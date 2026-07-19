@@ -1,9 +1,10 @@
 # 企业私有化可组合运营平台总体设计
 
-- 状态：已完成第一次书面规格复核，本版按复核意见修订；第二次书面复核已启动但未完成，不得据此认定已通过复核
+- 状态：已完成两次书面规格复核。第二次复核结论为"可有条件定稿"，待修订其中 5 项 HIGH 后进入实施
 - 版本：v1.3
 - 日期：2026-07-19
-- 复核记录：第一次书面复核报告见 docs/superpowers/reviews/2026-07-19-enterprise-private-operations-platform-spec-review.md。第二次复核的未完成结果见同目录下 2026-07-19-enterprise-private-operations-platform-spec-review-2-partial.md，其中 14 条已确认发现尚未修订。v1.1 消化其中全部 HIGH 级问题，v1.2 消化全部 MEDIUM 级问题，v1.3 消化规格范围内的全部 LOW 级问题；另有两项 LOW 属对外产品介绍文档，已在该文档处理。
+- 复核记录：第一次书面复核报告见 docs/superpowers/reviews/2026-07-19-enterprise-private-operations-platform-spec-review.md，确认 58 项；v1.1 消化其中全部 HIGH 级问题，v1.2 消化全部 MEDIUM 级问题，v1.3 消化规格范围内的全部 LOW 级问题，另有两项 LOW 属对外产品介绍文档并已在该文档处理。第一次复核意见至此全部闭合。
+- 第二次书面复核报告见同目录下 2026-07-19-enterprise-private-operations-platform-spec-review-2.md，对 v1.3 确认 44 项（HIGH 5、MEDIUM 31、LOW 8，无 CRITICAL），结论为可有条件定稿；该 44 项均尚未修订。
 - 产品范围：中国大陆、简体中文、人民币
 - 研发模式：Codex 承担主要研发执行，产品负责人作最终决策，专业人员负责关键领域验收
 - 当前阶段：总体设计，不包含实施代码
