@@ -540,7 +540,7 @@ def build_document():
         ["项目", "说明"],
         [
             ["使用设备", "Windows、macOS、iOS（iPhone；iPad 以 iOS 客户端兼容运行）、Android"],
-            ["部署方式", "企业机房、私有云，或企业自己的国内云服务器"],
+            ["部署方式", "企业机房、私有云，或企业自己的国内云服务器；核心交易数据库从平台认证的五种产品中选择一种，详见第 6 节"],
             ["数据原则", "每个客户独立部署；数据、备份、日志和 AI 上下文由客户控制"],
             ["核心特点", "高度自动化、高度定制、严格权限、完整审计、可连接已有系统"],
             ["适用范围", "首版面向中国大陆业务，仅支持简体中文与人民币；不含多币种、外汇和进出口"],
@@ -712,7 +712,9 @@ def build_document():
 
     add_heading(doc, "企业自己选择部署位置", 2)
     add_bullet(doc, "可部署在企业机房、私有云，或阿里云、腾讯云、华为云等企业自己的国内云环境。", bullet_num_id)
-    add_bullet(doc, "数据库、对象存储、密钥服务等既可自建，也可连接已有的合规服务。", bullet_num_id)
+    add_bullet(doc, "核心交易数据库须从平台认证的清单中选择一种：PostgreSQL、openGauss、达梦、人大金仓或 OceanBase，可自建，也可部署在企业自有云环境中，具体形态与版本以认证清单为准，版本须在认证版本范围内。", bullet_num_id)
+    add_bullet(doc, "同一客户不混用多种核心交易数据库；企业已有的 Oracle、SQL Server、MySQL 可作为外部系统或数据源接入，不作为核心交易数据库。", bullet_num_id)
+    add_bullet(doc, "对象存储、密钥服务等配套组件既可自建，也可连接已有的合规服务。", bullet_num_id)
     add_bullet(doc, "生产数据、备份、日志、索引和 AI 上下文限定在中国大陆境内。", bullet_num_id)
 
     add_heading(doc, "高保密设计", 2)
