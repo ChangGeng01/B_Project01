@@ -42,6 +42,41 @@ WHITE = "FFFFFF"
 BORDER = "C9D5E3"
 
 
+def _insert_ordered(parent, child, order):
+    """Insert child into parent at the position required by the OOXML sequence."""
+    name = child.tag.split("}")[-1]
+    idx = order.index(name)
+    for existing in parent:
+        existing_name = existing.tag.split("}")[-1]
+        if existing_name in order and order.index(existing_name) > idx:
+            existing.addprevious(child)
+            return
+    parent.append(child)
+
+
+TC_PR_ORDER = (
+    "cnfStyle", "tcW", "gridSpan", "hMerge", "vMerge", "tcBorders", "shd",
+    "noWrap", "tcMar", "textDirection", "tcFitText", "vAlign", "hideMark",
+)
+TBL_PR_ORDER = (
+    "tblStyle", "tblpPr", "tblOverlap", "bidiVisual", "tblStyleRowBandSize",
+    "tblStyleColBandSize", "tblW", "jc", "tblCellSpacing", "tblInd", "tblBorders",
+    "shd", "tblLayout", "tblCellMar", "tblLook",
+)
+TR_PR_ORDER = (
+    "cnfStyle", "divId", "gridBefore", "gridAfter", "wBefore", "wAfter",
+    "cantSplit", "trHeight", "tblHeader",
+)
+P_PR_ORDER = (
+    "pStyle", "keepNext", "keepLines", "pageBreakBefore", "framePr", "widowControl",
+    "numPr", "suppressLineNumbers", "pBdr", "shd", "tabs", "suppressAutoHyphens",
+    "kinsoku", "wordWrap", "overflowPunct", "topLinePunct", "autoSpaceDE",
+    "autoSpaceDN", "bidi", "adjustRightInd", "snapToGrid", "spacing", "ind",
+    "contextualSpacing", "mirrorIndents", "suppressOverlap", "jc", "textDirection",
+    "textAlignment", "textboxTightWrap", "outlineLvl", "divId", "cnfStyle", "rPr",
+)
+
+
 def apply_table_geometry(table, widths, *, table_width_dxa, indent_dxa, cell_margins_dxa):
     """Apply deterministic table geometry without relying on external helpers."""
     table.autofit = False
@@ -57,13 +92,13 @@ def apply_table_geometry(table, widths, *, table_width_dxa, indent_dxa, cell_mar
     tbl_layout = table_pr.find(qn("w:tblLayout"))
     if tbl_layout is None:
         tbl_layout = OxmlElement("w:tblLayout")
-        table_pr.append(tbl_layout)
+        _insert_ordered(table_pr, tbl_layout, TBL_PR_ORDER)
     tbl_layout.set(qn("w:type"), "fixed")
 
     tbl_indent = table_pr.find(qn("w:tblInd"))
     if tbl_indent is None:
         tbl_indent = OxmlElement("w:tblInd")
-        table_pr.append(tbl_indent)
+        _insert_ordered(table_pr, tbl_indent, TBL_PR_ORDER)
     tbl_indent.set(qn("w:w"), str(indent_dxa))
     tbl_indent.set(qn("w:type"), "dxa")
 
@@ -88,7 +123,7 @@ def apply_table_geometry(table, widths, *, table_width_dxa, indent_dxa, cell_mar
             margins = tc_pr.find(qn("w:tcMar"))
             if margins is None:
                 margins = OxmlElement("w:tcMar")
-                tc_pr.append(margins)
+                _insert_ordered(tc_pr, margins, TC_PR_ORDER)
             for side, value in cell_margins_dxa.items():
                 margin = margins.find(qn(f"w:{side}"))
                 if margin is None:
@@ -279,12 +314,12 @@ def create_numbering(doc: Document, *, decimal: bool) -> int:
     ind = OxmlElement("w:ind")
     ind.set(qn("w:left"), str(LIST_TEXT_DXA))
     ind.set(qn("w:hanging"), str(LIST_HANGING_DXA))
-    ppr.append(ind)
     spacing = OxmlElement("w:spacing")
     spacing.set(qn("w:after"), "80")
     spacing.set(qn("w:line"), "300")
     spacing.set(qn("w:lineRule"), "auto")
     ppr.append(spacing)
+    ppr.append(ind)
     lvl.append(ppr)
 
     rpr = OxmlElement("w:rPr")
@@ -377,7 +412,7 @@ def set_cell_shading(cell, fill: str):
     shd = tc_pr.find(qn("w:shd"))
     if shd is None:
         shd = OxmlElement("w:shd")
-        tc_pr.append(shd)
+        _insert_ordered(tc_pr, shd, TC_PR_ORDER)
     shd.set(qn("w:fill"), fill)
     shd.set(qn("w:val"), "clear")
 
@@ -387,7 +422,7 @@ def set_cell_borders(cell, color: str = BORDER, size: int = 6):
     borders = tc_pr.find(qn("w:tcBorders"))
     if borders is None:
         borders = OxmlElement("w:tcBorders")
-        tc_pr.append(borders)
+        _insert_ordered(tc_pr, borders, TC_PR_ORDER)
     for edge in ("top", "left", "bottom", "right", "insideH", "insideV"):
         element = borders.find(qn(f"w:{edge}"))
         if element is None:
@@ -402,13 +437,13 @@ def set_cell_borders(cell, color: str = BORDER, size: int = 6):
 def prevent_row_split(row):
     tr_pr = row._tr.get_or_add_trPr()
     if tr_pr.find(qn("w:cantSplit")) is None:
-        tr_pr.append(OxmlElement("w:cantSplit"))
+        _insert_ordered(tr_pr, OxmlElement("w:cantSplit"), TR_PR_ORDER)
 
 
 def repeat_header(row):
     tr_pr = row._tr.get_or_add_trPr()
     if tr_pr.find(qn("w:tblHeader")) is None:
-        tr_pr.append(OxmlElement("w:tblHeader"))
+        _insert_ordered(tr_pr, OxmlElement("w:tblHeader"), TR_PR_ORDER)
 
 
 def format_cell(cell, text: str, *, bold: bool = False, color: str = BODY, size: float = 10.3):
@@ -486,7 +521,7 @@ def add_callout(doc: Document, text: str, *, label: str | None = None):
     shd = OxmlElement("w:shd")
     shd.set(qn("w:fill"), LIGHT_FILL)
     shd.set(qn("w:val"), "clear")
-    p_pr.append(shd)
+    _insert_ordered(p_pr, shd, P_PR_ORDER)
     borders = OxmlElement("w:pBdr")
     for edge in ("top", "left", "bottom", "right"):
         border = OxmlElement(f"w:{edge}")
@@ -495,7 +530,7 @@ def add_callout(doc: Document, text: str, *, label: str | None = None):
         border.set(qn("w:space"), "6")
         border.set(qn("w:color"), BORDER)
         borders.append(border)
-    p_pr.append(borders)
+    _insert_ordered(p_pr, borders, P_PR_ORDER)
 
     if label:
         lead = p.add_run(f"{label}  ")
