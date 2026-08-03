@@ -295,7 +295,12 @@ def create_numbering(doc: Document, *, decimal: bool) -> int:
     rpr.append(fonts)
     lvl.append(rpr)
     abstract.append(lvl)
-    root.append(abstract)
+    # OOXML CT_Numbering 要求全部 w:abstractNum 排在 w:num 之前，追加到末尾会破坏部件结构
+    first_num = root.find(qn("w:num"))
+    if first_num is None:
+        root.append(abstract)
+    else:
+        first_num.addprevious(abstract)
 
     num = OxmlElement("w:num")
     num.set(qn("w:numId"), str(num_id))
@@ -664,7 +669,7 @@ def build_document():
     add_heading(doc, "订单管理", 2)
     add_body(doc, "销售下单后，系统自动检查价格权限、合同、库存可用量、交期和客户信用额度。")
     add_bullet(doc, "客户信用额度由应收未收金额与在途订单金额推算，超出可用额度时按配置阻断或转审批。", bullet_num_id)
-    add_bullet(doc, "支持订单变更、分批交付、退货、换货、直运和寄售；订阅与租赁作为订单类型登记周期和租期。", bullet_num_id)
+    add_bullet(doc, "支持订单变更、分批交付、退货、换货和直运；订阅、租赁与寄售作为订单类型登记：订阅与租赁登记周期和租期，寄售只登记订单类型，不含寄售在库台账与代销结算，货权转移仍以交付确认为准。", bullet_num_id)
     add_bullet(doc, "每次变更都保留版本和审批记录，避免口头修改造成部门信息不一致。", bullet_num_id)
 
     add_heading(doc, "采购与供应商", 2)
@@ -739,7 +744,7 @@ def build_document():
         ("智能与检索：", "本地 AI、OCR、MCP、向量检索、知识图谱、流程挖掘、预测和仿真；首版检索能力只有全文检索。"),
         ("现场与设备联网：", "边缘节点、断网独立运行、工业协议接入、物联网和数字孪生。"),
         ("外部资金与税务：", "银企直连、自动对账、第三方支付渠道，以及数电发票平台与税控设备对接。"),
-        ("更深的业务能力：", "完整仓库作业（波次、拣货、盘点、质检、预留、调拨）、完整财务与管理会计（多账簿、固定资产、预算、费用报销、合并报表、资金管理）、完整成本管理，以及线索、商机、销售预测、询比价和招投标。"),
+        ("更深的业务能力：", "完整仓库作业（波次、拣货、盘点、质检、预留、调拨）、寄售在库管理与代销结算、完整财务与管理会计（多账簿、固定资产、预算、费用报销、合并报表、资金管理）、完整成本管理，以及线索、商机、销售预测、询比价和招投标。"),
     ]
     for lead, rest in deferred_groups:
         add_bullet(doc, lead + rest, bullet_num_id, bold_lead=lead, compact=True)
