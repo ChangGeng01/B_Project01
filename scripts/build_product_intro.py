@@ -654,7 +654,7 @@ def build_document():
 
     add_heading(doc, "合同管理", 2)
     add_body(doc, "重点把合同的三类信息管清楚：关键条款、收付款信息、合同附件。")
-    add_bullet(doc, "支持模板、版本、批注、审批、签章、印章、履约、续签和到期提醒，合同也可以合并。", bullet_num_id)
+    add_bullet(doc, "支持模板、条款、修订版本、批注、审批、电子签章、实体印章、履约和义务跟踪，合同也可以合并。", bullet_num_id)
     add_bullet(doc, "合同审批后，可自动生成订单、采购需求、项目任务、收款计划和交付节点。", bullet_num_id)
     add_bullet(doc, "合同变更按新版本重新派生或调整已派生的单据，派生单据与合同双向可追溯。", bullet_num_id)
     add_bullet(doc, "合同生效属高风险操作，须重新确认身份，审批链不能越权跳过。", bullet_num_id)
