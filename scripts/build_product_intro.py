@@ -1,10 +1,19 @@
 #!/usr/bin/env python3
-"""Build the customer-facing product introduction and feature outline."""
+"""Build the customer-facing product introduction and feature outline.
 
+依赖与重建方式：
+- 唯一外部依赖是 python-docx，版本范围 >=1.2,<2。
+- 建仓库根目录虚拟环境：python3 -m venv .venv-docx
+- 安装依赖：.venv-docx/bin/pip install "python-docx>=1.2,<2"
+- 重建文档：.venv-docx/bin/python scripts/build_product_intro.py
+- 输出默认写入仓库内的 docs/介绍/ 目录，可用环境变量 PRODUCT_INTRO_OUTPUT 覆盖。
+"""
+
+import os
+from datetime import datetime, timezone
 from pathlib import Path
 
 from docx import Document
-from docx.enum.section import WD_SECTION
 from docx.enum.style import WD_STYLE_TYPE
 from docx.enum.table import WD_CELL_VERTICAL_ALIGNMENT
 from docx.enum.text import WD_ALIGN_PARAGRAPH, WD_TAB_ALIGNMENT
@@ -13,13 +22,15 @@ from docx.oxml.ns import qn
 from docx.shared import Inches, Pt, RGBColor
 
 
-WORKSPACE = Path("/Users/changgeng/Project/B_Project01/B_Project01")
-OUTPUT = WORKSPACE / "docs" / "介绍" / "企业一体化经营管理平台-产品介绍与功能大纲.docx"
+WORKSPACE = Path(__file__).resolve().parents[1]
+DEFAULT_OUTPUT = WORKSPACE / "docs" / "介绍" / "企业一体化经营管理平台-产品介绍与功能大纲.docx"
+OUTPUT = Path(os.environ.get("PRODUCT_INTRO_OUTPUT", DEFAULT_OUTPUT)).expanduser()
 
 
 # launch_messaging_guide -> compact_reference_guide token map.
 PAGE_WIDTH_DXA = 9360
-TABLE_INDENT_DXA = 120
+# 表格左缩进取 0，使表宽与正文可用宽度一致，右边缘不越过正文右边界。
+TABLE_INDENT_DXA = 0
 CELL_MARGINS_DXA = {"top": 80, "bottom": 80, "start": 120, "end": 120}
 LIST_MARKER_DXA = 270
 LIST_TEXT_DXA = 540
@@ -79,6 +90,14 @@ P_PR_ORDER = (
 
 def apply_table_geometry(table, widths, *, table_width_dxa, indent_dxa, cell_margins_dxa):
     """Apply deterministic table geometry without relying on external helpers."""
+    if sum(widths) != table_width_dxa:
+        raise ValueError(
+            f"列宽合计 {sum(widths)} 与表宽 {table_width_dxa} 不一致"
+        )
+    if table_width_dxa + indent_dxa > PAGE_WIDTH_DXA:
+        raise ValueError(
+            f"表宽 {table_width_dxa} 与左缩进 {indent_dxa} 之和超出正文可用宽度 {PAGE_WIDTH_DXA}"
+        )
     table.autofit = False
     table_pr = table._tbl.tblPr
 
@@ -578,8 +597,13 @@ def build_document():
     props = doc.core_properties
     props.title = "企业一体化经营管理平台 - 产品介绍与功能大纲"
     props.subject = "面向非技术读者的产品介绍（总体设计阶段，功能以正式发布版本为准）"
-    props.author = "Codex"
+    props.author = "企业一体化经营管理平台"
     props.keywords = "企业管理, CRM, 合同, 订单, 采购, 财务, 售后, 私有化"
+    props.comments = ""
+    props.last_modified_by = "企业一体化经营管理平台"
+    generated_at = datetime.now(timezone.utc)
+    props.created = generated_at
+    props.modified = generated_at
 
     # First-page customer-pack header pattern, without a decorative rule.
     spacer = doc.add_paragraph()
@@ -627,7 +651,7 @@ def build_document():
         doc,
         ["项目", "说明"],
         [
-            ["使用设备", "Windows、macOS、iOS（iPhone；iPad 以 iOS 客户端兼容运行）、Android"],
+            ["使用设备", "Windows、macOS、iOS（iPhone）、Android；iPad 可运行 iOS 客户端，首版不做平板版式适配，也不纳入四端验收"],
             ["部署方式", "企业机房、私有云，或企业自己的国内云服务器；核心交易数据库为 PostgreSQL，详见第 6 节"],
             ["数据原则", "每个客户独立部署；数据、备份和日志由客户控制"],
             ["核心特点", "合同贯穿全程、单据自动接力、高度定制、严格权限、完整审计"],
@@ -650,10 +674,10 @@ def build_document():
         ("合同审批：", "关键条款、折扣、付款计划和附件按各自审批链审批，不能越权跳过；管理层是合同审批的必经节点，意见、版本和附件全程留痕。"),
         ("合同生效：", "合同生效后自动生成销售订单、采购需求、项目任务、收款计划和交付节点，派生单据与合同双向可追溯。"),
         ("采购订货：", "采购查看已生效的合同与采购需求，按合同下达采购订单并可分批订货，供应商可通过门户确认订单与交期。"),
-        ("收货入账：", "收货按物料、批次和序列号写入库存台账；采购发票登记后形成应付明细，并按不含税单价更新库存金额。"),
+        ("收货入账：", "收货按物料、批次和序列号写入库存台账，并按采购订单不含税单价暂估入库金额；采购发票登记后回冲暂估，按发票不含税单价调整入库成本并形成应付明细。"),
         ("发票申请与开具：", "销售按合同和订单提交发票申请，管理层审批后由财务登记开具结果，回写申请单状态与剩余可开比例，并形成应收。"),
         ("交付确认：", "发货或合同交付节点确认后确认收入，并同步按加权平均单价结转销货成本。"),
-        ("到款与付款登记：", "财务按订单和发票登记到款，按采购发票登记付款，支持分次收付款，未核销部分进入账龄。"),
+        ("到款与付款登记：", "财务按订单和发票登记到款，按采购发票登记付款，支持分次收付款，未核销部分进入账龄；暂无可核销发票的款项先挂预收或预付，后续开票或采购发票登记时自动核销。"),
         ("售后工单：", "售后技术支持记录形成工单，关联原订单、合同、产品、批次、设备和保修，并进入客户档案。"),
         ("管理层看数：", "管理层随时查看收入、成本、交付和利润，并可按期间、客户、产品和合同下钻。"),
     ]
@@ -719,8 +743,8 @@ def build_document():
     add_heading(doc, "库存与存货计价", 2)
     add_body(doc, "管理仓库与库存台账、收发存记录、可用量查询，以及批次与序列号标识。")
     add_bullet(doc, "收货、出库和退货按物料、批次和序列号登记，可用量直接支撑下单校验和交期判断。", bullet_num_id)
-    add_bullet(doc, "存货计价采用移动加权平均一种方法：入库按采购不含税单价计价，出库按加权平均单价结转金额，数量账与金额账同步更新。", bullet_num_id)
-    add_bullet(doc, "提供按仓库和物料的库存金额查询与期末库存价值表；退货按当时的加权平均单价回冲，不重算历史成本。", bullet_num_id)
+    add_bullet(doc, "存货计价采用移动加权平均一种方法：收票前按采购订单不含税单价暂估入库，收票后按发票不含税单价调整，差额对仍在库部分调整加权平均单价、对已出库部分计入当期成本；出库按加权平均单价结转金额，数量账与金额账同步更新。", bullet_num_id)
+    add_bullet(doc, "提供按仓库和物料的库存金额查询与期末库存价值表；退货回冲不重算历史成本：销售退货以及采购发票已登记的采购退货按退货时的加权平均单价回冲，采购发票尚未登记的采购退货按该次收货的原暂估单价原额回冲。", bullet_num_id)
     add_bullet(doc, "首版不含库位、质检、预留、拣货、波次、调拨和盘点，也不含先进先出、标准成本和采购费用分摊。", bullet_num_id)
 
     add_heading(doc, "财务：应收应付、开票与总账", 2)
@@ -728,6 +752,7 @@ def build_document():
     add_bullet(doc, "应收台账按客户、合同、订单和发票记录应收明细、收款计划、到款核销和账龄；应付台账按供应商、采购订单和采购发票记录应付明细、付款申请、付款核销和账龄。", bullet_num_id)
     add_bullet(doc, "发票申请、审批、开具登记与合同收款计划的勾稽在系统内连成一条链路；开票有误时可在系统内登记作废或红字冲销。", bullet_num_id)
     add_bullet(doc, "到款和付款按订单与发票登记，支持分次收付款，一笔款项可核销多张发票或订单；银行与现金账户档案和资金流水由人工登记。", bullet_num_id)
+    add_bullet(doc, "预收与预付纳入台账：收到尚无应收可核销的款项按合同收款计划挂预收账款，付出尚无应付可核销的款项挂预付账款，后续开票或采购发票登记时自动核销，核销后的余额进入应收应付台账并参与账龄。", bullet_num_id)
     add_bullet(doc, "简易总账提供会计科目表、凭证生成、科目余额表、总账与明细账查询、试算平衡、月度期间开闭和年度损益结转；已过账凭证只能以红字冲销或更正凭证追加更正。", bullet_num_id)
     add_bullet(doc, "成本来源只有两类：交付确认时按加权平均结转的销货成本，以及直接关联合同、订单或项目的采购发票与外购服务费用；可按合同、订单、客户和项目查询成本并得出毛利。", bullet_num_id)
     add_bullet(doc, "收入确认只有一种口径：交付确认时确认收入并同步结转销货成本，开票时形成应收和销项税额。", bullet_num_id)
@@ -757,7 +782,7 @@ def build_document():
     add_heading(doc, "首版可以安装的能力", 2)
     first_release_modules = [
         ("核心业务：", "主数据、客户档案与客户 360、合同（含续签与到期提醒）、销售订单与客户信用额度校验、采购与供应商、库存台账与存货计价、成本归集、项目任务与交付节点、售后工单与设备台账。"),
-        ("财务：", "应收与应付台账、发票申请与开具登记、到款与付款登记、简易总账与期间结账。"),
+        ("财务：", "应收与应付台账、预收预付台账、发票申请与开具登记、到款与付款登记、简易总账与期间结账。"),
         ("报表与经营看板：", "报表设计器、仪表盘、企业自定义指标、打印模板，以及收入、成本、交付、利润的预置指标与默认管理驾驶舱。"),
         ("供应商门户：", "供应商查看与确认采购订单和交期、提交送货通知、上传发票、查询收付款对账、维护自身资质与价格交期档案。"),
         ("电子签章连接器：", "合同审批通过后发起签署，回传签署结果与带签章的合同文件，用印留痕并归入合同附件与审计。"),
@@ -793,7 +818,7 @@ def build_document():
     add_heading(doc, "高度定制，但不破坏升级", 1)
     customization_items = [
         ("数据可定制：", "新增业务对象、字段、关系、编号、校验、视图和搜索。"),
-        ("界面可定制：", "调整表单、列表、首页、菜单、看板和移动端任务页面。"),
+        ("界面可定制：", "调整表单、列表、首页、菜单和看板（同一配置在移动端按重排规则呈现）。"),
         ("流程可定制：", "设置审批、会签、时限、提醒、升级、自动任务和跨部门动作。"),
         ("权限可定制：", "按法人、部门、岗位、项目、客户、记录和字段控制访问。"),
         ("报表可定制：", "建立企业自己的指标、报表、打印模板和管理驾驶舱。"),
@@ -806,7 +831,7 @@ def build_document():
     add_heading(doc, "5. Excel、文档与外部连接", 1, page_break_before=True)
 
     add_heading(doc, "Excel 与批量数据", 2)
-    add_bullet(doc, "首版提供 Excel 导入与导出，用于批量建档、批量录入和把查询结果带出系统，四端能力一致。", bullet_num_id)
+    add_bullet(doc, "首版提供 Excel 导入与导出，用于批量建档、批量录入和把查询结果带出系统，四端能力一致；批量导入导出的执行在电脑端或服务端完成，移动端只保留可恢复的断点任务，单次批量规模按设备策略受限。", bullet_num_id)
     add_bullet(doc, "为了安全，不执行 VBA、任意宏或第三方 Excel 加载项。", bullet_num_id)
     add_bullet(doc, "首版不提供 Excel 或 WPS 加载项，也不提供在表格中实时查询与提交、复杂公式、数据透视和条件格式。", bullet_num_id)
 
@@ -823,7 +848,7 @@ def build_document():
         "首版随正式版交付的成品连接器只有电子签章一类：合同审批通过后发起签署，回传签署结果与带签章的合同文件，用印留痕并归入合同附件与审计。实际启用需完成签章机构准入，并按客户逐项联调。",
     )
     add_bullet(doc, "银行与税务侧首版不做系统对接：到款、付款与发票开具都在系统内登记，可人工录入或批量导入，闭环不依赖银企直连与税务平台。", bullet_num_id)
-    add_bullet(doc, "平台提供 REST 接口、OpenAPI 说明、批量接口、Webhook、业务事件，以及 CSV、Excel、XML 文件导入导出，供企业按需自行对接。", bullet_num_id)
+    add_bullet(doc, "平台提供查询类 REST 接口与 OpenAPI 说明、Webhook 与业务事件外发，以及 CSV、Excel、XML 文件导入导出，供企业按需自行对接；首版不开放外部业务系统直接写入平台数据，如需回写按项目制评估。", bullet_num_id)
     add_bullet(doc, "对外调用失败时支持超时、退避重试、熔断、死信队列和人工修复，不让问题悄悄丢失。", bullet_num_id)
 
     add_heading(doc, "6. 四端使用、私有部署与安全", 1, page_break_before=True)
@@ -831,7 +856,7 @@ def build_document():
     add_heading(doc, "Windows、macOS、iOS、Android", 2)
     add_body(
         doc,
-        "四个平台使用同一套数据、权限和业务规则：同一操作在任一端发起、审批或查询，产生的记录、校验、审计和结果相同；界面按屏幕和使用场景重排，不要求四端外观一致。电脑端适合批量操作、复杂报表和系统配置，手机和平板适合审批、查询、扫码和现场记录。",
+        "四个平台使用同一套数据、权限和业务规则：同一操作在任一端发起、审批或查询，产生的记录、校验、审计和结果相同；界面按屏幕和使用场景重排，不要求四端外观一致。电脑端适合批量操作、复杂报表和系统配置，手机等移动设备适合审批、查询、扫码和现场记录。",
     )
     mobile_scope_items = [
         ("移动端完整使用：", "库存台账与收发扫码、售后工单与设备台账、审批待办与站内通知。"),
@@ -855,7 +880,7 @@ def build_document():
     security_items = [
         ("权限细：", "可以控制到法人、部门、岗位、项目、客户、单条记录和单个字段；策略默认拒绝，不设置全能超级管理员。"),
         ("职责分开：", "系统、数据、安全、审计和密钥管理员相互制约；申请人不可自审，审批链不可越权跳过。"),
-        ("全程加密：", "传输、数据库、附件、备份和设备本地缓存均受加密与密钥管理保护，每个法人使用独立的密钥域。"),
+        ("全程加密：", "传输、数据库、附件、备份和设备本地缓存均受加密与密钥管理保护，每个法人使用独立的密钥域；首版加密采用国际算法，含 TLS 1.3、AES、SHA-256 和 RSA 或 ECDSA，国密算法与商用密码应用安全性评估属后续版本。"),
         ("控制外泄：", "敏感字段按经批准的清单脱敏；电脑端与移动端强制执行水印、导出审批、打印阻断、剪贴板拦截和分享控制，已下载文件失效在装有原生插件的电脑端和满足设备合规要求的移动端强制执行；浏览器门户端强制执行脱敏投影、水印、导出审批和操作审计，打印阻断、剪贴板拦截与已下载文件失效受浏览器能力限制，为尽力而为，不作承诺。"),
         ("完整审计：", "关键查看、修改、审批、导出和系统调用留下防篡改证据，审计记录只追加、可逐条验证。"),
         ("持续可用：", "正式生产采用单区域三故障域高可用部署，并配合境内异地不可变备份和定期恢复演练。"),
@@ -912,8 +937,8 @@ def build_document():
     scope_items = [
         ("阶段与版本：", "产品处于总体设计与分阶段研发阶段，不设置固定的发布日期；首版范围内的全部模块完成并通过验收后才对外发布首版。"),
         ("交付依据：", "每次交付的模块范围、版本和验收标准以双方签署的合同与验收清单为准，本文档不构成功能交付承诺。"),
-        ("首版范围：", "首版是以合同为中心的销售、采购、财务与工单闭环：合同（含续签与到期提醒）、订单与客户信用额度校验、采购与供应商、库存台账与存货计价、成本归集、售后工单与设备台账、应收应付与简易总账、发票申请与开具登记、报表与经营看板，以及权限与定制能力；对外协同只有供应商门户，成品连接器只有电子签章。"),
-        ("后续版本：", "制造与生产、企业运营与治理、电商与计费、本地 AI 与 OCR、MCP、向量检索与知识图谱、边缘节点与断网运行、工业接入与物联网、客户门户与经销商门户与员工门户、银企直连与税务平台对接，以及四种国产数据库的适配，首版均不交付；相关条目已逐条登记，后续版本可按登记恢复。"),
+        ("首版范围：", "首版是以合同为中心的销售、采购、财务与工单闭环：合同（含续签与到期提醒）、订单与客户信用额度校验、采购与供应商、库存台账与存货计价、成本归集、售后工单与设备台账、应收应付与预收预付台账、简易总账、发票申请与开具登记、报表与经营看板，以及权限与定制能力；对外协同只有供应商门户，成品连接器只有电子签章。"),
+        ("后续版本：", "制造与生产、企业运营与治理、电商与计费、本地 AI 与 OCR、MCP、向量检索与知识图谱、边缘节点与断网运行、工业接入与物联网、客户门户与经销商门户与员工门户、银企直连与税务平台对接、国密算法与国密 TLS 通道与商用密码应用安全性评估档位，以及四种国产数据库的适配，首版均不交付；相关条目已逐条登记，后续版本可按登记恢复。"),
         ("语言与币种：", "首版仅支持简体中文、人民币和中国标准时间，不支持多币种、外汇、进出口、报关、信用证和产品内容多语言。"),
         ("联网要求：", "全部业务写入由中心完成，首版不提供断网独立运行；网络中断期间客户端只保存本地草稿，恢复连接后由中心校验通过才写入。"),
         ("人工确认：", "合同生效、付款、开票、财务过账、结账和敏感数据导出属高风险操作，必须重新认证后才能提交并进入审批，审批链不可越权跳过，审批人不得与发起人为同一人。"),
