@@ -1,6 +1,6 @@
 ## 阶段 4：身份、认证与权限
 
-本阶段交付平台内核的身份与访问控制层，覆盖规格第 12.1 章身份与认证、第 12.2 章授权、第 7.7 章安全上下文建立与法人越权测试集、PRD 第 10.1 节至第 10.3 节。本阶段不实现流程引擎本体、不实现配置发布通道本体、不实现审计哈希链本体、不实现通知投递本体。按裁定通则第四条，调整后的阶段顺序为 1、2、3a、4、3b，这四项本体均由阶段 3b 交付，落在本阶段之后，因此本阶段一律按裁定通则第三条在 apps/core-server/src/wiring.rs 与 apps/job-worker/src/wiring.rs 注入以 Noop 前缀命名的空实现，并在该行加注释 `// TODO(stage-3b): replace with real impl`，由阶段 3b 替换，本阶段依赖这四项本体的端到端验收项顺延到阶段 3b。ConfigItemApplier 端口按 A-19 由阶段 3a 交付，本阶段在该端口上实现三个 AUTHZ 类 applier，见第 4.8 节。全部接缝的归属按总览第 4 节的裁定逐条写死，本阶段不再登记 needs。
+本阶段交付平台内核的身份与访问控制层，覆盖规格第 12.1 章身份与认证、第 12.2 章授权、第 7.7 章安全上下文建立与法人越权测试集、PRD 第 10.1 节至第 10.3 节。本阶段不实现流程引擎本体、不实现配置发布通道本体、不实现审计哈希链本体、不实现通知投递本体。按裁定通则第四条，调整后的阶段顺序为 1、2、3a、4、3b，这四项本体均由阶段 3b 交付，落在本阶段之后，因此本阶段一律按裁定通则第三条在 apps/core-server/src/wiring.rs 与 apps/job-worker/src/wiring.rs 注入以 Noop 前缀命名的空实现，并在该行加注释 `// TODO(stage-3b): replace with real impl`，由阶段 3b 替换，本阶段依赖这四项本体的端到端验收项顺延到阶段 3b。ConfigItemApplier 端口按 A-19 由阶段 3a 交付，本阶段在该端口上实现三个 AUTHZ 类 applier，见第 4.8 节。全部接缝的归属按裁定表逐条写死，本阶段不再登记 needs。
 
 本计划遵守共享技术基线。凡基线已定死的取值直接引用不再重述；凡基线未覆盖而本阶段必须取值的，一律在第 12 节“本阶段新增决定与偏离项”中显式登记，并给出回写基线的位置。凡属 PRD 附录乙待决的，给出临时取值、是否阻塞与切换代价。
 
@@ -141,7 +141,7 @@ ep-platform-identity 承载本地账号目录、凭据、多因子、设备登�
 
 表 3-15 platform_authz.field_permissions：id、legal_entity_id、role_id、object_type、field_name text not null、visibility text not null（HIDDEN、MASKED、READ、WRITE）、mask_style text null（FULL、KEEP_LAST_4、KEEP_DOMAIN）、公共列。索引 pk、ux_field_permissions_legal_entity_id_role_id_object_type_field_name。
 
-敏感字段登记表不在本阶段建立。按 C-06，全系统唯一的登记表是 platform_core.sensitive_field_registry，由阶段 2 交付，列为 schema_name、table_name、column_name、security_level smallint、is_field_encrypted boolean、blind_index_column text、mask_style text，唯一约束 ux_sensitive_field_registry_schema_table_column。本阶段第 4.2 节阶段四的字段密级与默认掩码风格一律从该表读取，登记行由各模块阶段以 backfill 迁移写入，本阶段不建表也不写入任何行。规格第 12.2 章“经产品负责人批准的敏感字段清单”的批准留痕改由阶段 3b 的配置发布通道的审批与签名承担，见 A-27，该表不设 approved_by 与 approved_at 两列；某字段的导出是否触发重新认证不由表列承载，按第 12.3 节 U-B-18 的判定函数计算。
+敏感字段登记表不在本阶段建立。按 C-06，全系统唯一的登记表是 platform_core.sensitive_field_registry，由阶段 2 交付，其业务列集与唯一约束 ux_sensitive_field_registry_schema_table_column 已由裁定 C-06 冻结为十一列，本阶段不复述该列集，也不声明该表另有附加列。本阶段第 4.2 节阶段四的字段密级与默认掩码风格一律从该表读取，登记行由各模块阶段以 backfill 迁移写入，本阶段不建表也不写入任何行。该表不设 approved_by 与 approved_at 两列，规格第 12.2 章“经产品负责人批准的敏感字段清单”的批准留痕由该表的 release_ref 列承载，经迁移登记时取 `MIGRATION:<迁移版本号>`，经端点登记时取 `ENDPOINT:<审批记录号>`；某字段的导出是否触发重新认证不由表列承载，按第 12.3 节 U-B-18 的判定函数计算。
 
 表 3-16 platform_authz.user_legal_entity_grants：id、legal_entity_id、user_id、granted_from date not null、granted_to date null、granted_by uuid not null、公共列。索引 pk、ux_user_legal_entity_grants_legal_entity_id_user_id、ix_user_legal_entity_grants_legal_entity_id_created_at。这是全系统唯一决定“某用户能不能进某法人”的表，它自身受策略约束，因此法人 A 的管理员无法看到也无法写入法人 B 的授权行。
 
@@ -190,7 +190,7 @@ db/migrations/platform_core/ 追加：
 9. V202610120940__platform_core_identity_breakglass_activations.sql
 10. V202610120945__platform_core_backfill_system_principal_account.sql
 
-db/migrations/platform_authz/ 新建目录并追加：
+db/migrations/platform_authz/ 追加：
 
 11. V202610121000__platform_authz_permission_items.sql
 12. V202610121005__platform_authz_object_scope_bindings.sql
@@ -211,7 +211,7 @@ db/migrations/platform_authz/ 新建目录并追加：
 27. V202610121125__platform_authz_backfill_admin_duty_roles.sql
 28. V202610121130__platform_authz_backfill_default_sod_rules.sql
 
-db/migrations/order.toml 在平台段内追加两项，顺序为 platform_core 在 platform_authz 之前，理由是 user_org_assignments 的外键指向租户阶段在 platform_core 建立的部门与岗位表，而 platform_authz 的表引用 user_accounts。租户阶段的迁移必须排在本阶段之前。
+db/migrations/order.toml 的二十四项顺序按 C-01 由阶段 2 冻结，本阶段不追加也不调整任何一项；二十四个目录按 C-01 由阶段 1 建为空目录，platform_core 与 platform_authz 均在其中，平台段内 platform_core 的位次在 platform_authz 之前。本阶段有两处跨 schema 引用，按裁定通则第五条以位次定目录，一律放在位次靠后的 platform_authz 目录下：platform_authz 的表引用 platform_core.user_accounts；user_org_assignments 的外键指向阶段 2 交付的 platform_core.departments 与 platform_core.positions，该外键落在 V202610121045。空库上按 order.toml 全量执行时，两处引用的前置对象均已由阶段 2 建立。
 
 每个迁移文件头部按基线第 3.9 节写 -- rollback: 段。10 号与 26 至 28 号是数据回填文件，slug 以 backfill_ 开头，回退说明为按 code 删除种子行。24 张建表迁移全部属于新增表，落在在线变更范围内，不需要停机窗口。V202610121030 号段作废，敏感字段登记表按 C-06 由阶段 2 在 platform_core 建立，本阶段不占用该号段。
 
@@ -402,7 +402,7 @@ FieldProjector 输入为对象类型、对象的原始行（serde_json::Value）
 ### 5. API 契约
 
 全部端点前缀为 /api/v1/platform，门户侧为 /api/v1/portal。请求头、封套、分页、排序、过滤、幂等键一律按基线第 5 章，本节只写差异与逐端点的语义。
-本节全部路由按 A-20 逐路由声明一对常量，命名为 `<USECASE_SCREAMING>_DOMAIN` 与 `<USECASE_SCREAMING>_ACTION`，类型分别取 `ep_foundation::CapabilityDomain` 与 `ep_foundation::ActionClass`，两个枚举由阶段 1 冻结，本阶段不自定义能力域码也不在本阶段内重新定义枚举；`xtask configdoc` 断言每个 HTTP 路由都能解析到一对常量，缺失即构建失败。第 4.1 节的 Action 六值与 ActionClass 五值是两个不同的东西：前者是权限项的动作粒度，参与授权判定阶段二；后者是客户端能力矩阵的动作类别，由阶段 13 的能力矩阵闸使用，两者按 View 对 Read、Create 与 Update 对 Write、Submit 对 Submit、Approve 对 Approve、Export 对 Export 映射。
+本节全部路由按 A-20 逐路由声明一对常量，命名为 `<USECASE_SCREAMING>_DOMAIN` 与 `<USECASE_SCREAMING>_ACTION`，类型分别取 `ep_foundation::CapabilityDomain` 与 `ep_foundation::ActionClass`，两个枚举由阶段 1 冻结，本阶段不自定义能力域码也不在本阶段内重新定义枚举；`xtask configdoc` 断言每个 HTTP 路由都能解析到一对常量，缺失即构建失败。本阶段全部路由落在 `/api/v1/platform/` 与 `/api/v1/portal/` 两段，按 A-20 为本阶段指名的承载 crate，两段的常量一律声明在 `crates/platform/authz/src/capability.rs`，其中 `/api/v1/platform/` 下路由的能力域按 A-20 一律取 `CapabilityDomain::PlatformAdminLowcodeOps`。第 4.1 节的 Action 六值与 ActionClass 五值是两个不同的东西：前者是权限项的动作粒度，参与授权判定阶段二；后者是客户端能力矩阵的动作类别，由阶段 13 的能力矩阵闸使用，两者按 View 对 Read、Create 与 Update 对 Write、Submit 对 Submit、Approve 对 Approve、Export 对 Export 映射。
 
 #### 5.1 认证前端点的头豁免
 
@@ -448,7 +448,7 @@ GET /api/v1/platform/identity/me/legal-entities 的实现按基线第 3.8 节：
 
 #### 5.5 授权配置
 
-roles、role-permission-grants、access-policies、field-permissions、sod-rules、approval-chains、user-role-grants、user-org-assignments、user-scope-grants、user-legal-entity-grants 十组资源，各自提供 GET 列表、GET 单条、POST 新建、PATCH 修改、POST {id}/actions/retire。全部要求 SECURITY 职责，user-role-grants 与 user-org-assignments 的新建要求 SYSTEM 发起加 SECURITY 确认两步，对应 PRD 第 10.2.3 节调岗行的“系统管理员发起，安全管理员确认”。敏感字段登记按 C-06 不再是本阶段的配置资源：唯一登记表是 platform_core.sensitive_field_registry，由阶段 2 建立，登记行由各模块阶段以 backfill 迁移写入，本阶段只提供 GET /api/v1/platform/sensitive-fields 一个只读端点供配置界面查阅，不提供任何写入端点。
+roles、role-permission-grants、access-policies、field-permissions、sod-rules、approval-chains、user-role-grants、user-org-assignments、user-scope-grants、user-legal-entity-grants 十组资源，各自提供 GET 列表、GET 单条、POST 新建、PATCH 修改、POST {id}/actions/retire。全部要求 SECURITY 职责，user-role-grants 与 user-org-assignments 的新建要求 SYSTEM 发起加 SECURITY 确认两步，对应 PRD 第 10.2.3 节调岗行的“系统管理员发起，安全管理员确认”。敏感字段登记按 C-06 不再是本阶段的配置资源：唯一登记表是 platform_core.sensitive_field_registry，由阶段 2 建立，登记行由各模块阶段以 backfill 迁移写入，只读端点 GET /api/v1/platform/sensitive-fields 同按 C-06 由阶段 2 交付，契约以阶段 2 计划为准，本阶段不注册该路由、不另写契约、不提供任何写入端点，配置界面查阅时直接调用阶段 2 的该端点。
 
 保存期校验按 PRD 第 10.2.2 节四条逐条实现并各有错误码：PLATFORM.SOD.DUTY_CONFLICT、PLATFORM.AUTHZ.ISOLATION_CONTROL_FORBIDDEN、PLATFORM.AUTHZ.DIRECT_DB_ACCESS_FORBIDDEN、PLATFORM.SOD.SELF_APPROVAL_FORBIDDEN。第二条与第三条的实现方式是 permission_items 中根本不存在“关闭或修改法人隔离机制”与“事务业务库直连”这两类权限项，任何引用未注册权限项的授予在保存时按 VALIDATION 拒绝，错误码 PLATFORM.AUTHZ.PERMISSION_ITEM_UNKNOWN。
 
@@ -533,7 +533,7 @@ roles、role-permission-grants、access-policies、field-permissions、sod-rules
 
 #### 6.3 与 Outbox 的关系
 
-本阶段发出五个事件，全部在业务事务内写入 platform_msg.outbox_events，信封字段按基线第 6.1 节。平台事件的 posting_date 与 accounting_period_id 取 null，因为它们不是账务事件。关账受理前提二的判定语句按 C-28 由阶段 9a 定死，本阶段逐字采用：该法人该期间内，platform_msg.outbox_events 中 status 属于 PENDING 或 DISPATCHING、posting_date 落在该期间起止之间、且 event_type 命中 ledger.posting_trigger_event_types 的条目数为零，且 platform_msg.dead_letters 中 state 属于 OPEN 或 REPAIRING、同样命中该注册表的条数为零。posting_date 为空的平台事件一律不计入，理由是它们不产生凭证；本阶段五个事件均不向 ledger.posting_trigger_event_types 登记，因此不会误拦关账。
+本阶段发出五个事件，全部在业务事务内写入 platform_msg.outbox_events，信封字段按基线第 6.1 节。平台事件的 posting_date 与 accounting_period_id 取 null，因为它们不是账务事件。关账受理前提二的判定语句按 C-28 由阶段 9a 定死，本阶段逐字采用：该法人该期间内，platform_msg.outbox_events 中 status 属于 PENDING 或 DISPATCHING、posting_date 落在该期间起止之间、且 event_type 命中 ledger.posting_trigger_event_types 的条目数为零，且 platform_msg.dead_letters 中 state 属于 OPEN 或 REPAIRING、同样命中该注册表的条数为零。posting_date 为空的平台事件一律不计入，理由是它们不产生凭证；本阶段五个事件不在阶段 9a 按 A-21 一次写入的 13 行种子之内，本阶段也不追加任何回填迁移，因此不会误拦关账。
 
 消费端幂等由 platform_msg.inbox_consumptions 保证。本阶段自身消费一个事件：platform.authz_policy.published.v1，消费副作用是重建 AuthzSnapshot 并通过进程间接口通知 core-server，副作用与消费记录同事务。
 
@@ -648,7 +648,7 @@ roles、role-permission-grants、access-policies、field-permissions、sod-rules
 
 聚合泄漏的具体判据：跨法人的 count、sum、分面计数在越权上下文下返回 0 或不返回该分面，不得返回真实值；排序泄漏的判据：按无权字段排序的请求返回 VALIDATION，不返回按该字段排好序的结果；错误信息泄漏的判据：对不可见记录的读写删三类请求，响应体与响应时间在“记录不存在”与“记录存在但无权”两种真实情况下不可区分，时间差的 P95 不超过 5 毫秒。
 
-另有五个入口借用测试，对应基线第 8.4 节，其断言函数按 C-05 由阶段 2 提供，本阶段只负责把它们编入矩阵与门禁判定：
+另有五个入口借用测试，对应基线第 8.4 节。按 C-05，两个复制角色两项经阶段 2 追加的 assert_replication_role_containment 判定，内部对账上下文一项经阶段 2 追加的 assert_recon_context_borrow 判定，两个只读角色两项经阶段 1 提供的 assert_read 判定；本阶段不实现其中任何一个函数，只负责把它们编入矩阵与门禁判定：
 
 1. ep_archiver 角色借用测试：验证该角色不具备任何业务表的 SELECT 权限，只有 REPLICATION 属性，且只能本机连接。
 2. ep_backuper 角色借用测试：同上。
@@ -707,7 +707,7 @@ roles、role-permission-grants、access-policies、field-permissions、sod-rules
 14. 本阶段的 3 处偏离项与 9 处新增决定已写入基线修订提案并经平台架构负责人签字，未签字项在计划中标注为阻塞。
 15. clippy 以 -D warnings 通过，非测试代码中不出现 unwrap、expect、panic!、数组越界索引与整数溢出运算；单文件不超过 800 行、函数不超过 50 行、嵌套不超过 4 层。
 16. 按 A-19 应交付的三个 applier 已在 ep-platform-authz 实现：AuthzRoleApplier、AuthzPolicyApplier、AuthzFieldGrantApplier，三者实现阶段 3a 提供的 ConfigItemApplier 端口并注册到 ConfigItemApplierRegistry，单元测试覆盖三者的写入与版本推进在同一事务内完成；配置包经发布通道审批签名后生效的端到端验收顺延到阶段 3b。
-17. 本阶段全部路由的能力域码与动作类别常量已声明，`xtask configdoc` 通过。
+17. 本阶段全部路由的能力域码与动作类别常量已声明在 `crates/platform/authz/src/capability.rs`，`xtask configdoc` 通过。
 18. 本阶段不交付任何业务界面。A-23 的四端界面按规格第 6.2 章能力矩阵由阶段 5 至阶段 12 各自交付，客户端壳、路由注册表与能力矩阵闸由阶段 13 交付，本阶段只交付服务端端点与其契约。
 19. 按 A-15 的实现清单，MasterReferenceCounter、SalesTradeHistoryProvider 与 PurchaseTradeHistoryProvider 三个 trait 的实现方不含本阶段，本阶段不实现也不注册，注册表由阶段 5 提供。
 20. 敏感字段登记表在本阶段的迁移与建表语句中不存在，本阶段对 platform_core.sensitive_field_registry 只有读取路径，由一条集成用例断言本阶段代码不含对该表的 INSERT、UPDATE 与 DELETE。
@@ -826,6 +826,6 @@ roles、role-permission-grants、access-policies、field-permissions、sod-rules
 | U-B-17 | CONFIG 职责与 SECURITY 互斥，与其余四类可兼 | 否 | 改互斥关系只需改种子 SoD 规则行 |
 | U-B-18 | 敏感导出的判定为：结果集含敏感字段清单内任一字段，或对象密级不低于 30，或单次导出行数不低于 1000，三者任一成立即为敏感导出；审计记录导出计入 | 否 | 阈值为配置项，判定条件的增删改一个纯函数 |
 | U-L-01 | 并发定义为最近 60 秒内有请求的不同用户数；达上限排队，等待 10 秒超时返回 503 | 否 | 改为不限制只记录需去掉信号量并保留计数器 |
-| U-A-12 | 开户银行与银行账号进敏感字段清单，列表与详情按 KEEP_LAST_4 掩码，导出触发重新认证 | 否 | 清单是数据行，改动不涉及代码 |
+| U-A-12 | 该项待决，裁定表不代拍。技术侧临时取值按 A-28：`mdm.customer_invoice_profiles` 与 `mdm.supplier_payment_profiles` 的 `bank_name` 与 `bank_account_no` 共四行登记为 ACCOUNT 类且密级 30，`bank_account_no` 的 mask_style 取 KEEP_LAST_4、`bank_name` 取 NONE，四行 is_field_encrypted 均为假，即首版不做字段级加密；导出是否触发重新认证按 U-B-18 的判定函数计算 | 否 | 登记行是数据行，取值切换按 A-28 的切换路径在一次变更内完成，本阶段的字段投影器与 U-B-18 判定函数不改 |
 
 以上 17 条均不阻塞本阶段实施。原先登记的唯一阻塞项已解除：SecurityContext 的 19 个字段与三个配套枚举按 A-03、SYSTEM_PRINCIPAL_ID 与 SYSTEM_DEVICE_ID 按 A-02、CapabilityDomain 与 ActionClass 按 A-20，均由阶段 1 在 ep-foundation 冻结并排在本阶段之前，本阶段只负责填充与引用，本计划不再存在需要标注为阻塞的前置项。

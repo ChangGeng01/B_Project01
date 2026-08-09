@@ -1,6 +1,6 @@
 ## 阶段 6：合同与销售（CLM、销售与 OMS、CPQ 价格权限、客户信用额度校验）
 
-本阶段承载规格第 5.2 章 CLM、销售与 OMS、客户信用额度校验、CPQ 价格权限四个条目的原生能力，以及规格第 8 章黄金业务闭环第 1 步、第 2 步、第 3 步与第 11 步销售侧的单据主体，对应 PRD 第 3 节全节。本阶段属规格第 19 章阶段 3 的建设内容，其时延与容量通过线在阶段 4 统一判定。
+本阶段承载规格第 5.2 章 CLM、销售与 OMS、客户信用额度校验、CPQ 价格权限四个条目的原生能力，以及规格第 8 章黄金业务闭环第 1 步、第 2 步、第 3 步、第 8 步与第 11 步销售侧的单据主体，对应 PRD 第 3 节全节。其中第 8 步的交付确认单按裁定 A-09 归本阶段建表、建用例、发事件，是该步的唯一落点；库存腿由阶段 8 提供端口，收入与成本腿由阶段 9a 提供端口，过渡科目腿由阶段 10 提供端口并反向替换本阶段注入的空实现。本阶段属规格第 19 章阶段 3 的建设内容，其时延与容量通过线在阶段 4 统一判定。
 
 全文取值一律遵循共享技术基线。基线已定死的事项本节直接引用，不重新决定；基线未覆盖而本阶段必须取值的，在第 11.3 小节集中列出并标注为本阶段新增决定；与基线有出入的，在第 11.2 小节单列偏离项。
 
@@ -12,13 +12,13 @@
 
 1. 六个新增库 crate 编译通过并被 apps 装配：`ep-contract-clm`、`ep-domain-clm`、`ep-app-clm`、`ep-contract-sales`、`ep-domain-sales`、`ep-app-sales`，以及 `ep-contract-cpq`、`ep-domain-cpq`、`ep-app-cpq` 中与价格权限校验相关的部分。
 2. 一个新增适配 crate `ep-adapter-esign` 编译通过，目录为 `crates/adapter/esign/`，并在 integration-gateway 中装配为唯一的对外出网出口；其两套契约测试文件 `crates/adapter/esign/tests/contract_sandbox.rs` 与 `crates/adapter/esign/tests/contract_stub.rs` 存在且共用同一组断言函数。
-3. `db/migrations/cpq/`、`db/migrations/clm/`、`db/migrations/sales/` 三个迁移目录下的全部迁移可在空库上离线执行成功，并可按各文件头 `-- rollback:` 段落回退到本阶段之前的版本。
+3. `db/migrations/cpq/`、`db/migrations/clm/`、`db/migrations/sales/` 三个迁移目录下的全部迁移可在空库上离线执行成功，并可按各文件头 `-- rollback:` 段落回退到本阶段之前的版本；其中含按裁定 A-09 新建的 `sales.delivery_confirmations` 与 `sales.delivery_confirmation_lines` 两张表，以及按裁定 A-18 新建的 `clm.v_contracts_dataset`、`clm.v_contract_delivery_milestones`、`sales.v_sales_orders_dataset`、`sales.v_order_delivery_batches` 四个受治理数据集视图。按裁定通则第五条，本阶段不新增任何跨 schema 迁移。
 4. core-server 暴露第 5 节列出的全部 HTTP 端点，`/api/v1/clm/*`、`/api/v1/sales/*`、`/api/v1/cpq/price-authorities`，四端可调用。
 5. job-worker 中运行三类消费者，名字固定为 `clm.derivation`、`clm.milestone_confirm`、`sales.delivery_writeback`，其中 `sales.delivery_writeback` 消费本模块发出的 `sales.delivery.confirmed.v1`；三者的死信可在运维中心枚举。
 6. integration-gateway 中运行电子签章出口，含超时、退避、熔断与证据固化，签署状态由本进程按退避轮询拉取。
-7. `docs/event-catalog.md` 中登记本阶段的 17 个领域事件，其中含 `sales.delivery.confirmed.v1` 与销售退货的登记、关闭、取消、驳回四个事件；`docs/error-codes.md` 中登记本阶段的 34 个错误码，两处与 `ep-foundation::error::codes` 常量表由 CI 校验一致。
+7. `docs/event-catalog.md` 中登记本阶段的 18 个领域事件，清单与计数口径见第 6.3 小节的事件登记表，其中含 `sales.delivery.confirmed.v1` 与销售退货的登记、关闭、取消、驳回四个事件；本阶段第 5 节 API 契约表中出现的全部错误码已登记在 `docs/error-codes.md` 并与 `ep-foundation::error::codes` 一致，由 CI 校验。
 8. `ep-testkit` 中新增 `ContractBuilder`、`SalesOrderBuilder`、`DeliveryScheduleBuilder`、`CreditFixture` 四个构造器；`ep-datagen` 在默认 scale 下生成合同与销售订单行各 10 万条并满足本阶段的全部不变量。
-9. 一个可重复执行的端到端用例集 `apps/core-server/tests/e2e_stage6/`，覆盖第 8 节列出的 12 个 E2E 场景。
+9. 一个可重复执行的端到端用例集 `apps/core-server/tests/e2e_stage6/`，覆盖第 8 节列出的 13 个 E2E 场景。
 10. 一份 `docs/adr/2026-11-clm-esign-polling.md`，记录电子签章不设公网入站回调而采用轮询的决定与理由。
 11. 四端界面：`clients/desktop/src/modules/clm/`、`clients/desktop/src/modules/sales/`、`clients/mobile/src/modules/clm/`、`clients/mobile/src/modules/sales/` 四个目录存在并可构建，按规格第 6.2 章能力矩阵的取值实现。
 
@@ -30,13 +30,13 @@
 
 | crate | 层 | 新增或改动 | 主要内容 |
 |---|---|---|---|
-| ep-contract-clm | 契约 | 新增 | 合同命令与查询 DTO、合同事件类型、供其他模块调用的 `ContractQueryPort`、`ContractMilestonePort`、`ContractDerivationCallbackPort`、`ContractDerivationPlanQuery`、`ContractPaymentScheduleQuery` |
+| ep-contract-clm | 契约 | 新增 | 合同命令与查询 DTO、合同事件类型、供其他模块调用的 `ContractQueryPort`、`ContractMilestonePort`、`ContractDerivationCallbackPort`、`ContractDerivationPlanQuery`、`ContractPaymentScheduleQuery`；`src/capability.rs` 中为每个用例声明 `<USECASE_SCREAMING>_DOMAIN` 与 `<USECASE_SCREAMING>_ACTION` 一对常量 |
 | ep-domain-clm | 领域 | 新增 | 合同聚合、合同版本、关键条款、交付节点、收付款期次、签署编排、派生批次；合同状态机与守卫；`ContractRepository`、`SignatureGateway`、`TemplateRenderer` 三个端口 |
 | ep-app-clm | 应用 | 新增 | 20 个用例、合同侧授权入口、事务边界、派生编排、审计与 Outbox 写入；`ClmProductUsageProbe` 与 `ClmReferenceCounter` 两个探针实现 |
-| ep-contract-sales | 契约 | 新增 | 销售订单、交付确认与退货的命令查询 DTO、事件类型、`SalesOrderDerivationPort`、`CreditExposureQueryPort`、`SalesOrderQueryPort`、`SalesReturnCommandPort` |
+| ep-contract-sales | 契约 | 新增 | 销售订单、交付确认与退货的命令查询 DTO、事件类型、`SalesOrderDerivationPort`、`CreditExposureQueryPort`、`SalesOrderQueryPort`、`SalesReturnCommandPort`；`src/capability.rs` 中为每个用例声明 `<USECASE_SCREAMING>_DOMAIN` 与 `<USECASE_SCREAMING>_ACTION` 一对常量 |
 | ep-domain-sales | 领域 | 新增 | 销售订单聚合、订单行、分批交付行、订单变更版本、交付确认聚合、销售退货聚合、换货关联；四套状态机；信用占用在途桶的纯计算 |
 | ep-app-sales | 应用 | 新增 | 20 个用例（含 `create_delivery_confirmation` 与 `confirm_delivery` 两个）、信用校验编排、交付确认三腿编排与回写消费、订单变更审批回写；`SalesProductUsageProbe`、`SalesReferenceCounter`、`SalesTradeHistoryProviderImpl` 三个探针实现 |
-| ep-contract-cpq | 契约 | 改动 | 追加 `PriceAuthorityPort` 与价格权限判定 DTO；价目表查询 trait 由主数据阶段定义，本阶段只消费 |
+| ep-contract-cpq | 契约 | 改动 | 追加 `PriceAuthorityPort` 与价格权限判定 DTO；价目表查询 trait 由主数据阶段定义，本阶段只消费；在阶段 5 已建的 `src/capability.rs` 中只追加价格权限档案路由的一对常量，不重定义能力域码 |
 | ep-domain-cpq | 领域 | 改动 | 追加价格权限值对象与判定规则、行金额与净单价的计算规则 |
 | ep-app-cpq | 应用 | 改动 | 追加价格权限档案的维护用例与判定用例 |
 | ep-adapter-esign | 适配 | 新增 | 电子签章外部出口的 HTTP 客户端、请求签名、响应验签、证据固化、熔断与退避 |
@@ -60,7 +60,7 @@
 | 交付确认单的登记与确认过账 | core-server | 确认动作在单个事务内依次调用库存腿、过渡科目腿与凭证腿三个契约端口 |
 | 合同附件正文的读写 | core-server | 交易路径上的附件正文按基线第 2 节归 core-server |
 | 合同生效派生编排与执行 | job-worker | 消费 `clm.contract.effective.v1`，按派生项逐项执行 |
-| 交付确认回写与合同履约进度推进 | job-worker | 消费者名 `sales.delivery_writeback`，消费本模块发出的 `sales.delivery.confirmed.v1`，更新分批交付行、订单行与交付节点 |
+| 交付确认回写与合同履约进度推进 | job-worker | `sales.delivery_writeback` 消费本模块发出的 `sales.delivery.confirmed.v1`，更新分批交付行、订单行与订单状态；`clm.milestone_confirm` 消费同一事件，更新 `clm.contract_milestones` 的交付节点；两个消费者各只写本模块 schema，按基线第 1.3 节不跨模块写入 |
 | 合同到期提醒的定时触发 | job-worker | 使用 ep-platform-flow 的定时器与 ep-platform-notify 的站内通知，本阶段只提供触发源投影 |
 | 电子签章的发起、状态轮询、结果拉取与验签 | integration-gateway | 首版唯一的对外出网出口 |
 | 合同模板渲染与 PDF 归档 | job-worker | 经 `ep_foundation::port::doc::DocTemplatePort::render` 与 `PdfRenderPort::render_pdf`，不新增接口，同步等待超过 8 秒的一律转后台任务 |
@@ -131,6 +131,7 @@
 | V202611021090 | clm.contract_validations、clm.contract_validation_items |
 | V202611021095 | clm.contract_merge_links |
 | V202611021100 | clm.v_contract_milestone_progress、clm.v_contract_reminder_sources |
+| V202611021105 | clm.v_contracts_dataset、clm.v_contract_delivery_milestones |
 
 表 `clm.contract_types`，档案类。列为 `code text`、`name text`、`requires_project boolean default false`、`requires_procurement_default boolean default false`、`approval_chain_terms_code text`、`approval_chain_discount_code text`、`approval_chain_payment_code text`、`approval_chain_attachment_code text`、`default_template_id uuid`、`is_active boolean`、`deactivated_at timestamptz`。约束 `ux_contract_types_legal_entity_id_code`。四个审批链编码是逻辑引用 platform_flow 的流程定义键，不建外键。
 
@@ -173,11 +174,11 @@
 
 表 `clm.contract_terms`，一合同一行。列为 `contract_id uuid not null unique`、`body text`、`warranty_clause text`、`liability_clause text`、`dispute_resolution text`、`structured jsonb not null default '{}'`、`clause_refs jsonb not null default '[]'`。约束 `ux_contract_terms_contract_id`。
 
-表 `clm.contract_milestones`。列为 `contract_id uuid not null`、`milestone_no int not null`、`name text not null`、`promised_date date not null`、`status text not null CHECK in PLANNED, ACTIVE, CONFIRMED, CANCELLED`、`confirmed_date date`、`delivery_confirmation_id uuid`、`owner_user_id uuid`。约束 `ux_contract_milestones_contract_id_milestone_no`；追加索引 `ix_contract_milestones_legal_entity_id_promised_date_status`（到期提醒与交付指标取数）。该表不带产品、物料与订单字段，与规格第 5.5 章经营驾驶舱条目的口径一致。
+表 `clm.contract_milestones`。列为 `contract_id uuid not null`、`milestone_no int not null`、`name text not null`、`promised_date date not null`、`status text not null CHECK in PLANNED, ACTIVE, CONFIRMED, CANCELLED`、`confirmed_date date`、`delivery_confirmation_id uuid`（跨 schema 逻辑引用 `sales.delivery_confirmations`，按裁定 A-09 保持逻辑引用，不建外键）、`owner_user_id uuid`。约束 `ux_contract_milestones_contract_id_milestone_no`；追加索引 `ix_contract_milestones_legal_entity_id_promised_date_status`（到期提醒与交付指标取数）。该表不带产品、物料与订单字段，与规格第 5.5 章经营驾驶舱条目的口径一致。
 
 表 `clm.contract_obligations`。列为 `contract_id uuid not null`、`seq_no int not null`、`name text not null`、`description text`、`due_date date`、`status text CHECK in OPEN, FULFILLED, WAIVED`。
 
-表 `clm.contract_payment_schedules`。列为 `contract_id uuid not null`、`period_no int not null`、`condition_text text`、`basis text not null CHECK in RATIO, AMOUNT`、`ratio numeric(9,6)`、`amount numeric(18,2)`、`amount_with_tax numeric(18,2)`、`due_date date not null`、`remark text`、`derived_receivable_plan_id uuid`。约束 `ux_contract_payment_schedules_contract_id_period_no`；`ck_contract_payment_schedules_basis` 约束 `(basis='RATIO' and ratio is not null and amount is null) or (basis='AMOUNT' and amount is not null and ratio is null)`；追加索引 `ix_contract_payment_schedules_legal_entity_id_due_date`。同一合同内 basis 不混用，由应用层校验并写入 `clm.contract_validations`。
+表 `clm.contract_payment_schedules`。列为 `contract_id uuid not null`、`period_no int not null`、`condition_text text`、`basis text not null CHECK in RATIO, AMOUNT`、`ratio numeric(9,6)`、`amount numeric(18,2)`、`amount_with_tax numeric(18,2)`、`due_date date not null`、`remark text`。约束 `ux_contract_payment_schedules_contract_id_period_no`；`ck_contract_payment_schedules_basis` 约束 `(basis='RATIO' and ratio is not null and amount is null) or (basis='AMOUNT' and amount is not null and ratio is null)`；追加索引 `ix_contract_payment_schedules_legal_entity_id_due_date`。同一合同内 basis 不混用，由应用层校验并写入 `clm.contract_validations`。按裁定 C-20，本表是收付款计划行的唯一出处，`ep_contract_finance::ReceivablePlanPort` 已撤销，finance 不再派生第二套；阶段 10 的到款自动核销经本阶段提供的 `ep_contract_clm::ContractPaymentScheduleQuery::schedules(tx, ctx, contract_id)` 取数。
 
 表 `clm.contract_attachments`，按基线第 4 节的附件关联表规范。列为 `owner_id uuid not null`（指向 contracts.id）、`attachment_object_id uuid not null`、`purpose text not null CHECK in CONTRACT_BODY, SIGNED_FILE, SEAL_SCAN, SUPPORTING`、`sort_no int not null default 0`、`contract_version_no int not null`。追加索引 `ix_contract_attachments_owner_id_purpose`。
 
@@ -206,6 +207,7 @@
 视图 `clm.v_contract_milestone_progress`：按合同聚合交付节点的计划数、已确认数、逾期数与最近到期日，只读取本 schema 的表。
 
 视图 `clm.v_contract_reminder_sources`：把合同有效期止日、交付节点约定日期、收付款期次到期日三类触发源统一为 `(legal_entity_id, contract_id, source_kind, due_date, owner_user_id)` 五列，供 ep-platform-flow 的定时器取数。三类触发源与 PRD 3.9.2 的三行一一对应。
+按裁定 A-18，第 V202611021105 号迁移 `V202611021105__clm_create_dataset_views.sql` 建立本模块的两个受治理数据集视图。`clm.v_contracts_dataset` 的 dataset code 为 `clm_contracts`，grain 取 DOCUMENT，取数为 `clm.contracts`；`clm.v_contract_delivery_milestones` 的 dataset code 为 `clm_contract_delivery_milestones`，grain 取 DOCUMENT_LINE，取数为 `clm.contract_milestones`，输出列含 `contract_id`、`milestone_no`、`name`、`promised_date`、`status`、`confirmed_date`、`delivery_confirmation_id`、`owner_user_id`。两个视图都必须含 `legal_entity_id`、`security_level`、`data_scope_tags` 三列，都不做聚合、不跨 schema 连接，并在同一迁移内执行 `GRANT SELECT ON <视图> TO ep_analyst_ro`，不授予 `ep_app_rw` 之外的任何写权限。列名与类型签名必须与阶段 11 的 `reporting.dataset_fields` 登记一致，由阶段 11 的启动自检项 `reporting-dataset-signature-matched` 校验，本阶段在第 9 节退出条件中把列签名同步给阶段 11。该文件头的 `-- rollback:` 段为 `drop view` 与对应的 `revoke`。
 
 #### 3.4 sales schema 的变更
 
@@ -216,6 +218,8 @@
 | V202611031010 | sales.sales_orders |
 | V202611031015 | sales.sales_order_lines |
 | V202611031020 | sales.delivery_schedules |
+| V202611031021 | sales.delivery_confirmations |
+| V202611031022 | sales.delivery_confirmation_lines |
 | V202611031025 | sales.sales_order_versions |
 | V202611031030 | sales.sales_order_changes、sales.sales_order_change_lines |
 | V202611031040 | sales.sales_returns、sales.sales_return_lines |
@@ -223,6 +227,7 @@
 | V202611031055 | sales.exchange_links |
 | V202611031060 | sales.order_validations、sales.order_validation_items |
 | V202611031070 | sales.v_credit_exposure_in_transit |
+| V202611031075 | sales.v_sales_orders_dataset、sales.v_order_delivery_batches |
 
 表 `sales.credit_policies`，法人级策略，经配置发布通道维护。列为 `scope text not null CHECK in LEGAL_ENTITY`、`on_exceed text not null CHECK in BLOCK, REVIEW`、`null_limit_behavior text not null CHECK in TREAT_AS_ZERO, TREAT_AS_UNLIMITED, SKIP_CHECK`、`amount_basis text not null CHECK in WITH_TAX, WITHOUT_TAX`、`deduct_advance_receipts boolean not null default false`、`recheck_on_order_change boolean not null default true`、`release_package_id uuid`。约束 `ux_credit_policies_legal_entity_id_scope`，每法人一行。
 
@@ -260,7 +265,27 @@
 
 约束与索引：`ux_sales_order_lines_sales_order_id_line_no`；`ck_sales_order_lines_delivered_range` 约束 `delivered_quantity >= 0 and delivered_quantity <= quantity`；`ck_sales_order_lines_returned_range` 约束 `returned_quantity >= 0 and returned_quantity <= delivered_quantity`；追加索引 `ix_sales_order_lines_sales_order_id`、`ix_sales_order_lines_legal_entity_id_customer_id_status`（包含 `open_amount_with_tax` 的列顺序设计为使信用在途桶聚合不出现顺序扫描）、`ix_sales_order_lines_source_contract_line_id`。
 
-表 `sales.delivery_schedules`。列为 `sales_order_id uuid not null`、`sales_order_line_id uuid not null`（外键）、`batch_no int not null`、`quantity numeric(18,6) not null`、`promised_date date not null`、`warehouse_id uuid`、`delivered_quantity numeric(18,6) not null default 0`、`status text not null CHECK in PENDING, DELIVERED, CLOSED, CANCELLED`、`delivery_confirmation_id uuid`、`confirmed_date date`。约束 `ux_delivery_schedules_line_batch` 在 `(sales_order_line_id, batch_no)`；`ck_delivery_schedules_quantity_positive`；追加索引 `ix_delivery_schedules_legal_entity_id_promised_date_status`（交付指标的期间维度取数）、`ix_delivery_schedules_sales_order_id`。
+表 `sales.delivery_schedules`。列为 `sales_order_id uuid not null`、`sales_order_line_id uuid not null`（外键）、`batch_no int not null`、`quantity numeric(18,6) not null`、`promised_date date not null`、`warehouse_id uuid`、`delivered_quantity numeric(18,6) not null default 0`、`status text not null CHECK in PENDING, DELIVERED, CLOSED, CANCELLED`、`delivery_confirmation_id uuid`（同 schema 外键，按裁定 A-09 因被引用表建于本表之后，该外键由第 V202611031021 号迁移以 `ALTER TABLE sales.delivery_schedules ADD CONSTRAINT fk_delivery_schedules_delivery_confirmations FOREIGN KEY (delivery_confirmation_id) REFERENCES sales.delivery_confirmations(id) ON DELETE RESTRICT` 补建，会话沿用 `lock_timeout = '5s'`）、`confirmed_date date`。约束 `ux_delivery_schedules_line_batch` 在 `(sales_order_line_id, batch_no)`；`ck_delivery_schedules_quantity_positive`；追加索引 `ix_delivery_schedules_legal_entity_id_promised_date_status`（交付指标的期间维度取数）、`ix_delivery_schedules_sales_order_id`。
+
+表 `sales.delivery_confirmations`，单据类，类型码 DC，按裁定 A-09 由第 V202611031021 号迁移建立。
+
+| 列 | 类型 | 可空 | 说明 |
+|---|---|---|---|
+| doc_no | text | 否 | 由 ep-platform-sequence 生成，类型码 DC |
+| status | text | 否 | CHECK in DRAFT, CONFIRMED |
+| customer_id | uuid | 否 | 逻辑引用 mdm |
+| sales_order_id | uuid | 否 | 同 schema 外键 |
+| posting_date | date | 否 | 记账日期，取值与用途见基线第 3.4 节 |
+| warehouse_id | uuid | 是 | 出库仓库，直运时为空 |
+| is_drop_ship | boolean | 否 | 默认 false |
+| confirmed_at | timestamptz | 是 | 确认过账时点 |
+| confirmed_by | uuid | 是 | 确认人 |
+| voucher_id | uuid | 是 | 逻辑引用 ledger，确认时由凭证腿回填 |
+| remark | text | 是 | 备注 |
+
+约束与索引：`ux_delivery_confirmations_legal_entity_id_doc_no`；追加索引 `ix_delivery_confirmations_sales_order_id`、`ix_delivery_confirmations_legal_entity_id_posting_date`。不设作废态，冲正一律经销售退货单，理由是基线第 3.6 节禁止软删除且已过账分录只追加。本表不带 `accounting_period_id`，与第 11.2 小节的偏离项一并登记。
+
+表 `sales.delivery_confirmation_lines`，按裁定 A-09 由第 V202611031022 号迁移建立。列除公共列外为 `delivery_confirmation_id uuid not null`（同 schema 外键）、`line_no int not null`、`sales_order_line_id uuid not null`（同 schema 外键）、`delivery_schedule_id uuid not null`（同 schema 外键）、`item_kind text`、`item_id uuid not null`、`uom_code text not null`、`quantity numeric(18,6) not null`、`net_unit_price numeric(18,6) not null`、`tax_rate numeric(9,6) not null default 0`、`line_amount numeric(18,2) not null`、`line_amount_with_tax numeric(18,2) not null`、`warehouse_id uuid`、`batch_no text not null default '-'`、`serial_nos text[] not null default '{}'`、`cogs_amount numeric(18,2)`（确认时由库存腿回填）、`stock_movement_id uuid`（逻辑引用 inventory）。约束 `ux_delivery_confirmation_lines_confirmation_id_line_no`；追加索引 `ix_delivery_confirmation_lines_sales_order_line_id`。批次列与序列号列取固定值按基线第 11.4 节。
 
 表 `sales.sales_order_versions`，仅追加。列为 `sales_order_id uuid not null`、`version_no int not null`、`snapshot jsonb not null`、`change_id uuid`、`created_at`、`created_by`、`reverses_id uuid null`。约束 `ux_sales_order_versions_order_version`。
 
@@ -272,13 +297,14 @@
 
 表 `sales.sales_return_lines`。列为 `sales_return_id uuid not null`（外键）、`line_no int not null`、`sales_order_line_id uuid not null`、`item_kind text`、`item_id uuid not null`、`uom_code text not null`、`quantity numeric(18,6) not null`、`net_unit_price numeric(18,6) not null`、`tax_rate numeric(9,6) not null`、`line_amount numeric(18,2) not null`、`line_amount_with_tax numeric(18,2) not null`、`warehouse_id uuid`、`batch_no text not null default '-'`、`serial_nos text[] not null default '{}'`。约束 `ux_sales_return_lines_return_line_no`。批次列取固定值 `'-'` 而非 NULL，按基线第 11.4 节。
 
-表 `sales.return_line_delivery_links`，多对多，承载退货明细行与交付确认单的关联，是规格第 5.2 章退货回冲取价三分支的输入。列为 `sales_return_line_id uuid not null`（外键）、`delivery_confirmation_id uuid not null`（逻辑引用）、`delivery_confirmation_line_id uuid not null`、`quantity numeric(18,6) not null`、`assigned_by text not null CHECK in MANUAL, AUTO_FIFO`。约束 `ux_return_line_delivery_links_pair` 在 `(sales_return_line_id, delivery_confirmation_line_id)`；追加索引 `ix_return_line_delivery_links_delivery_confirmation_id`。
+表 `sales.return_line_delivery_links`，多对多，承载退货明细行与交付确认单的关联，是规格第 5.2 章退货回冲取价三分支的输入。列为 `sales_return_line_id uuid not null`（外键）、`delivery_confirmation_id uuid not null`（同 schema 外键，按裁定 A-09 由逻辑引用改为真实外键 ON DELETE RESTRICT）、`delivery_confirmation_line_id uuid not null`（同 schema 外键，同上）、`quantity numeric(18,6) not null`、`assigned_by text not null CHECK in MANUAL, AUTO_FIFO`。约束 `ux_return_line_delivery_links_pair` 在 `(sales_return_line_id, delivery_confirmation_line_id)`；追加索引 `ix_return_line_delivery_links_delivery_confirmation_id`。
 
 表 `sales.exchange_links`。列为 `sales_return_id uuid not null`、`replacement_delivery_schedule_id uuid not null`、`linked_at timestamptz not null`、`linked_by uuid not null`。约束 `ux_exchange_links_pair`。
 
 表 `sales.order_validations` 与 `sales.order_validation_items`，列结构与 `clm.contract_validations` 及其明细完全同构，只把 `contract_id` 换为 `sales_order_id`，`occasion` 取 `CHECK in RELEASE, CHANGE_SUBMIT, CHANGE_APPROVE`。两处同构而分表的理由见第 11.2 小节。
 
 视图 `sales.v_credit_exposure_in_transit`：按 `(legal_entity_id, customer_id)` 汇总 `sales.sales_order_lines` 中订单状态属于 RELEASED、CHANGE_APPROVAL、PARTIALLY_DELIVERED 且行状态属于 OPEN、PARTIALLY_DELIVERED 的 `open_amount_with_tax` 合计。待放行订单不计入，与 PRD 3.14.2 末句一致。
+按裁定 A-18，第 V202611031075 号迁移 `V202611031075__sales_create_dataset_views.sql` 建立本模块的两个受治理数据集视图。`sales.v_sales_orders_dataset` 的 dataset code 为 `sales_sales_orders`，grain 取 DOCUMENT，取数为 `sales.sales_orders`；`sales.v_order_delivery_batches` 的 dataset code 为 `sales_order_delivery_batches`，grain 取 DOCUMENT_LINE，取数为 `sales.delivery_schedules`，输出列含 `sales_order_id`、`sales_order_line_id`、`batch_no`、`quantity`、`delivered_quantity`、`promised_date`、`warehouse_id`、`status`、`delivery_confirmation_id`、`confirmed_date`。两个视图都必须含 `legal_entity_id`、`security_level`、`data_scope_tags` 三列，都不做聚合、不跨 schema 连接，并在同一迁移内执行 `GRANT SELECT ON <视图> TO ep_analyst_ro`，不授予 `ep_app_rw` 之外的任何写权限。列名与类型签名必须与阶段 11 的 `reporting.dataset_fields` 登记一致，由阶段 11 的启动自检项 `reporting-dataset-signature-matched` 校验。该文件头的 `-- rollback:` 段为 `drop view` 与对应的 `revoke`。
 
 #### 3.5 数据库角色与迁移账号
 
@@ -288,7 +314,7 @@
 
 ### 4. 领域模型与关键算法
 
-本阶段不生成任何总账凭证，也不写库存数量账与金额账。销售退货登记只产生业务单据与领域事件，其分录、取价、回冲单价与税额分支一律按规格第 5.2 章财务规则条目的事件-分录表及其规则块，由财务模块与库存模块承接，本节不复述。
+本阶段不自行生成总账凭证，也不自行写库存数量账与金额账。交付确认的三腿一律经对方模块的契约端口在 `confirm_delivery` 的同一事务内触发，凭证与库存账由被调方写入，本阶段只传入来源单据与计量项并回填返回值；销售退货登记只产生业务单据与领域事件。分录、取价、回冲单价与税额分支一律按规格第 5.2 章财务规则条目的事件-分录表及其规则块，由财务模块与库存模块承接，本节不复述。
 
 #### 4.1 核心结构体与枚举
 
@@ -371,7 +397,7 @@
 实现口径为不设独立的占用台账，三部分各由其状态的权威模块给出，非重复由生命周期本身保证。
 
 - 在途订单金额：由本阶段的 `sales.v_credit_exposure_in_transit` 给出，等于已放行且尚未交付部分的含税金额合计，`open_amount_with_tax = round2((quantity - delivered_quantity) * net_unit_price * (1 + tax_rate))`，该列在交付确认回写、订单变更生效、订单取消与关闭三处同事务维护。
-- 已交付未开票金额与应收未收金额：经 `ep-contract-finance::CustomerCreditExposurePort` 一次调用取回，其取数分别为该客户在应收账款未开票过渡科目上的借方余额与应收台账未核销余额合计。
+- 已交付未开票金额与应收未收金额：经 `ep_contract_finance::ReceivableExposureQuery::exposure` 一次调用取回 `delivered_unbilled_amount` 与 `receivable_open_amount` 两项，其取数分别为该客户在应收账款未开票过渡科目上的借方余额与应收台账未核销余额合计。按裁定 C-14，`finance::CreditExposureQuery` 与 `finance::CustomerCreditExposurePort` 两个旧名作废；对外唯一入口是本模块的 `ep_contract_sales::CreditExposureQueryPort::exposure`，由本阶段把在途桶与上述两项组装为 `CreditExposureView` 的 `credit_limit`、`in_transit_amount`、`delivered_unbilled_amount`、`receivable_open_amount`、`available_amount` 五项返回。本阶段先注入 `NoopReceivableExposureQuery`，阶段 10 替换，见第 11.5 小节。
 
 判定步骤：
 
@@ -385,7 +411,7 @@
 
 释放的反向情形按同一映射反向执行，不设单独的释放动作：订单取消与剩余数量关闭把对应行的 `open_amount_with_tax` 归零；交付确认使该部分自在途桶移出并由财务侧进入已交付未开票桶；开票、到款与红冲的桶间迁移全部发生在财务侧。销售退货登记本身不改变本阶段的在途桶，因为退货针对的是已交付部分，其释放体现为财务侧两个桶的减少，这一点在第 8 节以专门用例验证。
 
-边界条件：客户在两个法人下分别设额度，跨法人不合并，理由与临时取值见第 11.3 小节；预收账款不抵减占用，由 `deduct_advance_receipts` 开关承载，默认关闭；`ep-contract-finance` 端口不可用时信用校验返回 `INFRASTRUCTURE` 且可重试，不静默按零占用放行。
+边界条件：客户在两个法人下分别设额度，跨法人不合并，理由与临时取值见第 11.3 小节；预收账款不抵减占用，由 `deduct_advance_receipts` 开关承载，默认关闭；`ep-contract-finance` 端口不可用时信用校验返回 `INFRASTRUCTURE` 且可重试，不静默按零占用放行。`NoopReceivableExposureQuery` 在位期间已交付未开票与应收未收两桶恒为零，界面与校验明细一律把该结果明示为未完整，不据以放行真实额度判定，相应断言按第 11.5 小节顺延。
 
 #### 4.8 合同生效与派生算法
 
@@ -395,13 +421,14 @@
 
 1. 消费 `clm.contract.effective.v1`，在 `platform_msg.inbox_consumptions` 上以 `(consumer = 'clm.derivation', event_id)` 唯一约束保证只处理一次。
 2. 在一个事务内建立 `clm.contract_derivations` 批次行与全部 `clm.contract_derivation_items`，`item_total` 一次算定。批次行的唯一约束在 `(contract_id, contract_version_no, trigger)`，重复投递直接命中冲突并结束。
-3. 派生项的生成规则：销售订单一张，含全部合同行；采购需求按 `requires_procurement` 为真或 `order_type = DROP_SHIP` 的合同行逐行一条；项目任务在 `contract_types.requires_project` 为真时按交付节点逐条一条；收款计划按收付款期次逐期一条；交付节点为本模块内对象，派生项的动作是把 `clm.contract_milestones.status` 由 PLANNED 置为 ACTIVE，纳入同一批次只为使追溯与计数口径一致。
-4. 每个派生项一个独立事务，调用目标模块的契约端口，`Idempotency-Key` 取该派生项的 `id`，本身是 UUIDv7。成功写 `target_doc_id`、`target_doc_no` 与 `status = DONE`；失败 `attempts + 1` 并按基线第 6.2 节的八档退避重排 `available_at`，八次全部失败置 `DEAD` 并写入 `platform_msg.dead_letters`。
+3. 派生项的生成规则：销售订单一张，含全部合同行；采购需求按 `requires_procurement` 为真或 `order_type = DROP_SHIP` 的合同行逐行一条；项目任务在 `contract_types.requires_project` 为真时按交付节点逐条一条；收款计划按收付款期次逐期一条；交付节点为本模块内对象，派生项的动作是把 `clm.contract_milestones.status` 由 PLANNED 置为 ACTIVE，纳入同一批次只为使追溯与计数口径一致。其中收款计划派生项按裁定 C-20 只写本模块的 `clm.contract_payment_schedules`，不调用任何外部端口；项目任务派生项按裁定 C-19 只登记不派发，在批次建立的同一事务内即置 `status = DONE`、`target_module` 取 project、`target_doc_id` 留空，实际项目任务由阶段 12 的 `project.contract_derivation` 消费者消费 `clm.contract.effective.v1` 后经本小节末段的 `ContractDerivationPlanQuery` 自行派生，追溯经该查询的 `unique_key` 对应，本阶段不再同步派生项目任务。
+4. 每个派生项一个独立事务，调用目标模块的契约端口，`Idempotency-Key` 取该派生项的 `id`，本身是 UUIDv7。目标端口固定为：销售订单经 `ep_contract_sales::SalesOrderDerivationPort`；采购需求经 `ep_contract_procure::PurchaseRequisitionIntakePort::intake`，其 `unique_key` 取 `CONTRACT:{contract_id}:{contract_line_id}:{contract_version}`，按裁定 C-17 本阶段先注入 `NoopPurchaseRequisitionIntakePort`、阶段 7 替换；交付节点与收款计划两类为本模块内写入，不出模块；项目任务类不调用端口，按第 3 步处理。成功写 `target_doc_id`、`target_doc_no` 与 `status = DONE`；失败 `attempts + 1` 并按基线第 6.2 节的八档退避重排 `available_at`，八次全部失败置 `DEAD` 并写入 `platform_msg.dead_letters`。
 5. 销售订单派生项内先执行第 4.6 小节的后四项校验，结论写 `sales.order_validations`；四项全通过则订单状态为 RELEASED，信用或库存任一不足则为 PENDING_RELEASE 并写 `pending_release_reason`，同时按 `on_exceed` 追加信用审批节点或直接置为待放行。
 6. 全部项 DONE 时把合同置为 IN_PERFORMANCE、`derivation_state = DONE`，并发 `clm.contract.derivation_completed.v1`。存在 DEAD 项时 `derivation_state = FAILED`，合同保持 EFFECTIVE 并在界面显示待人工修复，与 PRD 3.6 中已生效到已生效的自环一致。
 7. 人工修复后可重放该批次，重放按第 3.3 小节的两道唯一约束去重，不产生重复单据。
 
 边界条件：单张合同的派生项数上限由 `EP__CLM__DERIVATION__MAX_ITEMS_PER_CONTRACT` 约束，默认 2000，超出直接拒绝生效并提示拆分合同；派生过程中合同不接受修订，`actions/amend` 在 `derivation_state = RUNNING` 时返回 `CLM.CONTRACT.DERIVATION_IN_PROGRESS`。
+按裁定 A-16，本阶段在 `crates/contract/clm/src/port/derivation.rs` 提供 `ContractDerivationPlanQuery::derivation_plan(tx, ctx, contract_id, contract_version_no)`，返回 `ContractDerivationPlan`，实现落在 ep-app-clm，取数与上述派生项生成规则同源，不另建第二套计划。其 `items` 的 `unique_key` 取值规则固定为 `<contract_id>:<contract_version_no>:<item_kind>:<source_contract_line_id 或 milestone_no>`，阶段 12 的派生任务以该键做唯一性去重。该键与第 4 步采购需求经 `PurchaseRequisitionIntakePort` 传入的 `unique_key` 不是同一个键，前者供阶段 12 的派生去重，后者供采购需求登记去重，两者各按其裁定取值。
 
 #### 4.9 合同变更后的重新派生
 
@@ -412,7 +439,7 @@
 | 新增合同行 | 在已派生订单上追加订单行，追加动作走 `SalesOrderDerivationPort::append_lines`，追加后按第 4.6 小节重跑后四项校验 |
 | 已派生未开始交付的行数量或交期变更 | 调整对应订单行与其分批交付行，走第 4.10 小节的订单变更版本 |
 | 已部分交付的行变更 | 只允许调整未交付部分，`new_quantity` 不得小于 `delivered_quantity`，否则返回 `SALES.SALES_ORDER.DELIVERED_QTY_EXCEEDED` |
-| 收付款信息变更 | 调整尚未开票且尚未到款的期次，经 `ep-contract-finance::ReceivablePlanPort::adjust`，已开票或已到款的期次不调整 |
+| 收付款信息变更 | 按裁定 C-20 直接维护本模块的 `clm.contract_payment_schedules`，只调整尚未开票且尚未到款的期次，已开票或已到款的期次不调整；`ep_contract_finance::ReceivablePlanPort` 已撤销，不再派生第二套收款计划 |
 | 交付节点变更 | 调整 `status = ACTIVE` 的节点，`status = CONFIRMED` 的节点不调整 |
 
 #### 4.10 订单变更与分批交付
@@ -421,15 +448,35 @@
 
 拆分与合并：同一订单行的全部分批交付行数量合计必须等于该订单行数量，不等时返回 `SALES.DELIVERY_SCHEDULE.SPLIT_SUM_MISMATCH`。未拆分的订单行在派生时即建立一条分批交付行，其数量与约定交付日期取订单行取值，因此系统中不存在没有分批交付行的订单行，这使交付确认与交付指标的取数只有一条路径。`status` 不为 PENDING 的分批交付行不可再拆分、不可改数量与仓库，返回 `SALES.DELIVERY_SCHEDULE.NOT_SPLITTABLE`。拆分与合并不改变订单总量、总金额与信用占用总额，该性质由领域属性测试守护。
 
-#### 4.11 销售退货
+#### 4.11 交付确认与三腿过账
 
-前置校验按 PRD 3.13.1：退货数量不超过该订单行 `delivered_quantity - returned_quantity`；每一退货明细行必须至少关联一条交付确认单行，关联方式为操作者指定或按交付先后自动带出，写入 `sales.return_line_delivery_links` 并记录 `assigned_by`；该退货部分已开票的必须先完成红字冲销，由 `ep-contract-invoice::InvoiceStatusPort` 判定，未完成时返回 `SALES.SALES_RETURN.INVOICE_NOT_CREDIT_NOTED` 并列出待冲销的发票；直运订单的退货 `is_drop_ship` 为真，不产生库存流水。
+交付确认单是规格第 8 章黄金业务闭环第 8 步的唯一落点，按裁定 A-09 归本阶段。单据只有 DRAFT 与 CONFIRMED 两个状态，不设作废态，冲正一律经销售退货单。
+
+登记动作 `create_delivery_confirmation` 位于 `crates/application/sales/src/usecase/create_delivery_confirmation.rs`。按 `sales_order_id` 取该订单下 `status = PENDING` 的分批交付行，逐条建立 `sales.delivery_confirmation_lines`，`sales_order_line_id` 与 `delivery_schedule_id` 均为同 schema 外键；本次数量不得超过该分批交付行的 `quantity - delivered_quantity`，超出返回 `SALES.DELIVERY_CONFIRMATION.QTY_EXCEEDS_SCHEDULED`；`net_unit_price`、`tax_rate`、`line_amount` 与 `line_amount_with_tax` 自订单行带出，不在本单重新取价；`is_drop_ship` 自订单头的 `order_type` 派生；`posting_date` 由操作者录入，取值与用途按基线第 3.4 节。
+
+确认动作 `confirm_delivery` 位于 `crates/application/sales/src/usecase/confirm_delivery.rs`，在一个事务内完成，四步次序固定，不得调换。
+
+1. 会计期间解析。经 `ep_contract_ledger::AccountingPeriodResolver::resolve` 在事务最前解析一次，库存腿与过渡科目腿复用其返回值，不各自再解析。
+2. 库存腿，端口由阶段 8 提供。经 `ep_contract_inventory::InventoryPostingPort::post_outbound(tx, ctx, OutboundPosting { reason: MovementReason::DeliveryConfirmation, pricing: OutboundPricing::MovingAverage, source: SourceRef{ doc_type: DELIVERY_CONFIRMATION, .. }, lines })`，返回每行的 `cogs_amount` 与 `stock_movement_id` 并回填到 `sales.delivery_confirmation_lines`。`SourceDocType::DELIVERY_CONFIRMATION` 由本模块传入。`is_drop_ship` 为真时整段跳过，两列留空。
+3. 过渡科目腿，端口由阶段 10 提供。经 `ep_contract_finance::UnbilledArPort::record_on_delivery(tx, ctx, DeliveryUnbilledArCommand { delivery_confirmation_id, customer_id, posting_date, accounting_period_id, direction: DEBIT, net_amount })`，写 `finance.unbilled_ar_entries`。本阶段先注入 `NoopUnbilledArPort`，阶段 10 替换，见第 11.5 小节。
+4. 凭证腿，端口由阶段 9a 提供。经 `ep_contract_ledger::PostingPort::post(tx, ctx, PostingInput { source_kind: VoucherSourceKind::DELIVERY_CONFIRMED, branch: DROP_SHIP 或 NON_DROP_SHIP, posting_date, source_document, measures })`，`measures` 含 `revenue_amount`、`unbilled_receivable_amount`、`cogs_amount`、`inventory_release_amount` 四项，返回的凭证标识回填到 `sales.delivery_confirmations.voucher_id`。
+
+四步之后在同一事务内把单据置 CONFIRMED，写 `confirmed_at` 与 `confirmed_by`，写审计事件，写 Outbox 条目 `sales.delivery.confirmed.v1`。任一腿失败整笔回滚，不存在只写一腿的中间态。本阶段不判定借贷方向、不取价、不确定科目，四项 `measures` 的口径与其对应分录一律按规格第 5.2 章的事件-分录表，本小节不复述。
+
+事件 `sales.delivery.confirmed.v1` 的 `aggregate_type` 取 `sales.delivery_confirmations`，payload 字段固定为 `delivery_confirmation_id`、`doc_no`、`sales_order_id`、`customer_id`、`contract_id`、`is_drop_ship`、`voucher_id`、`lines`，其中 `lines` 每元素含 `delivery_confirmation_line_id`、`sales_order_line_id`、`delivery_schedule_id`、`item_kind`、`item_id`、`quantity`、`warehouse_id`、`batch_no`、`serial_nos`、`revenue_amount`、`cogs_amount`；`revenue_amount` 取该行的 `line_amount`，`cogs_amount` 取库存腿的回填值，直运时为空。信封的 `posting_date` 取单据的 `posting_date`，`accounting_period_id` 取 PostingPort 返回值。
+
+回写由第 2.3 节的两个消费者承担，各只写本模块 schema。`sales.delivery_writeback` 推进分批交付行的 `delivered_quantity` 与 `status`、订单行的 `delivered_quantity` 与 `open_amount_with_tax`、订单状态，并把 `sales.delivery_schedules.delivery_confirmation_id` 与 `confirmed_date` 回填；`clm.milestone_confirm` 推进 `clm.contract_milestones` 的交付节点。在途桶按第 4.7 小节由该回写移出，不设第二条回写路径。
+
+#### 4.12 销售退货
+
+前置校验按 PRD 3.13.1：退货数量不超过该订单行 `delivered_quantity - returned_quantity`；每一退货明细行必须至少关联一条交付确认单行，关联方式为操作者指定或按交付先后自动带出，写入 `sales.return_line_delivery_links` 并记录 `assigned_by`；该退货部分已开票的必须先完成红字冲销，按裁定 C-16 由 `ep_contract_invoice::InvoiceReversalStatusQuery::is_fully_credit_noted(tx, ctx, sales_order_line_id, quantity)` 判定，未完成时返回 `SALES.SALES_RETURN.INVOICE_NOT_CREDIT_NOTED` 并列出待冲销的发票，原 `InvoiceStatusPort` 一名作废，本阶段先注入 `NoopInvoiceReversalStatusQuery`、阶段 10 替换，该判定的端到端验收顺延到 M7；直运订单的退货 `is_drop_ship` 为真，不产生库存流水，按裁定 B-07 在同一登记事务内调用 `ep_contract_procure::PurchaseReturnLinkPort::link_drop_ship_return(tx, ctx, sales_return_id, lines)` 勾稽对应的采购退货，本阶段先注入 `NoopPurchaseReturnLinkPort`、阶段 7 替换，直运退货勾稽的验收顺延到阶段 7。
 
 登记动作在一个事务内写退货单状态为 REGISTERED、更新订单行 `returned_quantity`、写审计、写 Outbox 条目 `sales.sales_return.registered.v1`。该事件的载荷携带退货明细行与其交付确认单关联，是库存模块回冲取价与财务模块生成红字分录的输入，取价与分录一律按规格第 5.2 章销售退货事件与退货回冲的取价三分支。
+三个终态动作同样各自在一个事务内写状态、审计与 Outbox 条目，按裁定 A-17：REGISTERED 迁到 CLOSED 发 `sales.sales_return.closed.v1`，payload 含 `sales_return_id`、`doc_no`、`sales_order_id`、`source_ref`、`closed_at`；任一状态迁到 CANCELLED 发 `sales.sales_return.cancelled.v1`，payload 另含 `cancel_reason`；SUBMITTED 因审批驳回退回 DRAFT 发 `sales.sales_return.rejected.v1`，payload 另含 `reject_reason` 与 `approval_ref`。三者与既有的 `sales.sales_return.registered.v1` 一并登记在第 6.3 小节的事件登记表。退货单的对外创建入口固定为 `ep_contract_sales::SalesReturnCommandPort::create_sales_return`，`CreateSalesReturn`、`SalesReturnSourceRef`、`CreateSalesReturnLine`、`SalesReturnDeliveryLink` 与 `SalesReturnView` 五个 DTO 的字段按裁定 A-17 冻结，阶段 12 的服务工单退货经该端口调用，不另起第二个入口。
 
 换货不设独立单据，按一笔退货加一笔在原订单上追加或放行的分批交付行表达，两者之间写 `sales.exchange_links`。
 
-#### 4.12 电子签章编排
+#### 4.13 电子签章编排
 
 1. 合同全部审批节点通过后置为 PENDING_SIGNATURE。签署方式为 ESIGN 时建立 `clm.signature_requests` 并写 Outbox 条目 `clm.contract.signature_requested.v1`。
 2. job-worker 消费该事件，经回环 HTTP 调用 integration-gateway 的 `POST /internal/v1/esign/requests`。core-server 与 job-worker 都不直接出网。
@@ -444,6 +491,7 @@
 ### 5. API 契约
 
 全部端点遵循基线第 5 节：路径前缀 `/api/v1`，JSON 字段 snake_case，成功与失败封套固定，写请求必须带 `Idempotency-Key`，请求头固定集合含 `Authorization`、`X-Legal-Entity-Id`、`X-Device-Id`、`X-Client`，高风险操作另带 `X-Reauth-Token`。分页、排序与过滤按基线第 5.3 节，本阶段各列表端点的排序白名单在下表逐个给出。存在性泄漏一律按基线第 5.5 节返回 404 与 `PLATFORM.AUTHZ.NOT_FOUND_OR_DENIED`。
+本节全部路由按裁定 A-20 逐用例声明一对常量，命名为 `<USECASE_SCREAMING>_DOMAIN` 与 `<USECASE_SCREAMING>_ACTION`，类型取阶段 1 在 ep-foundation 冻结的 `CapabilityDomain` 与 `ActionClass`，本阶段不重新定义能力域码。第 5.1 小节 CLM 端点的能力域取 `CapabilityDomain::ClmContractEsign`，声明在 `crates/contract/clm/src/capability.rs`；第 5.2 小节 SALES 端点的能力域取 `CapabilityDomain::SalesOrderFulfillment`，声明在 `crates/contract/sales/src/capability.rs`；第 5.3 小节 `/api/v1/cpq/price-authorities` 的能力域按裁定 A-20 取 `CapabilityDomain::SalesOrderFulfillment`，在阶段 5 已建的 `crates/contract/cpq/src/capability.rs` 中只追加不重定义。动作类别的取值规则为：只读查询取 `Read`，创建与修改取 `Write`，`actions/submit-for-approval`、`actions/release`、`actions/register`、`actions/confirm-delivery` 一类提交动作取 `Submit`；审批结论一律由 ep-platform-flow 的审批任务端点承载，本阶段不出现 `Approve`；本阶段无导出路由，不出现 `Export`。第 5.4 小节的 integration-gateway 内部端点在 `/internal/v1/` 下、不对四端暴露，按 A-20 不参与判定也不声明常量。`xtask configdoc` 断言每个 `/api/v1/` 路由都能解析到一对常量，缺失即构建失败。
 
 #### 5.1 CLM 端点
 
@@ -492,6 +540,10 @@
 | POST /api/v1/sales/sales-order-lines/{id}/delivery-schedules/actions/split | 分批数量、约定日期、仓库 | 分批交付行列表 | SALES.DELIVERY_SCHEDULE.SPLIT_SUM_MISMATCH、SALES.DELIVERY_SCHEDULE.NOT_SPLITTABLE | 幂等键 | sales.order.schedule |
 | POST /api/v1/sales/sales-order-lines/{id}/delivery-schedules/actions/merge | 待合并的分批行 id 列表 | 分批交付行列表 | SALES.DELIVERY_SCHEDULE.NOT_SPLITTABLE | 幂等键 | sales.order.schedule |
 | GET /api/v1/sales/delivery-schedules | 排序白名单 promised_date、created_at；过滤 status、customer_id、sales_order_id、promised_date | 分页列表，供交付经办与交付指标取数 | 无 | 无 | sales.order.read |
+| POST /api/v1/sales/delivery-confirmations | 交付确认单头与行，行按分批交付行选取 | 交付确认单视图，status 为 DRAFT | VALIDATION、SALES.DELIVERY_CONFIRMATION.QTY_EXCEEDS_SCHEDULED | 幂等键 | sales.delivery.create |
+| POST /api/v1/sales/delivery-confirmations/{id}/actions/confirm-delivery | row_version | 状态视图，含 voucher_id 与逐行 cogs_amount | SALES.DELIVERY_CONFIRMATION.INVALID_STATE_TRANSITION、SALES.DELIVERY_CONFIRMATION.QTY_EXCEEDS_SCHEDULED；三腿透传的错误按其所属模块的错误码原样返回，不在本模块重新编码 | 幂等键；重放不重复过账也不重复发事件 | sales.delivery.confirm |
+| GET /api/v1/sales/delivery-confirmations | 排序白名单 posting_date、created_at、doc_no；过滤 status、customer_id、sales_order_id、posting_date | 分页列表 | 无 | 无 | sales.delivery.read |
+| GET /api/v1/sales/delivery-confirmations/{id} | 无 | 交付确认单头行与三腿回填结果 | PLATFORM.AUTHZ.NOT_FOUND_OR_DENIED | 无 | sales.delivery.read |
 | POST /api/v1/sales/sales-returns | 退货单头行与交付确认关联 | 退货单草稿 | SALES.SALES_RETURN.DELIVERY_LINK_REQUIRED、SALES.SALES_RETURN.QTY_EXCEEDS_DELIVERED | 幂等键 | sales.return.create |
 | POST /api/v1/sales/sales-returns/{id}/actions/submit | row_version | 状态视图与审批实例 id | SALES.SALES_RETURN.INVOICE_NOT_CREDIT_NOTED | 幂等键 | sales.return.submit |
 | POST /api/v1/sales/sales-returns/{id}/actions/register | 记账日期 | 状态视图 | SALES.SALES_RETURN.INVOICE_NOT_CREDIT_NOTED、SALES.SALES_RETURN.QTY_EXCEEDS_DELIVERED | 幂等键；重放不重复发事件 | sales.return.register |
@@ -530,6 +582,8 @@
 | 销售订单放行 | 后四项校验、状态迁移、审计、Outbox | READ COMMITTED | `customer_credit_controls` 行 FOR UPDATE |
 | 订单变更审批通过 | 旧版本快照、变更应用、版本号递增、open_amount 重算、重跑校验、审计、Outbox | READ COMMITTED | 订单与订单行乐观锁 |
 | 分批交付行拆分与合并 | 分批行全量重写、守恒校验、审计 | READ COMMITTED | 订单行 FOR UPDATE |
+| 交付确认单登记 | 交付确认单头行写入、对分批交付行未交付量的校验、审计 | READ COMMITTED | 分批交付行 FOR UPDATE |
+| 交付确认过账 | 会计期间解析、库存腿、过渡科目腿、凭证腿、单据置 CONFIRMED 与三处回填、审计、Outbox | READ COMMITTED | 交付确认单行与分批交付行 FOR UPDATE |
 | 交付确认事件消费 | inbox 去重行、分批行与订单行数量回写、订单与合同状态推进、交付节点确认、审计 | READ COMMITTED | 订单行与分批行 FOR UPDATE |
 | 销售退货登记 | 退货单状态、订单行 returned_quantity、审计、Outbox | READ COMMITTED | 订单行 FOR UPDATE |
 | 合同合并 | 新合同建立、来源合同置 VOID、merge_links、审计 | READ COMMITTED | 来源合同行 FOR UPDATE |
@@ -547,7 +601,25 @@
 
 #### 6.3 与 Outbox 的关系
 
-本阶段发出的领域事件全部与业务状态、审计事件在同一数据库事务内写入 `platform_msg.outbox_events`。事件信封字段按基线第 6.1 节完整填写，其中 `security_level` 与 `data_scope_tags` 自源记录继承，`posting_date` 只在销售退货登记事件上非空，取退货单的 `posting_date`；合同与订单类事件不产生凭证，`posting_date` 与 `accounting_period_id` 为空，这与基线第 6.1 节对可过账事件的要求不冲突，因为该两项是关账受理前提的可枚举依据，只对会产生凭证的事件有意义。
+本阶段发出的领域事件全部与业务状态、审计事件在同一数据库事务内写入 `platform_msg.outbox_events`。事件信封字段按基线第 6.1 节完整填写，其中 `security_level` 与 `data_scope_tags` 自源记录继承，`posting_date` 在交付确认与销售退货登记两类事件上非空，分别取交付确认单与退货单的 `posting_date`，`accounting_period_id` 取 PostingPort 返回值；合同与订单类事件不产生凭证，`posting_date` 与 `accounting_period_id` 为空，这与基线第 6.1 节对可过账事件的要求不冲突，因为该两项是关账受理前提的可枚举依据，只对会产生凭证的事件有意义。
+
+按裁定 A-21，`sales.delivery.confirmed.v1` 与 `sales.sales_return.registered.v1` 两条在 `ledger.posting_trigger_event_types` 中的登记行由阶段 9a 的种子迁移一次写入，本阶段不新增任何 `backfill_posting_trigger_event_types` 迁移，只在启动时按第 7 节的第二个自检追加项经 `ep_contract_ledger::PostingTriggerRegistry::register` 对本模块这两个事件做幂等 upsert 比对。登记行与上述 `posting_date` 非空两者齐备，这两类事件才按裁定 C-28 的受理前提二计入待过账积压。
+
+本阶段的事件总数固定为 18，第 1 节与第 9 节的计数只引用本小节，不另写数字。其中九个的事件名由本计划与裁定固定，逐条如下；其余九个是合同与销售订单状态机的迁移事件，名称按基线第 6.1 节的四段式在实现前先登记入 `docs/event-catalog.md`。
+
+| 事件 | aggregate_type | 产生位 | posting_date |
+|---|---|---|---|
+| clm.contract.effective.v1 | clm.contracts | 第 4.8 小节的生效事务 | 空 |
+| clm.contract.derivation_completed.v1 | clm.contracts | 第 4.8 小节派生编排第 6 步 | 空 |
+| clm.contract.signature_requested.v1 | clm.contracts | 第 4.13 小节第 1 步 | 空 |
+| clm.contract.signed.v1 | clm.contracts | 第 4.13 小节第 5 步 | 空 |
+| sales.delivery.confirmed.v1 | sales.delivery_confirmations | 第 4.11 小节的 confirm_delivery 事务 | 非空，取交付确认单的 posting_date |
+| sales.sales_return.registered.v1 | sales.sales_returns | 第 4.12 小节的登记动作 | 非空，取退货单的 posting_date |
+| sales.sales_return.closed.v1 | sales.sales_returns | 第 4.12 小节 REGISTERED 迁到 CLOSED | 空 |
+| sales.sales_return.cancelled.v1 | sales.sales_returns | 第 4.12 小节任一状态迁到 CANCELLED | 空 |
+| sales.sales_return.rejected.v1 | sales.sales_returns | 第 4.12 小节 SUBMITTED 因审批驳回退回 DRAFT | 空 |
+
+后三个事件的 payload 字段按裁定 A-17 固定，见第 4.12 小节。
 
 #### 6.4 失败重试与补偿
 
@@ -592,7 +664,7 @@
 | EP__SALES__DELIVERY_SCHEDULE__MAX_PER_LINE | u32 | 60 | 重启生效 |
 | EP__SALES__RETURN__MAX_LINES | u32 | 200 | 重启生效 |
 
-启动自检的追加项：本阶段在基线第 7.3 节的十三项之外，在 core-server 与 job-worker 上追加一项，即 `clm` 与 `sales` 两个 schema 的迁移历史版本与二进制期望版本一致；该项失败按同一口径以退出码 78 退出。integration-gateway 在 `EP__CLM__ESIGN__BASE_URL` 缺失时不退出，以降级状态启动。
+启动自检的追加项：本阶段在基线第 7.3 节的十三个命名项之外，在 core-server 与 job-worker 上追加两项。一是 `clm` 与 `sales` 两个 schema 的迁移历史版本与二进制期望版本一致。二是按裁定 A-21 经 `ep_contract_ledger::PostingTriggerRegistry::register` 对本阶段两个可过账事件做幂等 upsert 比对，与阶段 9a 种子迁移写入的登记行不一致即判失败。两项失败均按同一口径以退出码 78 退出。integration-gateway 在 `EP__CLM__ESIGN__BASE_URL` 缺失时不退出，以降级状态启动。
 
 ---
 
@@ -612,6 +684,7 @@
 - 分批交付行拆分：合计相等、合计不等、已交付行不可拆、合并后的批次号重排。
 - 派生项生成规则：五类派生物在直运、需立项、订阅、寄售四种合同形态下的项数与来源引用。
 - 收付款期次校验：比例合计等于 1、金额合计等于合同金额、两种基准混用被拒。
+- 交付确认：本次数量超过分批交付行未交付量被拒、直运单跳过库存腿、非直运单的四步次序、任一腿失败整笔回滚，四条各一个用例，三腿以记录型桩断言入参与调用次序。
 
 #### 8.2 领域属性测试
 
@@ -651,6 +724,8 @@
 20. 合同续签：续签版本与原合同双向可达，生效后派生新的订单、收款计划与交付节点，不重复派生原合同已有单据。
 21. 法人越权测试集 `tests/rls_matrix` 的本阶段部分：对 `clm` 与 `sales` 两个 schema 的全部表覆盖读取、写入、更新、删除、聚合、排序、报表投影与错误信息泄漏八类，跨法人一律不可见且不泄露存在性。
 22. 迁移的执行与回退：全部迁移在空库上执行成功，按各文件的 `-- rollback:` 段落回退后 schema 与本阶段之前一致。
+23. 交付确认三腿同事务：非直运单一次确认后 `sales.delivery_confirmation_lines` 的 `cogs_amount` 与 `stock_movement_id` 已回填、`sales.delivery_confirmations.voucher_id` 已回填、`sales.delivery.confirmed.v1` 的信封带 `posting_date` 与 `accounting_period_id`；过渡科目腿在 `NoopUnbilledArPort` 在位期间不产生条目，该项断言按第 11.5 小节顺延到 M7。
+24. 交付确认的重复提交与重复消费：同一 `Idempotency-Key` 重放 3 次只产生一张交付确认单、一次三腿调用与一条事件；`sales.delivery_writeback` 重复消费同一事件后 `delivered_quantity` 不重复累加。
 
 #### 8.4 端到端测试
 
@@ -670,8 +745,9 @@
 | E2E-6-10 | 销售退货完整用例：已开票部分先红冲再退货，退货后信用占用相应释放 | 规格第 8 章第 11 步、第 17.2 章财务内核测试的销售退货基础分支的销售侧 |
 | E2E-6-11 | 换货用例：一笔退货加一笔在原订单上放行的分批交付行，两者保留换货关联 | 规格第 8 章第 11 步 |
 | E2E-6-12 | 电子签章端到端：签署发起、结果回传、验签、签章文件归入合同附件与审计 | 规格第 10.4 章连接器验收判据、第 19 章阶段 3 |
+| E2E-6-13 | 交付确认完整用例：由分批交付行建交付确认单并确认过账，同一事务内四步依次成功，单据置已确认并回填 voucher_id 与逐行 cogs_amount，`sales.delivery_writeback` 与 `clm.milestone_confirm` 消费自身事件后分批交付行、订单行 `delivered_quantity` 与合同交付节点同步推进 | 规格第 8 章第 8 步 |
 
-E2E-6-04、E2E-6-10 的账务侧判据由财务与库存阶段承接，本阶段只验证销售侧的单据、状态、占用与事件；两阶段合并执行时按规格第 17.2 章财务内核测试的对应条目判定差额为零。
+E2E-6-04、E2E-6-10 的账务侧判据由财务与库存阶段承接，本阶段只验证销售侧的单据、状态、占用与事件；两阶段合并执行时按规格第 17.2 章财务内核测试的对应条目判定差额为零。按裁定 A-09，E2E-6-09 与 E2E-6-10 中过渡科目净额的断言顺延到 M7，新增的 E2E-6-13 同此处理，顺延项逐条列在第 11.5 小节。
 
 #### 8.5 性能相关项
 
@@ -693,20 +769,25 @@ E2E-6-04、E2E-6-10 的账务侧判据由财务与库存阶段承接，本阶段
 
 下列条目全部达成才算本阶段完成，每条均可客观判定。
 
-1. 第 1 节的十项交付物全部存在，`cargo build --workspace --release` 与 `cargo clippy --workspace -- -D warnings` 通过。
-2. 三个迁移目录的全部迁移在空库上执行成功，且各文件的回退说明经一次实际回退验证。
+1. 第 1 节的十一项交付物全部存在，`cargo build --workspace --release` 与 `cargo clippy --workspace -- -D warnings` 通过；第 11.5 小节列出的五个空实现已在 `apps/core-server/src/wiring.rs` 与 `apps/job-worker/src/wiring.rs` 注入，每行带 `// TODO(stage-<n>): replace with real impl` 注释。
+2. 三个迁移目录的全部迁移按 `db/migrations/order.toml` 的位次在空库上全量执行成功，且各文件的回退说明经一次实际回退验证；按裁定通则第五条本阶段不新增任何跨 schema 迁移，`ledger.posting_trigger_event_types` 的两行登记由阶段 9a 的种子迁移写入，本阶段只做运行期比对。
 3. `apps/core-server --check` 与 `apps/job-worker --check` 在基线第 7.3 节十三项加本阶段追加项上全部通过并输出结构化报告。
 4. 基线第 1.3 节的依赖方向自检脚本对本阶段新增 crate 全部通过，`ep-domain-clm` 与 `ep-domain-sales` 中无 sqlx、reqwest、文件与网络符号。
 5. 第 8.1 至 8.3 节的全部单元、属性与集成测试通过，集成测试跑在真实 PostgreSQL 16 上。
-6. 第 8.4 节的十二个 E2E 场景在 Windows 与 macOS 两端全部通过，在 iOS 与 Android 两端按简化取值通过，合同生效的重新认证在四端一致。
+6. 第 8.4 节的十三个 E2E 场景在 Windows 与 macOS 两端全部通过，在 iOS 与 Android 两端按简化取值通过，合同生效的重新认证在四端一致。
 7. `tests/rls_matrix` 的本阶段部分八类越权测试全部通过，跨法人零泄漏。
 8. 第 8.6 节的三档覆盖率门槛全部达标。
 9. 第 8.5 节涉及的四条索引在基准数据集上的 `EXPLAIN` 证据已归档，无顺序扫描。
-10. 本阶段的 14 个事件与 31 个错误码已登记在 `docs/event-catalog.md` 与 `docs/error-codes.md`，与 `ep-foundation::error::codes` 一致性校验通过。
+10. 本阶段的 18 个事件已登记在 `docs/event-catalog.md`，与第 6.3 小节事件登记表列出的九个逐字一致；本阶段第 5 节 API 契约表中出现的全部错误码已登记在 `docs/error-codes.md` 并与 `ep-foundation::error::codes` 一致，由 CI 校验通过。
 11. 本阶段新增的六个指标已在 ops-agent 的 127.0.0.1:9101 上可抓取，标签基数符合基线第 9.2 节的纪律。
 12. 合同生效、订单放行、退货登记三类操作的审计事件已进入按法人与自然日的哈希链，审计链验证工具在本阶段的用例数据上通过。
 13. 第 11.2 小节的偏离项已提出对应的基线修订并被整合员接受，第 11.3 小节的新增决定已回写基线。
 14. 派生失败到死信、人工修复、重放不产生重复单据的完整链路已在运维中心可见并演示通过。
+15. 本模块的四个受治理数据集视图 `clm.v_contracts_dataset`、`clm.v_contract_delivery_milestones`、`sales.v_sales_orders_dataset`、`sales.v_order_delivery_batches` 已发布并授予 `ep_analyst_ro`，每个视图含 `legal_entity_id`、`security_level`、`data_scope_tags` 三列，`ep_app_rw` 之外无任何写权限，列签名已同步给阶段 11 且与 `reporting.dataset_fields` 的登记一致。
+16. clm 与 sales 两个模块在规格第 6.2 章能力矩阵中取值为完整或简化的能力域，其四端界面已实现并通过 Playwright 与 tauri-driver 的桌面用例、XCUITest 与 Espresso 的移动用例；取值为 VIEW_ONLY 的能力域只实现只读视图；取值为 NOT_APPLICABLE 的不实现入口。
+17. 本阶段全部路由的能力域码与动作类别常量已在 `crates/contract/clm/src/capability.rs`、`crates/contract/sales/src/capability.rs` 与阶段 5 已建的 `crates/contract/cpq/src/capability.rs` 声明，`xtask configdoc` 通过。
+18. `ClmProductUsageProbe` 与 `SalesProductUsageProbe` 已实现并注入阶段 5 提供的 `AnyProductUsageProbe`，阶段 5 的启动自检项 `master-data-usage-probes-registered` 在 clm 与 sales 启用时通过；本模块的 `ClmReferenceCounter` 与 `SalesReferenceCounter` 已注册到 `MasterReferenceCounterRegistry`，`SalesTradeHistoryProviderImpl` 已注册到 `TradeHistoryProviderRegistry`。
+19. 四个单据类型码 CT、SO、SR、DC 已登记入 `docs/data-dictionary.md` 的单据类型码一节与 `ep-platform-sequence` 的常量表，`xtask configdoc --check-doc-type-codes` 通过。
 
 ---
 
@@ -726,6 +807,7 @@ E2E-6-04、E2E-6-10 的账务侧判据由财务与库存阶段承接，本阶段
 | 第 8 章第 1 步 | 销售建单、自动带出客户产品价目与历史成交资料、五项校验、超额阻断或转审批 |
 | 第 8 章第 2 步 | 四条审批链、管理层必经节点、不可越权跳过、审批意见版本附件全程留痕、电子签章与印章、合同生效的重新认证 |
 | 第 8 章第 3 步 | 合同生效派生五类单据、Outbox 与持久化工作流驱动并保证幂等、双向可追溯、派生时校验重跑与待放行、派生失败进入死信与人工修复、合同变更后的重新派生 |
+| 第 8 章第 8 步 | 交付确认单的登记与确认过账，同一事务内依次调用库存腿、过渡科目腿与凭证腿三个契约端口，事件信封带记账日期与会计期间，交付回写推进分批交付行、订单行与合同交付节点 |
 | 第 8 章第 11 步销售侧 | 销售退货单的登记与前置红冲校验、直运退货的库存侧无流水、换货按退货与发货两笔事件组合表达 |
 | 第 9.1 章流程引擎语义要求 | 派生编排的流程实例状态持久化、步骤幂等键、至少一次投递、补偿逆序与人工任务兜底、流程定义版本化 |
 | 第 12.1 章 | 合同生效作为六类高风险操作之一的重新认证，认证方式、待签内容摘要、时间与设备写入审计证据 |
@@ -770,8 +852,7 @@ E2E-6-04、E2E-6-10 的账务侧判据由财务与库存阶段承接，本阶段
 
 | 风险 | 影响 | 控制 |
 |---|---|---|
-| 信用三部分中的两部分由财务模块提供，财务阶段尚未交付时本阶段无法端到端验证 | 阻塞 E2E-6-04 与部分集成用例 | 本阶段在 `ep-testkit` 中提供 `CustomerCreditExposurePort` 的可控桩，并提供一套契约测试固化端口语义；财务阶段交付后以同一套契约测试验证真实实现，桩即刻下线 |
-| 交付确认单主体不在本阶段，`delivered_quantity` 回写依赖尚未存在的事件 | 阻塞 E2E-6-09 与 E2E-6-10 | 本阶段先按契约在 testkit 中合成该事件驱动消费者，事件信封与载荷字段由本阶段与交付阶段在契约测试中共同冻结 |
+| 信用三部分中的两部分由财务模块提供，财务阶段尚未交付时本阶段无法端到端验证 | 阻塞 E2E-6-04 与部分集成用例 | 按裁定通则第三条在两个 wiring.rs 注入 `NoopReceivableExposureQuery` 并加 `// TODO(stage-10): replace with real impl` 注释，同时提供一套契约测试固化 `ReceivableExposureQuery` 的语义；阶段 10 替换后以同一套契约测试验证真实实现，顺延项见第 11.5 小节 |
 | 派生项数与单张合同规模无上限时会产生长时批处理 | 派生观察项时长不可控，job-worker 池被占满 | 以 `EP__CLM__DERIVATION__MAX_ITEMS_PER_CONTRACT` 与 `EP__CLM__DERIVATION__BATCH_CONCURRENCY` 双重约束，并把派生并发上限压在 job-worker 池上限 5 之下 |
 | 电子签章外部系统不可用时合同长期停在待签署 | 闭环第 2 步阻塞 | 轮询上限 168 小时后置 FAILED 并进入死信；同时保留实体印章路径与人工上传已签文件的兜底入口，兜底入口同样要求验签与审计 |
 | 信用校验对同一客户加行锁，极端情况下同客户下单串行 | 20 并发下同客户密集下单时的排队 | 锁粒度为法人加客户一行，`lock_timeout` 3 秒，超时返回业务冲突而非无限等待；把该场景纳入必测并发场景第 2 组并记录排队时长 |
@@ -780,7 +861,7 @@ E2E-6-04、E2E-6-10 的账务侧判据由财务与库存阶段承接，本阶段
 
 #### 11.2 对基线的偏离项
 
-1. `sales.sales_returns` 只带 `posting_date`，不带 `accounting_period_id`。基线第 4 节要求会计相关表两者兼具。偏离理由是规格第 5.2 章总账功能与期末处理块规定凭证的会计期间字段是判定期间归属的唯一依据，业务单据持有该列会产生第二处判定点，并在顺延入账时与凭证不一致。影响范围为本阶段唯一的会计相关表。建议基线第 4 节把该规则收窄为凭证与子账条目带 `accounting_period_id`，业务事件登记单据只带 `posting_date`。
+1. `sales.sales_returns` 与 `sales.delivery_confirmations` 只带 `posting_date`，不带 `accounting_period_id`。基线第 4 节要求会计相关表两者兼具。偏离理由是规格第 5.2 章总账功能与期末处理块规定凭证的会计期间字段是判定期间归属的唯一依据，业务单据持有该列会产生第二处判定点，并在顺延入账时与凭证不一致；会计期间在 `confirm_delivery` 事务内由 `AccountingPeriodResolver::resolve` 解析一次并随事件信封传出，不落单据列。影响范围为本阶段仅有的两张会计相关表。建议基线第 4 节把该规则收窄为凭证与子账条目带 `accounting_period_id`，业务事件登记单据只带 `posting_date`。
 2. 业务表上使用 `customer_id` 列。基线第 4 节写明不设 `customer_id` 列，其理由段落指向规格第 7.1 章的每客户一实例，可见该处的客户指承租的企业客户，即租户。本阶段的 `customer_id` 是业务客户档案的逻辑外键，不承担隔离职责。建议基线第 4 节把该条改写为不设租户隔离列，以免与业务客户字段混淆。
 3. `sales.order_validations` 与 `clm.contract_validations` 两处同构表。基线第 12 节禁止引入第二套机制。本处不是两套机制而是同一模型在两个模块内的本地存储，理由是基线第 1.3 节禁止跨模块直接读写业务表，订单侧的重跑发生在 `ep-app-sales` 事务内，无法写入 clm 的表。两表的列、枚举与序列化类型由 `ep-foundation` 中的同一类型导出，CI 校验两处 DDL 的列集合一致。
 4. 电子签章不设公网入站回调，改由 integration-gateway 按退避轮询拉取签署状态。规格第 10.4 章只要求回传签署结果，未规定方向。偏离理由是首版公网侧只有供应商门户一个站点，新增入站入口会扩大规格第 21.17 章的暴露面，且单机形态下入站回调在停机窗口内会丢失。代价是签署结果的可见延迟上限等于一个轮询间隔。该决定另出一份 ADR。
@@ -806,7 +887,7 @@ E2E-6-04、E2E-6-10 的账务侧判据由财务与库存阶段承接，本阶段
 | U-E-14 退货单是否独立审批 | 设独立审批链 `sales.return`，退货原因为受控取值列表，出厂取值为质量问题、发错货、客户取消、其他四项 | 否 | 取消审批链时把 SUBMITTED 状态直接映射到 REGISTERED |
 | U-E-15 订阅与租赁字段清单 | 周期单位取 DAY、WEEK、MONTH、QUARTER、YEAR 五值，周期长度为正整数，租期起止为日期，自动续期为布尔 | 否 | 字段增删按基线第 3.9 节的在线新增可空列执行 |
 | U-E-16 关键条款结构化字段清单 | 交付节点清单、质保条款、违约责任、争议解决方式、合同义务清单五项为结构化，其余进条款正文 | 否 | 结构化字段增补走 `structured jsonb` 或新增可空列 |
-| U-A-01 单据编号 | 合同类型码 CT、销售订单 SO、销售退货 SR，格式按基线第 11.1 节 | 否 | 类型码改动只改序列配置 |
+| U-A-01 单据编号 | 合同类型码 CT、销售订单 SO、销售退货 SR、交付确认单 DC，四码按裁定 C-26 登记在 `docs/data-dictionary.md` 的单据类型码一节，格式按基线第 11.1 节 | 否 | 类型码改动只改序列配置 |
 | 价格权限档案的承载 | 新增 `cpq.price_authorities`，三级取用顺序为 USER、POSITION、ROLE，三级均无命中时阻断提交。PRD 2.8.1 只给了价目行的价格下限，未给操作者权限侧取值，本阶段据规格第 5.2 章 CPQ 条目的价格权限校验要求补齐 | 否 | 若主数据阶段另行承载则本表移交 |
 | 电子签章的兜底入口 | 保留人工上传已签署文件的入口，同样要求验签、附件归档与审计，用于外部系统长期不可用时闭环不中断 | 否 | 无 |
 | 合同派生项数上限 | 2000，超出拒绝生效并提示拆分合同 | 否 | 调配置 |
@@ -818,4 +899,18 @@ E2E-6-04、E2E-6-10 的账务侧判据由财务与库存阶段承接，本阶段
 3. `sales.credit_policies` 预留 `deduct_advance_receipts` 与 `amount_basis` 两个开关，信用评级模型与账期分级策略恢复时可在该表上扩展策略维度。
 4. `ep-contract-clm::ContractQueryPort` 已把合同头、行、条款、交付节点四类投影分开暴露，客户 360 视图、经营驾驶舱的合同维度下钻与全文检索索引可直接消费，不需要为其新增读取通道。
 5. `clm.signature_requests.provider_code` 预留多签章服务商并存，附录 B 的外部替换验收在阶段 4 只需新增一个 provider 实现并跑同一套契约测试。
-6. `sales.delivery_schedules.promised_date` 是交付指标期间维度的唯一取数来源，`clm.contract_milestones.promised_date` 是合同交付节点侧的唯一取数来源，两者的字段命名与索引已按规格第 5.5 章经营驾驶舱条目的下钻口径准备，报表阶段直接取用即可，不需要在本阶段之外再建投影表。
+6. `sales.delivery_schedules.promised_date` 是交付指标期间维度的唯一取数来源，`clm.contract_milestones.promised_date` 是合同交付节点侧的唯一取数来源，两者的字段命名与索引已按规格第 5.5 章经营驾驶舱条目的下钻口径准备，报表阶段经第 3.3 与 3.4 小节的四个受治理数据集视图取用，不需要再建物化投影表。
+
+#### 11.5 跨阶段反向依赖与空实现替换清单
+
+按裁定通则第三条，被调方阶段晚于本阶段时，本阶段在 `apps/core-server/src/wiring.rs` 与 `apps/job-worker/src/wiring.rs` 注入以 `Noop` 前缀命名的空实现，并在该行加注释 `// TODO(stage-<n>): replace with real impl`，由被调方阶段逐行替换。下表是本阶段全部反向依赖的唯一出处，五个空实现一律返回成功且无副作用，不得静默改变业务判定，界面与校验明细一律把其取值明示为未完整。
+
+| 空实现类型 | 被替换的契约方法 | 注释 | 顺延的验收项 |
+|---|---|---|---|
+| NoopUnbilledArPort | `ep_contract_finance::UnbilledArPort::record_on_delivery` | `// TODO(stage-10): replace with real impl` | E2E-6-09、E2E-6-10 与 E2E-6-13 中过渡科目净额的断言顺延到 M7 |
+| NoopReceivableExposureQuery | `ep_contract_finance::ReceivableExposureQuery::exposure` | `// TODO(stage-10): replace with real impl` | 信用三桶中已交付未开票与应收未收两桶在 M4 明示为未完整，E2E-6-04 的这两桶断言顺延到 M7 |
+| NoopInvoiceReversalStatusQuery | `ep_contract_invoice::InvoiceReversalStatusQuery::is_fully_credit_noted` | `// TODO(stage-10): replace with real impl` | `SALES.SALES_RETURN.INVOICE_NOT_CREDIT_NOTED` 的判定与 E2E-6-10 的红冲前置分支顺延到 M7 |
+| NoopPurchaseRequisitionIntakePort | `ep_contract_procure::PurchaseRequisitionIntakePort::intake` | `// TODO(stage-7): replace with real impl` | 采购需求派生项的端到端验收顺延到阶段 7 |
+| NoopPurchaseReturnLinkPort | `ep_contract_procure::PurchaseReturnLinkPort::link_drop_ship_return` | `// TODO(stage-7): replace with real impl` | 直运退货勾稽的端到端验收顺延到阶段 7 |
+
+阶段 10 计划所称的发票冲销状态查询空实现即本表第三行，名字按通则第三条的 `Noop` 前缀规则取被替换 trait 的同名形式。阶段 11 计划单方面列出的 `NoopCostReturnMarkPort` 在裁定表中没有出处，且与阶段 7 已冻结的采购侧不置位取值相反，本阶段不注入该空实现，其归属需另行裁定后再回写。

@@ -52,7 +52,7 @@
 
 18. 全文检索索引与查询（3b 段）：`ep-adapter-search` 实现 `ep_foundation::port::search::SearchIndexPort` 与 `SearchQueryPort`，索引按法人分区，物理路径 `/var/lib/ep/search/<legal_entity_id>/`。`SearchDocument`、`SearchQuery`、`SearchHit` 三个类型与两个 trait 由阶段 1 在 `crates/foundation/src/port/search.rs` 建空文件、本阶段补齐。写入一律经 job-worker 消费 Outbox 事件触发，不在业务事务内调用。本阶段不交付任何业务对象的检索文档投影函数，投影由各业务阶段按 `SearchDocument` 结构提供，见第 3.4.10 节。
 19. 配置发布的内容项落地端口（3a 段）：`crates/platform/release/src/port/config_item.rs`，内容为 `ConfigItemApplier` trait、`ItemKind` 枚举 15 项、`ConfigPackageItem` DTO 与 `ConfigItemApplierRegistry`，其中 `Tx` 取自 `ep_foundation::port::tx`。本项无表、无用例、不依赖身份与授权，因此排在阶段 4 之前，使阶段 4 的三个授权类 applier 不再倒挂，见第 3.4.12 节。
-20. 最小配置发布通道（3b 段）：`platform_meta.config_packages`、`platform_meta.config_package_items`、`platform_meta.config_release_orders` 三张表，六态发布状态机，ECDSA P-256 签名与逐项 `item_hash` 校验，发布与回退用例，`ConfigItemApplierRegistry` 的运行期装配，以及 `FlowDefinitionApplier` 与 `NotifyRuleApplier` 两个 applier。本阶段不建 `config_item_apply_logs` 与 `config_edit_locks`，十一态生命周期、自动测试编排与编辑锁由阶段 13b 扩展。
+20. 最小配置发布通道（3b 段）：`platform_meta.config_packages`、`platform_meta.config_package_items`、`platform_meta.config_release_orders` 三张表，六态发布状态机，ECDSA P-256 签名与逐项 `item_hash` 校验，发布与回退用例，`ConfigItemApplierRegistry` 的运行期装配，以及 `FlowDefinitionApplier` 与 `NotifyRuleApplier` 两个 applier。本阶段不建 `config_release_steps` 与 `config_edit_locks`，十一态生命周期、自动测试编排与编辑锁由阶段 13b 扩展。
 21. 模块许可与生命周期（3b 段）：`platform_core.module_registrations`、`platform_core.license_grants`、`platform_core.feature_flags` 三张表与 `ep-platform-license` 的 `ModuleLicenseQuery`。定时器扫描与 Outbox 投递按 `ModuleLicenseQuery::module_state` 过滤，落实规格第 5.6 章模块停用后停止定时任务与对外事件。基线第 7.3 节的自检项 `license-and-modules-consistent` 由本阶段从 Pending 换成实现。模块停用再启用的端到端验收按裁定 A-05 顺延到阶段 13b。
 
 ---
@@ -115,7 +115,7 @@
 
 本阶段全部新增 crate 均为 `ep-platform-*` 与 `ep-adapter-*`，依赖只指向 `ep-foundation` 与其他 `ep-platform-*`，不依赖任何 `ep-domain-*` 与 `ep-app-*`，符合基线第 1.3 节。`ep-adapter-file` 只依赖 `ep-foundation` 与 `ep-platform-file` 中的 `ObjectStore` 端口 trait，不依赖任何其他 adapter。装配全部发生在 `apps/core-server/src/wiring.rs`、`apps/job-worker/src/wiring.rs`、`apps/integration-gateway/src/wiring.rs` 三处。
 
-platform 内部的依赖边为：`ep-platform-outbox → ep-foundation`；`ep-platform-audit → ep-foundation`；`ep-platform-file → ep-foundation`；`ep-platform-sequence → ep-foundation`；`ep-platform-license → ep-foundation`；`ep-platform-release → ep-foundation`（3a 段），3b 段追加 `ep-platform-audit`、`ep-platform-outbox`，阶段 13b 扩展时再追加 `ep-platform-meta`；`ep-platform-notify → ep-foundation, ep-platform-release`；`ep-platform-flow → ep-foundation, ep-platform-outbox, ep-platform-audit, ep-platform-release`。无环，因为 `ep-platform-release` 不反向依赖 `ep-platform-flow` 与 `ep-platform-notify`，两个 applier 落在实现方 crate 内。`ep-adapter-search` 只依赖 `ep-foundation`。CI 的 `cargo metadata` 自检脚本增加本阶段八个 platform crate 与两个 adapter crate 的断言。
+platform 内部的依赖边为：`ep-platform-outbox → ep-foundation`；`ep-platform-audit → ep-foundation`；`ep-platform-file → ep-foundation`；`ep-platform-sequence → ep-foundation`；`ep-platform-license → ep-foundation`；`ep-platform-release → ep-foundation`（3a 段），3b 段追加 `ep-platform-audit`、`ep-platform-outbox`；`ep-platform-notify → ep-foundation, ep-platform-release`；`ep-platform-flow → ep-foundation, ep-platform-outbox, ep-platform-audit, ep-platform-release`。无环，因为 `ep-platform-release` 不反向依赖 `ep-platform-flow` 与 `ep-platform-notify`，两个 applier 落在实现方 crate 内。`ep-adapter-search` 只依赖 `ep-foundation`。CI 的 `cargo metadata` 自检脚本增加本阶段八个 platform crate 与两个 adapter crate 的断言。
 
 #### 3.2.4 进程职责增量
 
@@ -176,7 +176,7 @@ archive-writer 与 backup-writer 在本阶段不改动，本阶段只为其提�
 | 31 | `V202611020950__platform_file_create_watermark_views.sql` | platform_file | 3b |
 | 32 | `V202611020960__platform_msg_create_ops_views.sql` | platform_msg | 3b |
 
-第 9 至 14 号在 `platform_flow` 内的顺序保证被引用方先建，第 6 至 8 号在 `platform_meta` 内同理保证 `config_packages` 早于 `config_package_items` 与 `config_release_orders`；跨 schema 不建外键，故 `platform_flow` 早于 `platform_audit` 与 `platform_msg` 不构成引用问题。第 1 号属 3a 段，号段排在阶段 4 的 `V202610…` 之前；第 2 至 32 号属 3b 段，号段排在其后；两个号段互不重叠，也不与阶段 2 已占用的 `V20260901…` 号段冲突。
+第 9 至 14 号在 `platform_flow` 内的顺序保证被引用方先建，第 6 至 8 号在 `platform_meta` 内同理保证 `config_packages` 早于 `config_package_items` 与 `config_release_orders`；跨 schema 不建外键，故 `platform_flow` 早于 `platform_audit` 与 `platform_msg` 不构成引用问题。第 31 与 32 两个视图文件跨 schema 取数，按裁定通则第五条放在所涉 schema 中位次靠后的那个目录：第 31 号建 `platform_file` 与 `platform_audit` 两个 schema 的视图，放在 `db/migrations/platform_file/`；第 32 号建 `platform_msg`、`platform_flow` 与 `platform_audit` 三个 schema 的视图，放在 `db/migrations/platform_msg/`。第 1 号属 3a 段，号段排在阶段 4 的 `V202610…` 之前；第 2 至 32 号属 3b 段，号段排在其后；两个号段互不重叠，也不与阶段 2 已占用的 `V20260901…` 号段冲突。
 
 #### 3.3.2 公共列的适用口径
 
@@ -319,7 +319,7 @@ archive-writer 与 backup-writer 在本阶段不改动，本阶段只为其提�
 
 索引：`pk_process_tasks`；`ix_process_tasks_le_created`；`ix_process_tasks_le_assignee_state_due_at`（待办列表，对应附录 A.1 的审批任务列表加载）；`ix_process_tasks_le_instance_state`；`ix_process_tasks_le_state_due_at`（SLA 扫描）。
 
-`initiator_user_id` 是职责分离判定的输入，`assignee_user_id` 等于它时由授权层拒绝，对应规格第 12.2 章“申请人不可自审”。判定本身在阶段 2 的 ep-platform-authz，本表只提供事实。
+`initiator_user_id` 是职责分离判定的输入，`assignee_user_id` 等于它时由授权层拒绝，对应规格第 12.2 章“申请人不可自审”。判定本身在阶段 4 的 ep-platform-authz，本表只提供事实。
 
 **表 6 `platform_flow.process_timers`**
 
@@ -604,7 +604,7 @@ archive-writer 与 backup-writer 在本阶段不改动，本阶段只为其提�
 | id | uuid | not null，pk |
 | legal_entity_id | uuid | not null |
 | user_id | uuid | not null |
-| device_id | uuid | not null，逻辑引用阶段 2 的设备登记 |
+| device_id | uuid | not null，逻辑引用阶段 4 的设备登记 |
 | platform | text | not null，ck 取值 `ios`、`android` |
 | token_ciphertext | bytea | not null，按法人密钥域字段级加密 |
 | token_fingerprint | text | not null，用于唯一约束的盲索引 |
@@ -660,7 +660,7 @@ archive-writer 与 backup-writer 在本阶段不改动，本阶段只为其提�
 | upload_session_id | uuid | null |
 | row_version, created_at, created_by, updated_at, updated_by | | 按公共列 |
 
-索引：`pk_attachment_versions`；`ux_attachment_versions_le_object_version_no`；`ix_attachment_versions_le_created`；`ix_attachment_versions_le_state_created`（对账与回收）；`ix_attachment_versions_le_available_at`（水位输入）。
+索引：`pk_attachment_versions`；`ux_attachment_versions_le_object_version_no`；`ix_attachment_versions_le_created`；`ix_attachment_versions_le_state_created`（收敛与回收）；`ix_attachment_versions_le_available_at`（水位输入）。
 
 规格第 7.5 章要求“事务数据库只保存对象 ID、版本、哈希、大小、类型、密级、密钥引用和业务关联”，本表逐项对应，正文不入库。
 
@@ -767,7 +767,7 @@ archive-writer 与 backup-writer 在本阶段不改动，本阶段只为其提�
 
 **表 28 `platform_meta.config_packages`**（3b 段，部署级）
 
-列与约束按阶段 13 计划第 3.2.10 节逐项照建，本阶段一次建齐列集，只收窄 `status` 的 CHECK：本阶段取值为 `DRAFT`、`PENDING_REVIEW`、`PENDING_APPROVAL`、`APPROVED`、`RELEASED`、`ROLLED_BACK` 六项，对应第 3.4.12 节的六态状态机；阶段 13b 扩展该 CHECK 到 PRD 第 10.4.1 节的十一态。
+列与约束按阶段 13 计划第 3.2.10 节逐项照建，本阶段一次建齐列集，只收窄 `status` 的 CHECK：本阶段取值为 `DRAFT`、`PENDING_APPROVAL`、`REJECTED`、`APPROVED`、`RELEASED`、`ROLLED_BACK` 六项，对应第 3.4.12 节的六态状态机；阶段 13b 扩展该 CHECK 到 PRD 第 10.4.1 节的十一态。
 
 **表 29 `platform_meta.config_package_items`**（3b 段，部署级）
 
@@ -1147,11 +1147,11 @@ pub trait ConfigItemApplier: Send + Sync {
 
 本阶段实现的 applier 共两个：`FlowDefinitionApplier`（位于 `ep-platform-flow`，落地到 `platform_flow.process_definitions`）与 `NotifyRuleApplier`（位于 `ep-platform-notify`，落地到 `platform_msg.notification_templates` 与提醒规则）。其余 13 个按裁定 A-19 分派到阶段 4、11 与 13b，本阶段不代做。查不到实现的 `item_kind` 整包拒绝发布，错误码 `PLATFORM.CONFIG_RELEASE_ORDER.APPLIER_NOT_REGISTERED`，分类 `BUSINESS_CONFLICT`，由本阶段登记。
 
-3b 段的六态发布状态机：Draft 到 PendingReview（提交差异审查，守卫为内容项数在 1 至 2000 之间且每项 `item_hash` 与其 `after_spec` 的规范化 SHA-256 一致）、PendingReview 到 PendingApproval（差异审查通过）、PendingApproval 到 Approved（审批通过，守卫为审批人不等于提交人）、Approved 到 Released（签名并执行发布单）、Released 到 RolledBack（回退发布单）。非法迁移返回 `BUSINESS_CONFLICT` 与 `PLATFORM.CONFIG_PACKAGE.*` 的对应码，不静默忽略。
+3b 段的六态发布状态机按裁定 A-27 以 PRD 第 10.4.1 节的十一态为唯一出处，本阶段实现其中六态：Draft 到 PendingApproval（提交审批，守卫为内容项数在 1 至 2000 之间且每项 `item_hash` 与其 `after_spec` 的规范化 SHA-256 一致）、PendingApproval 到 Approved（审批通过，守卫为审批人不等于提交人）、PendingApproval 到 Rejected（审批驳回，记名并写审计）、Approved 到 Released（签名并执行发布单）、Released 到 RolledBack（回退发布单）。差异审查由 `GET /api/v1/platform/config-packages/{id}/diff` 端点承载，不单列为状态。非法迁移返回 `BUSINESS_CONFLICT` 与 `PLATFORM.CONFIG_PACKAGE.*` 的对应码，不静默忽略。其余五态 PendingAutotest、TestFailed、TestPassed、SignedPendingRelease、Superseded 由阶段 13b 补齐，扩展只放宽 `ck_config_packages_status`，不改写任何既有行。
 
 签名与验签：签名算法固定为 ECDSA P-256，密钥经 `ep-adapter-kms` 取用；`item_hash` 为该项 `after_spec` 的 JSON 规范化序列化（键按字典序、无空白、UTF-8）后的 SHA-256 十六进制小写，与阶段 13 计划第 4.7 节一致；导入时逐项重算 `item_hash` 并比对，任一不符整包置拒绝。
 
-发布执行：在一个 `READ COMMITTED` 事务内按 `sort_no` 升序对每个内容项调用 `validate` 与 `apply`，同一事务内把发布单置 `SUCCEEDED`、配置包置 `RELEASED`、上一 `RELEASED` 包置 `SUPERSEDED`，写审计事件与 Outbox 事件 `platform.config_release.released.v1`。回退按 `sort_no` 逆序调用 `revert`，以 `before_spec` 恢复，同样单事务。任一 applier 的 `requires_derived_store_rebuild` 为真时，本阶段只把该判定结果写入事件载荷，派生存储重建的传播段由阶段 13b 实现。
+发布执行：在一个 `READ COMMITTED` 事务内按 `sort_no` 升序对每个内容项调用 `validate` 与 `apply`，同一事务内把发布单置 `SUCCEEDED`、配置包置 `RELEASED`，写审计事件与 Outbox 事件 `platform.config_release.released.v1`。回退按 `sort_no` 逆序调用 `revert`，以 `before_spec` 恢复，同样单事务。任一 applier 的 `requires_derived_store_rebuild` 为真时，本阶段只把该判定结果写入事件载荷，派生存储重建的传播段由阶段 13b 实现。
 
 本阶段不交付自动测试编排、编辑锁、停机窗口排队与在线 DDL，这四项与十一态生命周期一并由阶段 13b 扩展。
 
@@ -1161,7 +1161,7 @@ pub trait ConfigItemApplier: Send + Sync {
 
 全部端点前缀 `/api/v1/platform`，门户侧为 `/api/v1/portal/...` 由 portal-gateway 转发。请求头集合、封套、分页、排序、过滤、幂等键、版本化一律按基线第 5 章，本节不重复，只给各端点的差异项。
 
-权限项名称形如 `platform.<resource>.<action>`，判定由阶段 2 的 ep-platform-authz 承担；本阶段负责在每个端点上声明所需权限项并注册到权限项目录。
+权限项名称形如 `platform.<resource>.<action>`，判定由阶段 4 的 ep-platform-authz 承担；本阶段负责在每个端点上声明所需权限项并注册到权限项目录。
 
 #### 3.5.1 通知
 
@@ -1261,10 +1261,10 @@ pub trait ConfigItemApplier: Send + Sync {
 | POST /api/v1/platform/config-packages | 就地创建配置包，`source` 取 `IN_PLACE` | 必填 | lowcode.config_package.create |
 | POST /api/v1/platform/config-packages/actions/import | 导入并验签，同一 `content_hash` 重复导入返回既有包 | 必填 | lowcode.config_package.import |
 | GET /api/v1/platform/config-packages/{id} | 包详情含内容项摘要 | 不适用 | lowcode.config_package.view |
-| GET /api/v1/platform/config-packages/{id}/diff | 与指定包的差异，供 PendingReview 段的人工审查 | 不适用 | lowcode.config_package.view |
-| POST /api/v1/platform/config-packages/{id}/actions/submit-for-approval | PendingReview 到 PendingApproval | 必填 | lowcode.config_package.submit |
+| GET /api/v1/platform/config-packages/{id}/diff | 与指定包的差异，供提交审批前的人工差异审查 | 不适用 | lowcode.config_package.view |
+| POST /api/v1/platform/config-packages/{id}/actions/submit-for-approval | Draft 到 PendingApproval | 必填 | lowcode.config_package.submit |
 | POST /api/v1/platform/config-packages/{id}/actions/approve | PendingApproval 到 Approved，审批人不得等于提交人 | 必填 | lowcode.config_package.approve |
-| POST /api/v1/platform/config-packages/{id}/actions/reject | 驳回回 Draft | 必填 | lowcode.config_package.approve |
+| POST /api/v1/platform/config-packages/{id}/actions/reject | PendingApproval 到 Rejected | 必填 | lowcode.config_package.approve |
 | POST /api/v1/platform/config-packages/{id}/actions/sign | 签名，已签名重复调用返回既有签名 | 必填 | lowcode.config_package.sign |
 | POST /api/v1/platform/config-release-orders | 建发布单或回退单 | 必填 | lowcode.config_release.submit |
 | POST /api/v1/platform/config-release-orders/{id}/actions/execute | 执行，重复执行返回同一回执 | 必填 | lowcode.config_release.execute |
@@ -1475,7 +1475,7 @@ E2E-6 配置发布最小通道（3b 段）：创建含一个 `FLOW_DEFINITION` �
 | 锚定间隔 | 规格第 12.5 章 | 不超过 5 分钟或 1000 条 | `ep_audit_anchor_age_seconds` |
 | 附件上传吞吐 | 规格第 6.5 章大文件通道 | 无通过线 | 单独记录 |
 
-`EXPLAIN` 证据：上述三个进入附录 A.1 的查询，以及 Outbox 取件、定时器扫描、死信按会计期间枚举五条语句，必须在基准数据集上给出不含顺序扫描的执行计划，基线第 3.10 节要求。
+`EXPLAIN` 证据：上述三个进入附录 A.1 的查询，以及 Outbox 取件、定时器扫描、死信按会计期间枚举三条语句，合计六条，必须在基准数据集上给出不含顺序扫描的执行计划，基线第 3.10 节要求。
 
 #### 3.8.5 基准数据集扩展
 
@@ -1509,14 +1509,14 @@ E2E-6 配置发布最小通道（3b 段）：创建含一个 `FLOW_DEFINITION` �
 16. 五类混沌场景全部通过，故障移除后 5 分钟内自愈，进程崩溃后未完成任务自动恢复且已确认事务零丢失。
 17. 六条后端 E2E 全通过。
 18. 附录 A.1 的三个本阶段度量项在 20 并发负载模型下 P95 不超过 2 秒，样本各不少于 200，单次运行错误率不超过 0.1%。
-19. 八条关键语句的 `EXPLAIN` 证据不含顺序扫描。
+19. 六条关键语句的 `EXPLAIN` 证据不含顺序扫描。
 20. 覆盖率：本阶段代码行覆盖率不低于 85%，新增与修改代码不低于 80%，工作区整体不低于 80%。
 21. `docs/error-codes.md` 的 `PLATFORM` 段、`docs/event-catalog.md` 的 `platform` 段、`ep-foundation::error::codes` 常量表、指标注册表四处由 CI 校验一致，无重复码、无未登记项。
 22. 本阶段的四项偏离与十二项新增决定已回写共享技术基线，并经平台架构负责人签字。
 23. 模块许可：三张许可表建立，`ModuleLicenseQuery` 可用，模块置 `INSTALLED_DISABLED` 后其定时器停止触发、其事件停止投递且条目不累加 `attempts`，再启用后自动恢复；停用再启用的端到端验收按裁定 A-05 顺延到阶段 13b，本阶段以集成测试判定。
 24. 最小配置发布通道：三张配置表建立，六态状态机的全部合法与非法迁移有测试，ECDSA P-256 签名与逐项 `item_hash` 重算校验通过，`FlowDefinitionApplier` 与 `NotifyRuleApplier` 两个 applier 已实现并在两个 wiring 注册，未注册 `ItemKind` 的内容项整包拒绝发布。
 25. 全文检索：`SearchIndexPort` 与 `SearchQueryPort` 在 `ep-adapter-search` 上实现，索引按法人分区落在 `/var/lib/ep/search/<legal_entity_id>/`，`xtask archcheck` 断言业务事务路径上不出现索引写调用，两个法人的分区互不可见。
-26. 本阶段全部路由的能力域码与动作类别常量已按裁定 A-20 声明，取值取自 `ep_foundation::CapabilityDomain` 与 `ep_foundation::ActionClass`，`xtask configdoc` 通过。
+26. 本阶段全部路由的能力域码与动作类别常量已按裁定 A-20 声明，常量落在 `crates/platform/flow/src/capability.rs`，取值取自 `ep_foundation::CapabilityDomain` 与 `ep_foundation::ActionClass`，`/api/v1/platform/` 下的平台路由能力域一律取 `CapabilityDomain::PlatformAdminLowcodeOps`，`xtask configdoc` 通过。
 27. `DisposalPort` 的 trait 与两个 DTO 已定义在 `crates/platform/file/src/port/disposal.rs`，两个 wiring 已注入 `NoopDisposalPort` 并标注 `// TODO(stage-14): replace with real impl`，实现由阶段 14 的 `OpsDisposalService` 交付。
 28. 附件的幂等收敛任务在四个崩溃点上收敛，且不产生任何对账差异事项、不实现 `ReconCheck`、不依赖 `ep-platform-recon`。
 29. 3a 段闸门：`platform_msg.idempotency_keys` 与 `IdempotencyStore` 实现、`crates/platform/release/src/port/config_item.rs` 端口与注册表两项已完成并通过各自单元测试，且该段不引入对 `ep-platform-identity` 与 `ep-platform-authz` 的任何依赖，`cargo metadata` 自检通过。
@@ -1680,9 +1680,9 @@ U-A-01 与 U-A-02 已由共享技术基线第 11.1 节取值，本阶段直接�
 
 依赖三，法人与组织（阶段 2）：`ep-platform-tenancy::LegalEntityDirectory::list_active`（供后台按法人轮转）与其返回的 `LegalEntityRef`，编号格式的法人段取该结构的 `entity_no`（2 位数字）。缺失时以固定两法人的测试夹具替代，退出条件不受影响，但编号格式的法人段无法在真实数据上验收。
 
-依赖四，身份（阶段 2）：`ep-platform-identity` 的用户目录、会话令牌校验、设备登记、用户停用状态、`X-Reauth-Token` 的签发与校验。缺失则通知接收人解析、推送设备绑定、人工任务的重新认证三处只能用桩。
+依赖四，身份（阶段 4）：`ep-platform-identity` 的用户目录、会话令牌校验、设备登记、用户停用状态、`X-Reauth-Token` 的签发与校验。缺失则通知接收人解析、推送设备绑定、人工任务的重新认证三处只能用桩。
 
-依赖五，授权（阶段 2）：`ep-platform-authz` 的权限项注册与判定入口、职责分离判定（申请人不可自审）、字段级与密级过滤。缺失则全部端点的权限声明只能登记不能生效，第 3.9 节退出条件第 2 项的“报表投影”与“错误信息泄漏”两类无法判定。
+依赖五，授权（阶段 4）：`ep-platform-authz` 的权限项注册与判定入口、职责分离判定（申请人不可自审）、字段级与密级过滤。缺失则全部端点的权限声明只能登记不能生效，第 3.9 节退出条件第 2 项的“报表投影”与“错误信息泄漏”两类无法判定。
 
 依赖六，元数据（阶段 13b）：`ep-platform-meta` 的自定义对象注册与六个 `CUSTOM_` 前缀的 applier，用于让附件、流程、审计、检索对自定义对象自动生效，规格第 7.4 章要求“自定义对象自动获得权限、流程、审计、搜索、API 和报表能力”。缺失不阻塞本阶段核心能力，但该自动生效的验收推迟到阶段 13b。
 

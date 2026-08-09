@@ -28,7 +28,7 @@
 | D-10 | `tests/rls_matrix` 的本阶段那一段 | 独立集成测试目标的增量 | 16 组法人越权用例、5 项复制角色用例、5 个系统上下文入口用例全绿；按 C-05 本阶段追加 `assert_replication_role_containment` 与 `assert_recon_context_borrow` 两个函数 |
 | D-11 | `scripts/verify-connection-budget.sh` | shell | 输出八进程连接枚举并与规格第 7.7 章逐项比对，不一致即非 0 退出 |
 | D-12 | `tools/ep-explain-check` | CLI | 对给定 SQL 采集 `EXPLAIN (ANALYZE, BUFFERS)` 并在出现 Seq Scan 时报错，供后续阶段提交附录 A.1 证据 |
-| D-13 | 文档增量 | Markdown | `docs/data-dictionary.md` 十二张表条目、`docs/error-codes.md` 17 个新错误码、`docs/event-catalog.md` 3 个事件、`docs/metrics-catalog.md` 五个指标条目、`docs/adr/` 五篇 ADR |
+| D-13 | 文档增量 | Markdown | `docs/data-dictionary.md` 十二张表条目、`docs/error-codes.md` 19 个新错误码、`docs/event-catalog.md` 3 个事件、`docs/metrics-catalog.md` 五个指标条目、`docs/adr/` 五篇 ADR |
 | D-14 | `ep-platform-tenancy` | 库 crate 加五个迁移 | 集团、组织、部门、岗位与部门层级闭包五张表建成；`LegalEntityDirectory` 与 `DepartmentClosureQuery` 两个 trait 及其 pg 实现编译通过并被集成测试覆盖 |
 | D-15 | `ep-platform-obs` 降级台账最小实现 | 库 crate 加一个迁移 | `platform_ops.degradation_windows` 建成并带两条约束；`DegradationLedger` 三个方法可用；`ep_degradation_windows_open` 指标已注册并填充 |
 
@@ -89,7 +89,7 @@
 
 #### 3.3 迁移框架
 
-工具为 refinery 0.8 系列，历史表 `<schema>.refinery_schema_history`，每 schema 一个 Runner。执行顺序由 `db/migrations/order.toml` 显式声明：平台 9 个 schema 在前（`platform_core` 最先，`ext` 最后），业务按 mdm、cpq、clm、sales、procure、inventory、costing、project、service、invoice、finance、ledger、crm、portal、reporting。按 C-01，`order.toml` 的二十四项顺序以本节为准，阶段 1 只交付只含注释与顺序数组骨架的同名文件，本阶段填入取值。
+工具为 refinery 0.8 系列，历史表 `<schema>.refinery_schema_history`，每 schema 一个 Runner。执行顺序由 `db/migrations/order.toml` 显式声明：平台 9 个 schema 在前（`platform_core` 最先，`ext` 最后），业务按 mdm、cpq、clm、sales、procure、inventory、costing、project、service、invoice、finance、ledger、crm、portal、reporting。按 C-01，`order.toml` 的二十四项顺序以本节为准，阶段 1 只交付只含注释与顺序数组骨架的同名文件，本阶段填入取值。该顺序在本阶段冻结后不得调整。按裁定通则第五条，迁移文件的目录归属以该顺序中的 schema 位次为准，不以写入方所属模块为准，需要读写另一个 schema 的对象时一律放在两个 schema 中位次靠后的那个目录下；空库上按 `order.toml` 全量执行成功是各阶段退出条件的判据。
 
 非事务迁移的处理：`CREATE INDEX CONCURRENTLY` 不能在事务块内执行，而 refinery 默认每个迁移一个事务。解法是把此类文件放在 `db/migrations/<schema>/concurrent/` 子目录，由 `ep-migrate` 的自建执行器以自动提交模式逐条执行，成功后按 refinery 历史表的同一结构手工插入一行（version、name、applied_on、checksum）。两条路径共用同一张历史表与同一套版本号空间，`ep-migrate status` 不区分来源。该执行器约 200 行，只做读文件、算校验和、执行、写历史四件事，风险点在于中途失败会留下失效索引，因此执行前先 `DROP INDEX IF EXISTS` 同名对象，执行后校验 `pg_index.indisvalid`，无效即报错并要求人工清理。
 
@@ -107,7 +107,7 @@
 
 退出码约定固定为 0 成功、2 参数错误、3 迁移窗口未打开、4 校验和不符、5 版本不一致、78 环境自检失败。
 
-按 B-03，迁移窗口的判定另以组件形态对外提供：`MigrationWindowGuard::assert_open(tx)` 在未持有 `OPEN` 窗口时返回 `PLATFORM.DB.MIGRATION_WINDOW_CLOSED`，HTTP 409，分类 BUSINESS_CONFLICT。判定逻辑与实现体由本阶段交付，对外可用路径为 `ep_platform_release::MigrationWindowGuard`，由阶段 3a 建立 `ep-platform-release` crate 时以再导出方式暴露；阶段 13b 的在线 DDL 执行段在开始前必须调用该守卫。
+按 B-03，迁移窗口的判定另以组件形态对外提供：端口为 `ep_adapter_db::port::MigrationWindowGuard`，与 C-07 的 `IdempotencyStore` 同 crate 同模块，唯一方法为 `async fn assert_open(&self, tx: &mut dyn Tx) -> Result<(), AppError>`，未持有 `OPEN` 窗口时返回 `PLATFORM.DB.MIGRATION_WINDOW_CLOSED`，HTTP 409，分类 BUSINESS_CONFLICT；唯一实现类型为 `PgMigrationWindowGuard`，位于 `crates/adapter/db-pg/`。端口与实现均由本阶段交付，并在 `apps/core-server/src/wiring.rs` 与 `apps/job-worker/src/wiring.rs` 注入。阶段 13b 的在线 DDL 由 job-worker 的 DDL 执行器发起，在把控制交给 ep-platform-release 的编排之前调用注入实例的 `assert_open(tx)`，`ep-platform-release` 不引用该 trait。
 
 #### 3.4 迁移编号与顺序
 
@@ -132,7 +132,7 @@
 | 23 | `V202609011050__ext_create_schema.sql` | 低代码扩展 schema |
 | 24 至 38 | `V2026090111{00,05,10,15,20,25,30,35,40,45,50,55}__…` 与 `V2026090112{00,05,10}__…` | 15 个业务 schema 的建 schema 与授权，文件名 slug 为 `<schema>_create_schema` |
 
-合计 38 个迁移文件。本阶段不向 `platform_core.sensitive_field_registry` 预置任何行，阶段 5 按 A-28 以 `db/migrations/mdm/` 下的 backfill 迁移插入客户与供应商两行；`platform_core.append_only_registry` 的登记行按 B-02 由阶段 8、阶段 9a 与阶段 10 各自在本模块迁移中插入，本阶段只建登记表与一致性检查脚本。
+合计 38 个迁移文件。本阶段不向 `platform_core.sensitive_field_registry` 预置任何行，阶段 5 按 A-28 以 `db/migrations/mdm/` 下的 backfill 迁移插入 `mdm.customer_invoice_profiles` 与 `mdm.supplier_payment_profiles` 两表的 `bank_name` 与 `bank_account_no` 共四行；`platform_core.append_only_registry` 的登记行按 B-02 由阶段 7、阶段 8、阶段 9a 与阶段 10 各自在本模块迁移中插入，本阶段只建登记表与一致性检查脚本。
 
 #### 3.5 本阶段自有表逐表定义
 
@@ -207,11 +207,9 @@
 | `blind_index_column` | text null | 盲索引列名；`blind_index` 取 `NONE` 时为空，取 `EXACT` 时形如 `bank_account_no_bidx` |
 | `mask_style` | text not null default 'NONE' | 掩码样式；取值语义由阶段 4 的字段级授权解释，本阶段只承载登记 |
 | `normalization` | text not null default 'TRIM_NFKC' | 取 `NONE`、`TRIM_NFKC`、`TRIM_NFKC_LOWER`、`DIGITS_ONLY` |
-| `approved_by` | uuid not null | 产品负责人批准记录 |
-| `approved_at` | timestamptz not null | |
-| `release_ref` | text not null | 登记来源引用；按 A-27 本阶段不接入配置发布通道，经迁移登记时取 `MIGRATION:<迁移版本号>`，经端点登记时取 `ENDPOINT:<请求标识>`，发布通道接入由阶段 3b 反向补齐 |
-| `is_active`、`deactivated_at` | | 档案类 |
-本表的 `schema_name`、`table_name`、`column_name`、`security_level`、`is_field_encrypted`、`blind_index_column`、`mask_style` 七列与唯一约束 `ux_sensitive_field_registry_schema_table_column` 按 C-06 冻结，是跨阶段被引用的部分；其余列是本阶段为归一化与批准链路保留的附加列。阶段 4 只引用本表不建表，其 `platform_authz.sensitive_field_registry` 一名作废。
+| `release_ref` | text not null | 批准留痕与登记来源引用；按 A-27 本阶段不接入配置发布通道，经迁移登记时取 `MIGRATION:<迁移版本号>`，经端点登记时取 `ENDPOINT:<审批记录号>`，发布通道接入由阶段 3b 反向补齐 |
+
+本表业务列集按 C-06 冻结为上表十一列，即 `schema_name`、`table_name`、`column_name`、`category`、`security_level`、`is_field_encrypted`、`blind_index`、`blind_index_column`、`mask_style`、`normalization`、`release_ref`，公共列另按基线第 4 节，唯一约束 `ux_sensitive_field_registry_schema_table_column` 在前三列上。`approved_by` 与 `approved_at` 两列按 C-06 撤销，本阶段建表时不建这两列，理由是这两列无来源可填，经迁移登记时只能以系统主体冒充产品负责人批准，规格第 12.2 章要求的批准留痕改由 `release_ref` 承载。任何阶段不得写入本列集之外的列，也不得再声明本表另有附加列。阶段 4 只引用本表不建表，其 `platform_authz.sensitive_field_registry` 一名作废。
 
 表五 `platform_core.append_only_registry`（全局配置字典类）
 
@@ -371,7 +369,7 @@ end $$;
 
 `db/checks/` 十一项编号断言，全部返回 0 行为通过：01 公共列齐备；02 RLS 已启用且强制；03 策略文本与模板全等；04 时间列类型（`_at` 为 timestamptz、`_date` 与 `_on` 为 date）；05 数值精度后缀；06 命名前缀；07 标识符长度；08 无 PostgreSQL enum 类型、无函数索引、无部分索引、无 JSON 路径索引；09 无 `current_date` 与无跨 schema 外键、无 `ON DELETE CASCADE`；10 基线索引齐备；11 敏感字段登记项在物理表上为 `bytea` 且列名以 `_enc` 结尾，且不存在同名明文列。
 
-另有一个不编号的脚本 `db/checks/append_only_consistency.sql`，按 B-02 断言 `platform_core.append_only_registry` 的登记与物理表上实际挂接的触发器逐项一致，由 `xtask sqlcheck` 执行，不计入 `ep-migrate check` 的十一项。阶段 8、阶段 9a 与阶段 10 追加登记行后由该脚本兜底。
+另有一个不编号的脚本 `db/checks/append_only_consistency.sql`，按 B-02 断言 `platform_core.append_only_registry` 的登记与物理表上实际挂接的触发器逐项一致，由 `xtask sqlcheck` 执行，不计入 `ep-migrate check` 的十一项。阶段 7、阶段 8、阶段 9a 与阶段 10 追加登记行后由该脚本兜底。
 
 ---
 
@@ -537,7 +535,9 @@ A-09。开窗请求体 `{"approval_ref": "...", "reason": "...", "ttl_minutes": 
 
 统一约定：所有端点对当前安全上下文不可见的记录一律返回 404 与 `PLATFORM.AUTHZ.NOT_FOUND_OR_DENIED`；对该对象类型完全无权时返回 403 与 `PLATFORM.AUTHZ.OBJECT_FORBIDDEN`。`message` 与 `advice` 为简体中文，不出现 SQL、表名、密钥引用与进程名。
 
-本阶段新增错误码 17 个，全部登记在 `docs/error-codes.md` 与 `ep-foundation` 的 `error::codes`。
+按 A-20，本阶段这九个平台路由在 `crates/platform/tenancy/src/capability.rs` 中各声明一对常量，命名为 `<USECASE_SCREAMING>_DOMAIN` 与 `<USECASE_SCREAMING>_ACTION`，能力域一律取 `CapabilityDomain::PlatformAdminLowcodeOps`，四个只读端点的动作类别取 `ActionClass::Read`，五个 `actions/` 端点取 `ActionClass::Submit`。两个枚举按 A-20 由阶段 1 在 `ep-foundation` 冻结，本阶段不重定义。`xtask configdoc` 断言每个 `/api/v1/` 路由都能解析到一对常量，缺失即构建失败。
+
+下表 17 个错误码由本阶段新增，全部登记在 `docs/error-codes.md` 与 `ep-foundation` 的 `error::codes`。
 
 | 错误码 | 分类 | HTTP |
 |---|---|---|
@@ -756,9 +756,10 @@ E-13 第 12 节的偏离与新增决定已回写共享技术基线，评审记�
 E-14 代码审查与安全审查由独立角色完成，严重与高危发现全部关闭，符合规格第 17.1 章不得由同一执行角色自行批准的要求。
 E-15 组织架构五张表建成并挂接策略与触发器，`LegalEntityDirectory` 与 `DepartmentClosureQuery` 两个 trait 已交付并可被阶段 3、阶段 4 与阶段 5 在 `wiring.rs` 中注入；IT-39 与 IT-40 通过。
 E-16 `platform_ops.degradation_windows` 建成并带 `ux_degradation_windows_kind_scope_closed` 与 `ck_degradation_windows_open_order` 两条约束，`DegradationLedger` 的 `open`、`close`、`open_count` 三个方法可用，`DegradationKind` 的两个初始取值已定义，阶段 1 预留的 `// TODO(stage-2): write degradation ledger` 一行已补上。
-E-17 `MigrationWindowGuard::assert_open` 已交付并在窗口关闭时返回 `PLATFORM.DB.MIGRATION_WINDOW_CLOSED`；`tools/ep-migrate` 的五个子命令与六个退出码与第 3.3 节逐项一致，阶段 1 的 `migrate`、`verify`、`manifest` 三个名字在本阶段制品中不存在。
+E-17 `ep_adapter_db::port::MigrationWindowGuard` 端口与 `PgMigrationWindowGuard` 实现均已交付，`apps/core-server/src/wiring.rs` 与 `apps/job-worker/src/wiring.rs` 两处已注入，窗口关闭时 `assert_open` 返回 `PLATFORM.DB.MIGRATION_WINDOW_CLOSED`；`tools/ep-migrate` 的五个子命令与六个退出码与第 3.3 节逐项一致，阶段 1 的 `migrate`、`verify`、`manifest` 三个名字在本阶段制品中不存在。
 E-18 `docs/metrics-catalog.md` 的唯一性校验通过，第 7.2 节五个指标的注册方与填充方与该文件一致，制品中不出现 `ep_db_retries_total`、`ep_tx_retry_total` 与 `ep_db_replication_crosscheck_age_seconds` 三个已作废的名字。
 E-19 `ep_adapter_db::port::IdempotencyStore` 已按 C-07 定义并被内存实现覆盖，`platform_msg.idempotency_keys` 建表与重放判定不在本阶段交付物中，CI 断言本阶段无第二套判等实现。
+E-20 本阶段全部路由的能力域码与动作类别常量已声明，常量位于 `crates/platform/tenancy/src/capability.rs`，`xtask configdoc` 通过。
 
 ---
 
@@ -796,7 +797,7 @@ PRD 条目逐条。
 | 11.9 降级状态的用户可见性 | 数据基座自检失败项的结构化结论输出，供运维中心台账取用 |
 | 附录乙 U-A-03 | 文本长度上限以 `text` 加 CHECK 表达，取值按基线第 11.2 节；本阶段被该项的业务侧决策阻塞程度为零，因为改 CHECK 属在线变更范围 |
 | 附录乙 U-A-04 | 数量、单价、金额、税率的小数位数与舍入规则的两侧一致实现；业务侧若另有决策，改动范围限于列类型与 `Money` 的 scale 常量，切换代价为一次停机窗口内的列类型变更 |
-| 附录乙 U-A-12 与 6.16 的 F-17 | 开户银行与银行账号是否纳入敏感字段清单尚待决策，本阶段以 `sensitive_field_registry` 承载该决策，不预置任何行；被阻塞程度为零，因为登记是插入一行而非代码变更。按 A-28，阶段 5 以 `db/migrations/mdm/` 下的 backfill 迁移插入客户与供应商的开户银行与银行账号两行；按 A-27，本阶段不接入配置发布通道 |
+| 附录乙 U-A-12 与 6.16 的 F-17 | 开户银行与银行账号是否纳入敏感字段清单尚待决策，本阶段以 `sensitive_field_registry` 承载该决策，不预置任何行；被阻塞程度为零，因为登记是插入一行而非代码变更。按 A-28，阶段 5 以 `db/migrations/mdm/` 下的 backfill 迁移插入 `mdm.customer_invoice_profiles` 与 `mdm.supplier_payment_profiles` 两表的 `bank_name` 与 `bank_account_no` 共四行，四行的 `is_field_encrypted` 在该事项决策前一律取假；按 A-27，本阶段不接入配置发布通道 |
 | 附录乙 U-B-05 | 权限求值顺序中显式拒绝优先的结论，本阶段只落实第一步法人授权，其余四步属授权阶段 |
 
 ---
@@ -819,7 +820,7 @@ R-07 复制槽的 `max_slot_wal_keep_size` 取值依赖附录 A.4 实测的事�
 
 R-08 幂等键的三段职责按 C-07 已经拆定，本阶段只定义端口，请求头校验属阶段 1，表与重放判定属阶段 3a，因此本阶段不再登记为被阻塞。残余风险是判等口径必须只在阶段 3a 一处实现，本阶段与阶段 1 都不得自行判等，由第 6 节的端口签名与 CI 依赖图断言约束；阶段 3a 交付后重跑本阶段四个写端点的用例。
 
-为后续阶段预留的扩展点，逐项给出位置。一是 `attach_table_guards` 与 `assert_baseline_indexes` 两个函数，各业务阶段建表时调用一次即自动获得策略、触发器与索引断言，无需重复实现。二是 `sensitive_field_registry` 与 `append_only_registry` 两张登记表，新增受保护列或仅追加表只是插入一行，不改代码；按 A-27 本阶段不接入配置发布通道，登记经迁移或端点直接写入，发布通道接入由阶段 3b 反向补齐，登记行分别由阶段 5（A-28）与阶段 8、9a、10（B-02）插入。三是 `KmsBackend` trait 的 `hsm` 实现位点，客户提供硬件密码机时只切换配置；`derive_blind_key` 是盲索引取值的唯一计算入口，阶段 5 与阶段 10 按 B-04 直接取用。四是 `UnitOfWork::snapshot_transact` 与语句集签名校验位点，供阶段 9a 的 `ep-platform-recon` 直接承接。五是 `db/migrations/<schema>/concurrent/` 目录，供后续阶段在有数据的表上加索引，其在线 DDL 执行段按 B-03 须先调用 `MigrationWindowGuard::assert_open`。六是 `ep-datagen` 的模块生成器注册点。七是 `CipherEnvelope` 的算法标识字段预留 `0x02` 起的取值，供后续版本恢复商用密码档位时扩展，本阶段不实现也不验收。八是 `key_domains.domain_kind` 的 `GROUP_SHARED` 取值已在类型中存在但 CHECK 不放行，供后续版本恢复跨法人能力时放开。九是 `LegalEntityDirectory` 与 `DepartmentClosureQuery` 两个 trait 与 `DegradationLedger` 端口，阶段 3 至阶段 14 直接注入取用，不自建同义接口。
+为后续阶段预留的扩展点，逐项给出位置。一是 `attach_table_guards` 与 `assert_baseline_indexes` 两个函数，各业务阶段建表时调用一次即自动获得策略、触发器与索引断言，无需重复实现。二是 `sensitive_field_registry` 与 `append_only_registry` 两张登记表，新增受保护列或仅追加表只是插入一行，不改代码；按 A-27 本阶段不接入配置发布通道，登记经迁移或端点直接写入，发布通道接入由阶段 3b 反向补齐，登记行分别由阶段 5（A-28）与阶段 7、8、9a、10（B-02）插入。三是 `KmsBackend` trait 的 `hsm` 实现位点，客户提供硬件密码机时只切换配置；`derive_blind_key` 是盲索引取值的唯一计算入口，阶段 5 与阶段 10 按 B-04 直接取用。四是 `UnitOfWork::snapshot_transact` 与语句集签名校验位点，供阶段 9a 的 `ep-platform-recon` 直接承接。五是 `db/migrations/<schema>/concurrent/` 目录，供后续阶段在有数据的表上加索引，其在线 DDL 执行段按 B-03 须先调用 `MigrationWindowGuard::assert_open`。六是 `ep-datagen` 的模块生成器注册点。七是 `CipherEnvelope` 的算法标识字段预留 `0x02` 起的取值，供后续版本恢复商用密码档位时扩展，本阶段不实现也不验收。八是 `key_domains.domain_kind` 的 `GROUP_SHARED` 取值已在类型中存在但 CHECK 不放行，供后续版本恢复跨法人能力时放开。九是 `LegalEntityDirectory` 与 `DepartmentClosureQuery` 两个 trait 与 `DegradationLedger` 端口，阶段 3 至阶段 14 直接注入取用，不自建同义接口。
 
 ---
 

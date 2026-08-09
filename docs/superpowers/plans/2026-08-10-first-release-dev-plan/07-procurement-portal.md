@@ -15,7 +15,7 @@
 3. job-worker 进程内新增四类消费者与一个定时任务：合同生效派生采购需求的 Outbox 消费者、采购退货生成供应商质量记录的消费者、采购与门户单据的检索索引与门户投影刷新消费者（产出 `foundation::port::search::SearchDocument` 并经 `SearchIndexPort` 写入）、采购与门户单据的站内通知投递消费者，以及库存不足触发采购需求的扫描定时任务（默认关闭，理由见第 11.2 小节）。
 4. `procure` 与 `portal` 两个 schema 的全部表、约束、索引与行级安全策略，经 refinery 迁移可离线执行并可按迁移文件头的回退说明回退。
 5. 六个新增 crate：`ep-contract-procure`、`ep-domain-procure`、`ep-app-procure`、`ep-contract-portal`、`ep-domain-portal`、`ep-app-portal`。
-6. `ep-testkit` 中新增的采购与门户构造器，以及两个记录型桩（`RecordingStockPostingPort` 记录 `ep_contract_inventory::InventoryPostingPort` 的调用，`RecordingLedgerPostingPort` 记录 `ep_contract_ledger::PostingPort` 的调用），用于契约测试的入参断言与故障注入。库存与总账的真实实现分别在阶段 8 与阶段 9a 已合入，记录型桩不再承担实现缺位的兜底职责；发票模块的两个端口在本阶段之后交付，本阶段在 `apps/core-server/src/wiring.rs` 与 `apps/job-worker/src/wiring.rs` 注入 `NoopReceiptInvoiceMatchQueryPort` 与 `NoopPurchaseCreditNotePort`，该行加注释 `// TODO(stage-10): replace with real impl`。
+6. `ep-testkit` 中新增的采购与门户构造器，以及两个记录型桩（`RecordingStockPostingPort` 记录 `ep_contract_inventory::InventoryPostingPort` 的调用，`RecordingLedgerPostingPort` 记录 `ep_contract_ledger::PostingPort` 的调用），用于契约测试的入参断言与故障注入。库存与总账的真实实现分别在阶段 8 与阶段 9a 已合入，记录型桩不再承担实现缺位的兜底职责；发票与财务两个模块的四个端口在本阶段之后交付，本阶段按裁定通则第三条在 `apps/core-server/src/wiring.rs` 与 `apps/job-worker/src/wiring.rs` 注入 `NoopReceiptInvoiceMatchQueryPort`、`NoopPurchaseCreditNotePort`、`NoopPayableLedgerQuery` 与 `NoopSupplierStatementQuery`，四行各加注释 `// TODO(stage-10): replace with real impl`。
 7. `ep-datagen` 中新增的采购侧基准数据生成器，产出附录 A.3 规模中的采购订单行 10 万条与其对应的收货、退货与付款申请分布。
 8. 一份可执行的端到端用例集合，覆盖规格第 8 章闭环第 4 步、第 5 步收货腿、第 10 步的申请与审批腿、第 11 步的采购退货腿，以及规格第 19 章阶段 3 门户条目要求的采购订单与交期确认、送货通知、发票上传、收付款对账查询四项闭环用例。
 9. 三份登记文档的增量：`docs/event-catalog.md` 新增 14 个事件类型，`docs/error-codes.md` 新增 34 个 PROCURE 与 PORTAL 段错误码（平台段错误码由阶段 1 登记，本阶段只引用），`docs/data-dictionary.md` 新增 30 张表并在单据类型码一节补齐本阶段的八个类型码。
@@ -31,8 +31,8 @@
 |---|---|---|---|
 | ep-contract-procure | crates/contract/procure | 采购模块对外公开的命令、查询、事件类型与 DTO；供其他模块调用的 trait，含 `PaymentRequestWritebackPort`、`PurchaseOrderInvoicingPort`、`GoodsReceiptQueryPort`、`PurchaseRequisitionIntakePort`、`PurchaseReturnLinkPort`；`src/capability.rs` 中为每个用例声明 `<USECASE_SCREAMING>_DOMAIN` 与 `<USECASE_SCREAMING>_ACTION` 一对常量 | 仅 ep-foundation |
 | ep-domain-procure | crates/domain/procure | 采购需求、采购订单、收货单、采购退货单、付款申请、供应商准入与质量记录六类聚合；数量守恒、可退数量、累计下达数量、占用金额四组不变量；业务端口 trait | ep-foundation、ep-contract-procure |
-| ep-app-procure | crates/application/procure | 采购各用例、事务边界、授权调用、审计与 Outbox 写入、与库存与总账与发票三个模块契约的编排；`src/probe/` 下的 `ProcureReferenceCounter` 与 `ProcureTradeHistoryProvider`；六个 `ReconCheck` 实现；`GrniSubledgerBalanceQuery` 子账侧余额查询函数 | ep-foundation、ep-platform-*、ep-domain-procure、ep-contract-* |
-| ep-contract-portal | crates/contract/portal | 门户受控能力的命令、查询与 DTO；门户投影的字段白名单类型；`PortalCapability` 枚举 | 仅 ep-foundation |
+| ep-app-procure | crates/application/procure | 采购各用例、事务边界、授权调用、审计与 Outbox 写入、与库存与总账与发票与财务四个模块契约的编排；`src/probe/` 下的 `ProcureReferenceCounter` 与 `ProcureTradeHistoryProvider`；六个 `ReconCheck` 实现（R-PROC-01 至 R-PROC-05 与 R-PORT-01）；`GrniSubledgerBalanceQuery` 子账侧余额查询函数 | ep-foundation、ep-platform-*、ep-domain-procure、ep-contract-* |
+| ep-contract-portal | crates/contract/portal | 门户受控能力的命令、查询与 DTO；门户投影的字段白名单类型；`PortalCapability` 枚举；`src/capability.rs` 中为每个门户用例声明 `<USECASE_SCREAMING>_DOMAIN` 与 `<USECASE_SCREAMING>_ACTION` 一对常量 | 仅 ep-foundation |
 | ep-domain-portal | crates/domain/portal | 门户账号绑定、送货通知、发票上传记录三类聚合；能力白名单与供应商数据范围两组不变量 | ep-foundation、ep-contract-portal |
 | ep-app-portal | crates/application/portal | 门户五项能力的受控用例、投影组装与脱敏裁剪、门户操作审计写入 | ep-foundation、ep-platform-*、ep-domain-portal、ep-contract-* |
 
@@ -45,11 +45,10 @@
 | ep-adapter-db-pg | 新增 `src/repo/procure/` 与 `src/repo/portal/` 两个目录，按表分文件，每个仓储只访问自己模块的 schema |
 | ep-testkit | 新增 `SupplierFixture`、`PurchaseOrderBuilder`、`GoodsReceiptBuilder`、`PurchaseReturnBuilder`、`PaymentRequestBuilder`、`PortalUserFixture`、`DeliveryNoticeBuilder`；新增库存与总账两个契约的记录型桩 |
 | ep-datagen | 新增 `--module procure` 分支 |
-| apps/core-server | 路由注册、权限对象类型注册；wiring 注入，含 `NoopReceiptInvoiceMatchQueryPort` 与 `NoopPurchaseCreditNotePort` 两个待阶段 10 替换的空实现、`PurchaseReturnLinkPort` 对阶段 6 空实现的替换，以及本模块向 `MasterReferenceCounterRegistry`、`TradeHistoryProviderRegistry`、`ReconRegistry` 的注册 |
+| apps/core-server | 路由注册、权限对象类型注册；wiring 注入，含 `NoopReceiptInvoiceMatchQueryPort`、`NoopPurchaseCreditNotePort`、`NoopPayableLedgerQuery` 与 `NoopSupplierStatementQuery` 四个待阶段 10 替换的空实现、`PurchaseReturnLinkPort` 对阶段 6 空实现的替换，以及本模块向 `MasterReferenceCounterRegistry` 与 `TradeHistoryProviderRegistry` 的注册 |
 | apps/portal-gateway | 站点、会话、限流、水印、五项能力的呈现层与转发 |
-| apps/job-worker | 四个消费者与一个定时任务的注册 |
+| apps/job-worker | 四个消费者与一个定时任务的注册；本阶段六个 `ReconCheck`（R-PROC-01 至 R-PROC-05 与 R-PORT-01）向 `ReconRegistry` 的注册 |
 | ep-platform-obs | 注册本阶段新增的三个指标 |
-| ep-platform-recon | 实现本阶段的六个 `ReconCheck`（R-PROC-01 至 R-PROC-05、R-PORT-01）并在两个 wiring.rs 注册到 `ReconRegistry` |
 
 #### 2.3 进程归属
 
@@ -89,7 +88,7 @@
 
 金额列一律 `numeric(18,2)`，单价列一律 `numeric(18,6)`，数量列一律 `numeric(18,6)`，税率列一律 `numeric(9,6)`。批次列与序列号列在物料未启用相应管理时取固定值 `'-'`，按基线第 11.4 节。
 
-密级取值：采购需求、采购订单、收货单、采购退货单、送货通知、发票上传取 20；付款申请、供应商风险记录取 30。数据范围标签的取值集合为 `dept:<部门码>`、`supplier:<供应商编码>`、`contract:<合同编号>`、`project:<项目编号>`、`sales_order:<订单编号>`，标签不承载任何敏感值。
+密级取值：采购需求、采购订单、收货单、采购退货单、送货通知、发票上传取 20；付款申请取 30。数据范围标签的取值集合为 `dept:<部门码>`、`supplier:<供应商编码>`、`contract:<合同编号>`、`project:<项目编号>`、`sales_order:<订单编号>`，标签不承载任何敏感值。
 
 #### 3.2 procure schema 的表
 
@@ -422,7 +421,7 @@
 | 21 | V202611030921__procure_create_purchase_return_attachments.sql | drop table |
 | 22 | V202611030922__procure_create_payment_request_attachments.sql | drop table |
 | 23 | V202611030923__procure_create_receipt_rejection_attachments.sql | drop table |
-| 24 | V202611030924__procure_backfill_posting_trigger_event_types.sql | 把 `ledger.posting_trigger_event_types` 中 `PURCHASE_RECEIPT` 与 `PURCHASE_RETURN` 两行的 `event_type` 置回空 |
+| 24 | V202611030924__procure_backfill_append_only_registry.sql | delete 本次插入的登记行 |
 | 25 | V202611031201__portal_create_supplier_portal_users.sql | drop table |
 | 26 | V202611031202__portal_create_delivery_notices.sql | drop table |
 | 27 | V202611031203__portal_create_delivery_notice_lines.sql | drop table |
@@ -431,7 +430,7 @@
 | 30 | V202611031206__portal_create_supplier_invoice_uploads.sql | drop table |
 | 31 | V202611031207__portal_create_supplier_invoice_upload_attachments.sql | drop table |
 
-前三十个文件为新增表，第 24 号为数据回填，全部落在基线第 3.9 节的在线变更范围内，索引一律 `CREATE INDEX CONCURRENTLY`，迁移会话固定 `SET lock_timeout = '5s'` 与 `SET statement_timeout = '30min'`。第 24 号文件对 `ledger.posting_trigger_event_types` 的既有行执行 UPDATE，按 `ledger_event_kind` 定位 `PURCHASE_RECEIPT` 与 `PURCHASE_RETURN` 两行并分别写入 `event_type` 为 `procure.goods_receipt.posted.v1` 与 `procure.purchase_return.posted.v1`，不新增行、不建表，登记表本体由阶段 9a 提供。
+三十一个文件中三十个为新增表、第 24 号为登记回填，全部落在基线第 3.9 节的在线变更范围内，索引一律 `CREATE INDEX CONCURRENTLY`，迁移会话固定 `SET lock_timeout = '5s'` 与 `SET statement_timeout = '30min'`。第 24 号文件按裁定 B-02 向 `platform_core.append_only_registry` 插入一行，`schema_name` 取 `procure`、`table_name` 取 `goods_receipt_line_costings`、`mode` 取 `APPEND_ONLY`、`mutable_columns` 取空数组，`created_by` 取 `foundation::SYSTEM_PRINCIPAL_ID`，仅追加触发器按该登记行挂接，回退为删除该行。该文件同时读写 `platform_core` 与 `procure` 两个 schema，按裁定通则第五条放在两者中 `order.toml` 位次靠后的 `db/migrations/procure/` 目录下。本阶段按裁定 A-21 不新增 `ledger.posting_trigger_event_types` 的回填迁移，`procure.goods_receipt.posted.v1` 与 `procure.purchase_return.posted.v1` 两行登记由阶段 9a 的种子迁移一次写入，见第 6.5 小节。
 
 模块属主角色为 `ep_mod_procure` 与 `ep_mod_portal`，两者在迁移中建立表与索引的归属，运行期读写仍只由 `ep_app_rw` 承担。
 
@@ -577,7 +576,7 @@ rule/field_whitelist.rs         五项能力各自的返回字段白名单
 同一张采购发票被多张未关闭付款申请引用时的占用校验必须可串行化，算法如下。
 
 1. 对本次申请涉及的每一个 `purchase_invoice_id`，在 `procure.payable_reservations` 上执行 `INSERT ... ON CONFLICT (legal_entity_id, purchase_invoice_id) DO UPDATE SET reserved_amount = payable_reservations.reserved_amount + $delta, open_request_count = payable_reservations.open_request_count + 1 RETURNING reserved_amount`。该语句在冲突分支上取得行锁，使同一发票的并发申请串行化。
-2. 用返回的 `reserved_amount` 与 `ep-contract-finance::PayableQueryPort::open_balance(tx, purchase_invoice_id)` 返回的未核销余额比较，超出即返回 `PROCURE.PAYMENT_REQUEST.AMOUNT_EXCEEDS_OPEN_BALANCE`，并在 `details` 中列出各发票的未核销余额与已占用金额。
+2. 用返回的 `reserved_amount` 与 `ep_contract_finance::PayableLedgerQuery::open_balance(tx, ctx, purchase_invoice_id)` 返回的未核销余额比较，超出即返回 `PROCURE.PAYMENT_REQUEST.AMOUNT_EXCEEDS_OPEN_BALANCE`，并在 `details` 中列出各发票的未核销余额与已占用金额。该端口由阶段 10 交付，本阶段按通则第三条注入 `NoopPayableLedgerQuery`，与真实应付台账余额的比对顺延到 M7。
 3. 申请被驳回、撤回、作废、关闭或付清时按同一方式做减法释放，`open_request_count` 归零时保留行不删除，理由是业务 schema 上禁止 `DELETE`。
 
 预付款类型不产生占用，理由是其关联对象是合同或采购订单而不是应付明细。
@@ -786,7 +785,7 @@ portal-gateway 在每个请求上做四件事：会话校验（结果按第 7 �
 
 写请求的 `Idempotency-Key` 与业务写入同事务，存储在 `platform_msg.idempotency_keys`，保留 7 天。本阶段的全部领域事件与业务状态、审计事件写入同一事务，事务提交前不发起任何外部调用。消费端幂等由 `platform_msg.inbox_consumptions` 的唯一约束保证，消费副作用与该行插入同事务。
 
-本阶段的 Outbox 事件信封一律携带 `posting_date` 与 `accounting_period_id` 两个字段：收货过账与采购退货过账事件取其单据上的实际取值，其余事件取空值。`procure.goods_receipt.posted.v1` 与 `procure.purchase_return.posted.v1` 两个事件按第 3.4 节第 24 号迁移登记到 `ledger.posting_trigger_event_types`，因此它们在 PENDING 或 DISPATCHING 状态下进入关账受理前提二的统计；`posting_date` 为空的其余事件不计入该统计。
+本阶段的 Outbox 事件信封一律携带 `posting_date` 与 `accounting_period_id` 两个字段：收货过账与采购退货过账事件取其单据上的实际取值，其余事件取空值。`procure.goods_receipt.posted.v1` 与 `procure.purchase_return.posted.v1` 两个事件在 `ledger.posting_trigger_event_types` 中的登记行按裁定 A-21 由阶段 9a 的种子迁移一次写入，本阶段不新增回填迁移，只在启动自检中经 `ep_contract_ledger::PostingTriggerRegistry::register` 对这两个事件做幂等 upsert 比对，与种子行不一致即以退出码 78 启动失败；因此它们在 PENDING 或 DISPATCHING 状态下进入关账受理前提二的统计，`posting_date` 为空的其余事件不计入该统计。
 
 #### 6.6 失败重试与补偿
 
@@ -893,7 +892,7 @@ portal-gateway 在每个请求上做四件事：会话校验（结果按第 7 �
 
 场景清单：
 
-1. 迁移正向执行与按 `-- rollback:` 段回退，三十一个文件逐个验证，其中第 24 号回填文件验证正向 UPDATE 与回退置空两个方向。
+1. 迁移正向执行与按 `-- rollback:` 段回退，三十一个文件逐个验证，其中第 24 号登记回填文件验证正向插入与回退删除两个方向，并断言 `db/checks/append_only_consistency.sql` 返回零行。
 2. 三十张表的行级安全策略生效：变量缺失时不可见不可写；跨法人上下文读、写、更新、聚合、排序六类操作均不返回也不写入他法人数据。
 3. 采购需求四类来源的端到端生成，含合同派生事件的重复投递 3 次只产生一条需求。
 4. 采购订单从草稿到下达到供应商确认的全链路，含审批链为空与非空两种配置。
@@ -918,7 +917,7 @@ portal-gateway 在每个请求上做四件事：会话校验（结果按第 7 �
 
 外部电子签章不在本阶段范围内，本阶段不引入任何 wiremock 打桩。
 
-第 9 项的发票已登记分支与第 4.4 小节第 2 步的匹配判定依赖阶段 10 的 `ReceiptInvoiceMatchQueryPort` 与 `PurchaseCreditNotePort`，本阶段以两个 Noop 空实现恒定返回未登记分支，该分支与红字发票登记的端到端验收顺延到 M7，顺延项在第 9 节退出条件中单列。
+第 9 项的发票已登记分支与第 4.4 小节第 2 步的匹配判定依赖阶段 10 的 `ReceiptInvoiceMatchQueryPort` 与 `PurchaseCreditNotePort`，本阶段以两个 Noop 空实现恒定返回未登记分支，该分支与红字发票登记的端到端验收顺延到 M7，顺延项在第 9 节退出条件中单列。第 12、13、20 三项中对财务应付台账未核销余额与供应商对账单的比对同样依赖阶段 10 的 `PayableLedgerQuery` 与 `SupplierStatementQuery`，本阶段以两个 Noop 空实现执行，该比对顺延到 M7；占用汇总本身的并发正确性在本阶段以 ep-testkit 的可配置桩验证，不顺延。
 
 #### 8.3 端到端测试
 
@@ -955,7 +954,7 @@ E2E-T-01 至 E2E-T-04 逐条对应规格第 19 章阶段 3 门户条目的四项
 
 #### 8.6 对账语句与不变量校验
 
-本阶段实现六个 `ep_platform_recon::ReconCheck` 并在两个 wiring.rs 注册到 `ReconRegistry`，由 ep-platform-recon 的执行器按法人逐轮遍历、在其提供的快照上分批执行，差额非零即生成对账差异事项并按规格第 10.2 章拦截关账。六个 check 的 `code()` 取值即下表编号，`blocks_period_close()` 一律为真，`category()` 除 R-PROC-04 取 `CROSS_MODULE_LINK` 外一律取 `INVARIANT`。
+本阶段在 `ep-app-procure` 实现六个 `ep_platform_recon::ReconCheck`，并按裁定 A-06 全部在 `apps/job-worker/src/wiring.rs` 中经 `ReconRegistry::register` 注册，由 ep-platform-recon 的执行器按法人逐轮遍历、在其提供的快照上分批执行，差额非零即生成对账差异事项并按规格第 10.2 章拦截关账。裁定 A-06 固定的五个注册方十六个校验项中，本阶段承担六个。六个 check 的 `code()` 取值即下表编号，`blocks_period_close()` 一律为真，`category()` 除 R-PROC-04 取 `ReconCategory::CrossModuleLink` 外一律取 `ReconCategory::Invariant`，两个变体的落库文本分别为 `CROSS_MODULE_LINK` 与 `INVARIANT`。
 
 | 编号 | 判据 |
 |---|---|
@@ -1003,7 +1002,7 @@ E2E-T-01 至 E2E-T-04 逐条对应规格第 19 章阶段 3 门户条目的四项
 
 下列条目全部达成才算本阶段完成，每条可客观判定。
 
-1. 三十一个迁移文件在空库上正向执行成功，并按其 `-- rollback:` 段逆向回退成功，回退后 `procure` 与 `portal` 两个 schema 无残留对象，且 `ledger.posting_trigger_event_types` 的两行 `event_type` 已置回空。
+1. 三十一个迁移文件（三十个建表文件与第 24 号 `append_only_registry` 登记回填文件）在空库上按 `db/migrations/order.toml` 全量执行成功，并按其 `-- rollback:` 段逆向回退成功，回退后 `procure` 与 `portal` 两个 schema 无残留对象，`platform_core.append_only_registry` 中无本阶段残留登记行。
 2. 三十张表全部 `ENABLE` 且 `FORCE` 行级安全，策略名与基线模板一致，运行期账号不具备 `BYPASSRLS` 与 `SUPERUSER`。`--check` 模式的 `rls-enabled-and-forced` 自检项对这三十张表通过。
 3. `tests/rls_matrix` 的十类断言在本阶段三十张表上全部通过，含门户跨供应商与跨授权法人两类。
 4. 第 5 节列出的全部端点可用，逐个端点的封套、分页、排序白名单、过滤算子、幂等语义与错误码与基线一致，由一组契约测试逐端点断言。
@@ -1011,7 +1010,7 @@ E2E-T-01 至 E2E-T-04 逐条对应规格第 19 章阶段 3 门户条目的四项
 6. 第 8.3 小节的十六个 E2E 用例全部通过，其中 E2E-T-01 至 E2E-T-04 对应规格第 19 章阶段 3 门户条目的四项闭环用例。
 7. 第 8.1 小节的四组领域属性测试各运行不少于 1000 个用例且无反例。
 8. 第 6.7 小节的六个并发场景全部通过，`procure.goods_receipt.posted.v1` 的重复投递 3 次业务效果、外发事件与审计记录各只产生一次。
-9. 第 8.6 小节的六个 `ReconCheck` 已实现并注册到 `ReconRegistry`，注入任一差额后对账差异事项生成且关账请求被拒绝，差额清零后关账可通过。
+9. 第 8.6 小节的六个 `ReconCheck` 已在 `ep-app-procure` 实现并在 `apps/job-worker/src/wiring.rs` 经 `ReconRegistry::register` 注册，注入任一差额后对账差异事项生成且关账请求被拒绝，差额清零后关账可通过。
 10. 第 8.4 小节的四项数据保护控制测试通过，其中导出审批以「无导出入口」判定并已取得安全负责人的书面确认。
 11. 第 8.8 小节的覆盖率门槛全部达标，`cargo llvm-cov --fail-under-lines` 在 CI 上通过。
 12. 依赖方向自检脚本通过：`ep-domain-procure` 与 `ep-domain-portal` 不出现 sqlx、reqwest、tokio 的 IO 模块、`std::fs`、`std::net`、`SystemTime::now`、`rand` 六类符号；`ep-app-procure` 与 `ep-app-portal` 之间无相互依赖；除 `apps/*/src/wiring.rs` 外无 `use ep_adapter_db_pg::` 出现。
@@ -1027,8 +1026,9 @@ E2E-T-01 至 E2E-T-04 逐条对应规格第 19 章阶段 3 门户条目的四项
 22. 已提供本模块的子账侧余额查询函数，函数名 `GrniSubledgerBalanceQuery`、返回类型 `Money`，返回该法人该会计期间的已收货未收票暂估合计，由阶段 10 在其 `SubledgerBalanceProvider` 上包装。
 23. `PurchaseReturnLinkPort::link_drop_ship_return` 已实现并在 wiring 中替换阶段 6 注入的 `NoopPurchaseReturnLinkPort`，直运退货勾稽端到端通过。
 24. 八个单据类型码 PR、PO、GR、RJ、PRT、PAYR、DN、SIU 已登记入 `docs/data-dictionary.md` 的单据类型码一节与 `ep-platform-sequence` 的常量表，`xtask configdoc --check-doc-type-codes` 通过。
-25. `NoopReceiptInvoiceMatchQueryPort` 与 `NoopPurchaseCreditNotePort` 已在两个 wiring.rs 注入并带 `// TODO(stage-10): replace with real impl` 注释，依赖这两个端口的发票已登记分支验收已按顺延到 M7 登记。
-26. 严重与高危缺陷全部关闭，中危缺陷已登记并给出规避方案与责任人。
+25. `NoopReceiptInvoiceMatchQueryPort`、`NoopPurchaseCreditNotePort`、`NoopPayableLedgerQuery` 与 `NoopSupplierStatementQuery` 已在两个 wiring.rs 注入并各带 `// TODO(stage-10): replace with real impl` 注释，依赖这四个端口的发票已登记分支与财务应付台账比对两项验收已按顺延到 M7 登记。
+26. `platform_core.append_only_registry` 中存在 `procure.goods_receipt_line_costings` 一行，其 `mode` 为 `APPEND_ONLY`、`mutable_columns` 为空数组，仅追加触发器已按该行挂接，`xtask sqlcheck` 执行 `db/checks/append_only_consistency.sql` 返回零行。
+27. 严重与高危缺陷全部关闭，中危缺陷已登记并给出规避方案与责任人。
 
 ---
 
@@ -1114,11 +1114,11 @@ E2E-T-01 至 E2E-T-04 逐条对应规格第 19 章阶段 3 门户条目的四项
 
 假设 A1：采购需求是单行单据。理由是 PRD 第 4.3.2 小节的字段表只有单个物料与单个数量，没有明细行的结构。切换代价为新增一张 `procure.purchase_requisition_lines` 表与一次数据回填迁移，属中等代价，因此在整合期确认。
 
-假设 A2：收货与采购退货的采购单据、库存两账与总账凭证在同一个数据库事务内同步写入，不经 Outbox 异步过账。理由有三条：规格第 17.3 章要求存货金额账合计等于总账存货科目余额；PRD 第 4.5.3 小节把凭证号列为收货登记的输出；PRD 第 4.5.6 小节要求库存或财务侧写入不一致时界面返回明确失败。三条同时成立只有同事务一种实现。由此产生的推论是：规格第 10.2 章关账受理前提下不存在收货与退货的异步过账路径，受理前提二统计的是这两个事件的未投递条目而不是未生成的凭证。本阶段仍在 Outbox 信封上携带 `posting_date` 与 `accounting_period_id`，并按 A-21 把两个事件登记入 `ledger.posting_trigger_event_types`，使该统计可枚举。总账与库存的契约端口按 A-01 接受 `&mut dyn Tx`，已由阶段 1 提供。
+假设 A2：收货与采购退货的采购单据、库存两账与总账凭证在同一个数据库事务内同步写入，不经 Outbox 异步过账。理由有三条：规格第 17.3 章要求存货金额账合计等于总账存货科目余额；PRD 第 4.5.3 小节把凭证号列为收货登记的输出；PRD 第 4.5.6 小节要求库存或财务侧写入不一致时界面返回明确失败。三条同时成立只有同事务一种实现。由此产生的推论是：规格第 10.2 章关账受理前提下不存在收货与退货的异步过账路径，受理前提二统计的是这两个事件的未投递条目而不是未生成的凭证。本阶段仍在 Outbox 信封上携带 `posting_date` 与 `accounting_period_id`，两个事件在 `ledger.posting_trigger_event_types` 中的登记行按裁定 A-21 由阶段 9a 的种子迁移写入、本阶段只做运行期比对，使该统计可枚举。总账与库存的契约端口按 A-01 接受 `&mut dyn Tx`，已由阶段 1 提供。
 
 假设 A3：采购退货在「采购发票已登记」分支下调用 `ep_contract_invoice::PurchaseCreditNotePort::register_credit_note`，进项红字发票由 invoice 模块登记，采购侧只提供 `RegisterPurchaseCreditNote` 所需的供应商、原采购发票、退货单标识、过账日期与逐行的原发票行、收货行、数量、净额、税额。理由是 PRD 第 4.6.2 小节的字段表没有红字发票字段，而规格第 5.2 章采购退货事件要求按红字发票价税合计入账。该端口由阶段 10 交付，本阶段注入 `NoopPurchaseCreditNotePort`，该分支的端到端验收顺延到 M7。同一小节的「供应商不接受退回而不冲回成本」对应 U-C-09，本阶段的取值是：该标注由 invoice 模块在其成本冲回入口上接收，采购侧不置位，理由是它影响的是成本归集查询而不是采购单据。该取值须在整合期与成本阶段对齐。
 
-假设 A4（对应 U-C-08）：供应商的资质证照、价格资料、交期资料唯一存储在 mdm 的供应商档案及其版本上，`procure` 只存准入结论、质量记录与风险记录三类。理由是 PRD 第 2.4.1 小节与第 2.4.3 小节已把这三类定义为供应商档案的字段与子表，而 PRD 第 4.8.1 小节只是从采购视角复述。切换代价为把三张表从 mdm 迁到 procure 并改门户提交的写入目标，属中等代价。准入结论存于 procure 的理由是它只被采购侧读取且带自己的状态机。
+假设 A4（对应 U-C-08）：供应商的资质证照、价格资料、交期资料与风险记录唯一存储在 mdm 的供应商档案及其版本与子表上，`procure` 只存准入结论与质量记录两类；风险记录按裁定 C-10 一律经 `ep_contract_mdm::SupplierRiskRecordPort::append` 与 `::list` 读写，`procure.supplier_risk_records` 已撤销，见第 3.2.2 小节。理由是 PRD 第 2.4.1 小节与第 2.4.3 小节已把这四类定义为供应商档案的字段与子表，而 PRD 第 4.8.1 小节只是从采购视角复述。切换代价为把四张表从 mdm 迁到 procure 并改门户提交的写入目标，属中等代价。准入结论存于 procure 的理由是它只被采购侧读取且带自己的状态机。
 
 假设 A5：门户账号的身份主体、口令、MFA、会话与设备登记归 `platform_identity`，`portal.supplier_portal_users` 只存账号与供应商与法人的授权绑定及五项能力白名单。理由是规格第 12.1 章把外部供应商用户列为身份能力，重复建目录会产生第二套认证面。
 

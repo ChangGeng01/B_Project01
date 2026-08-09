@@ -56,12 +56,12 @@
 
 | crate | 归属进程 | 改动 |
 |---|---|---|
-| ep-platform-obs | core-server、job-worker、ops-agent | 扩展阶段 2 已交付的 DegradationLedger 与 degradation_windows 的 kind 取值；新增运维中心台账模型：RPO 依据判定、容量与配额事件、部署记录；新增 crates/platform/obs/src/disposal.rs 的 OpsDisposalService，实现阶段 3b 在 crates/platform/file/src/port/disposal.rs 定义的 DisposalPort；新增本阶段指标注册项 |
+| ep-platform-obs | core-server、job-worker、ops-agent | 扩展阶段 2 已交付的 DegradationLedger 与 degradation_windows 的 kind 取值；新增运维中心台账模型：RPO 依据判定、容量与配额事件、部署记录；新增 crates/platform/obs/src/disposal.rs 的 OpsDisposalService，实现阶段 3b 在 crates/platform/file/src/port/disposal.rs 定义的 DisposalPort；新增 crates/platform/obs/src/capability.rs 中本阶段各用例的能力域码与动作类别常量；新增本阶段指标注册项 |
 | ep-platform-file | core-server | 新增附件写出范围查询端口，向 archive-writer 提供对象范围与元数据提交状态；不改动上传流水线状态机 |
 | ep-platform-audit | core-server | 新增审计证据存储的写出范围查询端口，供 archive-writer 取段根与签名对象；审计链与分段签名本身不改 |
 | ep-platform-kms 侧 ep-adapter-kms | archive-writer、backup-writer | 新增实例级部署备份加密密钥的解封与信封操作 |
 | ep-adapter-ipc | 全部 | 新增本阶段七种报文类型 |
-| ep-platform-recon | job-worker | 本体、三张表、ReconCheck 与 ReconExecutor 由阶段 9a 交付；本阶段只新增恢复验收模式的调用入口与留证字段，调用形态为 ReconExecutor::run，run_kind 取 RECOVERY_ACCEPTANCE；本阶段如需登记校验语句一律以实现 ReconCheck 并在 wiring 注册的形式提供，不另建登记路径 |
+| ep-platform-recon | job-worker | 本体、三张表、ReconCheck 与 ReconExecutor 由阶段 9a 交付；本阶段只新增恢复验收模式的调用入口与留证字段，调用形态为 ReconExecutor::run，run_kind 取 RECOVERY_ACCEPTANCE；本阶段不实现也不注册任何 ReconCheck，注册方清单见裁定 A-06 |
 | apps/archive-writer、apps/backup-writer、apps/ops-agent | 同名 | 由骨架变为完整实现 |
 | apps/core-server | core-server | 新增运维中心用例、上报受理器、交叉核对器的装配 |
 
@@ -145,7 +145,7 @@ kind 取值：OFFSITE_SINK_NOT_CONFIGURED、OFFSITE_SINK_OFFLINE_MEDIA_RPO_DEGRA
 列：id、security_level、data_scope_tags、sampled_at timestamptz not null、slot_name text not null、retained_bytes bigint not null、max_slot_wal_keep_bytes bigint not null、retention_ratio numeric(9,6) not null、pg_wal_bytes bigint not null、created_at、created_by。
 索引：ix_wal_retention_samples_sampled_at。保留 90 天，超期按基线第 3.6 节允许的过期指标快照清理路径删除。
 
-表 14 platform_ops.capacity_samples，磁盘五项水位采样，可按期清理。
+表 14 platform_ops.capacity_samples，磁盘容量水位采样，可按期清理。
 列：id、security_level、data_scope_tags、sampled_at、component text not null CHECK in ('ATTACHMENT_CURRENT','ATTACHMENT_HISTORY','DB_DATA','ARCHIVE_LOCAL','BASEBACKUP_SPILL','SEARCH_AND_TEMP')、used_bytes bigint not null、floor_bytes bigint not null、ratio numeric(9,6) not null、created_at、created_by。
 索引：ix_capacity_samples_sampled_at。保留 400 天，覆盖年度容量复核。
 
@@ -356,6 +356,8 @@ ep_degradation_windows_open 由阶段 2 注册并填充，本阶段只扩展其 
 ### 5. API 契约
 
 统一前提。全部端点前缀 /api/v1/platform，请求头按基线第 5.6 节固定集合，写请求必带 Idempotency-Key，响应按基线第 5.2 节封套。分页、排序、过滤按基线第 5.3 节。权限一律按 ABAC 判定，主体角色取运维管理员、安全管理员、审计管理员三类，对当前上下文不可见的记录按基线第 5.5 节返回 404 与 PLATFORM.AUTHZ.NOT_FOUND_OR_DENIED。本节端点不涉及规格第 12.1 章六类高风险操作，因此不要求 X-Reauth-Token，只有密钥恢复材料核验登记一项要求审批链且申请人不可自审。处置执行不在本节端点内，其双人控制与重新认证凭证要求见第 4.10 节。
+
+能力域码与动作类别按裁定 A-20 声明。本节全部路由逐用例声明一对常量，命名为用例名的全大写下划线形式后接 _DOMAIN 与 _ACTION，类型取阶段 1 在 ep-foundation 冻结的 CapabilityDomain 与 ActionClass，本阶段不自定义能力域码，也不重新定义这两个枚举。本节路由都在 /api/v1/platform 前缀下，常量一律声明在 crates/platform/obs/src/capability.rs，能力域一律取 CapabilityDomain::PlatformAdminLowcodeOps。动作类别按只读查询取 Read、部署记录导出取 Export、其余写端点取 Write。ops-agent 的三个端点与第 4.10 节的处置执行都不在 /api/v1 命名空间内，不参与该判定，不声明常量。xtask configdoc 断言每个 /api/v1/ 路由都能解析到一对常量，缺失即构建失败。
 
 | 方法与路径 | 请求 | 响应 data | 主要错误码 | 幂等 | 权限 |
 |---|---|---|---|---|---|
@@ -579,7 +581,7 @@ ep-release-gate 逐项判定，判定结论进入发布证据包，任一为否�
 18. 电子签章的认证清单已补齐：crates/adapter/esign/tests/contract_sandbox.rs 对真实沙箱的一次通过记录已归档，或已提交规格附录 B 允许的等效验证证据。
 19. ep_replication_crosscheck_age_seconds 已由本阶段注册且在 docs/metrics-catalog.md 内唯一；本阶段未重复登记 ep_degradation_windows_open、ep_db_pool_connections 与 ep_db_statement_duration_seconds。
 20. platform_ops.degradation_windows 的 kind 取值已由阶段 2 的 2 个扩展至 18 个，两条 CHECK 与三个索引已追加，阶段 2 交付的 ux_degradation_windows_kind_scope_closed 与 ck_degradation_windows_open_order 未被改写。
-21. 本阶段全部路由的能力域码与动作类别常量已按 A-20 声明，取值取 foundation::CapabilityDomain 与 foundation::ActionClass，xtask configdoc 通过。
+21. 本阶段全部路由的能力域码与动作类别常量已按 A-20 声明在 crates/platform/obs/src/capability.rs，能力域一律取 foundation::CapabilityDomain::PlatformAdminLowcodeOps，动作类别取 foundation::ActionClass，xtask configdoc 通过。
 
 ---
 

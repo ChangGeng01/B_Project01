@@ -18,7 +18,7 @@
 
 与规格第 10.2 章关账受理前提二的关系：受理前提二的判定语句按跨阶段裁定 C-28 固定为一句话，本阶段与阶段 4、阶段 9 三处逐字一致，即该法人该期间内，`platform_msg.outbox_events` 中 `status` 属于 PENDING 或 DISPATCHING、`posting_date` 落在该期间起止之间、且 `event_type` 命中 `ledger.posting_trigger_event_types` 的条目数为零，且 `platform_msg.dead_letters` 中 `state` 属于 OPEN 或 REPAIRING、同样命中该注册表的条数为零。`posting_date` 为空的平台事件一律不计入，理由是它们不产生凭证。判定所用视图固定为 `ledger.v_pending_posting_backlog`，两个错误码固定为 `LEDGER.PERIOD_CLOSE_REQUEST.PENDING_POSTING_BACKLOG` 与 `LEDGER.PERIOD_CLOSE_REQUEST.UNREPAIRED_DEAD_LETTERS`，视图与错误码均由阶段 9a 提供。
 
-本阶段发布的 12 个事件中有 8 个按 A-21 登记到 `ledger.posting_trigger_event_types`，见第 5.8 节末表。这 8 个事件的凭证已在业务事务内生成，Outbox 条目只驱动派生传播，即站内通知、报表投影、检索索引与客户 360 视图；但按上述判定语句，它们在被消费完毕之前仍计入该计数，因此关账受理需等待其消费结束，而不是等待任何异步过账。
+本阶段发布的 12 个事件中有 8 个在 `ledger.posting_trigger_event_types` 中有登记行，按裁定 A-21 该登记行由阶段 9a 的种子迁移一次写入，本阶段不新增任何回填迁移，见第 5.8 节末表。这 8 个事件的凭证已在业务事务内生成，Outbox 条目只驱动派生传播，即站内通知、报表投影、检索索引与客户 360 视图；但按上述判定语句，它们在被消费完毕之前仍计入该计数，因此关账受理需等待其消费结束，而不是等待任何异步过账。
 
 与顺延入账的关系：会计期间在业务事务内由 `AccountingPeriodResolver` 一次解析并同时写入凭证与全部子账条目，因此规格第 10.2 章“受理时点在途写事务”这一集合天然覆盖本阶段的在途提交，等待该集合结束后建立的快照必然包含这些凭证。
 
@@ -79,7 +79,7 @@ PRD 第 6.2.2 的资金账户字段表没有期初余额，而第 6.2.4 的资�
 3. 36 张业务表与 17 个只读视图在 `ep` 库中建立，其中 invoice 13 张、finance 23 张；17 个视图为 10 个对账视图、4 个业务查询视图与 3 个受治理数据集视图。全部带法人列的表已 `ENABLE` 且 `FORCE` 行级安全并挂上统一策略。
 4. 58 个 HTTP 端点在 `/api/v1/invoice/**` 与 `/api/v1/finance/**` 下可用，含 OpenAPI 描述文件 `docs/openapi/invoice.v1.yaml` 与 `docs/openapi/finance.v1.yaml`。相对原计划新增两个：`POST /api/v1/invoice/purchase-invoices` 与 `POST /api/v1/finance/opening-balances/actions/import`。
 5. 16 个对外契约 trait 在 `ep-contract-finance` 与 `ep-contract-invoice` 中定义并有实现注册到 `apps/core-server/src/wiring.rs` 与 `apps/job-worker/src/wiring.rs`，供 sales、procure、clm、portal、reporting、ledger 六个模块调用，清单见第 5.9 节。其中 8 个 trait 是阶段 6 与阶段 7 已注入空实现的反向依赖点，本阶段负责替换。
-6. 12 个领域事件登记到 `docs/event-catalog.md` 并可从 `platform_msg.outbox_events` 中查得，其中 8 个按 A-21 回填到 `ledger.posting_trigger_event_types` 的 `event_type` 列。
+6. 12 个领域事件登记到 `docs/event-catalog.md` 并可从 `platform_msg.outbox_events` 中查得，其中 8 个在 `ledger.posting_trigger_event_types` 中有登记行，按裁定 A-21 该登记行由阶段 9a 的种子迁移写入，本阶段只做启动自检比对，不交付回填迁移。
 7. 规格第 17.3 章与 PRD 第 6.13.1 合计 10 个勾稽项的对账视图全部完整实现，可在应用内按法人与会计期间查询并展示子账侧、总账侧与差额三列。其中存货与已收货未收票两项按裁定 B-08 由本阶段把阶段 8 的 `InventorySubledgerBalanceQuery` 与阶段 7 的 `GrniSubledgerBalanceQuery` 两个查询函数包装为 `SubledgerBalanceProvider` 实现后接入，不再是外壳。
 8. 一条可重复执行的端到端脚本 `testkit/scenarios/stage10_ar_ap_closed_loop.rs`，覆盖规格第 8 章闭环第 6、7、9、10、11 步，并串起规格第 17.2 章十五类必测分支中的第二、五、六、八、九、十三类。
 9. `ep-datagen` 增加往来与发票子集生成器，可在基准规模下产出销项发票 6 万张、进项发票 4 万张、应收明细条目 6 万条、应付明细条目 4 万条、到款单 3 万张、付款单 2 万张、资金腿明细 6 万条，用于附录 A.1 的应收账龄分析与应付账龄分析两项报表实测。
@@ -117,7 +117,7 @@ PRD 第 6.2.2 的资金账户字段表没有期初余额，而第 6.2.4 的资�
 | ep-testkit | 增加 `CashAccountFixture`、`InvoiceApplicationBuilder`、`SalesInvoiceBuilder`、`ReceiptBuilder`、`PaymentBuilder`、`RefundBuilder`、`ReceivableEntryProbe`、`ReconciliationProbe` 八个构造器与探针 | 阶段 1 建立，本阶段追加 |
 | ep-datagen | 增加往来与发票子集 | 阶段 1 建立，本阶段追加 |
 | apps/core-server | `wiring.rs` 注入 16 个契约实现，路由注册 58 个端点；其中 8 个注入行替换阶段 6 与阶段 7 留下的 `Noop` 前缀空实现 | 本阶段追加 |
-| apps/job-worker | 注册批量导入任务处理器与对账取数语句集 | 本阶段追加 |
+| apps/job-worker | 注册批量导入任务处理器；按裁定 A-06 实现一个 `ReconCheck` 并在 `apps/job-worker/src/wiring.rs` 经 `ReconRegistry::register` 注册，`check_code` 为 `FIN_CROSS_MODULE_LINK`、`category` 为 `CROSS_MODULE_LINK`，一次覆盖本模块全部跨模块逻辑引用，不按引用逐条建校验项 | 本阶段追加 |
 
 本阶段不新增进程、不新增 schema、不新增模块码、不新增错误分类、不新增依赖方向。`ep-domain-finance` 与 `ep-domain-invoice` 不依赖对方，跨模块只由 `ep-app-invoice` 依赖 `ep-contract-finance`，反向不成立。
 
@@ -220,6 +220,8 @@ PRD 第 6.2.2 的资金账户字段表没有期初余额，而第 6.2.4 的资�
 
 列为 `sales_invoice_id`（同 schema 外键）、`receipt_plan_line_id`（跨模块逻辑引用 clm）、`linked_net_amount numeric(18,2)`、`linked_gross_amount numeric(18,2)`、`is_reversed boolean`，加公共列。红冲或作废登记时追加一条 `is_reversed` 为 true 的反向行，不更新原行，理由是勾稽记录属于证据链。
 
+收款计划行的取数唯一经 `ep_contract_clm::ContractPaymentScheduleQuery::schedules(tx, ctx, contract_id)`，按裁定 C-20 该查询由阶段 6 提供，收付款计划行的唯一表为 `clm.contract_payment_schedules`，`ep_contract_finance::ReceivablePlanPort` 已撤销，本阶段不派生第二套收付款计划。
+
 ##### 3.1.6 invoice.invoice_import_batches（批量导入批次）
 
 列为 `doc_no`、`status`（`ck_invoice_import_batches_status` 取值 PENDING、RUNNING、SUCCEEDED、PARTIALLY_FAILED、FAILED）、`total_rows int`、`succeeded_rows int`、`failed_rows int`、`file_object_id uuid`（逻辑引用 platform_file）、`result_object_id uuid`、`started_at`、`finished_at`、`reauth_ref`、`approval_ref`，加公共列。
@@ -278,7 +280,7 @@ PRD 第 6.2.2 的资金账户字段表没有期初余额，而第 6.2.4 的资�
 
 列为 `code`、`display_name`、`from_days int`、`to_days int`（`to_days` 为空表示最后一档开区间）、`sort_no`、`is_active`、`deactivated_at`，加公共列。约束 `ck_aging_bucket_definitions_range` 表达 `from_days >= 0` 且 `to_days` 为空或大于 `from_days`。
 
-本表按裁定 C-08 是临时表：账龄分档的唯一出处为阶段 11 的 `reporting.aging_bucket_profiles` 与 `reporting.aging_bucket_lines`，阶段 11 交付 `V…__reporting_backfill_migrate_aging_buckets_from_finance.sql` 与 `V…__finance_drop_aging_bucket_definitions.sql` 两个迁移文件，把本表数据迁走并删表，两个文件均由阶段 11 提供。本阶段的账龄查询在阶段 11 到位后改经 `ep_contract_reporting::AgingBucketQuery::buckets(tx, ctx, legal_entity_id, ledger_side)`，不保留第二套口径。
+本表按裁定 C-08 是临时表：账龄分档的唯一出处为阶段 11 的 `reporting.aging_bucket_profiles` 与 `reporting.aging_bucket_lines`。迁数据与删表两个迁移文件按裁定通则第五条一律放在 `db/migrations/reporting/` 目录下，文件名为 `V202611031060__reporting_backfill_migrate_aging_buckets_from_finance.sql` 与 `V202611031065__reporting_drop_finance_aging_bucket_definitions.sql`，两个文件均由阶段 11 提供，本阶段一个都不提供，也不在 `db/migrations/finance/` 下建删表文件。本阶段的账龄查询在阶段 11 到位后改经 `ep_contract_reporting::AgingBucketQuery::buckets(tx, ctx, legal_entity_id, ledger_side)`，不保留第二套口径。
 
 ##### 3.2.2 finance.cash_accounts（资金账户档案）
 
@@ -573,7 +575,6 @@ invoice 目录：
 13. V202611030950__invoice_backfill_seed_tax_rate_options.sql
 14. V202611030955__invoice_backfill_migrate_tax_rates_from_mdm.sql
 15. V202611030960__invoice_create_dataset_views.sql
-16. V202611030965__invoice_backfill_posting_trigger_event_types.sql
 
 第 6 与第 7 两个文件按裁定 A-10 排在 `invoice.invoice_reversals` 之后。第 14 个文件按裁定 C-11 把阶段 5 的分类项税率一类迁入 `invoice.tax_rate_options` 并撤销阶段 5 的 `MdmTaxRateStub`。第 15 个文件按裁定 A-18 建立 `invoice.v_purchase_invoices_dataset` 并在同一文件内执行 `GRANT SELECT` 给 `ep_analyst_ro`。
 
@@ -602,13 +603,12 @@ finance 目录：
 21. V202611031100__finance_backfill_seed_aging_buckets.sql
 22. V202611031105__finance_create_dataset_views.sql
 23. V202611031110__finance_backfill_append_only_registry.sql
-24. V202611031115__finance_backfill_posting_trigger_event_types.sql
 
-第 22 个文件按裁定 A-18 建立 `finance.v_receivable_ledger_entries` 与 `finance.v_payable_ledger_entries` 并授予 `ep_analyst_ro`。第 23 个文件按裁定 B-02 向 `platform_core.append_only_registry` 登记本阶段的七张表 `finance.receivable_entries`、`finance.payable_entries`、`finance.advance_receipt_entries`、`finance.advance_payment_entries`、`finance.unbilled_ar_entries`、`finance.overbilling_entries`、`finance.cash_ledger_entries`，逐表给出 `immutable_columns`，登记与触发器的一致性由 `db/checks/append_only_consistency.sql` 经 `xtask sqlcheck` 断言。
+第 22 个文件按裁定 A-18 建立 `finance.v_receivable_ledger_entries` 与 `finance.v_payable_ledger_entries` 并授予 `ep_analyst_ro`。第 23 个文件按裁定 B-02 向 `platform_core.append_only_registry` 登记本阶段的两张表 `finance.unbilled_ar_entries` 与 `finance.cash_ledger_entries`，两行的 `mode` 取 `APPEND_ONLY`、`mutable_columns` 取 `'{}'`；`finance.receivable_entries`、`finance.payable_entries`、`finance.advance_receipt_entries`、`finance.advance_payment_entries`、`finance.overbilling_entries` 五张表带核销金额与状态机，属可更新表，一律不登记。该文件读 finance 写 platform_core，按裁定通则第五条放在两者中位次靠后的 `db/migrations/finance/` 目录下。登记与触发器的一致性由 `db/checks/append_only_consistency.sql` 经 `xtask sqlcheck` 断言。
 
-两个 `backfill_posting_trigger_event_types` 文件按裁定 A-21 只对 `ledger.posting_trigger_event_types` 执行 UPDATE，按 `ledger_event_kind` 定位并写入 `event_type`，不新增行；invoice 目录的文件覆盖 SALES_INVOICE_ISSUED、PURCHASE_INVOICE 与 INVOICE_REVERSED，finance 目录的文件覆盖 RECEIPT_REGISTERED、PAYMENT_REGISTERED 与 REFUND_REGISTERED，逐条对照见第 5.8 节末表。全部 backfill 与 seed 迁移的 `created_by` 一律取 `ep_foundation::SYSTEM_PRINCIPAL_ID`，即 `00000000-0000-7000-8000-000000000001`，按裁定 A-02，不得自选取值。
+按裁定 A-21，本阶段两个目录一律不建 `backfill_posting_trigger_event_types` 文件，`ledger.posting_trigger_event_types` 的全部登记行由阶段 9a 的种子迁移一次写入，本阶段只做运行期比对，逐条对照见第 5.8 节末表。全部 backfill 与 seed 迁移的 `created_by` 一律取 `ep_foundation::SYSTEM_PRINCIPAL_ID`，即 `00000000-0000-7000-8000-000000000001`，按裁定 A-02，不得自选取值。
 
-每个文件头带 `-- rollback:` 段。建表类文件的回退为对应 `drop table`；seed 与 backfill 文件的回退为按 `code` 删除出厂预置行或把被写入的列置回空；`enable_row_level_security` 与 `create_indexes` 的回退为逐条 `drop policy` 与 `drop index`；`create_dataset_views` 的回退为 `drop view` 加 `revoke`。本阶段没有改列类型与收紧非空的迁移，因此全部迁移可在线执行。
+每个文件头带 `-- rollback:` 段。建表类文件的回退为对应 `drop table`；seed 与 backfill 文件的回退为按 `code` 删除出厂预置行，或按 `schema_name` 与 `table_name` 删除本次登记的两行；`enable_row_level_security` 与 `create_indexes` 的回退为逐条 `drop policy` 与 `drop index`；`create_dataset_views` 的回退为 `drop view` 加 `revoke`。本阶段没有改列类型与收紧非空的迁移，因此全部迁移可在线执行。
 
 ---
 
@@ -914,18 +914,18 @@ OPEN 到 PARTIALLY_SETTLED 到 SETTLED，三条结清路径任一条都推进该
 
 上述事件的消费方均不做过账，见第 0.1 节。事件的 `aggregate_type` 按共享基线第 6.1 节取 `<schema>.<表名>`，采购发票登记事件取 `invoice.purchase_invoices`。
 
-按裁定 A-21，登记表与登记接口归阶段 9a，登记行归产生该事件的阶段。本阶段在两个 `backfill_posting_trigger_event_types` 迁移中按下表定位并写入 `event_type`，运行期自检经 `ep_contract_ledger::PostingTriggerRegistry::register` 比对。
+按裁定 A-21，登记表、登记接口与全部登记行均归阶段 9a：`ledger.posting_trigger_event_types` 的 13 行由阶段 9a 的种子迁移一次写入并直接填入 `event_type` 与 `registered_by_module`，本阶段不新增任何回填迁移。本阶段只在启动自检中经 `ep_contract_ledger::PostingTriggerRegistry::register` 对下表八个事件做幂等 upsert 比对，与种子行不一致即以退出码 78 启动失败。
 
-| event_type | ledger_event_kind | 迁移所在目录 |
-|---|---|---|
-| invoice.sales_invoice.issued.v1 | SALES_INVOICE_ISSUED | invoice |
-| invoice.purchase_invoice.registered.v1 | PURCHASE_INVOICE | invoice |
-| invoice.sales_invoice.reversed.v1 | INVOICE_REVERSED | invoice |
-| invoice.purchase_invoice.reversed.v1 | INVOICE_REVERSED | invoice |
-| finance.receipt.registered.v1 | RECEIPT_REGISTERED | finance |
-| finance.payment.registered.v1 | PAYMENT_REGISTERED | finance |
-| finance.refund.registered.v1 | REFUND_REGISTERED | finance |
-| finance.cash_document.reversed.v1 | REFUND_REGISTERED | finance |
+| event_type | ledger_event_kind |
+|---|---|
+| invoice.sales_invoice.issued.v1 | SALES_INVOICE_ISSUED |
+| invoice.purchase_invoice.registered.v1 | PURCHASE_INVOICE |
+| invoice.sales_invoice.reversed.v1 | INVOICE_REVERSED |
+| invoice.purchase_invoice.reversed.v1 | INVOICE_REVERSED |
+| finance.receipt.registered.v1 | RECEIPT_REGISTERED |
+| finance.payment.registered.v1 | PAYMENT_REGISTERED |
+| finance.refund.registered.v1 | REFUND_REGISTERED |
+| finance.cash_document.reversed.v1 | REFUND_REGISTERED |
 
 #### 5.9 对外契约 trait
 
@@ -1192,14 +1192,15 @@ OPEN 到 PARTIALLY_SETTLED 到 SETTLED，三条结清路径任一条都推进该
 18. 严重与高危缺陷为零，中危缺陷登记并给出规避方案与责任人，按规格第 17.2 章发布缺陷门禁的口径。
 19. invoice 与 finance 两个模块在规格第 6.2 章能力矩阵中取值为完整或简化的能力域，其四端界面已实现并通过 Playwright 与 tauri-driver 的桌面用例、XCUITest 与 Espresso 的移动用例；取值为 VIEW_ONLY 的能力域只实现只读视图；取值为 NOT_APPLICABLE 的不实现入口。
 20. 本模块数据集视图 `invoice.v_purchase_invoices_dataset`、`finance.v_receivable_ledger_entries`、`finance.v_payable_ledger_entries` 已发布并授予 `ep_analyst_ro`，列签名已同步给阶段 11，阶段 11 的自检项 `reporting-dataset-signature-matched` 在三者上通过。
-21. 本阶段全部路由的能力域码与动作类别常量已声明，`xtask configdoc` 通过。
+21. 本阶段全部路由的能力域码与动作类别常量已声明在 `crates/contract/invoice/src/capability.rs` 与 `crates/contract/finance/src/capability.rs`，`xtask configdoc` 通过。
 22. 本模块的 `InvoiceReferenceCounter`、`FinanceReferenceCounter`、`InvoiceSalesTradeHistoryProvider`、`InvoicePurchaseTradeHistoryProvider` 已实现并注册到阶段 5 提供的两个注册表。
 23. `finance.cash_accounts` 的银行账号查重经 `derive_blind_key` 与 `BlindIndex` 实现，唯一约束名为 `ux_cash_accounts_legal_entity_id_bank_account_no_bidx`，全库无第二套账号哈希实现。
-24. `platform_core.append_only_registry` 已登记本阶段七张表及其 `immutable_columns`，`db/checks/append_only_consistency.sql` 经 `xtask sqlcheck` 通过。
-25. `ledger.posting_trigger_event_types` 的八个 `event_type` 已按第 5.8 节末表回填，运行期自检与该表比对无差异。
+24. `platform_core.append_only_registry` 已登记本阶段两张表 `finance.unbilled_ar_entries` 与 `finance.cash_ledger_entries`，两行的 `mode` 取 `APPEND_ONLY`、`mutable_columns` 取 `'{}'`，五张可更新台账表未登记，`db/checks/append_only_consistency.sql` 经 `xtask sqlcheck` 通过。
+25. 本阶段八个事件在 `ledger.posting_trigger_event_types` 中的登记行由阶段 9a 的种子迁移写入，本阶段不含任何 `backfill_posting_trigger_event_types` 迁移；启动自检经 `PostingTriggerRegistry::register` 与第 5.8 节末表逐条比对无差异，不一致时以退出码 78 启动失败。
 26. 八个反向依赖点的空实现已全部替换并端到端通过：阶段 6 注入的 `NoopUnbilledArPort`、`NoopReceivableExposureQuery` 与发票冲销状态查询空实现，阶段 7 注入的 `NoopPurchaseCreditNotePort`、`NoopReceiptInvoiceMatchQueryPort`、超量开票匹配、应付余额查询与供应商对账查询的空实现；阶段 6 顺延到本阶段的 `SALES.SALES_RETURN.INVOICE_NOT_CREDIT_NOTED` 判定与交付确认过渡科目净额断言在本阶段通过。
 27. 税率字典迁移 `V202611030955__invoice_backfill_migrate_tax_rates_from_mdm.sql` 执行成功，阶段 5 的 `MdmTaxRateStub` 已撤销，全库取默认税率只有 `TaxRateOptionQuery` 一条路径。
 28. 期初导入通道在四个方向上各通过一次，导入后首个会计期间的八个 `finance.v_recon_*` 视图差额为零，且该通道不产生任何凭证。
+29. 本模块的一个 `ReconCheck` 已实现并在 `apps/job-worker/src/wiring.rs` 经 `ReconRegistry::register` 注册，`check_code` 为 `FIN_CROSS_MODULE_LINK`、`category` 为 `CROSS_MODULE_LINK`，阶段 9a 的 `ReconExecutor` 在该校验项上可跑出差异事项并可清零，见裁定 A-06。
 
 ---
 

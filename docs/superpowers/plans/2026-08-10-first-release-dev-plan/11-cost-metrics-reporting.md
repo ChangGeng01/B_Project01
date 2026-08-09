@@ -12,7 +12,7 @@
 | D-11-02 | 分析查询使用单个只读 REPEATABLE READ 事务。基线第 8.4 节只为内部对账与关账前校验规定该级别 | PRD 第 8.2.3 与第 8.3.2 节要求各维度合计加未分摊差异等于总额可由用户在结果表上直接验算。汇总行、未分摊差异行与总计行若分处不同快照，并发写入会使该恒等式在结果页上不成立 | 只影响 costing 与 reporting 的只读查询路径，不改变任何业务事务的隔离级别 |
 | D-11-03 | reporting.datasets 与 reporting.dataset_fields 不带 legal_entity_id，按基线第 3.8 节的全局配置字典归类，不建行级策略 | 两表是随版本发布的内置数据集目录，不承载业务数据，对全部法人取值相同。加法人列会产生两份完全相同的目录与两套目录不一致的可能 | 两表禁止承载业务数据，禁止出现指向具体业务记录的列，由本阶段越权测试目标逐列核对 |
 | D-11-04 | 启动自检新增命名项 reporting-dataset-signature-matched：已登记数据集的来源视图存在，且其列名与类型签名与 reporting.dataset_fields 一致，不一致以退出码 78 拒绝启动。自检项按基线第 7.3 节注册进 SelfCheckRegistry，用注册名标识，不用序号称呼 | 来源视图缺失或列签名漂移会使全部已发布报表在运行期取数失败。PRD 第 8.6 节要求该场景不返回可能错位的结果，把判定前移到启动期比留到运行期更可判定 | core-server 与 job-worker 执行，--check 模式一并执行；对已登记但其提供阶段尚未交付来源视图的目录行按已登记但未发布降级放行，该降级只允许存在于阶段 12 结束前，阶段 12 结束后转为强制 |
-| D-11-05 | 新增 5 个指标、28 个错误码、3 个领域事件、13 个配置键，清单见第 3.6、第 5.6、第 6.5、第 7 节 | 基线第 12 节要求先登记再实现 | 阶段结束时回写基线第 5.5、第 6.1、第 7.1、第 9.2 节 |
+| D-11-05 | 新增 5 个指标、36 个错误码、3 个领域事件、13 个配置键，清单见第 3.6、第 5.6、第 6.5、第 7 节 | 基线第 12 节要求先登记再实现 | 阶段结束时回写基线第 5.5、第 6.1、第 7.1、第 9.2 节 |
 
 #### 0.2 被 PRD 附录乙未决事项覆盖的部分与临时取值
 
@@ -33,7 +33,7 @@
 | U-I-11 导出格式与是否一律触发高风险 | 报表与指标导出一律按敏感数据导出处理，需重新认证与审批；格式为 XLSX、CSV、PDF 三种；单次上限 50000 行，取自基线第 11.5 节 | 若改为按数据范围分级判定，需依赖 U-B-18 的敏感字段清单，属新增判定，代价中 |
 | U-I-12 状态名称、版本号与回退粒度 | 状态取 PRD 第 8.4.5 节的 DRAFT、PENDING_APPROVAL、PUBLISHED、DEACTIVATED 四个；版本号为整数 version_no 自 1 递增；回退粒度为对象版本级 | 与第 10 节配置发布通道一并决策，代价低 |
 
-另有四条未决事项落在别的阶段但会改变本阶段的取数结果，本阶段按下列假定实现并在退出条件中留出核对项：U-D-11 账龄分档由本阶段承载配置结构，取值见第 3.4 节；U-D-12 到期日取值来源由财务阶段给出，本阶段只消费台账视图上的 due_date 列；U-C-09 已退货未冲回成本的置位动作由采购退货用例经本阶段的端口调用，本阶段只提供列、端口与筛选；U-F-06 直接费用类采购单据的合同订单项目字段是否至少必填其一直接决定未分摊差异桶的大小，本阶段不做假定，字段为空即归入未分摊差异。
+另有四条未决事项落在别的阶段但会改变本阶段的取数结果，本阶段按下列假定实现并在退出条件中留出核对项：U-D-11 账龄分档由本阶段承载配置结构，取值见第 3.4 节；U-D-12 到期日取值来源由财务阶段给出，本阶段只消费台账视图上的 due_date 列；U-C-09 已退货未冲回成本的置位方尚未决策，本阶段只提供 is_returned_not_reversed 列、CostReturnMarkPort 与按该标注的筛选，不指名调用方，第 8.5 节第十五类用例经该端口直接置位，该事项关闭后由其指定的阶段接入调用；U-F-06 直接费用类采购单据的合同订单项目字段是否至少必填其一直接决定未分摊差异桶的大小，本阶段不做假定，字段为空即归入未分摊差异。
 
 #### 0.3 本阶段显式声明的假设
 
@@ -57,10 +57,10 @@
 6. 统一前置查询服务的分析取数侧：数据集白名单、字段级与密级重写、记录级谓词注入、结果限量、高级只读 SQL 的解析与重写、超限终止到运维中心的记录。
 7. 同实例只读角色的取数隔离：ep_analyst_ro 独立连接池的取用路径、会话参数、只读事务、语句超时与单查询资源上限的实测触发与错误映射。
 8. 导出与打印渲染的后台任务：render_tasks 台账、job-worker 侧渲染、产物落为附件对象、站内通知回执、敏感导出的重新认证与审批留痕。
-9. 内部对账新增两个勾稽项与一个交叉核对项：在 ep-app-costing 实现三个 ep_platform_recon::ReconCheck，经 ReconRegistry::register 在 apps/job-worker 的 wiring 注册，进入每日校验与关账前强制校验。对账框架本体、platform_core 的三张对账表与 ReconExecutor 由阶段 9a 交付，本阶段不建框架。
+9. 内部对账新增两个勾稽项与一个交叉核对项：在 ep-app-costing 实现三个 ep_platform_recon::ReconCheck，经 ReconRegistry::register 在 apps/job-worker/src/wiring.rs 注册，进入每日校验与关账前强制校验。对账框架本体、platform_core 的三张对账表与 ReconExecutor 由阶段 9a 交付，本阶段不建框架，也不复述注册方清单与校验项总数，该清单的唯一出处是裁定 A-06。
 10. 基准数据集扩展：ep-datagen 产出成本与收入归集条目、交付节点与分批交付、账龄可测的历史分布，规模与规格附录 A.3 一致。
 11. 测试目标：tests/rls_matrix 的 costing 与 reporting 扩展、tests/analytics_isolation、tests/finance_metrics_consistency、四个 E2E 用例与六项常用报表性能用例。
-12. 文档：docs/data-dictionary 的 costing 与 reporting 两节、docs/error-codes.md 新增 28 条、docs/event-catalog.md 新增 3 条、docs/adr 中 D-11-01 至 D-11-05 五份决策记录。
+12. 文档：docs/data-dictionary 的 costing 与 reporting 两节、docs/error-codes.md 新增 36 条、docs/event-catalog.md 新增 3 条、docs/adr 中 D-11-01 至 D-11-05 五份决策记录。
 13. 四个报表类 ConfigItemApplier：ReportDefinitionApplier、MetricDefinitionApplier、DashboardDefinitionApplier、PrintTemplateApplier，位于 ep-app-reporting，实现阶段 3a 在 crates/platform/release/src/port/config_item.rs 交付的 ConfigItemApplier，注册进 ConfigItemApplierRegistry。
 14. costing.stock_value_adjust 消费者：消费阶段 8 发出的 inventory.stock_value_adjusted.v1，位于 crates/application/costing/src/consumer/stock_value_adjust.rs，在 job-worker 注册，向 costing.cost_entries 补记只影响金额账的调整对应的成本条目。
 15. 本模块四端界面：costing 与 reporting 两个模块的桌面端与移动端界面，目录为 clients/desktop/src/modules/costing、clients/desktop/src/modules/reporting、clients/mobile/src/modules/costing、clients/mobile/src/modules/reporting。
@@ -82,7 +82,7 @@
 
 | crate | 改动 | 进程 |
 |---|---|---|
-| ep-foundation | error::codes 新增 28 个常量；新增 Ratio 展示辅助与 UnallocatedBucket 类型 | 全部 |
+| ep-foundation | error::codes 新增 36 个常量；新增 Ratio 展示辅助与 UnallocatedBucket 类型 | 全部 |
 | ep-adapter-db | 新增只读事务句柄类型 ReadOnlyTx 与只读池抽象，不含 PostgreSQL 专有语法 | 全部 |
 | ep-adapter-db-pg | 新增 costing 与 reporting 两个 schema 的仓储实现；实现 ep_analyst_ro 只读池的取用钩子，含 SET TRANSACTION READ ONLY ISOLATION LEVEL REPEATABLE READ、statement_timeout、work_mem、temp_file_limit 与会话变量注入清除；实现聚合语句构造器 | core-server、job-worker |
 | ep-adapter-doc | 在阶段 5 交付的 SpreadsheetPort、DocTemplatePort、PdfRenderPort 三个 trait 上增量实现像素级套打的 PrintLayout 取值与 CSV 写出，不新增 trait | job-worker |
@@ -90,14 +90,15 @@
 | ep-platform-obs | 注册 5 个新指标 | 全部 |
 | ep-platform-authz | 消费侧扩展：本阶段调用其记录级谓词导出与字段级密级裁剪 API，不改其实现 | core-server |
 | ep-platform-release | 消费侧：本阶段实现四个 ConfigItemApplier 并注册进阶段 3a 交付的 ConfigItemApplierRegistry；报表类配置对象的跨环境发布与回退一律经阶段 3b 交付的发布通道，本阶段不自建第二套 | core-server、job-worker |
-| apps/core-server | wiring 注入 CostCaptureService 与 RevenueCaptureService 到 ledger 过账用例，注入 CostReturnMarkPort 到 procure 与 sales 退货用例，注入 AgingBucketQuery 到 finance 台账查询用例；新增 21 个路由；新增启动自检第 14 项 | core-server |
+| ep-app-ledger | 在其过账用例内追加成本与收入捕获的调用点，新增对 ep-contract-costing 的依赖；不依赖 ep-app-costing，两个捕获实现经 wiring 注入 | core-server |
+| apps/core-server | wiring 注入本阶段交付的 CostCaptureService、RevenueCaptureService、CostReturnMarkPort 与 AgingBucketQuery 四个实现，其中成本与收入捕获的调用点由本阶段在 ledger 过账用例内追加，AgingBucketQuery 供 finance 台账查询用例取用，CostReturnMarkPort 的调用方按 PRD 附录乙 U-C-09 待决；新增第 5 节列出的全部路由；新增命名自检项 reporting-dataset-signature-matched | core-server |
 | apps/job-worker | 新增渲染任务消费者、预置报表对象幂等播种任务、数据集依赖失效扫描任务、三个新校验项的调度 | job-worker |
 | ep-testkit | 新增 CostEntryBuilder、RevenueEntryBuilder、ReportObjectBuilder、AgingProfileFixture、DeliveryMilestoneFixture | 测试 |
 | ep-datagen | 新增成本与收入归集条目、交付节点与分批交付、账龄分布三组生成器 | 测试 |
 
 #### 2.3 依赖方向自检
 
-ep-domain-costing 只依赖 ep-foundation 与 ep-contract-costing。ep-app-costing 依赖 ep-foundation、ep-platform-*（含 ep-platform-recon 以实现三个 ReconCheck）、ep-domain-costing 与 ep-contract-ledger、ep-contract-clm、ep-contract-sales、ep-contract-procure、ep-contract-mdm、ep-contract-project 六个契约。ep-app-reporting 另依赖 ep-platform-release 以实现四个 ConfigItemApplier。ep-app-ledger 只新增对 ep-contract-costing 的依赖，实现在 apps/core-server/src/wiring.rs 注入，不产生 ep-app-ledger 对 ep-app-costing 的依赖。ep-app-finance 只新增对 ep-contract-reporting 的依赖以取用账龄分档，方向为 finance 到 reporting，与 reporting 到 finance 的数据集读取不构成 crate 级环，因为后者不经 crate 依赖而经数据库视图。跨模块同步调用按总览第 4 节归属裁定的通则第三条处理：调用方阶段早于本阶段时，调用方在两个 wiring.rs 注入以 Noop 前缀命名的空实现并加 // TODO(stage-11): replace with real impl 注释，本阶段逐行替换，涉及阶段 9a 的 NoopCostCaptureService 与 NoopRevenueCaptureService、阶段 6 与阶段 7 的 NoopCostReturnMarkPort、阶段 10 的 NoopAgingBucketQuery 四处。上述自检写入 CI 的 cargo metadata 断言脚本。
+ep-domain-costing 只依赖 ep-foundation 与 ep-contract-costing。ep-app-costing 依赖 ep-foundation、ep-platform-*（含 ep-platform-recon 以实现三个 ReconCheck）、ep-domain-costing 与 ep-contract-ledger、ep-contract-clm、ep-contract-sales、ep-contract-procure、ep-contract-mdm、ep-contract-project 六个契约。ep-app-reporting 另依赖 ep-platform-release 以实现四个 ConfigItemApplier。ep-app-ledger 只新增对 ep-contract-costing 的依赖，实现在 apps/core-server/src/wiring.rs 注入，不产生 ep-app-ledger 对 ep-app-costing 的依赖。ep-app-finance 只新增对 ep-contract-reporting 的依赖以取用账龄分档，方向为 finance 到 reporting，与 reporting 到 finance 的数据集读取不构成 crate 级环，因为后者不经 crate 依赖而经数据库视图。本阶段不向任何早期阶段指派空实现，三处跨模块接法固定如下。成本与收入捕获的调用点由本阶段在 ep-app-ledger 的过账用例内追加，与两个实现同批交付，两个 wiring.rs 直接注入真实实现，不设 Noop 过渡，理由是阶段 9a 到本阶段之间没有第二个捕获调用方，空实现过渡不产生任何可验收结果。已退货未冲回成本的置位方按 PRD 附录乙 U-C-09 待决，本阶段只交付 CostReturnMarkPort 的实现与注册，不指名调用方。账龄分档按裁定 C-08 由阶段 10 先建临时表自行取数，本阶段迁移并删除该临时表后 finance 台账查询改经 AgingBucketQuery，同样不经空实现。上述自检写入 CI 的 cargo metadata 断言脚本。
 
 ### 3. 数据库变更
 
@@ -120,7 +121,7 @@ ep-domain-costing 只依赖 ep-foundation 与 ep-contract-costing。ep-app-costi
 | voucher_line_id | uuid | 否 | 逻辑引用 ledger，不建外键 |
 | account_id | uuid | 否 | 成本科目，逻辑引用 ledger |
 | amount | numeric(18,2) | 否 | 借方为正，贷方冲回为负，ck_cost_entries_amount_nonzero |
-| source_document_type | text | 否 | ck_cost_entries_source_document_type，取值 DELIVERY_CONFIRMATION、PURCHASE_INVOICE、PURCHASE_RETURN、RED_LETTER_INVOICE、OVER_INVOICE_SETTLEMENT、SALES_RETURN |
+| source_document_type | text | 否 | ck_cost_entries_source_document_type，取值 DELIVERY_CONFIRMATION、PURCHASE_INVOICE、PURCHASE_RETURN、RED_LETTER_INVOICE、OVER_INVOICE_SETTLEMENT、SALES_RETURN；取值为 DELIVERY_CONFIRMATION 时 source_document_id 与 source_document_line_id 指向阶段 6 按裁定 A-09 在 sales schema 交付的 sales.delivery_confirmations 与 sales.delivery_confirmation_lines，成本下钻与跳转原单据以这两张表为准 |
 | source_document_id | uuid | 否 | 逻辑引用来源模块 |
 | source_document_line_id | uuid | 否 | 无明细行时写全零 UUID 哨兵，理由见 0.3 A-5 |
 | contract_id | uuid | 是 | 归集维度 |
@@ -303,7 +304,7 @@ profiles 为档案类，带 code、is_active、deactivated_at，另加 ledger_si
 
 #### 3.3 迁移编号与顺序
 
-执行顺序按基线第 3.9 节的 db/migrations/order.toml，costing 在 reporting 之前，本阶段不修改该文件。
+执行顺序按基线第 3.9 节的 db/migrations/order.toml，costing 与 finance 的位次都在 reporting 之前，本阶段不修改该文件。
 
 db/migrations/costing/
 1. V202611030900__costing_create_cost_entries.sql
@@ -325,11 +326,9 @@ db/migrations/reporting/
 11. V202611031050__backfill_reporting_seed_datasets.sql
 12. V202611031055__backfill_reporting_seed_dataset_fields.sql
 13. V202611031060__reporting_backfill_migrate_aging_buckets_from_finance.sql
+14. V202611031065__reporting_drop_finance_aging_bucket_definitions.sql
 
-db/migrations/finance/
-1. V202611031065__finance_drop_aging_bucket_definitions.sql
-
-每个建表文件包含表、约束、索引与行级策略，不含任何数据写入；两个 seed backfill 文件只写数据集目录与字段目录，不写任何带法人的数据。全部文件头注释给出 rollback 段：建表类给出 DROP TABLE 逆向；两个 seed backfill 给出按 code 删除的逆向。带法人的预置对象即默认管理驾驶舱与默认账龄分档不在迁移中播种，由 job-worker 的幂等任务按法人补齐，理由是迁移执行时法人集合未知，且基线第 3.9 节要求迁移可离线执行、不得调用应用代码。第 13 号 reporting 迁移把阶段 10 临时建立的 finance.aging_bucket_definitions 的分档数据迁入 reporting.aging_bucket_profiles 与 reporting.aging_bucket_lines，落在 db/migrations/finance/ 的删表迁移随后删除该临时表，两者均由本阶段提供；删表迁移执行前校验 reporting.aging_bucket_profiles 中已存在该次迁移写入的标记行，缺失即以失败退出，保证它不会在迁移文件之前执行；其 rollback 段只给出重建空表的逆向，不恢复数据。
+每个建表文件包含表、约束、索引与行级策略，不含任何数据写入；两个 seed backfill 文件只写数据集目录与字段目录，不写任何带法人的数据。全部文件头注释给出 rollback 段：建表类给出 DROP TABLE 逆向；两个 seed backfill 给出按 code 删除的逆向。带法人的预置对象即默认管理驾驶舱与默认账龄分档不在迁移中播种，由 job-worker 的幂等任务按法人补齐，理由是迁移执行时法人集合未知，且基线第 3.9 节要求迁移可离线执行、不得调用应用代码。第 13 号与第 14 号两个迁移按裁定 C-08 与通则第五条都放在 db/migrations/reporting/：第 13 号把阶段 10 临时建立的 finance.aging_bucket_definitions 的分档数据迁入 reporting.aging_bucket_profiles 与 reporting.aging_bucket_lines，第 14 号删除该临时表，两者均由本阶段提供。两者同属 reporting 这一个 Runner，按版本号先迁后删自然成立，不设标记行守卫，也不设任何跨 Runner 的顺序断言。跨 schema 的 DROP 由 ep_migrator 执行，该角色已具备全部 ep_mod_* 成员资格。第 14 号的 rollback 段只给出重建空表的逆向，不恢复数据。
 
 #### 3.4 默认账龄分档取值
 
@@ -406,7 +405,7 @@ ep-domain-reporting：
 
 #### 4.2 成本与收入捕获算法
 
-触发点在 ledger 的过账用例内，与凭证写入同一事务。
+触发点在 ledger 的过账用例内，与凭证写入同一事务；该调用点由本阶段在 ep-app-ledger 内追加，阶段 9a 不预留空实现，见第 2.3 节。
 
 1. ledger 生成凭证后，把每条落在成本科目集合或收入科目集合上的凭证行连同该行对应的来源单据行标识与维度字段，组装为 CostCaptureCommand 或 RevenueCaptureCommand 列表，经注入的端口调用。
 2. costing 侧对每条命令执行：校验 amount 非零；校验 source_type 与 variance_reason 的充要关系；校验存货类必带仓库与物料；校验直接费用类不得带产品；解析客户维度，取合同的客户，合同为空时取订单的客户，两者都空则为空；写入条目。
@@ -435,7 +434,7 @@ ep-domain-reporting：
 - 收入卡：Σ revenue_entries.amount，按法人与期间集合。
 - 成本卡：Σ cost_entries.amount，三类来源可分列。
 - 利润卡：收入减成本，毛利率按 4.3 第 4 条。
-- 交付卡：不取任何凭证，取 clm_contract_delivery_milestones 与 sales_order_delivery_batches 两个数据集，期间维度取约定交付日期所属自然月，与金额类指标的会计期间字段不是同一口径。
+- 交付卡：不取任何凭证，取 clm_contract_delivery_milestones 与 sales_order_delivery_batches 两个数据集，期间维度取约定交付日期所属自然月，与金额类指标的会计期间字段不是同一口径。实际交付以交付确认单为准，其主体按裁定 A-09 由阶段 6 在 sales schema 交付，本阶段经上述两个数据集上的交付确认引用与确认日期列取得按期判定所需的实际交付日期，按 D-11-01 不在分析 SQL 中出现 sales.delivery_confirmation_lines 基表名。
 
 未分摊差异三侧：
 
@@ -610,7 +609,7 @@ core-server 在一个事务内取号、插入 render_tasks 行（status 为 QUEU
 
 #### 6.6 内部对账新增校验项
 
-本阶段在 ep-app-costing 实现三个 ep_platform_recon::ReconCheck，经 ReconRegistry::register 在 apps/job-worker 的 wiring 注册；对账框架本体、platform_core 的三张对账表与 ReconExecutor 由阶段 9a 交付，本阶段不建框架、不改其实现。三个实现的 code 返回下表校验项列的取值，category 前两项取 SUBLEDGER_VS_LEDGER、第三项取 CROSS_MODULE_LINK，blocks_period_close 三项均为 true。run_batch 接受执行器传入的 &dyn SnapshotCtx 与 BatchWindow，按规格第 10.2 章的分批与快照口径执行，进入每日校验与关账前强制校验，属子账与总账勾稽这一既有类别下的新增勾稽项，不新增校验类别。
+本阶段在 ep-app-costing 实现三个 ep_platform_recon::ReconCheck，经 ReconRegistry::register 在 apps/job-worker/src/wiring.rs 注册；对账框架本体、platform_core 的三张对账表与 ReconExecutor 由阶段 9a 交付，本阶段不建框架、不改其实现。三个实现的 code 返回下表校验项列的取值，category 前两项取 SUBLEDGER_VS_LEDGER、第三项取 CROSS_MODULE_LINK，blocks_period_close 三项均为 true。run_batch 接受执行器传入的 &dyn SnapshotCtx 与 BatchWindow，按规格第 10.2 章的分批与快照口径执行，进入每日校验与关账前强制校验，属子账与总账勾稽这一既有类别下的新增勾稽项，不新增校验类别。
 
 | 校验项 | 子账侧 | 总账侧 | 判据 |
 |---|---|---|---|
@@ -691,11 +690,11 @@ core-server 在一个事务内取号、插入 render_tasks 行（status 为 QUEU
 12. 无数据与无权的区分：同一查询在无数据时返回 200 空结果，在无权时返回 403 或 404，两者提示文案与错误码不同。
 13. 四个 ConfigItemApplier：经阶段 3b 的发布通道对四类对象各执行一次 apply 与一次 rollback，断言 apply 幂等（同 spec_hash 重放不新增版本行）、rollback 只回退 publications 行而不删除版本行、applier 全程使用通道传入的事务句柄且不自行提交。
 14. costing.stock_value_adjust 消费者：同一 inventory.stock_value_adjusted.v1 重复投递 3 次只补记一条成本条目；该凭证行已由同事务捕获路径写入时补记为空操作；载荷缺少凭证引用时进入死信而不是静默丢弃。
-15. 账龄分档唯一出处迁移：在含 finance.aging_bucket_definitions 数据的库上执行两个迁移文件，断言分档逐档迁入 reporting 两表、finance 侧表已删除、finance 台账内账龄查询经 AgingBucketQuery::buckets 取到与预置表一致的分档；断言删表迁移在标记行缺失时以失败退出。
+15. 账龄分档唯一出处迁移：在含 finance.aging_bucket_definitions 数据的库上执行两个迁移文件，断言两者在同一 reporting Runner 内按版本号顺序执行、分档逐档迁入 reporting 两表、finance 侧临时表已删除、finance 台账内账龄查询经 AgingBucketQuery::buckets 取到与预置表一致的分档。
 
 #### 8.4 越权与隔离测试
 
-tests/rls_matrix 扩展：对 costing.cost_entries、costing.revenue_entries 与 reporting 的六张带法人表，覆盖读取、写入、更新、删除、聚合、排序、报表投影与错误信息泄漏八类，另加两个复制角色与内部对账系统安全上下文的五个入口。
+tests/rls_matrix 扩展：对 costing.cost_entries、costing.revenue_entries 与 reporting 的七张带法人表，覆盖读取、写入、更新、删除、聚合、排序、报表投影与错误信息泄漏八类，另加两个复制角色与内部对账系统安全上下文的五个入口。
 
 tests/analytics_isolation 新增测试目标，承担规格第 17.2 章派生存储越权与删除传播测试中的同实例只读角色部分：以跨法人与跨密级的安全上下文对全部已登记数据集发起检索、排序与分面计数，断言不返回无权数据，且排序位次与聚合值不间接暴露无权数据；断言来源记录更正后，报表结果在同一事务快照上一致。首版不做小计数抑制，该点在交付说明中明写。
 
@@ -732,7 +731,7 @@ tests/analytics_isolation 新增测试目标，承担规格第 17.2 章派生存
 
 全部条目可由自动化用例或可复核证据判定。
 
-1. 12 张新表、3 个视图、18 条迁移（其中 1 条落在 db/migrations/finance/，为账龄分档临时表的删表迁移）全部在空库与含基准数据集的库上执行通过，每条迁移的 rollback 段在影子库上验证可执行；迁移会话锁持有不超过 5 秒、执行不超过 30 分钟。
+1. 11 张新表、3 个视图、18 条迁移（4 条在 db/migrations/costing/，14 条在 db/migrations/reporting/）全部在空库与含基准数据集的库上执行通过，每条迁移的 rollback 段在影子库上验证可执行；迁移会话锁持有不超过 5 秒、执行不超过 30 分钟。
 2. 全部带法人的新表已 ENABLE 且 FORCE 行级安全，运行期账号不具备 BYPASSRLS 与 SUPERUSER；tests/rls_matrix 的 costing 与 reporting 扩展八类全绿。
 3. 六个事件类型的成本与收入捕获与凭证同事务写入，重复投递 3 次只产生一条条目，过账回滚不留残条目。
 4. 三个 ReconCheck 实现并经 ReconRegistry::register 注册成功，注入差额后差异事项在 platform_core.recon_discrepancies 生成且可追溯、关账被拦截，清零后关账通过；每日校验与关账前强制校验两条路径各验证一次。
@@ -754,7 +753,7 @@ tests/analytics_isolation 新增测试目标，承担规格第 17.2 章派生存
 20. costing 与 reporting 两个模块在规格第 6.2 章能力矩阵中取值为完整或简化的能力域，其四端界面已实现并通过 Playwright 与 tauri-driver 的桌面用例、XCUITest 与 Espresso 的移动用例；取值为 VIEW_ONLY 的能力域只实现只读视图；取值为 NOT_APPLICABLE 的不实现入口。
 21. 本阶段全部路由的能力域码与动作类别常量已在 ep-contract-costing 与 ep-contract-reporting 的 src/capability.rs 声明，xtask configdoc 通过。
 22. 三个 ReconCheck 的 code、category 与 blocks_period_close 取值与第 6.6 节一致，run_batch 在阶段 9a 提供的快照上分批执行，未完成批次以 UNFINISHED 上报而不是静默截断。
-23. 账龄分档的唯一出处迁移完成：finance.aging_bucket_definitions 的数据已迁入 reporting.aging_bucket_profiles 与 reporting.aging_bucket_lines，该表已删除，finance 侧台账内账龄查询改经 AgingBucketQuery::buckets，两处分档逐档一致。
+23. 账龄分档的唯一出处迁移完成：finance.aging_bucket_definitions 的数据已由 db/migrations/reporting/ 第 13 号迁移迁入 reporting.aging_bucket_profiles 与 reporting.aging_bucket_lines，该表已由同目录第 14 号迁移删除，finance 侧台账内账龄查询改经 AgingBucketQuery::buckets，两处分档逐档一致。
 24. costing.stock_value_adjust 消费者已在 job-worker 注册，重复投递同一 inventory.stock_value_adjusted.v1 只补记一条成本条目，幂等由 platform_msg.inbox_consumptions 保证，载荷缺凭证引用时进入死信。
 25. 13 个外部数据集的目录行已登记且列签名与来源视图一致，启动自检项 reporting-dataset-signature-matched 在 core-server 与 job-worker 上通过；project_projects 一行在阶段 12 交付前按已登记但未发布降级放行，该降级在阶段 12 结束后解除。
 
@@ -812,7 +811,7 @@ tests/analytics_isolation 新增测试目标，承担规格第 17.2 章派生存
 | R-1 只读分析负载与交易负载在同一实例上抢占。规格第 13.1 章明确不表述为隔离保证 | 报表跑起来时交易时延劣化，可能击穿普通交易提交 P95 在 3 秒内 | 只读池上限 10 且与读写池合计不超过 30；statement_timeout 60 秒硬截断；聚合结果 2000 行上限；导出一律转 job-worker 并受 app-worker.slice 配额约束；性能测试必须在同时施加备份负载的条件下取样；该风险在交付说明中按规格第 21.19 章明写，不承诺隔离 |
 | R-2 六个维度索引加在仅追加的大表上，写放大影响过账时延 | 交付确认、采购发票登记等提交类操作的 P95 上升 | 在基准数据集上先测捕获路径的单条插入耗时；若超出预算，退路是把三个低频维度索引（项目、产品、客户）合并为一个覆盖索引并在查询侧接受一次额外过滤，该退路不改变任何口径 |
 | R-3 D-11-01 的跨模块只读投影使 reporting 的运行期正确性依赖 13 个外部数据集视图的列签名，其提供阶段为 5、6、8、9a、10、12 六个 | 来源模块改列会使报表在运行期失败 | 启动自检项 reporting-dataset-signature-matched 把失败前移；视图被界定为契约级，变更走契约变更流程；各提供阶段按 A-18 在本阶段之前发布视图并同步列签名，阶段 12 的 project_projects 在其交付前按已登记但未发布降级放行；CI 中加一条视图列签名快照测试，来源模块改列即构建失败 |
-| R-4 A-1 与 A-2 两条假设把捕获绑死在 ledger 的过账用例上 | 若阶段 9a 的过账用例未预留该调用点，本阶段无法在同事务捕获，只能退回 Outbox 异步补写 | 该调用点按总览第 4 节归属裁定的通则第三条固定：阶段 9a 在两个 wiring.rs 注入 NoopCostCaptureService 与 NoopRevenueCaptureService 并加 // TODO(stage-11): replace with real impl 注释，本阶段逐行替换，风险由接口形状不确定降为替换遗漏，由 CI 断言发布制品中不出现 Noop 前缀的成本与收入捕获实现；退路为 Outbox 异步补写，代价是正常运行期出现秒级差额，需要同时放宽 PRD 第 8.3.2 节的差额为零判定到关账时点判定，属口径变更，必须由财务负责人批准 |
+| R-4 A-1 与 A-2 两条假设把捕获绑死在 ledger 的过账用例上，而该用例由阶段 9a 先行交付 | 本阶段要在别的模块的既有用例内追加调用点，可能与其事务边界或科目判定冲突，改不动即无法在同事务捕获 | 调用点、两个捕获实现与 wiring 注入由本阶段同批交付，见第 2.2 节 ep-app-ledger 一行、第 2.3 节与第 4.2 节；阶段 9a 不预留空实现，本阶段也不向其派工；接口形状由本阶段在 ep-contract-costing 自定，改动范围限于过账用例内的一段调用与一条 crate 依赖，依赖方向由 CI 的 cargo metadata 断言脚本守住；退路为 Outbox 异步补写，代价是正常运行期出现秒级差额，需要同时放宽 PRD 第 8.3.2 节的差额为零判定到关账时点判定，属口径变更，必须由财务负责人批准 |
 | R-5 高级只读 SQL 的白名单可能被绕过，成为越权入口，对应规格第 21.7 章 | 报表成为越权读取通道 | AST 白名单而不是正则黑名单；执行只在受行级策略约束的 ep_analyst_ro 上，即使解析层被绕过，法人隔离仍由数据库承担；模糊测试对解析器施加不少于 10 万条变异输入；tests/analytics_isolation 属发布门禁项 |
 | R-6 未分摊差异桶可能显著偏大，取决于 U-F-06 的决策 | 管理层下钻可用性下降，指标被质疑 | 本阶段在成本归集查询响应中固定返回 unallocated_ratio，实施期可据此度量；不做任何分摊，也不隐藏 |
 | R-7 12 条未决事项若在阶段末仍未决策，交付的是临时取值 | 客户验收期返工 | 全部临时取值集中在配置键与两处纯函数中，第 0.2 节已逐条给出切换代价；U-I-06 与 U-I-08 两条属结构性，若决策与临时取值相反需要重新评估工期 |

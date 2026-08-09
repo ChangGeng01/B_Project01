@@ -17,7 +17,7 @@
 
 9b 段交付：ledger.close_serialization_slots、ledger.period_close_requests、ledger.year_end_closings 三张表；关账请求状态机、受理与在途写事务等待、快照建立、关账前强制校验的编排与四类校验项的注册；年度损益结转；期间关闭时的下一期间期初固化；本模块四端界面中关账发起跟进与年结发起的部分。
 
-四类关账前强制校验项在 9b 段实现并向 ReconRegistry 注册，9a 段只交付对账框架本体与调度，不注册本模块的校验项。阶段 7、8、11、13、14 的 ReconCheck 在其各自阶段注册，均早于 9b，因此 9b 开工时框架上已有在用的校验项。
+四类关账前强制校验项在 9b 段实现并向 ReconRegistry 注册，9a 段只交付对账框架本体与调度，不注册本模块的校验项。ReconCheck 的注册方按裁定 A-06 固定为阶段 7、8、9b、10、11 五个，校验项合计十六个，一律在 apps/job-worker/src/wiring.rs 经 ReconRegistry::register 注册，其中 9b 段的四个即本段自带的四类。
 
 
 ### 9.1 交付物清单
@@ -41,7 +41,7 @@
 八是文档产物：docs/error-codes.md 新增 LEDGER 段共 31 个错误码；docs/event-catalog.md 新增 ledger 段共 8 个事件；docs/data-dictionary/ledger.md 新增 12 张表的数据字典，docs/data-dictionary/platform_core.md 增补对账三张表的数据字典；docs/adr/ 新增 3 篇本阶段决定的 ADR。
 
 九是测试产物：ep-domain-ledger 与 ep-app-ledger 的单元测试与领域属性测试、crates/application/ledger/tests 下的集成测试、tests/rls_matrix 中新增的 ledger 越权用例、apps/core-server/tests 下的关账与顺延入账端到端用例，以及 A.1 度量清单中总账凭证过账与月度科目余额表两项的 EXPLAIN 证据文件。
-十是对账框架本体：ep-platform-recon crate、platform_core.recon_check_definitions 与 platform_core.recon_runs 与 platform_core.recon_discrepancies 三张表、ReconCheck 与 ReconRegistry 与 ReconExecutor 三个契约、job-worker 内的分批执行器与每日对账调度、签名语句集校验。按 A-06 该本体归本阶段 9a 段，阶段 7、8、11、13、14 只在其上实现自己的 ReconCheck，不另起对账框架。
+十是对账框架本体：ep-platform-recon crate、platform_core.recon_check_definitions 与 platform_core.recon_runs 与 platform_core.recon_discrepancies 三张表、ReconCheck 与 ReconRegistry 与 ReconExecutor 三个契约、job-worker 内的分批执行器与每日对账调度、签名语句集校验。按 A-06 该本体归本阶段 9a 段，注册方为阶段 7、8、9b、10、11 五个，各自在其上实现自己的 ReconCheck，不另起对账框架。
 
 十一是本模块的四端界面：clients/desktop/src/modules/ledger/ 与 clients/mobile/src/modules/ledger/ 两个目录，按 A-23 由本阶段交付，阶段 13 只提供客户端壳、路由注册表与能力矩阵闸。
 
@@ -98,11 +98,11 @@ job-worker 承载：期间自动建立定时任务、ep-platform-recon 的分批
 | 11 | V202611030950__ledger_create_year_end_closings.sql | 建 ledger.year_end_closings |
 | 12 | V202611030955__ledger_create_posting_trigger_event_types.sql | 建 ledger.posting_trigger_event_types |
 | 13 | V202611031000__ledger_create_ledger_views.sql | 建 ledger.v_account_period_balances 与 ledger.v_pending_posting_backlog |
-| 14 | V202611031005__ledger_backfill_posting_trigger_event_types.sql | 按十一类凭证来源各写一行 ledger_event_kind，event_type 留空，由各业务阶段按 A-21 在其迁移中回填 |
+| 14 | V202611031005__ledger_backfill_posting_trigger_event_types.sql | 按 A-21 一次写全 ledger.posting_trigger_event_types 的 13 行并直接填入 event_type 与 registered_by_module，清单见第 9.3.11 节；业务阶段不再追加任何回填迁移 |
 | 15 | V202611031010__ledger_create_dataset_views.sql | 按 A-18 重建 ledger.v_account_period_balances 使其输出 legal_entity_id、security_level、data_scope_tags 三列，并 GRANT SELECT ON ledger.v_account_period_balances TO ep_analyst_ro |
-| 16 | V202611031015__ledger_backfill_append_only_registry.sql | 按 B-02 向 platform_core.append_only_registry 登记 ledger.vouchers 与 ledger.voucher_lines 两行及其不可变列集合。B-02 另列的 ledger.general_vouchers 在本阶段的表清单中无同名对象，其所指即单据类型码为 GV 的 ledger.vouchers，故不另登记第三行 |
+| 16 | V202611031015__ledger_backfill_append_only_registry.sql | 按 B-02 向 platform_core.append_only_registry 登记 ledger.vouchers、ledger.voucher_lines 与 platform_core.recon_runs 三行，三行的 mode 一律取 APPEND_ONLY、mutable_columns 取空数组。本文件同时写入 ledger 与 platform_core 两个 schema 的登记对象，按裁定通则第五条放在两者中位次靠后的 db/migrations/ledger/ 目录下 |
 
-每个文件头部按基线第 3.9 节写 -- rollback: 段。建表类的回退语句为 drop table；第 13 号的回退为 drop view；第 14 号为按 ledger_event_kind 删除本次插入的行；第 15 号为按第 13 号的定义重建视图并 REVOKE SELECT ON ledger.v_account_period_balances FROM ep_analyst_ro；第 16 号为按 schema_name 与 table_name 删除本次登记的两行。第 6、7 号文件另注明其中的 REVOKE 语句无法安全逆向，回退须用升级前备份。
+每个文件头部按基线第 3.9 节写 -- rollback: 段。建表类的回退语句为 drop table；第 13 号的回退为 drop view；第 14 号为按 ledger_event_kind 与 event_type 删除本次插入的 13 行；第 15 号为按第 13 号的定义重建视图并 REVOKE SELECT ON ledger.v_account_period_balances FROM ep_analyst_ro；第 16 号为按 schema_name 与 table_name 删除本次登记的三行。第 6、7 号文件另注明其中的 REVOKE 语句无法安全逆向，回退须用升级前备份。
 
 上表第 9、10、11 号三个文件属 9b 段，其余十三个属 9a 段。两段之间隔着阶段 8 至 11，因此 9b 段三个文件的编号按其执行日期取，排在这些阶段的迁移之后，ledger 目录内的相对次序仍按上表。第 2 号表上的 closed_by_close_request_id 外键随第 10 号文件在 9b 段补建，该列在 9a 段保持可空且无外键。
 
@@ -279,11 +279,11 @@ RLS：按基线第 3.8 节模板生成 rls_accounts_le。以下各带法人列�
 列：id uuid 主键、ledger_event_kind text 非空 ck 取 11 个来源类型、event_type text 可空唯一（各业务模块在其阶段登记自己的事件类型名）、registered_by_module text 可空、created_at、created_by。
 
 索引：pk_posting_trigger_event_types、ux_posting_trigger_event_types_event_type、ix_posting_trigger_event_types_ledger_event_kind。
-登记接口：ep-contract-ledger 暴露 PostingTriggerRegistry，方法为 register(event_type: &str, kind: VoucherSourceKind, module: ModuleCode)，语义为 upsert，供各阶段在迁移之外做运行期自检比对，不替代迁移中的登记行。按 A-21，登记表与该接口归本阶段 9a 段，登记行由产生该事件的阶段在自己的迁移中写入。
+登记接口：ep-contract-ledger 暴露 PostingTriggerRegistry，方法为 register(event_type: &str, kind: VoucherSourceKind, module: ModuleCode)，语义为幂等 upsert，只供各阶段在启动自检中与种子行比对，不供迁移调用。按 A-21，登记表、该接口与全部 13 行登记行一律归本阶段 9a 段，业务阶段不再追加任何回填迁移。
 
-唯一约束只落在 event_type 上，event_type 为空的行不参与唯一性判定，因此一个 ledger_event_kind 可对应多行。第 14 号迁移按十一类来源各写一行且 event_type 留空；各业务阶段按 ledger_event_kind 定位写入 event_type，同一 ledger_event_kind 需要承载第二个事件类型时在其迁移中追加一行。登记清单按 A-21 固定如下，本阶段不代其他阶段写入。
+唯一约束只落在 event_type 上，event_type 为空的行不参与唯一性判定，因此一个 ledger_event_kind 可对应多行。第 14 号种子迁移一次写全 13 行：第 9.4.1 节的 11 个 ledger_event_kind 各一行，INVOICE_REVERSED 与 REFUND_REGISTERED 各再加一行；其中 12 行按下表逐字填入 event_type 与 registered_by_module，YEAR_END_PL_CLOSING 一行的 event_type 保持为空。下表的阶段列表示该事件由哪个阶段产生，不表示由哪个阶段写登记行；各业务阶段一律不新增回填迁移，只在启动自检中经 PostingTriggerRegistry::register 与种子行比对，不一致即以退出码 78 启动失败。
 
-| 登记阶段 | event_type | ledger_event_kind |
+| 阶段 | event_type | ledger_event_kind |
 |---|---|---|
 | 6 | sales.delivery.confirmed.v1 | DELIVERY_CONFIRMED |
 | 6 | sales.sales_return.registered.v1 | SALES_RETURN |
@@ -297,8 +297,8 @@ RLS：按基线第 3.8 节模板生成 rls_accounts_le。以下各带法人列�
 | 10 | finance.payment.registered.v1 | PAYMENT_REGISTERED |
 | 10 | finance.refund.registered.v1 | REFUND_REGISTERED |
 | 10 | finance.cash_document.reversed.v1 | REFUND_REGISTERED |
-| 8 | 零行，库存事件不独立产生凭证 | 不适用 |
-| 9b | 无 event_type，该行由第 14 号迁移保留 event_type 为空 | YEAR_END_PL_CLOSING |
+| 9b | 无 event_type，YEAR_END_PL_CLOSING 行由第 14 号种子迁移保留 event_type 为空 | YEAR_END_PL_CLOSING |
+| 8 | 零行 | 不适用 |
 
 
 #### 9.3.12 两个视图
@@ -575,7 +575,7 @@ AccountingPeriodResolver：resolve(tx, ctx, legal_entity_id, posting_date) 返�
 PostingPort：post(tx, ctx, PostingInput) 返回 PostingOutcome，取值为 Posted{voucher_id, doc_no, accounting_period_id, deferred_from_period_id}、IdempotentReplay{同上}、Skipped。同一 (legal_entity_id, source_kind, source_document_id, source_sequence_no) 重复提交返回 IdempotentReplay，不重复写余额、不重复写审计、不重复写 Outbox。
 
 TotalAccountBalanceProvider：balance(snapshot_ctx, legal_entity_id, accounting_period_id, account_role) 返回 Money，供 ep-platform-recon 在关账勾稽中取总账侧余额。
-PostingTriggerRegistry：register(event_type: &str, kind: VoucherSourceKind, module: ModuleCode) 为 upsert 语义，供各业务阶段在迁移之外做运行期自检比对，登记行本身仍由各阶段在其迁移中写入，清单见第 9.3.11 节。
+PostingTriggerRegistry：register(event_type: &str, kind: VoucherSourceKind, module: ModuleCode) 为幂等 upsert 语义，只供各业务阶段在启动自检中与种子行比对，不供迁移调用；13 行登记行由本阶段 9a 段的第 14 号种子迁移一次写全，清单见第 9.3.11 节。
 
 交付确认的调用形态按 A-09 固定：交付确认单归阶段 6 的 sales schema，其 confirm_delivery 用例在同一事务内按库存腿、过渡科目腿、凭证腿的次序调用三个端口，凭证腿即 PostingPort::post，PostingInput 的 source_kind 取 DELIVERY_CONFIRMED、branch 取 DROP_SHIP 或 NON_DROP_SHIP，measures 含 revenue_amount、unbilled_receivable_amount、cogs_amount、inventory_release_amount 四项；会计期间由 AccountingPeriodResolver::resolve 在该事务最前解析一次，库存腿与过渡科目腿复用其返回值。本阶段只提供这两个端口，不建交付确认单，不编排三腿次序。
 
@@ -778,11 +778,11 @@ E-17 受治理数据集视图 ledger.v_account_period_balances 已发布，datas
 
 E-18 本模块在规格第 6.2 章能力矩阵中取值为完整或简化的能力域，其四端界面已实现并通过 Playwright 与 tauri-driver 的桌面用例、XCUITest 与 Espresso 的移动用例；取值为 VIEW_ONLY 的能力域只实现只读视图；取值为 NOT_APPLICABLE 的不实现入口。
 
-E-19 本阶段全部路由的能力域码与动作类别常量已声明，xtask configdoc 通过。
+E-19 本阶段全部路由的能力域码与动作类别常量已声明在 crates/contract/ledger/src/capability.rs，xtask configdoc 通过。
 
 E-20 ep-platform-recon 本体已交付并可被其他阶段使用：crate、platform_core 下三张表、ReconCheck 与 ReconRegistry 与 ReconExecutor 三个契约、job-worker 内的分批执行器与每日对账调度、签名语句集校验齐备；以内置校验项在两个法人上跑通一次每日对账，差异事项与校验未完成事项均落库且可追溯。
 
-E-21 platform_core.append_only_registry 中 ledger.vouchers 与 ledger.voucher_lines 两行已登记，其不可变列集合与表上的仅追加约束一致，db/checks/append_only_consistency.sql 经 xtask sqlcheck 通过。
+E-21 platform_core.append_only_registry 中 ledger.vouchers、ledger.voucher_lines 与 platform_core.recon_runs 三行已登记，三行的 mode 均为 APPEND_ONLY、mutable_columns 均为空数组，与表上的仅追加约束一致，db/checks/append_only_consistency.sql 经 xtask sqlcheck 通过。
 
 E-22 单据类型码 OBB、GV、PCR、YEC 已登记在 docs/data-dictionary.md 的单据类型码一节，且与 ep-platform-sequence 的常量表逐项一致，xtask configdoc --check-doc-type-codes 通过。
 
@@ -865,7 +865,7 @@ E-22 单据类型码 OBB、GV、PCR、YEC 已登记在 docs/data-dictionary.md �
 
 五是 ledger.vouchers 与 ledger.voucher_lines 上对 ep_app_rw 撤销 UPDATE 与 DELETE。
 
-六是 ledger.posting_trigger_event_types 作为全局配置字典，各业务模块在其阶段登记自己的事件类型名。
+六是 ledger.posting_trigger_event_types 作为全局配置字典，其 13 行登记行按 A-21 由本阶段 9a 段的种子迁移一次写全，业务模块只在启动自检中比对，不再回填。
 
 七是科目余额一致性自检作为关账前强制校验的第四类，是引入增量余额表所必须的自检。
 
@@ -939,7 +939,7 @@ E-22 单据类型码 OBB、GV、PCR、YEC 已登记在 docs/data-dictionary.md �
 风险五：关账前强制校验的分批规模、单批时限与单查询资源上限在阶段 14 认证前只有临时取值，客户实际数据量超出基准时可能反复判定为校验未完成而使关账无法通过。控制手段是规格第 10.2 章已给出重取方法，本阶段在配置上把六项做成可热更，并在校验未完成事项中载明触发的具体上限值以便现场重取。
 
 风险六：顺延入账使期间数据不是严格的发生期口径，属规格第 21.20 章已登记的风险。本阶段的控制手段限于两条检索路径与顺延标识，不做追溯重述，界面不使用发生期一类措辞。
-风险七：ep-platform-recon 本体在 9a 段交付，而其最重的使用者关账前强制校验编排在 9b 段，中间隔着阶段 8、6、7、10、11 五个阶段陆续注册各自的 ReconCheck。若本体的分批语义、快照传递与差异事项模型在此期间被各阶段各自变通，9b 段的关账编排会拿到互不一致的实现。控制手段是把 A-06 冻结的三个契约签名写进 CI 的接口快照断言，9a 段交付时即以内置校验项跑通每日调度的一次完整执行，各阶段注册后即刻纳入每日对账并在其退出条件上留证。
+风险七：ep-platform-recon 本体在 9a 段交付，而其最重的使用者关账前强制校验编排在 9b 段，中间隔着阶段 8、6、7、10、11 五个阶段，其中阶段 7、8、10、11 四个陆续注册各自的 ReconCheck，阶段 6 不注册。若本体的分批语义、快照传递与差异事项模型在此期间被各阶段各自变通，9b 段的关账编排会拿到互不一致的实现。控制手段是把 A-06 冻结的三个契约签名写进 CI 的接口快照断言，9a 段交付时即以内置校验项跑通每日调度的一次完整执行，各阶段注册后即刻纳入每日对账并在其退出条件上留证。
 
 
 #### 9.13.2 为后续阶段预留的扩展点
@@ -950,7 +950,7 @@ E-22 单据类型码 OBB、GV、PCR、YEC 已登记在 docs/data-dictionary.md �
 
 三是 AccountRole 的 17 个取值中 DIRECT_EXPENSE_COST 预留了按费用类别细分的位置，U-H-05 决策后可扩展为角色加限定符的两段结构，event_account_bindings 的唯一键需相应扩展。
 
-四是 ledger.posting_trigger_event_types 的 event_type 列留空，各业务模块阶段登记后受理前提二的判据即自动生效，本阶段不需改动。
+四是 ledger.posting_trigger_event_types 的 13 行由本阶段的种子迁移一次写全，受理前提二的判据在本阶段即已生效；各业务模块只在启动自检中经 PostingTriggerRegistry::register 与种子行比对，不需改动本阶段代码。
 
 五是 account_period_balances 已预留 is_opening_fixed，若后续版本恢复受控反结账，只需把固化位回退并重算，不需改表结构。
 
