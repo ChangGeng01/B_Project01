@@ -11,15 +11,16 @@
 本阶段结束时下列可运行物存在，且可由 `cargo test --workspace` 与 `apps/core-server --check` 验证。
 
 1. 六个新增库 crate 编译通过并被 apps 装配：`ep-contract-clm`、`ep-domain-clm`、`ep-app-clm`、`ep-contract-sales`、`ep-domain-sales`、`ep-app-sales`，以及 `ep-contract-cpq`、`ep-domain-cpq`、`ep-app-cpq` 中与价格权限校验相关的部分。
-2. 一个新增适配 crate `ep-adapter-esign` 编译通过，并在 integration-gateway 中装配为唯一的对外出网出口。
+2. 一个新增适配 crate `ep-adapter-esign` 编译通过，目录为 `crates/adapter/esign/`，并在 integration-gateway 中装配为唯一的对外出网出口；其两套契约测试文件 `crates/adapter/esign/tests/contract_sandbox.rs` 与 `crates/adapter/esign/tests/contract_stub.rs` 存在且共用同一组断言函数。
 3. `db/migrations/cpq/`、`db/migrations/clm/`、`db/migrations/sales/` 三个迁移目录下的全部迁移可在空库上离线执行成功，并可按各文件头 `-- rollback:` 段落回退到本阶段之前的版本。
 4. core-server 暴露第 5 节列出的全部 HTTP 端点，`/api/v1/clm/*`、`/api/v1/sales/*`、`/api/v1/cpq/price-authorities`，四端可调用。
-5. job-worker 中运行两类消费者：合同生效派生编排消费者、交付确认回写消费者；两者的死信可在运维中心枚举。
+5. job-worker 中运行三类消费者，名字固定为 `clm.derivation`、`clm.milestone_confirm`、`sales.delivery_writeback`，其中 `sales.delivery_writeback` 消费本模块发出的 `sales.delivery.confirmed.v1`；三者的死信可在运维中心枚举。
 6. integration-gateway 中运行电子签章出口，含超时、退避、熔断与证据固化，签署状态由本进程按退避轮询拉取。
-7. `docs/event-catalog.md` 中登记本阶段的 14 个领域事件，`docs/error-codes.md` 中登记本阶段的 31 个错误码，两处与 `ep-foundation::error::codes` 常量表由 CI 校验一致。
+7. `docs/event-catalog.md` 中登记本阶段的 17 个领域事件，其中含 `sales.delivery.confirmed.v1` 与销售退货的登记、关闭、取消、驳回四个事件；`docs/error-codes.md` 中登记本阶段的 34 个错误码，两处与 `ep-foundation::error::codes` 常量表由 CI 校验一致。
 8. `ep-testkit` 中新增 `ContractBuilder`、`SalesOrderBuilder`、`DeliveryScheduleBuilder`、`CreditFixture` 四个构造器；`ep-datagen` 在默认 scale 下生成合同与销售订单行各 10 万条并满足本阶段的全部不变量。
 9. 一个可重复执行的端到端用例集 `apps/core-server/tests/e2e_stage6/`，覆盖第 8 节列出的 12 个 E2E 场景。
 10. 一份 `docs/adr/2026-11-clm-esign-polling.md`，记录电子签章不设公网入站回调而采用轮询的决定与理由。
+11. 四端界面：`clients/desktop/src/modules/clm/`、`clients/desktop/src/modules/sales/`、`clients/mobile/src/modules/clm/`、`clients/mobile/src/modules/sales/` 四个目录存在并可构建，按规格第 6.2 章能力矩阵的取值实现。
 
 ---
 
@@ -29,12 +30,12 @@
 
 | crate | 层 | 新增或改动 | 主要内容 |
 |---|---|---|---|
-| ep-contract-clm | 契约 | 新增 | 合同命令与查询 DTO、合同事件类型、供其他模块调用的 `ContractQueryPort`、`ContractMilestonePort`、`ContractDerivationCallbackPort` |
+| ep-contract-clm | 契约 | 新增 | 合同命令与查询 DTO、合同事件类型、供其他模块调用的 `ContractQueryPort`、`ContractMilestonePort`、`ContractDerivationCallbackPort`、`ContractDerivationPlanQuery`、`ContractPaymentScheduleQuery` |
 | ep-domain-clm | 领域 | 新增 | 合同聚合、合同版本、关键条款、交付节点、收付款期次、签署编排、派生批次；合同状态机与守卫；`ContractRepository`、`SignatureGateway`、`TemplateRenderer` 三个端口 |
-| ep-app-clm | 应用 | 新增 | 20 个用例、合同侧授权入口、事务边界、派生编排、审计与 Outbox 写入 |
-| ep-contract-sales | 契约 | 新增 | 销售订单与退货的命令查询 DTO、事件类型、`SalesOrderDerivationPort`、`CreditExposureQueryPort`、`SalesOrderQueryPort` |
-| ep-domain-sales | 领域 | 新增 | 销售订单聚合、订单行、分批交付行、订单变更版本、销售退货聚合、换货关联；三套状态机；信用占用在途桶的纯计算 |
-| ep-app-sales | 应用 | 新增 | 18 个用例、信用校验编排、交付确认事件消费、订单变更审批回写 |
+| ep-app-clm | 应用 | 新增 | 20 个用例、合同侧授权入口、事务边界、派生编排、审计与 Outbox 写入；`ClmProductUsageProbe` 与 `ClmReferenceCounter` 两个探针实现 |
+| ep-contract-sales | 契约 | 新增 | 销售订单、交付确认与退货的命令查询 DTO、事件类型、`SalesOrderDerivationPort`、`CreditExposureQueryPort`、`SalesOrderQueryPort`、`SalesReturnCommandPort` |
+| ep-domain-sales | 领域 | 新增 | 销售订单聚合、订单行、分批交付行、订单变更版本、交付确认聚合、销售退货聚合、换货关联；四套状态机；信用占用在途桶的纯计算 |
+| ep-app-sales | 应用 | 新增 | 20 个用例（含 `create_delivery_confirmation` 与 `confirm_delivery` 两个）、信用校验编排、交付确认三腿编排与回写消费、订单变更审批回写；`SalesProductUsageProbe`、`SalesReferenceCounter`、`SalesTradeHistoryProviderImpl` 三个探针实现 |
 | ep-contract-cpq | 契约 | 改动 | 追加 `PriceAuthorityPort` 与价格权限判定 DTO；价目表查询 trait 由主数据阶段定义，本阶段只消费 |
 | ep-domain-cpq | 领域 | 改动 | 追加价格权限值对象与判定规则、行金额与净单价的计算规则 |
 | ep-app-cpq | 应用 | 改动 | 追加价格权限档案的维护用例与判定用例 |
@@ -42,12 +43,12 @@
 | ep-testkit | 测试 | 改动 | 追加本阶段四个构造器与信用夹具 |
 | ep-datagen | 测试 | 改动 | 追加合同、订单、分批交付行、退货单的生成器 |
 
-不新增任何 crate 之外的目录结构，crate 内目录严格按基线第 10.1 节。`ep-domain-clm` 与 `ep-domain-sales` 中不得出现 sqlx、reqwest、`std::fs`、`std::net`、`SystemTime::now`、`rand` 符号，由基线第 8.4 节的静态检查强制。
+除按 A-23 在 `clients/desktop/src/modules/` 与 `clients/mobile/src/modules/` 下各新增 `clm` 与 `sales` 两个模块目录外，不新增任何 crate 之外的目录结构，crate 内目录严格按基线第 10.1 节。`ep-domain-clm` 与 `ep-domain-sales` 中不得出现 sqlx、reqwest、`std::fs`、`std::net`、`SystemTime::now`、`rand` 符号，由基线第 8.4 节的静态检查强制。
 
 #### 2.2 依赖方向
 
-- `ep-app-clm` 依赖 `ep-foundation`、`ep-platform-*`、`ep-domain-clm`、`ep-contract-clm`，以及 `ep-contract-sales`、`ep-contract-procure`、`ep-contract-project`、`ep-contract-finance`、`ep-contract-mdm`、`ep-contract-cpq`、`ep-contract-inventory` 七个外部模块契约。
-- `ep-app-sales` 依赖 `ep-foundation`、`ep-platform-*`、`ep-domain-sales`、`ep-contract-sales`，以及 `ep-contract-clm`、`ep-contract-mdm`、`ep-contract-cpq`、`ep-contract-inventory`、`ep-contract-finance`、`ep-contract-invoice` 六个外部模块契约。
+- `ep-app-clm` 依赖 `ep-foundation`、`ep-platform-*`、`ep-domain-clm`、`ep-contract-clm`，以及 `ep-contract-sales`、`ep-contract-procure`、`ep-contract-finance`、`ep-contract-mdm`、`ep-contract-cpq`、`ep-contract-inventory`、`ep-contract-invoice` 七个外部模块契约。`ep-contract-project` 按 C-19 移除，项目任务不再由本模块同步派生；`ep-contract-invoice` 按 C-11 引入，合同行的默认税率经 `TaxRateOptionQuery` 取得。
+- `ep-app-sales` 依赖 `ep-foundation`、`ep-platform-*`、`ep-domain-sales`、`ep-contract-sales`，以及 `ep-contract-clm`、`ep-contract-mdm`、`ep-contract-cpq`、`ep-contract-inventory`、`ep-contract-ledger`、`ep-contract-finance`、`ep-contract-invoice`、`ep-contract-procure` 八个外部模块契约，其中 `ep-contract-inventory` 与 `ep-contract-ledger` 供交付确认的库存腿与凭证腿调用，`ep-contract-procure` 供直运退货的勾稽调用。
 - `ep-app-clm` 与 `ep-app-sales` 之间不存在直接依赖。合同派生销售订单一律经 `ep-contract-sales::SalesOrderDerivationPort`，其实现是 `ep-app-sales` 的用例，在 apps 的 `wiring.rs` 中注入。
 - `ep-adapter-esign` 只依赖 `ep-foundation` 与 `ep-domain-clm::port::SignatureGateway`，不依赖任何 application。
 
@@ -56,12 +57,13 @@
 | 能力 | 进程 | 说明 |
 |---|---|---|
 | 合同与订单的全部命令与查询 API | core-server | 含四端与合同侧受控查询 |
+| 交付确认单的登记与确认过账 | core-server | 确认动作在单个事务内依次调用库存腿、过渡科目腿与凭证腿三个契约端口 |
 | 合同附件正文的读写 | core-server | 交易路径上的附件正文按基线第 2 节归 core-server |
 | 合同生效派生编排与执行 | job-worker | 消费 `clm.contract.effective.v1`，按派生项逐项执行 |
-| 交付确认回写与合同履约进度推进 | job-worker | 消费交付确认事件，更新分批交付行、订单行与交付节点 |
+| 交付确认回写与合同履约进度推进 | job-worker | 消费者名 `sales.delivery_writeback`，消费本模块发出的 `sales.delivery.confirmed.v1`，更新分批交付行、订单行与交付节点 |
 | 合同到期提醒的定时触发 | job-worker | 使用 ep-platform-flow 的定时器与 ep-platform-notify 的站内通知，本阶段只提供触发源投影 |
 | 电子签章的发起、状态轮询、结果拉取与验签 | integration-gateway | 首版唯一的对外出网出口 |
-| 合同模板渲染与 PDF 归档 | job-worker | 经 ep-adapter-doc，同步等待超过 8 秒的一律转后台任务 |
+| 合同模板渲染与 PDF 归档 | job-worker | 经 `ep_foundation::port::doc::DocTemplatePort::render` 与 `PdfRenderPort::render_pdf`，不新增接口，同步等待超过 8 秒的一律转后台任务 |
 
 不新增进程，不改动任何进程的监听端口、系统账户与 cgroup 归属。
 

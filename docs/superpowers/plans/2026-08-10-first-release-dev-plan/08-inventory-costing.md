@@ -9,6 +9,7 @@
 第二条，本阶段不定义任何取价规则（PRD 第 5.1.2 节）。暂估取价、暂估回冲、价差拆分、超量开票反向匹配的入账单价、退货回冲的取价三分支、交付确认结转销货成本的取价，一律执行规格第 5.2 章财务规则条目的事件-分录表及其七个规则块。本阶段实现的是这些规则中依赖库存状态的那一部分算法与状态（移动加权平均单价、未被价差覆盖在库数量、结存数量、原单价读取），并把计算结果返回给调用方用于生成分录。借贷方向与科目一概不由本阶段决定。
 
 第三条，凭证与子账共用同一会计期间归属（规格第 5.2 章子账与凭证共用同一期间归属块）。本阶段不解析会计期间，会计期间由业务事件的编排用例在同一事务内解析一次，并以入参形式同时传给库存与总账。
+三条硬边界之外，另有三条归属边界由跨阶段归属裁定固定，本阶段不得越界。其一，交付确认单主体归 sales 模块，`sales.delivery_confirmations` 与 `sales.delivery_confirmation_lines` 两张表由阶段 6 建立，本阶段不建任何单据表，只按裁定 A-09 提供交付确认的库存腿，即 `InventoryPostingPort::post_outbound`，`SourceDocType::DELIVERY_CONFIRMATION` 由 ep-app-sales 传入，直运行由 sales 侧整段跳过库存腿、本阶段不产生任何流水。其二，进项发票台账归 invoice 模块，`invoice.purchase_invoices` 与 `invoice.purchase_invoice_lines` 由阶段 10 建立，本阶段只提供价差拆分入口 `InventoryVariancePort::split_variance` 供 ep-app-invoice 调用。其三，取价一律归本阶段，总账只做分录映射与借贷平衡（裁定 C-13），收货登记与采购退货由采购模块在同一事务内先调本阶段的库存端口再调 `ep_contract_ledger::PostingPort::post`，ledger 侧不提供任何取价方法。
 
 ### 1. 交付物清单
 
@@ -16,42 +17,48 @@
 
 | 序号 | 交付物 | 可验证形态 |
 |---|---|---|
-| D1 | ep-contract-inventory crate | 编译通过，含四个对外 trait 与全部命令、结果 DTO，无任何 IO 依赖 |
+| D1 | ep-contract-inventory crate | 编译通过，含五个对外 trait 与全部命令、结果 DTO，无任何 IO 依赖 |
 | D2 | ep-domain-inventory crate | 编译通过，含四个聚合、计价与取价领域服务、五组不变量断言，`cargo test` 全绿，不含 sqlx 符号 |
-| D3 | ep-app-inventory crate | 编译通过，含三个过账用例、一个停用校验用例、七个查询投影、两个对账检查实现 |
+| D3 | ep-app-inventory crate | 编译通过，含三个过账用例、一个停用校验用例、七个查询投影、两个 `ReconCheck` 实现、`InventoryMaterialUsageProbe`、`InventoryReferenceCounter` 与 `InventorySubledgerBalanceQuery` |
 | D4 | ep-adapter-db-pg 中的 inventory 仓储实现 | 九张表的仓储与查询实现，只访问 inventory schema |
-| D5 | db/migrations/inventory 下 11 个迁移文件 | `--check` 模式下迁移历史版本一致，全部表 RLS 已 ENABLE 且 FORCE |
+| D5 | db/migrations/inventory 下 13 个迁移文件 | `--check` 模式下迁移历史版本一致，全部表 RLS 已 ENABLE 且 FORCE |
 | D6 | core-server 上的 10 个只读 HTTP 端点 | 可用 curl 打通，返回基线第 5.2 节封套 |
-| D7 | 两个对账检查在 job-worker 中注册并可运行 | 注入差异后生成对账差异事项，可追溯 |
+| D7 | 两个 `ep_platform_recon::ReconCheck` 实现在 job-worker 的 `ReconRegistry` 注册并可运行 | 注入差异后写入 `platform_core.recon_discrepancies`，可追溯 |
 | D8 | ep-testkit 中的 `InventoryPostingDriver` 与七个构造器 | 集成测试可在无采购、销售、发票模块的情况下驱动全部库存路径 |
 | D9 | ep-datagen 中的库存流水生成器 | `--scale=default` 产出 50 万条库存流水、36 个会计期间的基准数据集 |
 | D10 | docs 三处登记 | error-codes.md 新增 19 条、event-catalog.md 新增 2 条、data-dictionary 新增 9 张表 |
 | D11 | 性能证据 | 四个附录 A.1 度量项的 EXPLAIN 输出与 P95 实测报告 |
+| D12 | inventory 模块四端界面 | `clients/desktop/src/modules/inventory/` 与 `clients/mobile/src/modules/inventory/` 下的模块目录，桌面用例经 Playwright 与 tauri-driver、移动用例经 XCUITest 与 Espresso 通过 |
+| D13 | 受治理数据集视图 `inventory.v_stock_value_entries` | 视图存在且含 legal_entity_id、security_level、data_scope_tags 三列，已授予 `ep_analyst_ro`，列签名与阶段 11 的 `reporting.dataset_fields` 登记一致 |
 
-本阶段不交付任何界面。四端界面按规格第 6.2 章能力矩阵第 597 行库存台账与收发扫码一行四端取值均为完整，其界面实现归属四端阶段，本阶段只保证端点与字段级权限投影已就绪。
+本阶段交付 inventory 模块的四端界面（裁定 A-23），位置固定为 `clients/desktop/src/modules/inventory/` 与 `clients/mobile/src/modules/inventory/`。规格第 6.2 章能力矩阵第 597 行库存台账与收发扫码一行四端取值均为完整，因此四端均实现完整视图。界面只消费第 5 节的十个只读端点与字段级权限投影，不新增任何写端点，第一条硬边界不因界面下沉而放宽。
 
 ### 2. crate 与进程归属
 
-新增四个 crate，改动两个既有 crate，不新增任何进程。
+新增四个 crate，改动两个既有 crate 与两个客户端工程，不新增任何进程。
 
 | crate | 类型 | 装配进程 | 职责 |
 |---|---|---|---|
 | ep-contract-inventory | 新增 | core-server、job-worker | 对外 trait 与 DTO，只依赖 ep-foundation |
 | ep-domain-inventory | 新增 | core-server、job-worker | 聚合、值对象、计价服务、取价判定、不变量断言、仓储端口 trait |
-| ep-app-inventory | 新增 | core-server、job-worker | 过账用例、查询投影、授权调用、审计与 Outbox 写入、对账检查实现 |
+| ep-app-inventory | 新增 | core-server、job-worker | 过账用例、查询投影、授权调用、审计与 Outbox 写入、两个 `ReconCheck` 实现、两个 mdm 侧探针实现与子账侧余额查询函数 |
 | ep-adapter-db-pg | 改动 | core-server、job-worker | 新增 `repo/inventory/` 目录下 6 个仓储文件与 1 个查询文件 |
 | apps/core-server | 改动 | core-server | `wiring.rs` 注入 inventory 实现，路由注册 10 个端点 |
-| apps/job-worker | 改动 | job-worker | `wiring.rs` 注册 2 个对账检查与 1 个事件消费者占位 |
+| apps/job-worker | 改动 | job-worker | `wiring.rs` 向 `ReconRegistry` 注册 2 个对账检查、向 `MasterReferenceCounterRegistry` 注册 `InventoryReferenceCounter`、注入 `InventoryMaterialUsageProbe`，本阶段不注册任何事件消费者 |
+| clients/desktop | 改动 | 桌面客户端 | `src/modules/inventory/` 下的库存台账、库存流水、两张报表与扫码校验页面 |
+| clients/mobile | 改动 | 移动客户端 | `src/modules/inventory/` 下的扫码录入与台账查询页面 |
 
 依赖方向按基线第 1.3 节，逐条自查如下。ep-domain-inventory 只依赖 ep-foundation 与 ep-contract-inventory。ep-app-inventory 依赖 ep-foundation、ep-platform-authz、ep-platform-audit、ep-platform-outbox、ep-platform-obs、ep-platform-recon、ep-domain-inventory、ep-contract-inventory、ep-contract-mdm。ep-app-inventory 不依赖任何其他模块的 application crate。ep-contract-inventory 不依赖 ep-contract-mdm，物料与仓库属性以扁平化的入参结构体传入，避免契约层横向耦合。
 
 跨模块调用方向明确为单向：procure、sales、invoice 三个模块的 application crate 依赖 ep-contract-inventory 并在装配时注入本阶段的实现；本阶段不反向依赖它们。mdm 的仓库停用用例依赖 ep-contract-inventory 的停用校验 trait，同样在装配时注入。
+本阶段在调整后的阶段顺序 1 → 2 → 3a → 4 → 3b → 5 → 9a → 8 → 6 → 7 → 10 → 11 → 9b → 13 → 14 中排在阶段 9a 之后、阶段 6 之前。因此 ep-platform-recon 的对账框架、ep-contract-ledger 的过账端口与 ep-contract-mdm 的探针 trait 在本阶段开工时均已存在，本阶段不需要为它们注入任何空实现，也不存在只登记对账语句不执行的过渡期。反过来，交付确认单、采购收货单与采购发票分别由阶段 6、阶段 7、阶段 10 在其自身 schema 建立，本阶段只提供被它们调用的库存腿与价差拆分入口。本阶段实现但不拥有的三个 trait 与一个查询函数见第 4.9 节，注入位置为 `apps/core-server/src/wiring.rs` 与 `apps/job-worker/src/wiring.rs` 两处。
 
 进程归属：全部过账路径与查询路径在 core-server 内执行；对账检查与库存事件消费在 job-worker 内执行；portal-gateway 不接触库存数据，供应商门户不提供任何库存视图（PRD 第 4.9.1 节的能力边界内无库存项）。
 
 ### 3. 数据库变更
 
 schema 固定为 `inventory`，属主角色 `ep_mod_inventory`，运行期读写走 `ep_app_rw`，对账走 job-worker 池的同一账号，只读分析走 `ep_analyst_ro`。九张新表，全部按基线第 4 节的公共列排列。以下表定义中未重复列出的公共列一律按基线第 4 节取值：`id uuid`、`legal_entity_id uuid`、`security_level smallint default 20`、`data_scope_tags text[] default '{}'`、`row_version bigint default 1`、`created_at`、`created_by`、`updated_at`、`updated_by`。仅追加表按基线第 4 节去掉 `row_version`、`updated_at`、`updated_by`，改带 `reverses_id uuid null`。
+公共列 `created_by` 在由 job-worker 的对账执行器或库存期初导入通道写入时取 `ep_foundation::SYSTEM_PRINCIPAL_ID`，即裁定 A-02 冻结的保留取值 `00000000-0000-7000-8000-000000000001`，不得另写全零值或其他自选值。
 
 #### 3.1 表定义
 
@@ -76,7 +83,7 @@ schema 固定为 `inventory`，属主角色 `ep_mod_inventory`，运行期读写
 | reverses_id | uuid | 是 | 首版恒为 NULL，保留以满足基线第 4 节仅追加表的列约定 |
 | created_at / created_by | | 否 | |
 
-`reason` 的八项取值：`PURCHASE_RECEIPT`、`PURCHASE_RECEIPT_OVERBILL_MATCHED`、`SALES_RETURN`、`DELIVERY_CONFIRMATION`、`PURCHASE_RETURN_INVOICED`、`PURCHASE_RETURN_UNINVOICED`、`PURCHASE_INVOICE_VARIANCE`、`MIGRATION_OPENING`。最后一项为数据迁移阶段预留，本阶段实现其入库路径但只允许在该法人尚无任何库存流水时执行。
+`reason` 的八项取值：`PURCHASE_RECEIPT`、`PURCHASE_RECEIPT_OVERBILL_MATCHED`、`SALES_RETURN`、`DELIVERY_CONFIRMATION`、`PURCHASE_RETURN_INVOICED`、`PURCHASE_RETURN_UNINVOICED`、`PURCHASE_INVOICE_VARIANCE`、`MIGRATION_OPENING`。最后一项承载库存期初，按裁定 A-24 本阶段是库存期初导入的唯一落点，首版不设独立的数据迁移阶段；本阶段实现其入库路径但只允许在该法人尚无任何库存流水时执行，期初写入不生成凭证，其总账侧由阶段 9a 的期初余额批次承担。
 
 索引：`pk_stock_movements`；`ix_stock_movements_legal_entity_id_created_at`（基线）；`ux_stock_movements_le_src_doc` 唯一，列为 `(legal_entity_id, source_doc_type, source_doc_id)`，这是本阶段的过账幂等根；`ix_stock_movements_le_period` 列为 `(legal_entity_id, accounting_period_seq, business_date)`；`ix_stock_movements_le_bizdate` 列为 `(legal_entity_id, business_date, id)`。
 
@@ -105,7 +112,7 @@ schema 固定为 `inventory`，属主角色 `ep_mod_inventory`，运行期读写
 
 冗余四列的理由：收发存汇总与期末库存价值表按会计期间区间聚合，若每次都回连 movements 会在 50 万行规模上产生 hash join，实测无法稳定落在 10 秒通过线内。冗余列与 movements 的一致性由写入路径保证，并由对账检查 R3 逐条核对，不依赖人工纪律。
 
-索引：`pk`；`ix_stock_qty_entries_legal_entity_id_created_at`（基线）；`ix_stock_qty_entries_le_dim_seq` 列为 `(legal_entity_id, warehouse_id, material_id, batch_no, accounting_period_seq)`；`ix_stock_qty_entries_le_bizdate` 列为 `(legal_entity_id, business_date, id)`；`ix_stock_qty_entries_movement` 列为 `(movement_id, line_no)`。
+索引：`pk`；`ix_stock_qty_entries_legal_entity_id_created_at`（基线）；`ix_stock_qty_entries_le_dim_seq` 列为 `(legal_entity_id, warehouse_id, material_id, batch_no, accounting_period_seq)`；`ix_stock_qty_entries_le_bizdate` 列为 `(legal_entity_id, business_date, id)`；`ix_stock_qty_entries_movement` 列为 `(movement_id, line_no)`；`ix_stock_movements_legal_entity_id_material_id` 列为 `(legal_entity_id, material_id)`，供裁定 A-13 的物料引用探针做存在性判定，索引名按该裁定原样固定，其命名与所在表前缀不一致的理由见第 4.9 节。
 
 表 3，`inventory.stock_value_entries`，库存金额流水，仅追加。基线第 3.2 节已登记该表名。
 
@@ -263,9 +270,11 @@ create policy rls_<t>_le on inventory.<t>
 | 8 | V202610120907__inventory_create_variance_coverage_balances.sql | 表 7 | 新增表，可在线 |
 | 9 | V202610120908__inventory_create_serial_states.sql | 表 8 | 新增表，可在线 |
 | 10 | V202610120909__inventory_create_movement_serials.sql | 表 9 | 新增表，可在线 |
-| 11 | V202610120910__inventory_create_report_indexes.sql | 两条报表专用复合索引，全部 `CREATE INDEX CONCURRENTLY` | 可在线，单次锁持有不超过 5 秒 |
+| 11 | V202610120910__inventory_create_report_indexes.sql | 三条复合索引，两条报表专用与一条物料引用探针专用，全部 `CREATE INDEX CONCURRENTLY` | 可在线，单次锁持有不超过 5 秒 |
+| 12 | V202610120911__inventory_backfill_append_only_registry.sql | 向 `platform_core.append_only_registry` 登记四张仅追加表 | 仅数据登记，可在线 |
+| 13 | V202610120912__inventory_create_dataset_views.sql | 建 `inventory.v_stock_value_entries` 并授予 `ep_analyst_ro` | 新增视图，可在线 |
 
-每个文件头部带 `-- rollback:` 段。第 2 至 10 号的回退语句为对应的 `drop table`，第 11 号为 `drop index concurrently`。第 1 号注明只能用升级前备份回退。迁移会话固定 `SET lock_timeout = '5s'` 与 `SET statement_timeout = '30min'`，不在迁移中调用应用代码，不在同一文件中既建表又回填数据。
+每个文件头部带 `-- rollback:` 段。第 2 至 10 号的回退语句为对应的 `drop table`，第 11 号为 `drop index concurrently`，第 12 号为对应的 `delete from platform_core.append_only_registry`，第 13 号为 `drop view`。第 1 号注明只能用升级前备份回退。迁移会话固定 `SET lock_timeout = '5s'` 与 `SET statement_timeout = '30min'`，不在迁移中调用应用代码，不在同一文件中既建表又回填数据。
 
 #### 3.4 本阶段新增的命名决定
 
@@ -276,6 +285,13 @@ create policy rls_<t>_le on inventory.<t>
 二是二级明细表的命名。`stock_movement_serials` 是 `stock_qty_entries` 之下的第二级明细，不适用 `_lines`。本阶段决定二级明细表命名为主表单数加语义复数。
 
 三是索引名超长时的缩写。PostgreSQL 标识符上限为 63 字节，`ux_stock_movements_legal_entity_id_source_doc_type_source_doc_id` 为 65 字节。本阶段决定超长时按列名取语义缩写并在数据字典中登记全称映射，缩写词表固定为 `le` 对应 legal_entity_id、`dim` 对应该表的完整维度列组、`seq` 对应 accounting_period_seq、`src` 对应 source。
+#### 3.5 受治理数据集视图与仅追加登记
+
+两项跨阶段登记随本阶段迁移一并交付，二者都不是本模块自用的结构，但由本模块作为基表所有者提供。
+
+一是受治理数据集视图（裁定 A-18）。视图名固定为 `inventory.v_stock_value_entries`，dataset code 固定为 `inventory_stock_value_entries`，grain 取 ENTRY，由第 13 号迁移建立。视图必须含 `legal_entity_id`、`security_level`、`data_scope_tags` 三列，同一迁移内执行 `GRANT SELECT ON inventory.v_stock_value_entries TO ep_analyst_ro`，不授予 `ep_app_rw` 之外的任何写权限。视图取数为 `inventory.stock_value_entries`，不做聚合、不跨 schema 连接，金额与单价列的字段级密级仍为 30，投影口径与第 5 节一致。列名与类型签名必须与阶段 11 的 `reporting.dataset_fields` 登记一致，由阶段 11 的启动自检项 `reporting-dataset-signature-matched` 校验，本阶段在退出条件中把该列签名同步给阶段 11。
+
+二是仅追加登记（裁定 B-02）。第 12 号迁移向 `platform_core.append_only_registry` 登记四行，`schema_name` 取 `inventory`，`table_name` 依次取 `stock_movements`、`stock_qty_entries`、`stock_value_entries`、`variance_splits`，`immutable_columns` 取各表除 `reverses_id` 之外的全部列。登记与触发器的一致性由 `db/checks/append_only_consistency.sql` 断言，`xtask sqlcheck` 执行。`inventory.stock_movement_serials` 同为仅追加表但不在裁定 B-02 的四行清单内，本阶段按裁定只登记四行，该项差异在数据字典中标注并提请裁定方复核。
 
 ### 4. 领域模型与关键算法
 
@@ -330,7 +346,7 @@ pub enum OutboundPricing {
 
 对应关系逐条给出。`Explicit` 承载规格第 5.2 章采购收货事件的按采购订单不含税单价暂估，以及超量开票三条结清路径中路径一的按已登记发票不含税单价。`ReturnAtMovingAverage` 承载退货回冲的取价三分支中的前两个分支，即优先按退货发生时该仓库该物料的移动加权平均单价，结存为零或单价为零时改按 fallback 逐笔取原单价。`OriginalEstimate` 承载第三个分支，即采购发票尚未登记的采购退货一律按该次收货的原暂估单价原额冲回，不适用移动加权平均单价，因此没有条件判定。
 
-采购发票是否已登记这一判定由采购或发票模块给出（PRD 第 4.6.2 节明确该字段由系统判定、用户不可干预），本模块不判定，只按调用方选择的枚举分支执行。`fallback` 与 `allocations` 中的原单价由调用方从其自身单据上固化的原结转单价或原入账单价读出；本模块提供 `original_unit_price_by_source_line` 查询端口，使调用方可以从库存金额流水回查某条来源单据行当时的 `applied_unit_price`，避免两处各存一份单价。
+采购发票是否已登记这一判定由 invoice 模块给出（PRD 第 4.6.2 节明确该字段由系统判定、用户不可干预），取数入口为阶段 10 交付的 `ep_contract_invoice::ReceiptInvoiceMatchQueryPort::match_state`，本模块不判定，只按调用方选择的枚举分支执行。`fallback` 与 `allocations` 中的原单价由调用方从其自身单据上固化的原结转单价或原入账单价读出；本模块提供 `ep_contract_inventory::InventoryPricingLookupPort::original_unit_price_by_source_line` 查询端口，使调用方可以从库存金额流水回查某条来源单据行当时的 `applied_unit_price`。收货入账单价的权威出处唯一为 `inventory.stock_value_entries.applied_unit_price`，`procure.goods_receipt_line_costings` 按裁定 C-12 只保留数量与金额的分配关系、不再保留单价列，两处各存一份单价的形态由该裁定消除。
 
 #### 4.3 算法一：入库过账
 
@@ -366,7 +382,7 @@ pub enum OutboundPricing {
 
 #### 4.5 算法三：价差拆分
 
-对应规格第 5.2 章价差拆分规则的全文。输入为 `(warehouse_id, material_id, matched_quantity, total_variance_amount)` 的列表，`total_variance_amount` 由调用方按本次匹配的发票不含税金额减本次回冲暂估金额算出，本模块不重算。
+对应规格第 5.2 章价差拆分规则的全文。入口为 `InventoryVariancePort::split_variance`，调用方按裁定 A-10 收窄为 `ep-app-invoice`，采购模块不再直接调用本入口。输入为 `(warehouse_id, material_id, matched_quantity, total_variance_amount)` 的列表，`total_variance_amount` 由调用方按本次匹配的发票不含税金额减本次回冲暂估金额算出，本模块不重算。
 
 1. 校验 `matched_quantity > 0`。
 2. 锁 `stock_value_balances` 与 `variance_coverage_balances`。
@@ -420,6 +436,17 @@ I2，两账同源：本次每条 `IN` 或 `OUT` 方向的数量流水有且只�
 I3，金额余额一致：`value_balance.value_amount` 等于该维度全部金额流水 `amount` 的代数和；`value_balance.quantity` 等于该维度全部批次的 `qty_balance.quantity` 之和。
 I4，单价重算：`value_balance.quantity == 0` 时 `moving_avg == 0`；大于 0 时 `moving_avg == round(value_amount / quantity, 6)`。
 I5，未覆盖上界：`0 ≤ uncovered_quantity ≤ value_balance.quantity`。
+#### 4.9 本阶段实现的外部 trait 与查询函数
+
+四项，全部由其他阶段定义、本阶段实现，实现类型名与位置一律照跨阶段归属裁定，不另取名。
+
+一是 `ep_contract_mdm::MaterialUsageProbe::has_stock_movement(&self, ctx: &SecurityContext, material_id: Id<Material>) -> Result<bool, AppError>`，trait 由阶段 5 定义（裁定 A-13）。实现类型固定为 `InventoryMaterialUsageProbe`，位于 `crates/application/inventory/src/probe/material_usage.rs`，按 `(legal_entity_id, material_id)` 做存在性判定，命中索引 `ix_stock_movements_legal_entity_id_material_id`。该索引名按裁定原样固定；因第 3.1 节表 1 的 `inventory.stock_movements` 不带 material_id 列，物料维度落在其明细表，索引实际建在 `inventory.stock_qty_entries` 上，索引名与所在表前缀不一致一项在数据字典中登记并提请裁定方复核。本实现注入后，阶段 5 的启动自检项 `master-data-usage-probes-registered` 在 inventory 模块启用时由缺位放行转为强制，阶段 5 的档案停用校验完整性验收顺延到本阶段。
+
+二是 `ep_contract_mdm::MasterReferenceCounter`，trait 与注册表 `MasterReferenceCounterRegistry` 由阶段 5 定义（裁定 A-15）。实现类型固定为 `InventoryReferenceCounter`，位于 `crates/application/inventory/src/probe/reference_counter.rs`，`module_code()` 返回 `ModuleCode::Inventory`，`count_open_documents` 在 `MasterObjectKind::Material` 下返回该物料非零结存的仓库物料批次组合数，其余 object_kind 返回 0。本阶段不承担任何 `SalesTradeHistoryProvider` 或 `PurchaseTradeHistoryProvider` 实现。
+
+三是 `ep_platform_recon::ReconCheck`，trait、注册表 `ReconRegistry` 与执行器由阶段 9a 交付（裁定 A-06）。本阶段实现两个检查并在 job-worker 装配时经 `ReconRegistry::register` 注册：库存数量守恒，`category()` 取 `ReconCategory::Invariant`；存货项子账与总账勾稽，`category()` 取 `ReconCategory::SubledgerVsLedger`。两者的 `blocks_period_close()` 均返回 true，`run_batch` 的快照入参为 `&dyn SnapshotCtx`，分批规模取第 7 节的 `EP__INVENTORY__RECON__BATCH_SIZE`，差异事项写入 `platform_core.recon_discrepancies`。第 3.1 节与第 4.6 节提到的 R2、R3 两组判据落在这两个实现内，不另起第三个检查。
+
+四是存货子账侧余额查询函数（裁定 B-08）。实现类型固定为 `InventorySubledgerBalanceQuery`，位于 `crates/application/inventory/src/projection/subledger_balance.rs`，返回该法人该会计期间的存货金额账合计，其方法签名与阶段 10 定义的 `ep_contract_finance::SubledgerBalanceProvider::balance(snapshot: &dyn SnapshotCtx, legal_entity_id, accounting_period_id) -> Result<Money, AppError>` 逐字一致。本阶段不依赖 ep-contract-finance，阶段 10 交付时把本类型包装为该 trait 的实现并接线到 `finance.v_recon_inventory` 视图。
 
 ### 5. API 契约
 
@@ -471,16 +498,79 @@ A10 不自行计算勾稽差额，差额由对账组件判定（PRD 第 5.7.3 �
 | INVENTORY.STOCK_BALANCE.WAREHOUSE_HAS_STOCK | BUSINESS_CONFLICT | 409 | 仓库停用前置校验不通过，详情列出仍有结存的物料清单 |
 
 仓库所属法人与来源单据法人不一致这一情形不新增错误码，按基线第 5.5 节的存在性泄漏统一处理返回 404 与 `PLATFORM.AUTHZ.NOT_FOUND_OR_DENIED`，与 PRD 第 5.9 节权限或策略拒绝分类不冲突：PRD 要求的是不回显无权数据，404 更严格。
+#### 5.1 五个对外 trait 的完整签名
+
+本阶段对外只暴露五个 trait，全部位于 ep-contract-inventory。事务句柄一律取阶段 1 冻结的 `ep_foundation::port::Tx`，标记类型一律取 `ep_foundation::id::marker`，契约层不引入任何其他模块的类型。阶段 7 曾用的 `StockInboundPort`、`StockOutboundPort`、`StockAvailabilityQueryPort` 三个名字按裁定 C-18 作废。
+
+```rust
+// crates/contract/inventory/src/port/posting.rs
+#[async_trait::async_trait]
+pub trait InventoryPostingPort: Send + Sync {
+    async fn post_inbound(&self, tx: &mut dyn Tx, ctx: &SecurityContext, cmd: InboundPosting)
+        -> Result<InboundPostingResult, AppError>;
+    async fn post_outbound(&self, tx: &mut dyn Tx, ctx: &SecurityContext, cmd: OutboundPosting)
+        -> Result<OutboundPostingResult, AppError>;
+    async fn find_movement_by_source(&self, tx: &mut dyn Tx, ctx: &SecurityContext, source: SourceRef)
+        -> Result<Option<MovementResult>, AppError>;
+}
+
+// crates/contract/inventory/src/port/variance.rs
+#[async_trait::async_trait]
+pub trait InventoryVariancePort: Send + Sync {
+    async fn split_variance(&self, tx: &mut dyn Tx, ctx: &SecurityContext, cmd: VarianceSplitCommand)
+        -> Result<VarianceSplitResult, AppError>;
+}
+
+// crates/contract/inventory/src/port/pricing_lookup.rs
+#[async_trait::async_trait]
+pub trait InventoryPricingLookupPort: Send + Sync {
+    async fn original_unit_price_by_source_line(&self, tx: &mut dyn Tx, ctx: &SecurityContext,
+                                                source_doc_line_id: uuid::Uuid)
+        -> Result<UnitPrice, AppError>;
+}
+
+// crates/contract/inventory/src/port/availability.rs
+pub struct AvailabilityQuery {
+    pub legal_entity_id: Id<LegalEntity>,
+    pub material_id: Id<Material>,
+    pub warehouse_id: Option<Id<Warehouse>>,
+    pub required_on: chrono::NaiveDate,
+}
+pub struct AvailabilityView {
+    pub warehouse_id: Id<Warehouse>,
+    pub on_hand_quantity: Quantity,
+    pub reserved_quantity: Quantity,
+    pub available_quantity: Quantity,
+}
+
+#[async_trait::async_trait]
+pub trait AvailabilityQueryPort: Send + Sync {
+    async fn available(&self, tx: &mut dyn Tx, ctx: &SecurityContext, q: AvailabilityQuery)
+        -> Result<Vec<AvailabilityView>, AppError>;
+    async fn on_hand(&self, tx: &mut dyn Tx, ctx: &SecurityContext,
+                     legal_entity_id: Id<LegalEntity>, warehouse_id: Id<Warehouse>,
+                     material_id: Id<Material>, batch_no: &str) -> Result<Quantity, AppError>;
+}
+
+// crates/contract/inventory/src/port/deactivation.rs
+#[async_trait::async_trait]
+pub trait WarehouseDeactivationCheckPort: Send + Sync {
+    async fn assert_no_stock(&self, tx: &mut dyn Tx, ctx: &SecurityContext,
+                             warehouse_id: Id<Warehouse>) -> Result<(), AppError>;
+}
+```
+
+三条调用约定随签名一并冻结。其一，交付确认的库存腿（裁定 A-09）：ep-app-sales 在 confirm_delivery 的同一事务内以 `OutboundPosting { reason: MovementReason::DeliveryConfirmation, pricing: OutboundPricing::MovingAverage, source: SourceRef { doc_type: DELIVERY_CONFIRMATION, .. }, lines }` 调用 `post_outbound`，本阶段按行返回 `cogs_amount` 与 `stock_movement_id`；`is_drop_ship` 为真时由 sales 侧整段跳过该调用。其二，`available` 与第 5 节端点 A2 共用同一投影函数，`reserved_quantity` 按第 11.2 节 U-G-01 的临时取值恒为零；`on_hand` 是阶段 7 采购退货结存充足性前置校验的取数入口。其三，能力域码与动作类别（裁定 A-20）：第 5 节十个端点的能力域码一律取 `CapabilityDomain::InventoryLedgerScan`，动作类别一律取 `ActionClass::Read`，常量按 `<USECASE_SCREAMING>_DOMAIN` 与 `<USECASE_SCREAMING>_ACTION` 声明在 `crates/contract/inventory/src/capability.rs`，`xtask configdoc` 断言每个路由都能解析到一对常量，缺失即构建失败。
 
 ### 6. 并发与事务边界
 
 #### 6.1 事务归属
 
-本阶段不开启任何自己的事务。三个过账端口与停用校验端口都接受调用方传入的事务句柄，在调用方用例的同一事务内执行，符合基线第 10.3 节一个用例一个事务、禁止在一个 HTTP 请求内开启多个写事务。
+本阶段不开启任何自己的事务。三个过账端口、可用量查询端口、原单价回查端口与停用校验端口的方法签名一律接受调用方传入的 `&mut dyn Tx`，该类型由阶段 1 在 `ep_foundation::port::tx` 冻结（裁定 A-01），跨 crate 取具体句柄的 downcast 只允许出现在 ep-adapter-db-pg 内。全部方法在调用方用例的同一事务内执行，符合基线第 10.3 节一个用例一个事务、禁止在一个 HTTP 请求内开启多个写事务。
 
-一次采购收货登记的完整事务内容为：采购模块写收货单与订单行回写、库存模块写 movement 与两账、财务模块写凭证与应付账款暂估台账、审计事件写入、Outbox 条目写入，全部在同一事务内提交。规格第 5.2 章要求财务模块按同一业务事件生成唯一一张总账凭证，且规格第 10.2 章关账受理后建立快照时要求该期间的全部凭证已可见，因此凭证不得延迟到 Outbox 消费时才生成。这一点属总账阶段的实现约束，本阶段以入参契约把它显式化：过账端口返回的每行金额是分录的存货腿金额，调用方必须在同一事务内使用它。
+一次采购收货登记的完整事务内容为：采购模块写收货单与订单行回写、库存模块写 movement 与两账、财务模块写凭证与应付账款暂估台账、审计事件写入、Outbox 条目写入，全部在同一事务内提交，调用次序固定为先 `InventoryPostingPort::post_inbound` 后 `ep_contract_ledger::PostingPort::post`（裁定 C-13）。规格第 5.2 章要求财务模块按同一业务事件生成唯一一张总账凭证，且规格第 10.2 章关账受理后建立快照时要求该期间的全部凭证已可见，因此凭证不得延迟到 Outbox 消费时才生成。全部凭证一律与业务事件同事务生成、Outbox 只承载派生、通知、检索与报表数据集这一口径已由裁定 C-28 定死，本阶段以入参契约把它显式化：过账端口返回的每行金额是分录的存货腿金额，调用方必须在同一事务内使用它。
 
-隔离级别 `READ COMMITTED`（基线第 8.4 节）。对账检查在 job-worker 内以单个 `REPEATABLE READ` 事务或由其导出的快照执行。
+隔离级别 `READ COMMITTED`（基线第 8.4 节）。对账检查不自行开事务，其快照由 `ep_foundation::port::UnitOfWork::snapshot_transact` 导出的 `SnapshotCtx` 承载，经阶段 9a 的 ep-platform-recon 执行器逐批传入 `ReconCheck::run_batch`。
 
 #### 6.2 锁策略
 
@@ -504,9 +594,10 @@ A10 不自行计算勾稽差额，差额由对账组件判定（PRD 第 5.7.3 �
 
 本阶段在同一事务内写入两类事件。`inventory.stock_movement.posted.v1` 与 `inventory.stock_value_adjusted.v1`，信封按基线第 6.1 节，`aggregate_type` 取 `inventory.stock_movements`，`posting_date` 取 `business_date`，`accounting_period_id` 取本次过账的期间，`security_level` 与 `data_scope_tags` 从 movement 行取，缺失即拒绝入队（规格第 7.9 章派生存储写入的必备标签）。
 
-首版消费者两个：采购模块的库存不足触发采购建议（规格第 5.2 章采购与 SRM 条目的四个来源之一，PRD 第 5.6.5 节由库存侧提供判定输入），以及报表模块的库存类数据集刷新。消费幂等由 `platform_msg.inbox_consumptions` 保证。
+首版消费者两个，均不由本阶段交付。`inventory.stock_movement.posted.v1` 由阶段 7 的采购建议消费者消费（规格第 5.2 章采购与 SRM 条目的四个来源之一，PRD 第 5.6.5 节由库存侧提供判定输入）。`inventory.stock_value_adjusted.v1` 的消费者固定为 `costing.stock_value_adjust`，位于 `crates/application/costing/src/consumer/stock_value_adjust.rs`，由阶段 11 交付并在 job-worker 注册，副作用为向 `costing.cost_entries` 补记只影响金额账的调整对应的成本条目（裁定 B-09）。两者的消费幂等均由 `platform_msg.inbox_consumptions(consumer, event_id)` 保证。
 
 本阶段的事件不承载分录、不承载凭证生成，因此事件投递失败进入死信不会破坏账务一致性，只会延迟采购建议与报表刷新。这一点是有意设计：把可以异步的东西异步化，把必须同事务的东西留在同事务。
+本阶段不向 `ledger.posting_trigger_event_types` 登记任何行（裁定 A-21），库存事件不独立产生凭证。凭证一律由产生该库存流水的来源业务事件在同一事务内经 `ep_contract_ledger::PostingPort::post` 生成，其存货腿金额来自本阶段过账端口的返回值。因此关账受理前提二的待过账积压统计不会把本阶段的两个事件计入。
 
 #### 6.5 失败重试与补偿
 
@@ -532,7 +623,7 @@ A10 不自行计算勾稽差额，差额由对账组件判定（PRD 第 5.7.3 �
 
 不新增导出行数、分页、默认筛选期间三类配置，它们由基线第 11.5 节全局固定。
 
-启动自检不新增项。基线第 7.3 节的第 4 项全部带法人列的表均已 ENABLE 且 FORCE 行级安全，自动覆盖本阶段新增的九张表。
+启动自检不新增项。基线第 7.3 节的 `rls-enabled-and-forced` 一项断言全部带法人列的表均已 ENABLE 且 FORCE 行级安全，自动覆盖本阶段新增的九张表。自检项一律按注册名标识，不用序号（裁定 C-25）。
 
 ### 8. 测试计划
 
@@ -598,6 +689,8 @@ A10 不自行计算勾稽差额，差额由对账组件判定（PRD 第 5.7.3 �
 | I-19 | 迁移期初路径：该法人已有流水时拒绝 | 第 3.1 节预留分支 |
 | I-20 | 对账检查注入：注入负结存、注入两账不一致、注入金额余额为负，各自生成可追溯的对账差异事项 | 规格第 10.2 章发布验收的注入用例 |
 | I-21 | 零结存残值观察项：由 ORIGINAL_ESTIMATE_PRICE 分支产生残值时不生成差异事项、不拦截关账，但可逐条追溯到来源流水 | 第 4.6 节残值口径 |
+| I-22 | 探针与引用计数器：某物料有库存流水时 `InventoryMaterialUsageProbe` 返回真、无流水时返回假；`InventoryReferenceCounter` 在该物料有非零结存时返回仓库物料批次组合数、结存全部归零后返回 0 | 裁定 A-13 与 A-15 |
+| I-23 | 数据集视图与仅追加登记：`inventory.v_stock_value_entries` 含三列安全列且 `ep_analyst_ro` 可读、`ep_app_rw` 不可写；四张仅追加表在 `platform_core.append_only_registry` 的登记与触发器一致 | 裁定 A-18 与 B-02 |
 
 法人越权测试集独立成 `tests/rls_matrix` 的 inventory 子目标，覆盖基线第 8.4 节的八类：读取、写入、更新、删除、聚合、排序、报表投影与错误信息泄漏。具体做法是以法人 A 的安全上下文对法人 B 的九张表逐表发起操作，断言读取返回空集、写入被 RLS 拒绝、聚合结果不含 B 的数据、按金额排序时 B 的记录不影响 A 的位次、报表端点 A9 与 A10 的合计不含 B、错误消息不回显 B 的任何字段值。另覆盖内部对账系统安全上下文按法人逐轮遍历时每轮只写单一法人变量。该子目标属发布门禁项。
 
@@ -610,9 +703,9 @@ A10 不自行计算勾稽差额，差额由对账组件判定（PRD 第 5.7.3 �
 
 #### 8.3 端到端测试
 
-本阶段无写入界面，E2E 分两部分。
+本阶段既交付 inventory 模块的四端界面，也提供联调断言库，E2E 分两部分。本模块无写入界面，四端界面只消费第 5 节的十个只读端点。
 
-本阶段自测部分：Playwright 驱动桌面 WebView，覆盖 A1 至 A10 的十个查询页面在法人切换、字段级金额权限有无两种身份下的展示差异；移动端按规格第 6.2 章能力矩阵第 597 行库存台账与收发扫码四端取值均为完整，执行 XCUITest 与 Espresso 各一个场景，覆盖扫码录入批次与序列号的即时校验反馈（调用 A6 与 A7）。
+本阶段自测部分：桌面端经 Playwright 与 tauri-driver 驱动 `clients/desktop/src/modules/inventory/`，覆盖 A1 至 A10 的十个查询页面在法人切换、字段级金额权限有无两种身份下的展示差异；移动端按规格第 6.2 章能力矩阵第 597 行库存台账与收发扫码四端取值均为完整，对 `clients/mobile/src/modules/inventory/` 执行 XCUITest 与 Espresso 各一个场景，覆盖扫码录入批次与序列号的即时校验反馈（调用 A6 与 A7）。
 
 联调部分：规格第 8 章黄金业务闭环十四步中的第 5 步收货、第 8 步交付确认发货、第 11 步退货三步的库存侧断言，在采购与销售两个阶段完成后由联调用例执行，本阶段提供断言库 `ep-testkit::inventory_assertions`，含两账同源、守恒、勾稽三组断言函数，供后续阶段直接引用而不各写一套。
 
@@ -647,26 +740,33 @@ A10 不自行计算勾稽差额，差额由对账组件判定（PRD 第 5.7.3 �
 
 ### 9. 退出条件
 
-以下 18 条全部可客观判定，逐条达成才算本阶段完成。
+以下 25 条全部可客观判定，逐条达成才算本阶段完成。
 
 1. 四个新增 crate 与两个改动 crate 在 `cargo build --workspace --all-features` 下零警告通过，`-D warnings` 生效。
 2. 依赖方向自检脚本通过：`ep-domain-inventory` 不出现 sqlx、reqwest、tokio IO、std::fs、std::net、SystemTime::now、rand 符号；`ep-app-inventory` 的用例函数中不出现 reqwest 与文件写入符号；`ep-app-inventory` 不依赖任何其他模块的 application crate。
 3. 文件规模纪律通过：单文件不超过 800 行，函数不超过 50 行，嵌套不超过 4 层。
-4. 11 个迁移在空库上顺序执行成功，`--check` 模式报告迁移历史版本与二进制期望版本一致；每个迁移文件带 `-- rollback:` 段并经一次实际回退演练。
-5. 九张表全部 `ENABLE` 且 `FORCE` 行级安全，`ep_app_rw` 不具备 BYPASSRLS 与 SUPERUSER，启动自检第 4、5 项通过。
+4. 13 个迁移在空库上顺序执行成功，`--check` 模式报告迁移历史版本与二进制期望版本一致；每个迁移文件带 `-- rollback:` 段并经一次实际回退演练。
+5. 九张表全部 `ENABLE` 且 `FORCE` 行级安全，`ep_app_rw` 不具备 BYPASSRLS 与 SUPERUSER，启动自检 `rls-enabled-and-forced` 与 `runtime-role-privileges-bounded` 两项通过。
 6. 单元测试与三组领域属性测试全绿。
-7. 集成测试 I-01 至 I-21 全绿。
+7. 集成测试 I-01 至 I-23 全绿。
 8. `tests/rls_matrix` 的 inventory 子目标八类全绿。
 9. 并发测试 C-01 至 C-04 全绿，无死锁记录，重试次数指标有值且在阈值内。
 10. 覆盖率达到第 8.5 节的五档门槛。
 11. 四个性能度量项达到通过线，五个端点的 EXPLAIN 证据中无顺序扫描，证据归档到 `docs/evidence/stage-8/`。
-12. 两个对账检查在 job-worker 中注册并可按法人与会计期间执行，注入三类差异后差异事项生成且可追溯，注入清零后校验通过。
+12. 两个 `ep_platform_recon::ReconCheck` 实现已在 job-worker 的 `ReconRegistry` 注册并可按法人与会计期间执行，注入三类差异后差异事项写入 `platform_core.recon_discrepancies` 且可追溯，注入清零后校验通过。
 13. 19 个错误码在 `docs/error-codes.md` 与 `ep-foundation::error::codes` 两处一致，CI 的重复码校验通过。
 14. 2 个事件在 `docs/event-catalog.md` 登记，信封字段完整，缺少 `security_level` 或 `data_scope_tags` 时入队被拒绝的用例通过。
 15. 6 个指标在 ops-agent 的 9101 端点可抓取，标签基数纪律通过（不含 user_id、doc_no、trace_id）。
 16. 数据字典中九张表逐列登记，含第 3.4 节三项新增命名决定与其缩写词表。
 17. 第 4.6 节的偏离项已在阶段交付物中单列一节，并提交基线第 3.5 节的修订建议，由平台架构负责人签署。
 18. 第 11 节列出的五项未决事项的临时取值已逐项写入 `docs/pending-decisions-stage-8.md`，含切换代价估算，并与 PRD 附录乙的 U-G-01 至 U-G-07 编号对齐。
+19. inventory 模块在规格第 6.2 章能力矩阵中取值为完整或简化的能力域，其四端界面已实现并通过 Playwright 与 tauri-driver 的桌面用例、XCUITest 与 Espresso 的移动用例；取值为 VIEW_ONLY 的能力域只实现只读视图；取值为 NOT_APPLICABLE 的不实现入口。
+20. `inventory.v_stock_value_entries` 已发布并授予 `ep_analyst_ro`，列签名已同步给阶段 11 且与 `reporting.dataset_fields` 的登记一致。
+21. 本阶段全部路由的能力域码与动作类别常量已在 `crates/contract/inventory/src/capability.rs` 声明，`xtask configdoc` 通过。
+22. `InventoryMaterialUsageProbe` 已实现并注入，阶段 5 的启动自检项 `master-data-usage-probes-registered` 在 inventory 启用时通过。
+23. 本模块的 `InventoryReferenceCounter` 已实现并注册到 `MasterReferenceCounterRegistry`，本模块不承担任何 TradeHistoryProvider。
+24. 已提供本模块的子账侧余额查询函数，实现类型 `InventorySubledgerBalanceQuery` 的函数名与返回类型按裁定 B-08 固定，阶段 10 可直接包装为 `SubledgerBalanceProvider`。
+25. 四张仅追加表已登记 `platform_core.append_only_registry`，`db/checks/append_only_consistency.sql` 经 `xtask sqlcheck` 执行通过。
 
 ### 10. 与规格和 PRD 的对应
 
@@ -675,7 +775,7 @@ A10 不自行计算勾稽差额，差额由对账组件判定（PRD 第 5.7.3 �
 | 规格位置 | 本阶段实现的内容 |
 |---|---|
 | 第 5.2 章库存与 WMS 条目 | 仓库与库存台账的库存侧、收发存记录、可用量查询、批次与序列号标识、移动加权平均一种方法与单一成本层、出库按加权平均单价结转、两账同源同步、按仓库与物料的库存金额查询、期末库存价值表、销售退货为入库方向、采购退货为出库方向、数量账写入权归库存模块 |
-| 第 5.2 章事件-分录表交付确认事件 | 按交付确认时点的移动加权平均单价从库存金额账结转的库存侧算法；直运不产生库存流水 |
+| 第 5.2 章事件-分录表交付确认事件 | 按交付确认时点的移动加权平均单价从库存金额账结转的库存侧算法；直运不产生库存流水；交付确认单主体与其两张表归 sales 模块并由阶段 6 建立，本阶段不建单据表 |
 | 第 5.2 章事件-分录表采购收货事件 | 按采购订单不含税单价暂估入库的库存侧写入；已被反向匹配的收货数量不走暂估 |
 | 第 5.2 章事件-分录表采购发票事件 | 价差拆分中尚有库存部分调整存货金额并重算单价的库存侧写入；已出库部分金额的计算并返回 |
 | 第 5.2 章事件-分录表销售退货与采购退货事件 | 两个方向的库存流水与两账更新 |
@@ -688,7 +788,7 @@ A10 不自行计算勾稽差额，差额由对账组件判定（PRD 第 5.7.3 �
 | 第 7.5 章文件、分析与归档 | 库存流水列入仅追加对象，进入审计 |
 | 第 7.7 章法人行级隔离机制 | 九张表的 RLS 策略、内部对账系统安全上下文的逐法人遍历取数 |
 | 第 7.9 章派生存储安全继承 | 两个事件携带 security_level 与 data_scope_tags |
-| 第 10.2 章主系统规则 | 库存数量守恒与存货项子账总账勾稽两项检查在 job-worker 内注册与执行、分批口径、未完成处置 |
+| 第 10.2 章主系统规则 | 库存数量守恒与存货项子账总账勾稽两项检查以 `ep_platform_recon::ReconCheck` 实现，在 job-worker 的 `ReconRegistry` 注册与执行、分批口径、未完成处置 |
 | 第 12.2 章授权 | 库存金额、单价与价值表金额列的字段级权限与密级 30 |
 | 第 15.1 章错误分类 | 19 个错误码的五类分类映射与四要素齐备 |
 | 第 15.2 章可靠任务 | 负结存与勾稽差额进入死信与人工修复，不静默忽略 |
@@ -704,7 +804,7 @@ A10 不自行计算勾稽差额，差额由对账组件判定（PRD 第 5.7.3 �
 | 第 5.1.2 节 | 六项取价一律指向规格，本阶段不复述不改写 |
 | 第 5.1.3 节 | 库位、质检、预留、拣货与波次、调拨、盘点均不实现、不出现入口；无任何独立于业务事件的库存增减入口 |
 | 第 5.2.1 至 5.2.2 节 | 仓库作为唯一存放地点维度、跨仓库不合并单价、仓库归属单一法人；仓库档案属性由 mdm 承载，本阶段只读 |
-| 第 5.2.3 节 | 仓库停用前置校验的库存侧，即该仓库全部物料结存为零的判定端口 |
+| 第 5.2.3 节 | 仓库停用前置校验的库存侧，即 `WarehouseDeactivationCheckPort::assert_no_stock`，判定该仓库全部物料结存为零 |
 | 第 5.3.1 至 5.3.3 节 | 数量账四维度、金额账三维度、批次不承载独立成本、按批次不可查金额 |
 | 第 5.4.1 至 5.4.3 节 | 批次必填规则、出库批次候选、一行一批次、批次无状态；序列号非台账维度、条数校验、追溯链、扫码重复处理 |
 | 第 5.5.1 节 | 出入库事件总表七行的库存侧全部实现 |
@@ -726,7 +826,7 @@ A10 不自行计算勾稽差额，差额由对账组件判定（PRD 第 5.7.3 �
 
 R1，出清归零偏离未获批准。第 4.6 节的偏离若不被平台架构负责人接受，则规格第 17.3 章存货金额账与数量账一致这一项在结存归零点上无法严格成立，关账将被无解除路径地拦截。缓解：偏离项作为退出条件第 17 条前置，在编码开始前完成签署；备选方案是把该项不变量的判定式改为带舍入上界的容差判定，但那需要修改规格第 17.3 章的判据，代价更大。
 
-R2，凭证是否与业务事件同事务生成尚未由总账阶段确认。若总账阶段把凭证生成放到 Outbox 消费侧，则规格第 10.2 章关账受理后建立快照的时点将读不到在途已提交业务事件对应的凭证，产生跨期勾稽差额，而本阶段的库存条目已落在事务内。缓解：第 6.1 节已把同事务要求写入端口契约，并在 needs 中显式提出；本阶段的集成测试 I-17 以传入期间为准做一致性断言，联调时若发现总账侧异步生成，该断言会立即失败。
+R2，库存腿金额与凭证腿的同事务一致性。裁定 C-28 已定死全部凭证一律与业务事件同事务生成、Outbox 只承载派生、通知、检索与报表数据集，因此不存在总账侧异步生成凭证的分支，本条风险收窄为编排用例误用：调用方若在库存腿之后另开事务写凭证，规格第 10.2 章关账受理后建立快照的时点会读不到该凭证。缓解：第 6.1 节已把 `&mut dyn Tx` 的同事务要求写入端口签名，跨事务调用在类型上不可表达；本阶段的集成测试 I-17 以传入期间为准做一致性断言，联调时若出现跨事务写入，该断言会立即失败。
 
 R3，热点物料的行锁串行化。20 并发下若集中在少数物料上出库，`stock_value_balances` 的单行锁会把并发退化为串行，威胁 3 秒的普通交易提交通过线。缓解：C-01 并发测试直接度量该场景的 P95；若不达标，可行的优化是把金额账余额的更新推迟到语句级并使用 `UPDATE ... RETURNING` 的单语句原子更新，减少锁持有时间，但不改变一次一行的语义。不采用分片计数器，理由是移动加权平均单价必须读到全局一致的金额余额。
 
@@ -734,13 +834,13 @@ R4，收发存汇总与期末库存价值表的期初聚合随期间数增长。
 
 R5，`value_amount` 允许为负带来的下游影响。负存货金额会传导到总账存货科目余额与经营指标。缓解：对账检查 R2 生成差异事项，但不阻断写入；需在联调期确认财务阶段与报表阶段对负存货的展示口径。
 
-R6，序列号唯一性范围与设备档案的冲突（U-G-07、U-J-03）。本阶段按法人内唯一实现，若售后阶段的设备档案采用同一产品下唯一，同一序列号可能在两处各存一份。缓解：本阶段的 `serial_states` 是库存侧的唯一真相，售后阶段应引用而非另建；已写入 needs。
+R6，序列号唯一性范围与设备档案的冲突（U-G-07、U-J-03）。本阶段按法人内唯一实现，若阶段 12 的设备档案采用同一产品下唯一，同一序列号可能在两处各存一份。缓解：本阶段的 `serial_states` 是库存侧的唯一真相，阶段 12 的设备档案应引用而非另建，该约束作为阶段 12 的输入前提；本阶段不提供任何跨模块的序列号写入端口。
 
 #### 11.2 未决事项的临时取值与切换代价
 
 | 编号 | 临时取值 | 是否阻塞本阶段 | 切换代价 |
 |---|---|---|---|
-| U-G-01 可用量构成 | 可用量等于结存数量，响应中 `reserved_quantity` 恒为 0 | 不阻塞 | 若改为扣减已确认未发货订单数量，只需在 A2 的投影中接入 `ep-contract-sales` 的在途订单数量查询并改写 `available_quantity` 的算式，不改表结构，估约 1 个查询文件加 3 个测试用例 |
+| U-G-01 可用量构成 | 可用量等于结存数量，`AvailabilityQueryPort::available` 与端点 A2 共用同一投影函数，`reserved_quantity` 恒为 0 | 不阻塞 | 若改为扣减已确认未发货订单数量，只需在该投影中接入 `ep-contract-sales` 的在途订单数量查询并改写 `available_quantity` 的算式，不改表结构、不改 trait 签名，估约 1 个查询文件加 3 个测试用例 |
 | U-G-02 是否允许负结存 | 一律硬阻断，不提供配置 | 不阻塞 | 若改为可配置，需在物料或仓库档案上加一个开关字段（归 mdm）、在出库路径加一个分支、去掉 `ck_stock_qty_balances_non_negative`、新增 4 个测试用例；去掉数据库 CHECK 属收紧变更的逆操作，可在线执行 |
 | U-G-03 批次号与序列号的长度字符集 | 长度上限 64、字符集 `[A-Za-z0-9._-]`、批次号手工录入、唯一性范围为法人加仓库加物料 | 不阻塞 | 放宽长度属基线第 7.4 章在线变更范围，改 CHECK 即可；收紧字符集需回填校验 |
 | U-G-04 序列号状态语义 | 两状态 IN_STOCK 与 SHIPPED，退货入库后可再次发出且允许换仓入库 | 不阻塞 | 若增加已退回等第三状态，需扩 CHECK 取值与状态机守卫，约 1 个文件加 6 个用例 |
@@ -756,8 +856,8 @@ E2，可用量的预留扣减。见 U-G-01 的切换代价，扩展点为 `Avail
 
 E3，多计价方法。当前 `PricingBranch` 与计价服务是按移动加权平均单一方法写死的，但两账分离、流水仅追加、余额独立三项结构本身与计价方法无关。若后续引入先进先出，扩展点是在 `stock_value_balances` 之外新增成本层表并把计价服务改为 trait，`stock_qty_entries` 与 `stock_movements` 不需要改动。本阶段不预埋任何多方法的空壳代码。
 
-E4，迁移期初通道。`source_doc_type` 的 `MIGRATION_STOCK_ADJUSTMENT` 与 `reason` 的 `MIGRATION_OPENING` 已预留并实现入库路径，数据迁移阶段可直接使用，无需新增枚举取值（新增取值需要改 CHECK，属停机窗口内的收紧变更）。规格第 7.10 章要求的迁移库存调整单据以该来源类型承载。
+E4，期初导入通道。`source_doc_type` 的 `MIGRATION_STOCK_ADJUSTMENT` 与 `reason` 的 `MIGRATION_OPENING` 已预留并实现入库路径，按裁定 A-24 本阶段是库存期初导入的唯一落点，首版不设独立的数据迁移阶段，后续无需新增枚举取值（新增取值需要改 CHECK，属停机窗口内的收紧变更）。规格第 7.10 章要求的迁移库存调整单据以该来源类型承载，其总账侧由阶段 9a 的期初余额批次承担，应收应付预收预付与资金账户期初归阶段 10。
 
-E5，成本归集查询的取数接口。规格第 5.2 章成本归集与销货成本结转条目的存货类成本来源是交付确认时从库存金额账结转的销货成本，成本阶段需要按交付确认单行回查结转金额与单价。本阶段的 `original_unit_price_by_source_line` 端口与 `stock_value_entries` 上的 `source_doc_line_id` 索引即为该接口，成本阶段直接引用，不需要本阶段再改动。
+E5，成本归集查询的取数接口。规格第 5.2 章成本归集与销货成本结转条目的存货类成本来源是交付确认时从库存金额账结转的销货成本，成本阶段需要按交付确认单行回查结转金额与单价。本阶段的 `ep_contract_inventory::InventoryPricingLookupPort::original_unit_price_by_source_line` 端口与 `stock_value_entries` 上的 `source_doc_line_id` 索引即为该接口，成本阶段直接引用，不需要本阶段再改动。来源单据行的口径按裁定 A-09 固定为 `sales.delivery_confirmation_lines`，`SourceDocType::DELIVERY_CONFIRMATION` 由 ep-app-sales 在调用库存腿时传入，本阶段不自行判定来源类型。
 
 E6，断言库复用。`ep-testkit::inventory_assertions` 提供两账同源、数量守恒、存货勾稽三组断言函数，闭环联调阶段与恢复演练（规格附录 A.5、A.6 要求恢复后执行第 17.3 章全部强制不变量校验）直接引用同一实现，避免恢复验收另写一套判据。

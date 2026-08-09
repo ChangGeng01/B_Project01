@@ -9,6 +9,7 @@
 |---|---|
 | [00-overview.md](00-overview.md) | 总览、十四阶段总表、依赖图、跨阶段接口核对表、里程碑、全局风险 |
 | [00b-technical-baseline.md](00b-technical-baseline.md) | 共享技术基线:workspace 布局、进程清单、数据库约定、API 契约、事件、配置、测试门槛 |
+| [00c-gap-ruling.md](00c-gap-ruling.md) | 跨阶段缺口归属裁定表：67 条缺口的最终归属、确切签名与回写清单 |
 | [01-engineering-baseline.md](01-engineering-baseline.md) | 阶段 1:工程基座与 CI |
 | [02-data-foundation.md](02-data-foundation.md) | 阶段 2:数据基座与隔离 |
 | [03-platform-kernel.md](03-platform-kernel.md) | 阶段 3:平台内核 |

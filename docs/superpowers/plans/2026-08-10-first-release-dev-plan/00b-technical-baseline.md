@@ -36,7 +36,7 @@ crate 命名前缀统一为 `ep-`，crate 目录名不带前缀，`Cargo.toml` �
 
 | crate | 一句话职责 |
 |---|---|
-| ep-foundation | 稳定通用类型：Id、Money、Quantity、UnitPrice、Rate、AccountingPeriodRef、SecurityContext、SecurityLevel、AppError、ErrorCode、DomainEvent 信封、Clock 与 IdGen 端口。 |
+| ep-foundation | 稳定通用类型：Id、Money、Quantity、UnitPrice、Rate、AccountingPeriodRef、SecurityContext、SecurityLevel、AppError、ErrorCode、DomainEvent 信封、Clock 与 IdGen 端口；另含 `port::tx` 的 Tx、SnapshotCtx、UnitOfWork、TxId、IsolationKind，`id::marker` 的 22 个跨模块引用标记类型，`principal` 的 SYSTEM_PRINCIPAL_ID 与 SYSTEM_DEVICE_ID，模块码枚举 ModuleCode，`capability` 的 CapabilityDomain 与 ActionClass，以及 `port::search` 与 `port::doc` 两个端口模块。上述类型的签名与取值见第 1.4 节。 |
 | ep-platform-tenancy | 集团、法人、组织、部门、岗位，以及安全上下文的建立与法人授权集合校验。 |
 | ep-platform-identity | 本地账号目录、口令与 MFA、会话、设备登记、高风险操作的重新认证凭证。 |
 | ep-platform-authz | RBAC 与 ABAC 判定、字段级与密级过滤、职责分离、审批授权判定。 |
@@ -108,10 +108,113 @@ crate 命名前缀统一为 `ep-`，crate 目录名不带前缀，`Cargo.toml` �
 - 禁止 ep-domain-* 与 ep-contract-* 依赖任何 adapter、sqlx、reqwest、tokio 的 IO 模块、std 的文件与网络 API。
 - 禁止 ep-platform-* 依赖任何 domain 或 application。
 - 禁止 adapter 之间互相依赖，共用逻辑下沉到 ep-foundation。
-- 禁止 ep-foundation 承载任何业务概念，凡是只被一个模块使用的类型不得进入 foundation。
+- 禁止 ep-foundation 承载任何业务概念，凡是只被一个模块使用的类型不得进入 foundation。唯一的受限例外是 `crates/foundation/src/id/marker.rs` 中的 22 个零大小标记类型，它们无字段、无方法、无 trait 实现，只承载类型身份，供 `Id<T>` 在契约层表达跨模块引用，清单见第 1.4 节，任何阶段不得增删。
 - 禁止跨模块直接读写业务表，adapter-db-pg 中的仓储实现按 schema 分文件，一个仓储只访问自己模块的 schema。
 
 依赖方向由 CI 强制：`cargo deny` 检查许可与重复依赖，另在 CI 中运行一段基于 `cargo metadata` 的自检脚本，把上述禁止项表达为断言，违反即构建失败。
+
+### 1.4 ep-foundation 冻结的跨阶段共享类型
+
+本节各项由阶段 1 一次性冻结，签名与取值全阶段唯一。各阶段直接引用，不得改动签名、不得在阶段内另立同名类型、不得给出第二套取值。
+
+事务与快照抽象位于 `crates/foundation/src/port/tx.rs`。契约层的跨模块方法签名一律写 `&mut dyn Tx`。
+
+```rust
+pub type BoxFuture<'a, T> = core::pin::Pin<Box<dyn core::future::Future<Output = T> + Send + 'a>>;
+
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub struct TxId(pub uuid::Uuid);
+
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum IsolationKind { ReadCommitted, RepeatableReadSnapshot }
+
+pub trait Tx: Send {
+    fn tx_id(&self) -> TxId;
+    fn isolation(&self) -> IsolationKind;
+    fn legal_entity_id(&self) -> Id<LegalEntity>;
+    fn as_any_mut(&mut self) -> &mut (dyn core::any::Any + Send);
+}
+
+pub trait SnapshotCtx: Sync {
+    fn snapshot_id(&self) -> &str;
+    fn taken_at(&self) -> chrono::DateTime<chrono::Utc>;
+    fn legal_entity_id(&self) -> Id<LegalEntity>;
+    fn as_any(&self) -> &(dyn core::any::Any + Sync);
+}
+
+#[async_trait::async_trait]
+pub trait UnitOfWork: Send + Sync + 'static {
+    async fn transact<T, F>(&self, ctx: &SecurityContext, body: F) -> Result<T, AppError>
+    where
+        T: Send + 'static,
+        F: for<'t> FnOnce(&'t mut dyn Tx) -> BoxFuture<'t, Result<T, AppError>> + Send + 'static;
+
+    async fn snapshot_transact<T, F>(&self, ctx: &SecurityContext, body: F) -> Result<T, AppError>
+    where
+        T: Send + 'static,
+        F: for<'s> FnOnce(&'s dyn SnapshotCtx) -> BoxFuture<'s, Result<T, AppError>> + Send + 'static;
+}
+```
+
+配套纪律四条。跨 crate 取具体句柄的唯一写法是 `tx.as_any_mut().downcast_mut::<PgTx>()`，该 downcast 只允许出现在 `crates/adapter/db-pg/` 内，由 `xtask archcheck` 断言其他目录不出现 `downcast_mut::<PgTx>`。UnitOfWork 不带池参数，一个实例在装配时绑定一个池，与第 10.3 节示例的两参数形态一致。application crate 对 UnitOfWork 取泛型参数 `U: UnitOfWork` 而不是 trait 对象，理由是该 trait 含泛型方法不满足对象安全。实现类型 `PgUnitOfWork` 与 `PgTx` 的声明位在 ep-adapter-db，实现落在 ep-adapter-db-pg。
+
+跨模块引用的标记类型位于 `crates/foundation/src/id/marker.rs`，清单固定为 22 项，任何阶段不得增删：LegalEntity、UserAccount、Session、Department、Position、Project、Customer、Supplier、Material、Product、Warehouse、Contract、ContractLine、SalesOrder、SalesOrderLine、DeliveryConfirmation、DeliveryConfirmationLine、PurchaseOrder、GoodsReceiptLine、PurchaseInvoice、PurchaseInvoiceLine、AccountingPeriod。
+
+系统主体常量位于 `crates/foundation/src/principal.rs`。
+
+```rust
+pub const SYSTEM_PRINCIPAL_ID: uuid::Uuid =
+    uuid::uuid!("00000000-0000-7000-8000-000000000001");
+pub const SYSTEM_DEVICE_ID: &str = "SYSTEM";
+```
+
+取值选用全零前缀加版本位 7 与变体位 8 的保留形态，理由是它符合 UUIDv7 的版本与变体校验，同时不可能与 IdGen 生成的任何值碰撞。凡在种子迁移或系统上下文写 created_by 与 updated_by 的，一律引用该常量，不得另取字面量。
+
+安全上下文位于 `crates/foundation/src/security/context.rs`，字段顺序即下表顺序，共 19 项，不得增删改名。
+
+| 序 | 字段 | 类型 |
+|---|---|---|
+| 1 | user_id | Id\<UserAccount\> |
+| 2 | account_kind | AccountKind |
+| 3 | session_id | Id\<Session\> |
+| 4 | legal_entity_id | Id\<LegalEntity\> |
+| 5 | device_id | DeviceId |
+| 6 | client | ClientKind |
+| 7 | clearance_level | SecurityLevel |
+| 8 | roles | Arc\<[RoleCode]\> |
+| 9 | duty_classes | Arc\<[DutyClass]\> |
+| 10 | department_scope | DepartmentScope |
+| 11 | position_ids | Arc\<[Id\<Position\>]\> |
+| 12 | project_scope | Arc\<[Id\<Project\>]\> |
+| 13 | customer_scope | Arc\<[Id\<Customer\>]\> |
+| 14 | record_shares | Arc\<[RecordShare]\> |
+| 15 | data_scope_tags | Arc\<[DataScopeTag]\> |
+| 16 | snapshot_version | u64 |
+| 17 | is_breakglass | bool |
+| 18 | request_id | RequestId |
+| 19 | trace_id | TraceId |
+
+配套枚举同在 ep-foundation 冻结：`AccountKind { Human, System, Portal }`；`ClientKind { Win, Mac, Ios, Android, Portal, Ops }`，序列化取值与第 5.6 节 X-Client 头的六个取值一一对应；`DepartmentScope { All, Subtree(Id<Department>), Explicit(Arc<[Id<Department>]>) }`。构造函数只有 `SecurityContext::human(..)` 与 `SecurityContext::system(legal_entity_id, request_id, trace_id)` 两个，后者用上面两个常量填 user_id 与 device_id，account_kind 取 System。不提供任何 with_ 前缀的变换方法。第 18 与第 19 两个字段的存在理由是第 3.8 节要求连接取用时写入 `app.request_id` 与 `app.trace_id` 两条会话变量，取数只能来自安全上下文。
+
+模块码枚举 `ModuleCode` 按第 1.2 节的 15 个模块码冻结，取值为 Mdm、Crm、Cpq、Clm、Sales、Procure、Inventory、Costing、Project、Service、Finance、Ledger、Invoice、Portal、Reporting。
+
+能力域码与动作类别位于 `crates/foundation/src/capability.rs`。
+
+```rust
+pub enum CapabilityDomain {
+    CrmCustomer360, ClmContractEsign, SalesOrderFulfillment, ProcureSupplierCollab,
+    InventoryLedgerScan, ServiceWorkorderEquipment, PlatformApprovalNotify,
+    ProjectTaskMilestone, MdmMasterData, PlatformFullTextSearch, LedgerPostingClose,
+    FinanceSettlementView, InvoiceApplyIssue, ReportingReportPrint,
+    PlatformDocumentAttachment, PlatformAdminLowcodeOps, PlatformExtensionDynamicCode,
+    PortalSupplierWeb,
+}
+pub enum ActionClass { Read, Write, Submit, Approve, Export }
+```
+
+`CapabilityDomain` 的序列化取值逐一为阶段 13 计划第 4.4 节表中的 18 个能力域码字符串，顺序与该表序号一致。`ActionClass` 的五项与该节判定算法的 ViewOnly 分支配套，ViewOnly 只放行 Read。各阶段为每个用例声明常量的纪律见第 12 节。
+
+两个端口模块的位置与补齐时点固定。`crates/foundation/src/port/search.rs` 由阶段 1 建空文件，阶段 3b 补齐 SearchDocument、SearchQuery、SearchHit 与 SearchIndexPort、SearchQueryPort，实现落在 ep-adapter-search，索引按法人分区，写入一律经 job-worker 消费 Outbox 事件触发，不在业务事务内调用。`crates/foundation/src/port/doc.rs` 由阶段 1 建空文件，阶段 5 补齐 SheetSpec、ColumnSpec、CellValue、PrintLayout 与 SpreadsheetPort、DocTemplatePort、PdfRenderPort，实现落在 ep-adapter-doc，其后各阶段只在这三个 trait 上增量，不新增渲染接口。
 
 ## 2. 进程清单
 
@@ -276,7 +379,7 @@ create policy rls_<table>_le on <schema>.<table>
 | data_scope_tags | text[] | 否 | '{}' | 数据范围标签，派生存储与归档层必须随事件携带 |
 | row_version | bigint | 否 | 1 | 乐观锁版本 |
 | created_at | timestamptz | 否 | now() | 创建时间，UTC |
-| created_by | uuid | 否 | 无 | 创建人用户 ID，系统上下文写入固定的系统主体 ID |
+| created_by | uuid | 否 | 无 | 创建人用户 ID，系统上下文一律写入 `foundation::SYSTEM_PRINCIPAL_ID`，字面量为 00000000-0000-7000-8000-000000000001 |
 | updated_at | timestamptz | 否 | now() | 最后更新时间，UTC |
 | updated_by | uuid | 否 | 无 | 最后更新人用户 ID |
 
@@ -459,21 +562,25 @@ create policy rls_<table>_le on <schema>.<table>
 
 进程启动时按序执行下列自检，任一项失败即以退出码 78 退出并把失败项写入 stderr 与 `platform_ops` 台账（数据库不可用时只写 stderr）。
 
-1. 配置解析成功且无未知键。
-2. 事务数据库可达，服务端版本为 PostgreSQL 16.x，`timezone` 为 UTC，`max_connections` 不低于第 2 节的峰值 52，`max_wal_senders` 不低于 4，`max_replication_slots` 不低于 3。
-3. 迁移历史版本与二进制期望版本一致，不一致即拒绝启动，任何进程都不得在启动时自动执行迁移。
-4. 全部带法人列的表均已 `ENABLE` 且 `FORCE` 行级安全，且运行期账号不具备 `BYPASSRLS` 与 `SUPERUSER`。
-5. 运行期账号不具备 DDL、角色管理与策略管理权限。
-6. 机密全部可解引用，KMS 或 HSM 可用，每个法人的数据加密密钥域存在。
-7. 审计链最近一段可读，最近一次段根签名可验证，最近锚定时间在约定间隔内。
-8. 文件存储路径可写、不具备覆盖与原地删除权限、剩余空间不低于阈值。
-9. 系统时钟与授时源偏差小于 1 秒。
-10. 本进程所在 cgroup 的 CPU、内存与 IO 取值与规格第 13.1 章配额表一致。
-11. 服务器之外落点的三项最低要求判定。不满足时不阻止启动，但以降级状态启动，并按规格第 15.3 章持续告警、记录暴露窗口、按依据枚举展示该部署当前的 RPO。
-12. 许可证有效且模块开关与已安装模块一致。
-13. 每个法人存在当前自然月的打开会计期间，缺失时按规格第 5.2 章自动建立。
+自检项按注册名标识，不用序号称呼。注册表为 `SelfCheckRegistry`，位于 `crates/platform/runtime/src/selfcheck/registry.rs`，注册项为 `SelfCheckItem { name, title, severity, run }`，name 为 kebab-case，由阶段 1 交付。下列十三项是全部进程共有的基线项，注册顺序即执行顺序，报告按注册顺序输出，基线十三项在前。
 
-`--check` 模式只执行 1 至 13 并输出结构化报告后退出，不监听任何端口，用于部署验收与升级前置校验。
+- `config-parsed`：配置解析成功且无未知键。
+- `database-reachable`：事务数据库可达，服务端版本为 PostgreSQL 16.x，`timezone` 为 UTC，`max_connections` 不低于第 2 节的峰值 52，`max_wal_senders` 不低于 4，`max_replication_slots` 不低于 3。
+- `migration-version-matched`：迁移历史版本与二进制期望版本一致，不一致即拒绝启动，任何进程都不得在启动时自动执行迁移。
+- `rls-enabled-and-forced`：全部带法人列的表均已 `ENABLE` 且 `FORCE` 行级安全，且运行期账号不具备 `BYPASSRLS` 与 `SUPERUSER`。
+- `runtime-role-privileges-bounded`：运行期账号不具备 DDL、角色管理与策略管理权限。
+- `secrets-resolvable`：机密全部可解引用，KMS 或 HSM 可用，每个法人的数据加密密钥域存在。
+- `audit-chain-verifiable`：审计链最近一段可读，最近一次段根签名可验证，最近锚定时间在约定间隔内。
+- `file-store-writable`：文件存储路径可写、不具备覆盖与原地删除权限、剩余空间不低于阈值。
+- `clock-skew-within-limit`：系统时钟与授时源偏差小于 1 秒。
+- `cgroup-quota-matched`：本进程所在 cgroup 的 CPU、内存与 IO 取值与规格第 13.1 章配额表一致。
+- `offsite-sink-requirements`：服务器之外落点的三项最低要求判定。不满足时不阻止启动，但以降级状态启动，并按规格第 15.3 章持续告警、记录暴露窗口、按依据枚举展示该部署当前的 RPO，暴露窗口经 `ep-platform-obs` 的 `DegradationLedger` 登记。
+- `license-and-modules-consistent`：许可证有效且模块开关与已安装模块一致，判定取自 `ep-platform-license` 的 `ModuleLicenseQuery`。
+- `current-period-open`：每个法人存在当前自然月的打开会计期间，缺失时按规格第 5.2 章自动建立。
+
+各阶段追加的自检项同样为 kebab-case 注册名，注册顺序排在基线十三项之后，追加项名在各阶段计划中登记。任何阶段不得再以序号称呼自检项。
+
+`--check` 模式只执行已注册的全部自检项并按注册顺序输出结构化报告后退出，不监听任何端口，用于部署验收与升级前置校验。报告按注册名索引，不按序号索引。
 
 ## 8. 测试分层与门槛
 
@@ -499,8 +606,8 @@ create policy rls_<table>_le on <schema>.<table>
 
 ### 8.4 并发与事务测试
 
-- 业务事务隔离级别固定 `READ COMMITTED`；内部对账与关账前强制校验固定用单个 `REPEATABLE READ` 事务或由其导出的快照，照抄规格第 10.2 章。
-- 序列化失败 40001 与死锁 40P01 统一在数据访问层重试 3 次，退避 50、150、450 毫秒，且只对尚未产生任何外部可见副作用的事务重试。重试次数进指标。
+- 业务事务隔离级别固定 `READ COMMITTED`；内部对账与关账前强制校验固定用单个 `REPEATABLE READ` 事务或由其导出的快照，照抄规格第 10.2 章。该快照的唯一取用入口是 `UnitOfWork::snapshot_transact`，见第 10.3 节。
+- 序列化失败 40001 与死锁 40P01 统一在数据访问层重试 3 次，退避 50、150、450 毫秒，且只对尚未产生任何外部可见副作用的事务重试。重试次数记入指标 `ep_db_tx_retries_total`，标签为 pool 与 sqlstate，见第 9.2 节。
 - 必测的并发场景固定六组：同一单据的乐观锁冲突、同一物料的并发出库与移动加权平均单价重算、同一采购订单的并发发票匹配与暂估回冲、同一客户的并发下单与信用额度占用、关账受理与在途写事务的交叠、Outbox 同一事件的重复投递不少于 3 次。
 - 法人越权测试集是独立测试目标 `tests/rls_matrix`，覆盖读取、写入、更新、删除、聚合、排序、报表投影与错误信息泄漏八类，另覆盖两个复制角色与内部对账系统安全上下文的五个入口借用测试，属发布门禁项。
 - 事务边界的静态检查：CI 校验 `ep-domain-*` 不出现 sqlx 符号，`ep-app-*` 的用例函数中不出现 reqwest 与文件写入符号。
@@ -518,7 +625,7 @@ create policy rls_<table>_le on <schema>.<table>
 ### 9.2 指标
 
 - 由 ops-agent 在 127.0.0.1:9101 暴露 Prometheus 文本格式，仅内网可达，可对接客户已有的 Prometheus 与 Grafana。
-- 命名 `ep_<subsystem>_<metric>_<unit>`。固定的基线指标：`ep_http_request_duration_seconds`（直方图，桶为 0.05、0.1、0.25、0.5、1、2、3、5、10、30，标签 route、method、status_class、client）、`ep_db_pool_connections`（标签 pool 取 rw、ro、worker、integ、ops）、`ep_db_statement_duration_seconds`、`ep_outbox_pending_events`、`ep_outbox_dispatch_attempts_total`、`ep_dead_letters_open`、`ep_archive_write_lag_seconds`、`ep_attachment_write_lag_seconds`、`ep_audit_anchor_age_seconds`、`ep_backup_last_success_timestamp_seconds`、`ep_recon_run_duration_seconds`、`ep_recon_unfinished_total`、`ep_period_close_rejected_total`、`ep_quota_throttled_total`、`ep_degradation_windows_open`。
+- 命名 `ep_<subsystem>_<metric>_<unit>`。固定的基线指标：`ep_http_request_duration_seconds`（直方图，桶为 0.05、0.1、0.25、0.5、1、2、3、5、10、30，标签 route、method、status_class、client）、`ep_db_pool_connections`（gauge，标签 pool 取 rw、ro、worker、integ、ops）、`ep_db_statement_duration_seconds`（直方图，标签 pool 与 statement_kind）、`ep_db_tx_retries_total`（counter，标签 pool 取 rw、ro、worker、integ、ops，标签 sqlstate 取 40001、40P01）、`ep_outbox_pending_events`、`ep_outbox_dispatch_attempts_total`、`ep_dead_letters_open`、`ep_archive_write_lag_seconds`、`ep_attachment_write_lag_seconds`、`ep_replication_crosscheck_age_seconds`（gauge，标签 channel 取 archive、backup）、`ep_audit_anchor_age_seconds`、`ep_backup_last_success_timestamp_seconds`、`ep_recon_run_duration_seconds`、`ep_recon_unfinished_total`、`ep_period_close_rejected_total`、`ep_quota_throttled_total`、`ep_degradation_windows_open`。指标名全量登记在 `docs/metrics-catalog.md`，唯一性由 CI 校验，同一指标只能由一个阶段注册，重复登记即构建失败。
 - 标签基数纪律：禁止把 `user_id`、`doc_no`、`trace_id` 作为标签；`legal_entity_id` 允许，因为首版只有 2 个法人；`route` 用模板路径而非实例路径。
 - 规格第 15.3 章要求的降级与暴露窗口台账既进数据库表 `platform_ops.degradation_windows`，也各出一个 gauge，两处不得只有其一。
 
@@ -588,6 +695,7 @@ let result = uow.transact(ctx, |tx| async move {
 }).await?;
 ```
 
+- 工作单元的唯一定义是 `ep_foundation::port::UnitOfWork`，方法只有两个：读写事务用 `transact`，只读快照事务用 `snapshot_transact`，后者配合 `SET TRANSACTION SNAPSHOT` 使用，签名见第 1.4 节。任何阶段不得新增第三个方法，也不得使用 `transact_repeatable_read` 一类的旧名。
 - 一个用例一个事务。禁止在一个 HTTP 请求内开启多个写事务，需要多步的一律拆用例并由 Outbox 串接。
 - 事务内禁止：外部 HTTP 调用、文件正文读写、发送通知、长时计算、等待用户输入。
 - 事务预算固定：业务事务不超过 5 秒，`statement_timeout` 在读写池上设 10 秒，`lock_timeout` 设 3 秒，`idle_in_transaction_session_timeout` 设 15 秒。只读分析池 `statement_timeout` 60 秒、`work_mem` 64 MB、`temp_file_limit` 2 GB。job-worker 池 `statement_timeout` 300 秒。ops 池 5 秒。迁移账号 30 分钟。
@@ -608,7 +716,8 @@ let result = uow.transact(ctx, |tx| async move {
 ### 11.1 编号规则（对应 U-A-01、U-A-02）
 
 - 单据编号格式 `<类型码>-<法人码>-<YYYYMM>-<6 位流水>`，如 `SO-01-202608-000123`。类型码为 2 至 4 位大写字母，法人码为 2 位数字，流水按法人、类型、年月三元组独立自增，位数不足补零，溢出时位数自动扩展为 7 位。
-- 单据编号不允许人工指定。档案编码允许人工指定，也可按规则自动生成，唯一性范围为法人加对象类型。
+- 单据编号不允许人工指定。档案编码允许人工指定，也可按规则自动生成，唯一性范围为法人加对象类型；按规则自动生成时沿用上一条的编号格式与取号机制，前缀取同一张类型码登记表中的类型码，人工指定的档案编码只校验唯一性与第 11.2 节的文本长度，不校验格式。
+- 类型码全量登记在 `docs/data-dictionary.md` 的单据类型码一节，单据类与档案类共用同一张表，全局唯一。新增类型码必须先登记再实现，登记项与 `ep-platform-sequence` 的常量表由 CI 项 `xtask configdoc --check-doc-type-codes` 逐项比对，缺失、重复或不一致即构建失败。
 - 取号在业务事务内完成，实现为 `platform_core.number_sequences` 表上的 `update ... returning`，回滚即退号，因此不产生空号。承载模块为 `ep-platform-sequence`，落点为 PRD 第 10 节。
 
 ### 11.2 文本长度（对应 U-A-03）
@@ -636,6 +745,7 @@ let result = uow.transact(ctx, |tx| async move {
 ## 12. 各阶段必须遵守的落地纪律
 
 - 新增一张表、一个接口、一个事件、一个错误码、一个指标之前，先在本基线对应章节登记，再实现。阶段计划中出现未登记的以上五类，评审时按不通过处理。
+- 各阶段在 `crates/contract/<module>/src/capability.rs` 中为本模块每个用例声明一对常量 `<USECASE_SCREAMING>_DOMAIN` 与 `<USECASE_SCREAMING>_ACTION`，取值分别为第 1.4 节 `CapabilityDomain` 与 `ActionClass` 的成员，例如 `CONFIRM_DELIVERY_DOMAIN: CapabilityDomain = CapabilityDomain::SalesOrderFulfillment` 与 `CONFIRM_DELIVERY_ACTION: ActionClass = ActionClass::Submit`。`xtask configdoc` 断言每个 HTTP 路由都能解析到一对常量，缺失即构建失败。任何阶段不得在阶段内重新定义能力域码，客户端能力矩阵的运行期判定只读这两个枚举。
 - 任何阶段不得新增进程、不得新增 schema、不得新增模块码、不得新增错误分类、不得新增依赖方向。
 - 任何阶段不得引入第二套命名风格、第二套封套、第二套分页参数、第二套幂等机制。
 - 凡阶段计划需要偏离本基线，必须在计划中单列一节写明偏离项、理由与影响范围，并同步提出本基线的修订，不得只在实现里偏离。

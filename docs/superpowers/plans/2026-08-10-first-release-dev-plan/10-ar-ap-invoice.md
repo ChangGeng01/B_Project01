@@ -1,6 +1,8 @@
 ## 阶段 10：财务内核二 —— 往来与发票
 
-本阶段交付 invoice 与 finance 两个模块码的契约层、领域层、应用层与数据库结构，覆盖销项发票申请与开具登记、销项与进项两个方向的作废与红字冲销登记、应收应付台账与账龄、预收预付台账、到款与付款登记与核销、客户退款与供应商返款、资金账户与资金腿明细、应收账款未开票过渡科目子账、待处理超量开票子账与三条结清路径，以及规格第 17.3 章与 PRD 第 6.13.1 合计十个勾稽项中归属本阶段的八项对账视图。
+本阶段交付 invoice 与 finance 两个模块码的契约层、领域层、应用层与数据库结构，覆盖销项发票申请与开具登记、进项发票台账与采购发票登记及三单匹配、销项与进项两个方向的作废与红字冲销登记、应收应付台账与账龄、预收预付台账、到款与付款登记与核销、客户退款与供应商返款、资金账户与资金腿明细、应收账款未开票过渡科目子账、待处理超量开票子账与三条结清路径、往来与预收预付的期初余额导入，以及规格第 17.3 章与 PRD 第 6.13.1 合计十个勾稽项的对账视图。
+
+按跨阶段裁定 A-10，进项发票台账归 invoice 模块，因此 `invoice.purchase_invoices` 与 `invoice.purchase_invoice_lines` 两张表、采购发票登记用例与三单匹配一并归本阶段，采购阶段不建表也不写台账，与基线第 1.2 节 invoice 覆盖销项与进项发票台账一致。
 
 本阶段不定义任何借贷方向、科目、取价与拆分规则。全部账务处理指向规格第 5.2 章财务规则条目的事件-分录表及其后七个规则块，本文只写它在哪一步被调用、以什么参数被调用、结果落到哪张表。
 
@@ -10,15 +12,17 @@
 
 #### 0.1 过账时机：同步在业务事务内生成凭证
 
-本阶段的决定：由本阶段单据直接触发的七类事件（开票、红字冲销与作废、到款、付款、退款、超量开票路径二结清、超量开票路径三结清），其总账凭证、子账台账条目与核销关系在同一个业务数据库事务内同步写入，凭证经 `ep-contract-ledger` 的过账端口生成，本阶段不向 Outbox 投递任何需要异步过账的条目。
+本阶段的决定：由本阶段单据直接触发的八类事件（开票、采购发票登记、红字冲销与作废、到款、付款、退款、超量开票路径二结清、超量开票路径三结清），其总账凭证、子账台账条目与核销关系在同一个业务数据库事务内同步写入，凭证经 `ep-contract-ledger` 的过账端口生成，本阶段不向 Outbox 投递任何需要异步过账的条目。该决定与跨阶段裁定 C-28 一致：全部凭证一律与业务事件同事务生成，Outbox 只承载派生、通知、检索与报表数据集。
 
 理由有三条。其一，PRD 第 6.4.8、6.7.7、6.8.8 三张异常表都把“凭证生成失败或借贷不平”的系统行为定为“提交失败并进入死信与人工修复”，提交失败只有在凭证与业务写入同事务时才成立。其二，核销明细行的逐行上限校验必须读到该单据当前的未核销余额，异步过账会让紧邻的两次登记读到过期余额。其三，规格第 5.2 章要求同一业务事件的子账条目与凭证共用同一个会计期间字段，同事务写入使该要求成为结构性事实而不是运行期约定。
 
-与规格第 10.2 章关账受理前提二的关系：本阶段发布的领域事件一律不进入过账消费者订阅清单，因此“该法人记账日期属于该会计期间的待消费过账条目数”不因本阶段而非零。本阶段的 Outbox 条目只驱动派生传播，即站内通知、报表投影、检索索引与客户 360 视图。
+与规格第 10.2 章关账受理前提二的关系：受理前提二的判定语句按跨阶段裁定 C-28 固定为一句话，本阶段与阶段 4、阶段 9 三处逐字一致，即该法人该期间内，`platform_msg.outbox_events` 中 `status` 属于 PENDING 或 DISPATCHING、`posting_date` 落在该期间起止之间、且 `event_type` 命中 `ledger.posting_trigger_event_types` 的条目数为零，且 `platform_msg.dead_letters` 中 `state` 属于 OPEN 或 REPAIRING、同样命中该注册表的条数为零。`posting_date` 为空的平台事件一律不计入，理由是它们不产生凭证。判定所用视图固定为 `ledger.v_pending_posting_backlog`，两个错误码固定为 `LEDGER.PERIOD_CLOSE_REQUEST.PENDING_POSTING_BACKLOG` 与 `LEDGER.PERIOD_CLOSE_REQUEST.UNREPAIRED_DEAD_LETTERS`，视图与错误码均由阶段 9a 提供。
+
+本阶段发布的 12 个事件中有 8 个按 A-21 登记到 `ledger.posting_trigger_event_types`，见第 5.8 节末表。这 8 个事件的凭证已在业务事务内生成，Outbox 条目只驱动派生传播，即站内通知、报表投影、检索索引与客户 360 视图；但按上述判定语句，它们在被消费完毕之前仍计入该计数，因此关账受理需等待其消费结束，而不是等待任何异步过账。
 
 与顺延入账的关系：会计期间在业务事务内由 `AccountingPeriodResolver` 一次解析并同时写入凭证与全部子账条目，因此规格第 10.2 章“受理时点在途写事务”这一集合天然覆盖本阶段的在途提交，等待该集合结束后建立的快照必然包含这些凭证。
 
-本节属于接缝口径，需要整合员在 14 个阶段之间统一确认。若整合结论改为异步过账，本阶段的改动范围是：把七个用例的凭证生成腿改为向 Outbox 投递、把 PRD 三张异常表的“提交失败”改为“提交成功后进入死信”、并为核销上限校验引入待过账占用量，代价为中等偏高。
+本节口径已由跨阶段裁定 C-28 定死，不再是待整合议题。本阶段不存在也不预留任何异步过账路径，第 5.8 节的全部事件消费方均不做过账，核销上限校验只读已落库的未核销余额，不引入待过账占用量。
 
 #### 0.2 规格缺口：自动核销预收预付的分录腿
 
@@ -30,7 +34,9 @@
 
 PRD 第 6.2.2 的资金账户字段表没有期初余额，而第 6.2.4 的资金腿明细视图要求展示期初余额，规格第 17.3 章又要求资金流水台账按账户的余额合计等于银行存款科目余额。上线首期若科目有期初余额而资金腿明细没有，该项勾稽在首期即为非零差额。
 
-本阶段的显式假设：`finance.cash_accounts` 增加 `opening_balance` 与 `opening_balance_period_id` 两列，建档时录入一次，建档后不可修改；同一法人下全部银行存款类账户的期初余额合计必须等于总账银行存款科目的期初余额，现金类账户同理，该等式由本阶段的对账视图逐期校验。历史存量往来与存量资金的批量录入通道属历史数据导入阶段，本阶段只提供字段、校验与勾稽。
+本阶段的显式假设：`finance.cash_accounts` 增加 `opening_balance` 与 `opening_balance_period_id` 两列，建档时录入一次，建档后不可修改；同一法人下全部银行存款类账户的期初余额合计必须等于总账银行存款科目的期初余额，现金类账户同理，该等式由本阶段的对账视图逐期校验。
+
+按跨阶段裁定 A-24，本项目不设独立的数据迁移阶段，期初与历史数据按模块归属分落三处：总账期初余额归阶段 9a 的期初余额批次；库存期初归阶段 8 的 `MIGRATION_STOCK_ADJUSTMENT` 来源类型；应收应付预收预付期初与资金账户期初归本阶段，前者经第 4.12 节的期初导入通道，后者经本节两列在建档时一次录入。四个通道的写入一律不生成凭证，两侧的平衡由第 3.3 节的对账视图在首个会计期间校验。
 
 #### 0.4 被阻塞的业务决策项与本阶段的临时取值
 
@@ -39,7 +45,7 @@ PRD 第 6.2.2 的资金账户字段表没有期初余额，而第 6.2.4 的资�
 | 编号 | 临时取值 | 承载方式 | 切换代价 |
 |---|---|---|---|
 | F-01 / U-D-03 | 发票号码 `text` 且 `char_length <= 64`，法人内唯一；发票代码 `text` 且 `char_length <= 32`，可空，发票种类为数电时必须为空，为纸质时必填 | 表列与 CHECK 约束，发票种类为 `invoice_kind` 列 | 低，改 CHECK 与校验函数 |
-| F-02 / U-D-04 | 税率取自 `invoice.tax_rate_options`，出厂预置 0.130000、0.090000、0.060000、0.030000、0.010000、0.000000；一张发票单税率、单行金额，不做多行明细 | 配置发布对象写入 `invoice.tax_rate_options` | 税率集合为低；多行明细为中，需新增 `invoice.sales_invoice_lines` 与分摊逻辑 |
+| F-02 / U-D-04 | 税率取自 `invoice.tax_rate_options`，出厂预置 0.130000、0.090000、0.060000、0.030000、0.010000、0.000000；一张发票单税率、单行金额，不做多行明细 | 配置发布对象经阶段 3b 的发布通道写入 `invoice.tax_rate_options`；按裁定 C-11，该表是税率字典的唯一出处，取用入口唯一为 `ep_contract_invoice::TaxRateOptionQuery` | 税率集合为低；多行明细为中，需新增 `invoice.sales_invoice_lines` 与分摊逻辑 |
 | F-03 / U-D-05 | 舍入按共享基线第 3.5 节；容差判据为 `abs(tax_amount - round(net_amount * tax_rate, 2)) <= tolerance`，`tolerance` 默认 0.02 | 配置项 `EP__INVOICE__TAX__AMOUNT_TOLERANCE` | 低 |
 | F-04 / U-D-06 | 剩余可开比例的计算基数为合同金额；比例列类型 `numeric(9,6)`；累计比例校验容差 0.000001 | 配置项 `EP__INVOICE__RATIO__TOLERANCE` | 基数改为订单金额合计为中，需改取数与回滚公式 |
 | F-05 / U-D-07 | 申请金额不可人工改写，等于 `round(开票比例 * 合同金额, 2)` | 领域规则 | 低 |
@@ -47,7 +53,7 @@ PRD 第 6.2.2 的资金账户字段表没有期初余额，而第 6.2.4 的资�
 | F-07 | 开具登记不强制上传影像附件 | 配置项 `EP__INVOICE__ISSUE__REQUIRE_IMAGE_ATTACHMENT`，默认 false | 低 |
 | F-08 / U-D-09 | 红字发票号码必填；首版只允许全额红冲，红字不含税金额、税额、价税合计必须分别等于原发票对应值 | 领域规则 | 允许部分红冲为中偏高，需把销项发票状态机拆出部分红冲态并改比例回滚公式 |
 | F-09 / U-D-10 | 作废与红字冲销登记复用开票的高风险控制，即重新认证加审批 | 配置项 `EP__INVOICE__REVERSAL__REQUIRES_REAUTH`，默认 true | 低 |
-| F-10 / U-D-11 | 账龄分档为 0 至 30、31 至 60、61 至 90、91 至 180、181 至 360、361 以上，六档 | 配置发布对象写入 `finance.aging_bucket_definitions`，按法人可配 | 低 |
+| F-10 / U-D-11 | 账龄分档为 0 至 30、31 至 60、61 至 90、91 至 180、181 至 360、361 以上，六档 | 按裁定 C-08，本阶段先写入临时表 `finance.aging_bucket_definitions`，按法人可配；阶段 11 交付 `reporting.aging_bucket_profiles` 与 `reporting.aging_bucket_lines` 后迁移并删除本表，此后取用入口唯一为 `ep_contract_reporting::AgingBucketQuery::buckets` | 低 |
 | F-11 / U-D-12 | 到期日取值优先级为：关联收付款计划行的到期日；缺失时取发票开具日期加往来方档案上的约定账期天数；仍缺失时取发票开具日期 | 领域服务 `DueDateResolver`，账期天数经 `ep-contract-mdm` 读取 | 低 |
 | F-12 / U-D-13 | 可核销范围限定为同一法人同一往来方，不允许跨客户或跨供应商核销 | 配置项 `EP__FINANCE__SETTLEMENT__CROSS_PARTY_ALLOWED`，默认 false | 放开为中，需改越权测试集与账龄归属 |
 | F-13 / U-D-14 | 到款登记不需重新认证也不需审批；客户退款与供应商返款需重新认证加审批；资金账户档案的新增、修改与停用需审批不需重新认证 | 三个配置项，见第 7 节 | 低 |
@@ -70,15 +76,20 @@ PRD 第 6.2.2 的资金账户字段表没有期初余额，而第 6.2.4 的资�
 
 1. 两个模块的三层 crate 全部编译通过并接入 `core-server`：`ep-contract-invoice`、`ep-domain-invoice`、`ep-app-invoice`、`ep-contract-finance`、`ep-domain-finance`、`ep-app-finance`。
 2. `db/migrations/invoice/` 与 `db/migrations/finance/` 两个迁移目录可离线执行到最新版本，且可按各文件头 `-- rollback:` 段回退到本阶段起点。
-3. 34 张业务表与 14 个只读视图在 `ep` 库中建立，其中 invoice 11 张、finance 23 张；全部带法人列的表已 `ENABLE` 且 `FORCE` 行级安全并挂上统一策略。
-4. 56 个 HTTP 端点在 `/api/v1/invoice/**` 与 `/api/v1/finance/**` 下可用，含 OpenAPI 描述文件 `docs/openapi/invoice.v1.yaml` 与 `docs/openapi/finance.v1.yaml`。
-5. 12 个对外契约 trait 在 `ep-contract-finance` 与 `ep-contract-invoice` 中定义并有默认实现注册到 `apps/core-server/src/wiring.rs`，供 sales、procure、inventory、clm、portal、reporting 六个模块调用。
-6. 11 个领域事件登记到 `docs/event-catalog.md` 并可从 `platform_msg.outbox_events` 中查得。
-7. 规格第 17.3 章与 PRD 第 6.13.1 合计 10 个勾稽项中的 8 项对账视图可在应用内按法人与会计期间查询并展示子账侧、总账侧与差额三列，另 2 项（存货、应付账款暂估）的子账侧由其他阶段提供，本阶段只提供视图外壳与总账侧取数。
+3. 36 张业务表与 17 个只读视图在 `ep` 库中建立，其中 invoice 13 张、finance 23 张；17 个视图为 10 个对账视图、4 个业务查询视图与 3 个受治理数据集视图。全部带法人列的表已 `ENABLE` 且 `FORCE` 行级安全并挂上统一策略。
+4. 58 个 HTTP 端点在 `/api/v1/invoice/**` 与 `/api/v1/finance/**` 下可用，含 OpenAPI 描述文件 `docs/openapi/invoice.v1.yaml` 与 `docs/openapi/finance.v1.yaml`。相对原计划新增两个：`POST /api/v1/invoice/purchase-invoices` 与 `POST /api/v1/finance/opening-balances/actions/import`。
+5. 16 个对外契约 trait 在 `ep-contract-finance` 与 `ep-contract-invoice` 中定义并有实现注册到 `apps/core-server/src/wiring.rs` 与 `apps/job-worker/src/wiring.rs`，供 sales、procure、clm、portal、reporting、ledger 六个模块调用，清单见第 5.9 节。其中 8 个 trait 是阶段 6 与阶段 7 已注入空实现的反向依赖点，本阶段负责替换。
+6. 12 个领域事件登记到 `docs/event-catalog.md` 并可从 `platform_msg.outbox_events` 中查得，其中 8 个按 A-21 回填到 `ledger.posting_trigger_event_types` 的 `event_type` 列。
+7. 规格第 17.3 章与 PRD 第 6.13.1 合计 10 个勾稽项的对账视图全部完整实现，可在应用内按法人与会计期间查询并展示子账侧、总账侧与差额三列。其中存货与已收货未收票两项按裁定 B-08 由本阶段把阶段 8 的 `InventorySubledgerBalanceQuery` 与阶段 7 的 `GrniSubledgerBalanceQuery` 两个查询函数包装为 `SubledgerBalanceProvider` 实现后接入，不再是外壳。
 8. 一条可重复执行的端到端脚本 `testkit/scenarios/stage10_ar_ap_closed_loop.rs`，覆盖规格第 8 章闭环第 6、7、9、10、11 步，并串起规格第 17.2 章十五类必测分支中的第二、五、六、八、九、十三类。
-9. `ep-datagen` 增加往来与发票子集生成器，可在基准规模下产出销项发票 6 万张、应收明细条目 6 万条、应付明细条目 4 万条、到款单 3 万张、付款单 2 万张、资金腿明细 6 万条，用于附录 A.1 的应收账龄分析与应付账龄分析两项报表实测。
-10. `docs/error-codes.md` 增补本阶段错误码（第 5 节列出的全部错误码，合计 80 个上下），`docs/data-dictionary/invoice.md` 与 `docs/data-dictionary/finance.md` 两份数据字典。
+9. `ep-datagen` 增加往来与发票子集生成器，可在基准规模下产出销项发票 6 万张、进项发票 4 万张、应收明细条目 6 万条、应付明细条目 4 万条、到款单 3 万张、付款单 2 万张、资金腿明细 6 万条，用于附录 A.1 的应收账龄分析与应付账龄分析两项报表实测。
+10. `docs/error-codes.md` 增补本阶段错误码（第 5 节列出的全部错误码，含采购发票登记与期初导入两组，合计 90 个上下），`docs/data-dictionary/invoice.md` 与 `docs/data-dictionary/finance.md` 两份数据字典；`docs/data-dictionary.md` 的单据类型码一节增补 PINV 一码，见裁定 C-26。
 11. 三个新增指标接入 ops-agent 暴露端点。
+12. invoice 与 finance 两个模块的四端界面：目录为 `clients/desktop/src/modules/invoice/`、`clients/desktop/src/modules/finance/`、`clients/mobile/src/modules/invoice/`、`clients/mobile/src/modules/finance/`，按裁定 A-23 由本阶段而不是阶段 13 交付。
+13. 三个受治理数据集视图 `invoice.v_purchase_invoices_dataset`、`finance.v_receivable_ledger_entries`、`finance.v_payable_ledger_entries` 已发布并授予 `ep_analyst_ro`，列签名同步给阶段 11，见裁定 A-18。
+14. 四个主数据探针与历史成交提供者：`InvoiceReferenceCounter`、`FinanceReferenceCounter`（`crates/application/invoice/src/probe/` 与 `crates/application/finance/src/probe/`）与 `InvoiceSalesTradeHistoryProvider`、`InvoicePurchaseTradeHistoryProvider`，注册到阶段 5 提供的 `MasterReferenceCounterRegistry` 与 `TradeHistoryProviderRegistry`，见裁定 A-15。
+15. 往来与预收预付的期初导入通道：用例 `crates/application/finance/src/usecase/import_opening_balances.rs` 与端点 `POST /api/v1/finance/opening-balances/actions/import`，见裁定 A-24 与第 4.12 节。
+16. 两个模块全部路由的能力域码与动作类别常量已在 `crates/contract/invoice/src/capability.rs` 与 `crates/contract/finance/src/capability.rs` 声明，`xtask configdoc` 通过，见裁定 A-20。
 
 ---
 
@@ -88,9 +99,9 @@ PRD 第 6.2.2 的资金账户字段表没有期初余额，而第 6.2.4 的资�
 
 | crate | 目录 | 进程 | 职责 |
 |---|---|---|---|
-| ep-contract-invoice | crates/contract/invoice | 装配进 core-server、job-worker | 发票申请、销项发票、冲销登记的命令与查询 DTO、事件类型、供 clm 与 procure 调用的 trait |
+| ep-contract-invoice | crates/contract/invoice | 装配进 core-server、job-worker | 发票申请、销项发票、进项发票、冲销登记的命令与查询 DTO、事件类型、能力域码与动作类别常量、供 clm、sales、procure、reporting 调用的六个 trait，含 `ReceiptInvoiceMatchQueryPort`、`PurchaseCreditNotePort`、`TaxRateOptionQuery` |
 | ep-domain-invoice | crates/domain/invoice | 同上 | 发票申请单与销项发票聚合、剩余可开比例值对象、税额勾稽规则、冲销互斥规则 |
-| ep-app-invoice | crates/application/invoice | core-server 承载全部用例，job-worker 承载批量导入任务 | 开具登记、冲销登记、批量导入、进项发票台账组装 |
+| ep-app-invoice | crates/application/invoice | core-server 承载全部用例，job-worker 承载批量导入任务 | 开具登记、冲销登记、批量导入、采购发票登记与三单匹配、进项红字发票登记、进项发票台账、`InvoiceReferenceCounter` 与两个历史成交提供者 |
 | ep-contract-finance | crates/contract/finance | 装配进 core-server、job-worker、portal-gateway 的调用方 | 应收应付预收预付台账查询 DTO、供 sales、procure、inventory、portal 调用的 trait |
 | ep-domain-finance | crates/domain/finance | 同上 | 台账条目聚合、核销分配算法、账龄分桶、可退上限、超量开票余额推进 |
 | ep-app-finance | crates/application/finance | core-server 承载全部用例，job-worker 承载对账取数 | 到款、付款、退款、冲正、资金账户、对账视图 |
@@ -100,12 +111,12 @@ PRD 第 6.2.2 的资金账户字段表没有期初余额，而第 6.2.4 的资�
 | crate | 改动 | 归属阶段 |
 |---|---|---|
 | ep-foundation | 增加 `TaxRate`（复用 `Rate` 的 newtype）、`IssueRatio`（复用 `Rate`）、`SettlementAmount`（复用 `Money` 且约束非负）三个 newtype；增加 `AccountingPeriodRef` 的 `is_deferred` 标记 | 阶段 1 建立，本阶段追加 |
-| ep-adapter-db-pg | 增加 `invoice` 与 `finance` 两个仓储子模块，按 schema 分文件，一个仓储只访问自己模块的 schema，共 34 个仓储实现 | 阶段 1 建立，本阶段追加 |
-| ep-platform-sequence | 注册 8 个新的单据类型码：`INVA` 发票申请、`SINV` 销项发票、`IRVS` 冲销登记、`RCPT` 到款、`PAYM` 付款登记、`RFND` 退款与返款、`CDRV` 资金冲正、`OBST` 超量开票结清 | 阶段 2 建立，本阶段追加类型码 |
+| ep-adapter-db-pg | 增加 `invoice` 与 `finance` 两个仓储子模块，按 schema 分文件，一个仓储只访问自己模块的 schema，共 36 个仓储实现 | 阶段 1 建立，本阶段追加 |
+| ep-platform-sequence | 注册 9 个新的单据类型码：`INVA` 发票申请、`SINV` 销项发票、`IRVS` 冲销登记、`RCPT` 到款、`PAYM` 付款登记、`RFND` 退款与返款、`CDRV` 资金冲正、`OBST` 超量开票结清、`PINV` 进项发票；九码同时登记到 `docs/data-dictionary.md` 的单据类型码一节，由 `xtask configdoc --check-doc-type-codes` 校验全局唯一，见裁定 C-26 | 阶段 2 建立，本阶段追加类型码 |
 | ep-platform-authz | 注册 14 个对象类型与 12 个动作 | 阶段 2 建立，本阶段追加注册项 |
 | ep-testkit | 增加 `CashAccountFixture`、`InvoiceApplicationBuilder`、`SalesInvoiceBuilder`、`ReceiptBuilder`、`PaymentBuilder`、`RefundBuilder`、`ReceivableEntryProbe`、`ReconciliationProbe` 八个构造器与探针 | 阶段 1 建立，本阶段追加 |
 | ep-datagen | 增加往来与发票子集 | 阶段 1 建立，本阶段追加 |
-| apps/core-server | `wiring.rs` 注入 12 个契约实现，路由注册 56 个端点 | 本阶段追加 |
+| apps/core-server | `wiring.rs` 注入 16 个契约实现，路由注册 58 个端点；其中 8 个注入行替换阶段 6 与阶段 7 留下的 `Noop` 前缀空实现 | 本阶段追加 |
 | apps/job-worker | 注册批量导入任务处理器与对账取数语句集 | 本阶段追加 |
 
 本阶段不新增进程、不新增 schema、不新增模块码、不新增错误分类、不新增依赖方向。`ep-domain-finance` 与 `ep-domain-invoice` 不依赖对方，跨模块只由 `ep-app-invoice` 依赖 `ep-contract-finance`，反向不成立。
@@ -212,8 +223,52 @@ PRD 第 6.2.2 的资金账户字段表没有期初余额，而第 6.2.4 的资�
 ##### 3.1.6 invoice.invoice_import_batches（批量导入批次）
 
 列为 `doc_no`、`status`（`ck_invoice_import_batches_status` 取值 PENDING、RUNNING、SUCCEEDED、PARTIALLY_FAILED、FAILED）、`total_rows int`、`succeeded_rows int`、`failed_rows int`、`file_object_id uuid`（逻辑引用 platform_file）、`result_object_id uuid`、`started_at`、`finished_at`、`reauth_ref`、`approval_ref`，加公共列。
+##### 3.1.7 invoice.purchase_invoices（进项发票，单据类，类型码 PINV）
 
-##### 3.1.7 附件关联表
+本表按裁定 A-10 归 invoice 模块，采购阶段不建表也不写台账。
+
+| 列 | 类型 | 可空 | 约束与说明 |
+|---|---|---|---|
+| doc_no | text | 否 | `ux_purchase_invoices_legal_entity_id_doc_no`；类型码 PINV |
+| status | text | 否 | `ck_purchase_invoices_status` 取值 REGISTERED、REVERSED |
+| supplier_id | uuid | 否 | 跨模块逻辑引用 mdm |
+| purchase_order_id | uuid | 是 | 跨模块逻辑引用 procure |
+| invoice_no | text | 否 | 供应商发票号；`ux_purchase_invoices_legal_entity_id_supplier_id_invoice_no` |
+| invoice_date | date | 否 | |
+| posting_date | date | 否 | |
+| accounting_period_id | uuid | 否 | 由 ledger 端口在业务事务内解析 |
+| deferred_from_period_id | uuid | 是 | |
+| tax_rate | numeric(9,6) | 否 | |
+| net_amount | numeric(18,2) | 否 | |
+| tax_amount | numeric(18,2) | 否 | |
+| gross_amount | numeric(18,2) | 否 | |
+| cost_kind | text | 否 | `ck_purchase_invoices_cost_kind` 取值 INVENTORY_TYPE、DIRECT_EXPENSE_TYPE |
+| is_credit_note | boolean | 否 | 默认 false |
+| reversed_by_id | uuid | 是 | |
+| voucher_id | uuid | 是 | 逻辑引用 ledger.vouchers |
+
+索引 `ix_purchase_invoices_legal_entity_id_created_at`、`ix_purchase_invoices_legal_entity_id_purchase_order_id`、`ix_purchase_invoices_legal_entity_id_posting_date`。
+
+##### 3.1.8 invoice.purchase_invoice_lines（进项发票行）
+
+| 列 | 类型 | 可空 | 约束与说明 |
+|---|---|---|---|
+| purchase_invoice_id | uuid | 否 | 同 schema 外键，`ON DELETE RESTRICT` |
+| line_no | int | 否 | `ux_purchase_invoice_lines_invoice_id_line_no` |
+| purchase_order_line_id | uuid | 是 | 跨模块逻辑引用 procure |
+| goods_receipt_line_id | uuid | 是 | 跨模块逻辑引用 procure |
+| material_id | uuid | 是 | 跨模块逻辑引用 mdm |
+| quantity | numeric(18,6) | 否 | |
+| net_unit_price | numeric(18,6) | 否 | |
+| net_amount | numeric(18,2) | 否 | |
+| tax_amount | numeric(18,2) | 否 | |
+| accrual_reversal_amount | numeric(18,2) | 是 | 暂估回冲金额，由 `InventoryVariancePort::split_variance` 返回后回填 |
+| price_variance_amount | numeric(18,2) | 是 | 价差金额，来源同上 |
+| is_overbilling | boolean | 否 | 默认 false，为真时在 `finance.overbilling_entries` 生成挂账 |
+
+索引 `ix_purchase_invoice_lines_legal_entity_id_goods_receipt_line_id`，支撑 `ReceiptInvoiceMatchQueryPort` 按收货行判定是否已开票。
+
+##### 3.1.9 附件关联表
 
 `invoice.invoice_application_attachments`、`invoice.sales_invoice_attachments`、`invoice.invoice_reversal_attachments`，列均为 `owner_id`、`attachment_object_id`、`purpose`、`sort_no` 加公共列，按基线第 4 节。
 
@@ -222,6 +277,8 @@ PRD 第 6.2.2 的资金账户字段表没有期初余额，而第 6.2.4 的资�
 ##### 3.2.1 finance.aging_bucket_definitions（账龄分档配置）
 
 列为 `code`、`display_name`、`from_days int`、`to_days int`（`to_days` 为空表示最后一档开区间）、`sort_no`、`is_active`、`deactivated_at`，加公共列。约束 `ck_aging_bucket_definitions_range` 表达 `from_days >= 0` 且 `to_days` 为空或大于 `from_days`。
+
+本表按裁定 C-08 是临时表：账龄分档的唯一出处为阶段 11 的 `reporting.aging_bucket_profiles` 与 `reporting.aging_bucket_lines`，阶段 11 交付 `V…__reporting_backfill_migrate_aging_buckets_from_finance.sql` 与 `V…__finance_drop_aging_bucket_definitions.sql` 两个迁移文件，把本表数据迁走并删表，两个文件均由阶段 11 提供。本阶段的账龄查询在阶段 11 到位后改经 `ep_contract_reporting::AgingBucketQuery::buckets(tx, ctx, legal_entity_id, ledger_side)`，不保留第二套口径。
 
 ##### 3.2.2 finance.cash_accounts（资金账户档案）
 
@@ -234,7 +291,7 @@ PRD 第 6.2.2 的资金账户字段表没有期初余额，而第 6.2.4 的资�
 | bank_name | text | 是 | BANK 时必填，长度上限 200 |
 | bank_account_no_cipher | bytea | 是 | BANK 时必填；按规格第 7.8 章法人密钥域字段级加密存储 |
 | bank_account_no_tail | text | 是 | 明文后 4 位，供列表与导出脱敏展示 |
-| bank_account_no_hash | bytea | 是 | 法人内加盐哈希，唯一约束 `ux_cash_accounts_legal_entity_id_bank_account_no_hash` 建在其上，用于查重而不落明文 |
+| bank_account_no_bidx | bytea | 是 | 盲索引，取值为 `derive_blind_key(legal_entity_id, 'finance.cash_accounts.bank_account_no', plaintext)`，唯一约束 `ux_cash_accounts_legal_entity_id_bank_account_no_bidx` 建在其上，用于查重而不落明文；按裁定 B-04 直接复用阶段 2 提供的 `derive_blind_key` 与 `BlindIndex`，本阶段不自建第二套哈希 |
 | owner_user_id | uuid | 否 | 责任人 |
 | opening_balance | numeric(18,2) | 否 | 默认 0，见第 0.3 节 |
 | opening_balance_period_id | uuid | 是 | |
@@ -253,7 +310,7 @@ PRD 第 6.2.2 的资金账户字段表没有期初余额，而第 6.2.4 的资�
 | contract_id | uuid | 是 | |
 | sales_order_id | uuid | 是 | |
 | sales_invoice_id | uuid | 否 | 跨模块逻辑引用 invoice，不建外键 |
-| source_doc_type | text | 否 | `ck_receivable_entries_source_type` 取值 SALES_INVOICE |
+| source_doc_type | text | 否 | `ck_receivable_entries_source_type` 取值 SALES_INVOICE、MIGRATION_OPENING，后者由第 4.12 节的期初导入写入 |
 | business_date | date | 否 | 原始业务日期，等于发票开具日期 |
 | accounting_period_id | uuid | 否 | |
 | deferred_from_period_id | uuid | 是 | |
@@ -267,7 +324,7 @@ PRD 第 6.2.2 的资金账户字段表没有期初余额，而第 6.2.4 的资�
 
 ##### 3.2.4 finance.payable_entries（应付明细条目）
 
-结构与 3.2.3 对称，差异列为 `supplier_id`、`purchase_order_id`、`purchase_invoice_id`（跨模块逻辑引用 procure）、`source_doc_type` 取值 PURCHASE_INVOICE。三条守恒 CHECK 同构。
+结构与 3.2.3 对称，差异列为 `supplier_id`、`purchase_order_id`、`purchase_invoice_id`（跨 schema 逻辑引用 `invoice.purchase_invoices`，按裁定 A-10 该表已归 invoice 模块）、`source_doc_type` 取值 PURCHASE_INVOICE、MIGRATION_OPENING。三条守恒 CHECK 同构。
 
 ##### 3.2.5 finance.advance_receipt_entries（预收台账条目）
 
@@ -277,7 +334,8 @@ PRD 第 6.2.2 的资金账户字段表没有期初余额，而第 6.2.4 的资�
 | contract_id | uuid | 是 | |
 | sales_order_id | uuid | 是 | |
 | receipt_plan_line_id | uuid | 是 | 逻辑引用 clm |
-| receipt_id | uuid | 否 | 同 schema 外键指向 `finance.receipts` |
+| receipt_id | uuid | 是 | 同 schema 外键指向 `finance.receipts`；期初导入产生的条目无来源资金单据，取空 |
+| source_doc_type | text | 否 | `ck_advance_receipt_entries_source_type` 取值 RECEIPT、MIGRATION_OPENING |
 | business_date | date | 否 | 等于到款日期 |
 | accounting_period_id | uuid | 否 | |
 | deferred_from_period_id | uuid | 是 | |
@@ -289,7 +347,7 @@ PRD 第 6.2.2 的资金账户字段表没有期初余额，而第 6.2.4 的资�
 
 ##### 3.2.6 finance.advance_payment_entries（预付台账条目）
 
-与 3.2.5 对称，差异列为 `supplier_id`、`purchase_order_id`、`payment_plan_line_id`、`payment_id`。
+与 3.2.5 对称，差异列为 `supplier_id`、`purchase_order_id`、`payment_plan_line_id`、`payment_id`；`payment_id` 同样可空，`source_doc_type` 的 `ck_advance_payment_entries_source_type` 取值 PAYMENT、MIGRATION_OPENING。
 
 ##### 3.2.7 finance.unbilled_ar_entries（应收账款未开票过渡科目子账，仅追加）
 
@@ -430,7 +488,7 @@ PRD 第 6.1.4 要求系统不提供新增资金流水入口，本表在 API 层�
 
 #### 3.3 视图
 
-十个勾稽项对应十个对账视图，本阶段建其中八个的完整实现，另两个只建外壳。另有四个业务查询视图，合计 14 个。
+十个勾稽项对应十个对账视图，本阶段全部完整实现。其中八项的子账侧取自本阶段自有表；存货与已收货未收票两项按裁定 B-08 由本阶段把阶段 8 与阶段 7 各自提供的查询函数包装为 `ep_contract_finance::SubledgerBalanceProvider` 的实现后接入，实现类型名固定为 `InventorySubledgerBalanceQuery` 与 `GrniSubledgerBalanceQuery`。另有四个业务查询视图与三个受治理数据集视图，合计 17 个。
 
 | 视图 | 子账侧取数 | 归属 |
 |---|---|---|
@@ -442,16 +500,25 @@ PRD 第 6.1.4 要求系统不提供新增资金流水入口，本表在 API 层�
 | finance.v_recon_overbilling | `sum(open_amount)` from `finance.overbilling_entries` | 本阶段完整实现 |
 | finance.v_recon_cash_bank | `opening_balance` 加 `finance.cash_ledger_entries` 的方向净额，限 `account_type` 为 BANK | 本阶段完整实现 |
 | finance.v_recon_cash_on_hand | 同上，限 `account_type` 为 CASH | 本阶段完整实现 |
-| finance.v_recon_inventory | 存货金额账 | 外壳，子账侧由库存阶段提供契约查询 |
-| finance.v_recon_grni | 已收货未收票暂估 | 外壳，子账侧由采购阶段提供契约查询 |
+| finance.v_recon_inventory | 存货金额账，经 `InventorySubledgerBalanceQuery` | 本阶段完整实现，实现体包装阶段 8 交付的本模块查询函数 |
+| finance.v_recon_grni | 已收货未收票暂估，经 `GrniSubledgerBalanceQuery` | 本阶段完整实现，实现体包装阶段 7 交付的本模块查询函数 |
 
 另有四个业务查询视图：`finance.v_unbilled_ar_net`、`finance.v_receivable_aging`、`finance.v_payable_aging`、`finance.v_cash_account_period_balance`。账龄视图不做物化，理由是共享基线第 3.2 节禁用物化视图。
 
 全部视图不带 `SECURITY DEFINER`，因此继承调用连接的 RLS 会话变量。
+按裁定 A-18，本阶段另发布三个受治理数据集视图，dataset code、视图名与 grain 固定如下，任何阶段不得改名。
+
+| dataset code | 视图 | grain |
+|---|---|---|
+| invoice_purchase_invoices | invoice.v_purchase_invoices_dataset | DOCUMENT |
+| finance_receivable_ledger_entries | finance.v_receivable_ledger_entries | ENTRY |
+| finance_payable_ledger_entries | finance.v_payable_ledger_entries | ENTRY |
+
+三个视图必须包含 `legal_entity_id`、`security_level`、`data_scope_tags` 三列，并在同一迁移中执行 `GRANT SELECT ON <视图> TO ep_analyst_ro`，不授予 `ep_app_rw` 之外的任何写权限。列名与类型签名必须与阶段 11 的 `reporting.dataset_fields` 登记一致，由阶段 11 的启动自检项 `reporting-dataset-signature-matched` 校验。阶段 11 原先登记的 `procure_purchase_invoices` 与 `procure.v_purchase_invoices_dataset` 一行由本阶段的 `invoice_purchase_invoices` 与 `invoice.v_purchase_invoices_dataset` 取代，提供方由采购阶段改为本阶段。
 
 #### 3.4 RLS 策略
 
-上述 34 张表全部带 `legal_entity_id`，全部按共享基线第 3.8 节的统一模板生成策略，模板由迁移生成器产出，本阶段不写变体。策略名一律 `rls_<table>_le`。
+上述 36 张表全部带 `legal_entity_id`，全部按共享基线第 3.8 节的统一模板生成策略，模板由迁移生成器产出，本阶段不写变体。策略名一律 `rls_<table>_le`。
 
 两个配置字典表 `invoice.tax_rate_options` 与 `finance.aging_bucket_definitions` 同样带法人列并建策略，不列入基线第 3.8 节的四类免建策略表。
 
@@ -479,6 +546,9 @@ PRD 第 6.1.4 要求系统不提供新增资金流水入口，本表在 API 层�
 | ix_sales_invoices_legal_entity_id_invoice_application_id | invoice.sales_invoices | 剩余可开比例回滚与申请单勾稽 |
 | ix_sales_invoices_legal_entity_id_customer_id_issue_date | invoice.sales_invoices | 销项发票台账列表 |
 | ix_invoice_reversals_legal_entity_id_source_invoice_id | invoice.invoice_reversals | 冲销互斥判定 |
+| ix_purchase_invoices_legal_entity_id_purchase_order_id | invoice.purchase_invoices | 三单匹配与门户按采购订单反查已登记发票 |
+| ix_purchase_invoices_legal_entity_id_posting_date | invoice.purchase_invoices | 进项台账按记账日期与会计期间取数 |
+| ix_purchase_invoice_lines_legal_entity_id_goods_receipt_line_id | invoice.purchase_invoice_lines | `ReceiptInvoiceMatchQueryPort::match_state` 与 `match_states` 按收货行判定是否已开票 |
 
 全部索引在迁移中以 `CREATE INDEX CONCURRENTLY` 创建，迁移会话按共享基线第 3.9 节固定 `lock_timeout` 与 `statement_timeout`。
 
@@ -493,12 +563,19 @@ invoice 目录：
 3. V202611030910__invoice_create_invoice_application_link_tables.sql
 4. V202611030915__invoice_create_sales_invoices.sql
 5. V202611030920__invoice_create_invoice_reversals.sql
-6. V202611030925__invoice_create_invoice_receipt_plan_links.sql
-7. V202611030930__invoice_create_invoice_import_batches.sql
-8. V202611030935__invoice_create_attachment_link_tables.sql
-9. V202611030940__invoice_enable_row_level_security.sql
-10. V202611030945__invoice_create_indexes.sql
-11. V202611030950__invoice_backfill_seed_tax_rate_options.sql
+6. V202611030921__invoice_create_purchase_invoices.sql
+7. V202611030922__invoice_create_purchase_invoice_lines.sql
+8. V202611030925__invoice_create_invoice_receipt_plan_links.sql
+9. V202611030930__invoice_create_invoice_import_batches.sql
+10. V202611030935__invoice_create_attachment_link_tables.sql
+11. V202611030940__invoice_enable_row_level_security.sql
+12. V202611030945__invoice_create_indexes.sql
+13. V202611030950__invoice_backfill_seed_tax_rate_options.sql
+14. V202611030955__invoice_backfill_migrate_tax_rates_from_mdm.sql
+15. V202611030960__invoice_create_dataset_views.sql
+16. V202611030965__invoice_backfill_posting_trigger_event_types.sql
+
+第 6 与第 7 两个文件按裁定 A-10 排在 `invoice.invoice_reversals` 之后。第 14 个文件按裁定 C-11 把阶段 5 的分类项税率一类迁入 `invoice.tax_rate_options` 并撤销阶段 5 的 `MdmTaxRateStub`。第 15 个文件按裁定 A-18 建立 `invoice.v_purchase_invoices_dataset` 并在同一文件内执行 `GRANT SELECT` 给 `ep_analyst_ro`。
 
 finance 目录：
 
@@ -523,8 +600,15 @@ finance 目录：
 19. V202611031090__finance_create_indexes.sql
 20. V202611031095__finance_create_reconciliation_views.sql
 21. V202611031100__finance_backfill_seed_aging_buckets.sql
+22. V202611031105__finance_create_dataset_views.sql
+23. V202611031110__finance_backfill_append_only_registry.sql
+24. V202611031115__finance_backfill_posting_trigger_event_types.sql
 
-每个文件头带 `-- rollback:` 段。建表类文件的回退为对应 `drop table`；两个 backfill 文件的回退为按 `code` 删除出厂预置行；`enable_row_level_security` 与 `create_indexes` 的回退为逐条 `drop policy` 与 `drop index`。本阶段没有改列类型与收紧非空的迁移，因此全部迁移可在线执行。
+第 22 个文件按裁定 A-18 建立 `finance.v_receivable_ledger_entries` 与 `finance.v_payable_ledger_entries` 并授予 `ep_analyst_ro`。第 23 个文件按裁定 B-02 向 `platform_core.append_only_registry` 登记本阶段的七张表 `finance.receivable_entries`、`finance.payable_entries`、`finance.advance_receipt_entries`、`finance.advance_payment_entries`、`finance.unbilled_ar_entries`、`finance.overbilling_entries`、`finance.cash_ledger_entries`，逐表给出 `immutable_columns`，登记与触发器的一致性由 `db/checks/append_only_consistency.sql` 经 `xtask sqlcheck` 断言。
+
+两个 `backfill_posting_trigger_event_types` 文件按裁定 A-21 只对 `ledger.posting_trigger_event_types` 执行 UPDATE，按 `ledger_event_kind` 定位并写入 `event_type`，不新增行；invoice 目录的文件覆盖 SALES_INVOICE_ISSUED、PURCHASE_INVOICE 与 INVOICE_REVERSED，finance 目录的文件覆盖 RECEIPT_REGISTERED、PAYMENT_REGISTERED 与 REFUND_REGISTERED，逐条对照见第 5.8 节末表。全部 backfill 与 seed 迁移的 `created_by` 一律取 `ep_foundation::SYSTEM_PRINCIPAL_ID`，即 `00000000-0000-7000-8000-000000000001`，按裁定 A-02，不得自选取值。
+
+每个文件头带 `-- rollback:` 段。建表类文件的回退为对应 `drop table`；seed 与 backfill 文件的回退为按 `code` 删除出厂预置行或把被写入的列置回空；`enable_row_level_security` 与 `create_indexes` 的回退为逐条 `drop policy` 与 `drop index`；`create_dataset_views` 的回退为 `drop view` 加 `revoke`。本阶段没有改列类型与收紧非空的迁移，因此全部迁移可在线执行。
 
 ---
 
@@ -632,7 +716,7 @@ OPEN 到 PARTIALLY_SETTLED 到 SETTLED，三条结清路径任一条都推进该
 
 #### 4.5 账龄分桶
 
-输入：条目的 `due_date`、`open_amount`、评估基准日（默认为服务器自然日，按共享基线第 3.4 节取 `(now() AT TIME ZONE 'Asia/Shanghai')::date`）、`AgingBucketSet`。
+输入：条目的 `due_date`、`open_amount`、评估基准日（默认为服务器自然日，按共享基线第 3.4 节取 `(now() AT TIME ZONE 'Asia/Shanghai')::date`）、`AgingBucketSet`。`AgingBucketSet` 的取数在本阶段来自临时表 `finance.aging_bucket_definitions`，阶段 11 交付 `reporting.aging_bucket_profiles` 与 `reporting.aging_bucket_lines` 之后改经 `ep_contract_reporting::AgingBucketQuery::buckets(tx, ctx, legal_entity_id, ledger_side)`，本表随阶段 11 的删表迁移撤销，分档口径不设第二套，见裁定 C-08。
 
 `overdue_days = 评估基准日 - due_date`，小于零时归入第一档。逐档判定 `from_days <= overdue_days` 且（`to_days` 为空或 `overdue_days <= to_days`）。基数一律为 `open_amount`，不使用 `original_amount`，对应 PRD 第 6.9.3。
 
@@ -687,11 +771,33 @@ OPEN 到 PARTIALLY_SETTLED 到 SETTLED，三条结清路径任一条都推进该
 
 #### 4.10 会计期间归属
 
-本阶段不实现期间解析，只调用 `ep-contract-ledger::AccountingPeriodResolver::resolve(legal_entity_id, posting_date, tx) -> ResolvedPeriod { period_id, deferred_from_period_id }`。该端口在业务事务内调用一次，结果同时写入凭证与全部子账条目，包括台账条目、核销关系行、资金腿明细与超量开票记录。
+本阶段不实现期间解析，只调用 `ep-contract-ledger::AccountingPeriodResolver::resolve(legal_entity_id, posting_date, tx) -> ResolvedPeriod { period_id, deferred_from_period_id }`。该端口在业务事务内调用一次，结果同时写入凭证与全部子账条目，包括台账条目、核销关系行、资金腿明细与超量开票记录。事务句柄的类型按裁定 A-01 固定为 `&mut dyn Tx`，`Tx` 与只读快照上下文 `SnapshotCtx` 均取自 `ep_foundation::port`，由阶段 1 冻结；本阶段全部跨模块契约方法的事务参数一律写成 `&mut dyn Tx`，只读对账取数一律写成 `&dyn SnapshotCtx`，不使用具体连接类型。
 
 记账日期的取值与校验在本阶段：默认取登记时点服务器自然日；允许早于该日并按 PRD 第 6.1.4 提示为补记并写审计；晚于该日一律 `VALIDATION` 并定位字段。
 
 提交响应固定回带 `accounting_period`（编码与名称）与 `is_deferred`，供界面按 PRD 第 6.1.4 显式标注，缺失即视为实现缺陷。
+#### 4.11 采购发票登记与三单匹配
+
+本节按裁定 A-10 归本阶段。用例为 `crates/application/invoice/src/usecase/register_purchase_invoice.rs`，端点见第 5.2 节。
+
+步骤：
+
+1. 三单匹配在该用例内执行，依次比对采购订单行、收货行与本次发票行的数量与金额。收货行的已开票状态经本模块自有表判定，不回问采购模块。
+2. 暂估回冲与价差拆分经 `ep_contract_inventory::InventoryVariancePort::split_variance(tx, ctx, VarianceSplitCommand{..})` 取得尚有库存部分与已出库部分的金额，写入 `invoice.purchase_invoice_lines.accrual_reversal_amount` 与 `price_variance_amount`。按裁定 C-13，取价一律归阶段 8，本阶段不自行取价，ledger 侧只做分录映射与借贷平衡。
+3. 应付腿经本阶段自身的 `register_payable_on_purchase_invoice` 用例写入 `finance.payable_entries`，并按同一合同自动核销预付，见第 0.2 节的附加分录腿假设。
+4. 开票数量超过累计收货数量的部分按 `is_overbilling` 标记，并在 `finance.overbilling_entries` 生成挂账，后续走第 4.6 节的三条结清路径。
+5. 会计期间在事务最前由 `AccountingPeriodResolver::resolve` 一次解析，凭证与全部子账条目共用该结果。
+6. 事件 `invoice.purchase_invoice.registered.v1` 写入 Outbox，payload 见第 5.8 节。
+
+进项红字发票由阶段 7 的采购退货用例经 `ep_contract_invoice::PurchaseCreditNotePort::register_credit_note(tx, ctx, cmd: RegisterPurchaseCreditNote)` 触发，在调用方事务内执行，返回 `PurchaseCreditNoteView`；`is_for_overbilling_settlement` 为真时同时结清对应挂账，即第 4.6 节的路径二。收货与发票的匹配状态经 `ep_contract_invoice::ReceiptInvoiceMatchQueryPort` 的 `match_state` 与 `match_states` 两个方法对外提供，返回 `ReceiptInvoiceMatchState`。两个 trait 与四个 DTO 按裁定 A-11 由本阶段在 `ep-contract-invoice` 定义、在 `ep-app-invoice` 实现，并在两个 `wiring.rs` 中替换阶段 7 注入的 `NoopPurchaseCreditNotePort` 与 `NoopReceiptInvoiceMatchQueryPort`。
+
+#### 4.12 往来与预收预付的期初余额导入
+
+本节按裁定 A-24 归本阶段。用例为 `crates/application/finance/src/usecase/import_opening_balances.rs`，端点为 `POST /api/v1/finance/opening-balances/actions/import`，请求体为 `{ledger_side, accounting_period_id, rows[]}`。
+
+`rows` 按 `ledger_side` 写入 `finance.receivable_entries`、`finance.payable_entries`、`finance.advance_receipt_entries`、`finance.advance_payment_entries` 四张表之一，`source_doc_type` 一律取 `MIGRATION_OPENING`，`sales_invoice_id`、`purchase_invoice_id`、`receipt_id`、`payment_id` 四列在期初条目上取空。
+
+本通道与资金账户期初、总账期初、库存期初四者一律不生成凭证：期初对应的总账侧由阶段 9a 的期初余额批次承担，两侧的平衡由第 3.3 节的八个 `finance.v_recon_*` 视图在首个会计期间校验。逐行独立事务落库，失败行不回滚已成功行，逐行返回原因，与第 0.4 节 F-16 的批量导入口径一致。
 
 ---
 
@@ -722,9 +828,11 @@ OPEN 到 PARTIALLY_SETTLED 到 SETTLED，三条结清路径任一条都推进该
 | POST /api/v1/invoice/sales-invoices/actions/import-batch | `file_object_id`；必带 `X-Reauth-Token` | 后台任务回执 `{ task_id, batch_id }` | INVOICE.IMPORT_BATCH.ROW_LIMIT_EXCEEDED、INVOICE.IMPORT_BATCH.TEMPLATE_MISMATCH | invoice.sales_invoice:issue 加 invoice.sales_invoice:import |
 | GET /api/v1/invoice/invoice-import-batches/{id} | | 批次详情，含逐行结果对象引用 | | invoice.sales_invoice:read |
 | POST /api/v1/invoice/invoice-reversals | `direction`、`reversal_type`、`source_invoice_id`、`register_date`、`posting_date`、`red_invoice_no`、`red_net_amount`、`red_tax_rate`、`red_tax_amount`、`red_gross_amount`、`reason`、`overbilling_entry_id`、`attachment_object_ids[]`；按配置带 `X-Reauth-Token` | 冲销单视图，含 `voucher_id`、被回滚后的申请单状态与剩余可开比例 | INVOICE.INVOICE_REVERSAL.SOURCE_ALREADY_REVERSED、INVOICE.INVOICE_REVERSAL.TYPE_MUTUALLY_EXCLUSIVE、INVOICE.INVOICE_REVERSAL.RED_AMOUNT_MISMATCH、INVOICE.INVOICE_REVERSAL.SOURCE_INVOICE_NOT_REGISTERED、INVOICE.INVOICE_REVERSAL.RECEIPT_PLAN_ISSUED_AMOUNT_NEGATIVE | invoice.invoice_reversal:create |
-| GET /api/v1/invoice/purchase-invoices 与 /{id} | 进项发票台账只读投影，取数经 `ep-contract-procure` 加本阶段应付条目 | 分页列表与详情，含应付明细条目与凭证追溯 | | invoice.purchase_invoice_ledger:read |
+| POST /api/v1/invoice/purchase-invoices | `supplier_id`、`purchase_order_id`、`invoice_no`、`invoice_date`、`posting_date`、`tax_rate`、`net_amount`、`tax_amount`、`gross_amount`、`cost_kind`、`is_credit_note`、`lines[]`（含 `purchase_order_line_id`、`goods_receipt_line_id`、`material_id`、`quantity`、`net_unit_price`、`net_amount`、`tax_amount`）、`attachment_object_ids[]` | 采购发票视图，含 `doc_no`、`voucher_id`、`accounting_period`、`is_deferred`、逐行的 `accrual_reversal_amount` 与 `price_variance_amount`、`payable_entry_id` | INVOICE.PURCHASE_INVOICE.INVOICE_NO_DUPLICATED、INVOICE.PURCHASE_INVOICE.RECEIPT_LINE_ALREADY_INVOICED、INVOICE.PURCHASE_INVOICE.QUANTITY_EXCEEDS_RECEIPT、INVOICE.PURCHASE_INVOICE.AMOUNT_MISMATCH_WITH_ORDER、INVOICE.PURCHASE_INVOICE.GROSS_AMOUNT_MISMATCH、INVOICE.PURCHASE_INVOICE.POSTING_DATE_IN_FUTURE | invoice.purchase_invoice_ledger:create |
+| GET /api/v1/invoice/purchase-invoices 与 /{id} | 过滤 `supplier_id`、`status`、`invoice_date`、`accounting_period_id`、`purchase_order_id`、`invoice_no` | 分页列表与详情，含发票行、应付明细条目与凭证追溯；取数为本模块自有表 `invoice.purchase_invoices` 与 `invoice.purchase_invoice_lines`，不经 `ep-contract-procure` | | invoice.purchase_invoice_ledger:read |
 
 `POST /api/v1/invoice/sales-invoices` 是规格附录 A.1“应收发票生成”这一度量项的被测端点。
+发票打印按裁定 A-08 在阶段 5 交付的三个端口上增量实现，即 `ep_foundation::port::doc::DocTemplatePort::render` 与 `PdfRenderPort::render_pdf`，本阶段只产出像素级套打所需的 `PrintLayout` 取值，不新增任何渲染 trait，也不自建第二条渲染路径。
 
 #### 5.3 资金账户
 
@@ -761,8 +869,9 @@ OPEN 到 PARTIALLY_SETTLED 到 SETTLED，三条结清路径任一条都推进该
 | GET /api/v1/finance/overbilling-entries 与 /{id} | 待处理超量开票查询视图，`meta` 返回该法人该期间的挂账合计 |
 | POST /api/v1/finance/overbilling-entries/{id}/actions/settle-by-write-off | 路径三，必带 `X-Reauth-Token` 并进审批 |
 | POST /api/v1/finance/overbilling-entries/{id}/actions/reverse-write-off | 冲回路径三，必带 `X-Reauth-Token` 并进审批 |
-| GET /api/v1/finance/reconciliations | 查询参数 `accounting_period_id` 与可选 `item`；返回十项的子账侧、总账侧与差额三列，其中存货与已收货未收票两项在其子账侧契约接入前只返回总账侧并标注未接入；差额非零时附差异事项引用；本端点不提供任何调整入口，对应 PRD 第 6.13.2 |
+| GET /api/v1/finance/reconciliations | 查询参数 `accounting_period_id` 与可选 `item`；返回十项的子账侧、总账侧与差额三列，十项的子账侧均已接入，存货与已收货未收票两项经 `SubledgerBalanceProvider` 的两个实现取数，见第 3.3 节；差额非零时附差异事项引用；本端点不提供任何调整入口，对应 PRD 第 6.13.2 |
 | GET /api/v1/finance/cash-ledger-entries | 全法人资金腿明细，按账户筛选 |
+| POST /api/v1/finance/opening-balances/actions/import | 往来与预收预付期初导入，请求体 `{ledger_side, accounting_period_id, rows[]}`，见第 4.12 节；逐行独立事务，不生成凭证；错误码 FINANCE.OPENING_BALANCE.PERIOD_NOT_FIRST、FINANCE.OPENING_BALANCE.ROW_LIMIT_EXCEEDED、FINANCE.OPENING_BALANCE.PARTY_NOT_FOUND |
 
 移动端按规格第 6.2 章矩阵只提供本节全部 GET 端点，POST 端点在移动端由前端隐藏，服务端不做端别拒绝，理由是端别限制属客户端能力矩阵而不是服务端授权。
 
@@ -786,13 +895,14 @@ OPEN 到 PARTIALLY_SETTLED 到 SETTLED，三条结清路径任一条都推进该
 
 #### 5.8 领域事件
 
-11 个事件，命名按共享基线第 6.1 节的四段式，登记到 `docs/event-catalog.md` 后才实现。信封字段不增不减，`posting_date` 与 `accounting_period_id` 取本次解析结果，`security_level` 取单据取值，`data_scope_tags` 携带客户或供应商与合同两类标签。
+12 个事件，命名按共享基线第 6.1 节的四段式，登记到 `docs/event-catalog.md` 后才实现。信封字段不增不减，`posting_date` 与 `accounting_period_id` 取本次解析结果，`security_level` 取单据取值，`data_scope_tags` 携带客户或供应商与合同两类标签。
 
 | 事件类型 | 触发点 | payload 要点 | 消费方 |
 |---|---|---|---|
 | invoice.invoice_application.submitted.v1 | 申请提交进入审批 | 申请单 ID、合同、客户、开票比例、申请金额 | notify、reporting |
 | invoice.invoice_application.approved.v1 | 审批链全通过 | 申请单 ID、剩余可开比例 | notify |
 | invoice.sales_invoice.issued.v1 | 开具登记提交成功 | 发票 ID、申请单 ID、客户、合同、不含税金额、税额、价税合计、应收条目 ID、凭证 ID | notify、reporting、search、客户 360 |
+| invoice.purchase_invoice.registered.v1 | 采购发票登记提交成功 | `purchase_invoice_id`、`doc_no`、`supplier_id`、`purchase_order_id`、`cost_kind`、`net_amount`、`tax_amount`、`gross_amount`、`accrual_reversal_amount`、`price_variance_in_stock_amount`、`price_variance_released_amount`、`voucher_id`、`lines` | notify、reporting、门户投影 |
 | invoice.sales_invoice.reversed.v1 | 销项作废或红冲登记成功 | 冲销单 ID、原发票 ID、处理类型、红字金额、回滚后的剩余可开比例 | notify、reporting、search |
 | invoice.purchase_invoice.reversed.v1 | 进项作废或红冲登记成功 | 冲销单 ID、原采购发票 ID、处理类型、红字金额、是否用于超量开票结清 | notify、reporting |
 | invoice.invoice_import_batch.completed.v1 | 批量导入任务结束 | 批次 ID、总行数、成功行数、失败行数、结果对象引用 | notify |
@@ -802,26 +912,43 @@ OPEN 到 PARTIALLY_SETTLED 到 SETTLED，三条结清路径任一条都推进该
 | finance.cash_document.reversed.v1 | 资金单据冲正登记成功 | 冲正单 ID、原单据类型与 ID、冲正金额、凭证 ID | notify、reporting |
 | finance.overbilling_entry.settled.v1 | 三条结清路径任一条完成 | 挂账 ID、路径、结清数量与金额、剩余余额、凭证 ID | notify、reporting |
 
-上述事件的消费方均不做过账，见第 0.1 节。
+上述事件的消费方均不做过账，见第 0.1 节。事件的 `aggregate_type` 按共享基线第 6.1 节取 `<schema>.<表名>`，采购发票登记事件取 `invoice.purchase_invoices`。
+
+按裁定 A-21，登记表与登记接口归阶段 9a，登记行归产生该事件的阶段。本阶段在两个 `backfill_posting_trigger_event_types` 迁移中按下表定位并写入 `event_type`，运行期自检经 `ep_contract_ledger::PostingTriggerRegistry::register` 比对。
+
+| event_type | ledger_event_kind | 迁移所在目录 |
+|---|---|---|
+| invoice.sales_invoice.issued.v1 | SALES_INVOICE_ISSUED | invoice |
+| invoice.purchase_invoice.registered.v1 | PURCHASE_INVOICE | invoice |
+| invoice.sales_invoice.reversed.v1 | INVOICE_REVERSED | invoice |
+| invoice.purchase_invoice.reversed.v1 | INVOICE_REVERSED | invoice |
+| finance.receipt.registered.v1 | RECEIPT_REGISTERED | finance |
+| finance.payment.registered.v1 | PAYMENT_REGISTERED | finance |
+| finance.refund.registered.v1 | REFUND_REGISTERED | finance |
+| finance.cash_document.reversed.v1 | REFUND_REGISTERED | finance |
 
 #### 5.9 对外契约 trait
 
-12 个 trait，定义在两个 contract crate 中，实现注册在 `apps/core-server/src/wiring.rs`。调用方按共享基线第 1.3 节只依赖 contract，不依赖 application。
+16 个 trait，定义在两个 contract crate 中，实现注册在 `apps/core-server/src/wiring.rs` 与 `apps/job-worker/src/wiring.rs`。调用方按共享基线第 1.3 节只依赖 contract，不依赖 application。全部方法的事务句柄一律为 `&mut dyn Tx`，只读对账取数为 `&dyn SnapshotCtx`，两个类型取自 `ep_foundation::port`，按裁定 A-01 由阶段 1 冻结。
 
 | trait | 所在 crate | 调用方 | 语义 |
 |---|---|---|---|
-| PayableRegistrationPort | ep-contract-finance | ep-app-procure | 采购发票登记的应付明细条目写入、预付自动核销、超量开票挂账，在调用方事务内执行 |
-| OverbillingMatchPort | ep-contract-finance | ep-app-inventory 或 ep-app-procure 的收货用例 | 规格第 5.2 章超量开票路径一的反向匹配，返回可匹配数量与单价 |
-| UnbilledArPort | ep-contract-finance | ep-app-sales、ep-app-inventory | 交付确认与销售退货在应收账款未开票过渡科目上的子账腿写入 |
-| CreditExposureQuery | ep-contract-finance | ep-app-sales | 返回该客户的应收未收金额与已交付未开票金额两项，供信用额度占用计算 |
+| PayableRegistrationPort | ep-contract-finance | ep-app-invoice | 采购发票登记的应付明细条目写入、预付自动核销、超量开票挂账，在调用方事务内执行；按裁定 A-10 采购发票登记归本阶段，调用方由 ep-app-procure 收窄为 ep-app-invoice |
+| OverbillingMatchPort | ep-contract-finance | ep-app-procure 的收货用例 | 规格第 5.2 章超量开票路径一的反向匹配，返回可匹配数量与单价；阶段 7 先注入空实现，本阶段替换 |
+| UnbilledArPort | ep-contract-finance | ep-app-sales | 交付确认与销售退货在应收账款未开票过渡科目上的子账腿写入；交付确认腿的方法按裁定 A-09 固定为 `record_on_delivery(tx, ctx, DeliveryUnbilledArCommand { delivery_confirmation_id, customer_id, posting_date, accounting_period_id, direction: DEBIT, net_amount })`，写 `finance.unbilled_ar_entries`；阶段 6 先注入 `NoopUnbilledArPort`，本阶段替换，使用方由 ep-app-sales 与 ep-app-inventory 收窄为 ep-app-sales |
+| ReceivableExposureQuery | ep-contract-finance | ep-app-sales | 返回 `ReceivableExposureView { receivable_open_amount, delivered_unbilled_amount }` 两项，供 `ep_contract_sales::CreditExposureQueryPort` 组装对外唯一的信用敞口入口；按裁定 C-14，`CreditExposureQuery` 与 `CustomerCreditExposurePort` 两个旧名作废；阶段 6 先注入 `NoopReceivableExposureQuery`，本阶段替换 |
 | ReceivableLedgerQuery | ep-contract-finance | ep-app-reporting、ep-app-crm | 应收台账与核销关系只读查询 |
-| PayableLedgerQuery | ep-contract-finance | ep-app-reporting | 应付台账与核销关系只读查询 |
-| SupplierStatementQuery | ep-contract-finance | ep-app-portal | 供应商收付款对账查询的取数，返回未脱敏结构，脱敏在门户侧完成 |
+| PayableLedgerQuery | ep-contract-finance | ep-app-procure、ep-app-reporting | 应付台账与核销关系只读查询，方法按裁定 C-15 固定为 `open_balance(tx, ctx, purchase_invoice_id: Id<PurchaseInvoice>) -> Result<Money, AppError>`；阶段 7 的 `PayableQueryPort` 作废 |
+| SupplierStatementQuery | ep-contract-finance | ep-app-portal | 供应商收付款对账查询的取数，方法按裁定 C-15 固定为 `statement(tx, ctx, supplier_id: Id<Supplier>, period: PeriodRange) -> Result<SupplierStatementView, AppError>`，返回未脱敏结构，脱敏在门户侧完成；阶段 7 的 `PayableStatementQueryPort` 作废 |
 | CashAccountQuery | ep-contract-finance | ep-app-procure、ep-app-reporting | 资金账户与资金腿明细只读查询 |
-| AgingQuery | ep-contract-finance | ep-app-reporting | 应收账龄与应付账龄两张基础表的取数 |
-| ReconciliationItemQuery | ep-contract-finance | ep-app-ledger 的关账前强制校验、job-worker 的内部对账组件 | 按法人与会计期间返回八项勾稽的子账侧合计，结构为 `ReconciliationItemView` |
-| SalesInvoiceQuery | ep-contract-invoice | ep-app-clm、ep-app-sales、ep-app-reporting | 销项发票与收款计划勾稽的只读查询 |
-| InvoiceReversalStatusQuery | ep-contract-invoice | ep-app-sales、ep-app-procure | 判定某张发票是否已完成红冲或作废，供销售退货与采购退货的前置校验，对应 PRD 第 6.5.4 |
+| AgingQuery | ep-contract-finance | ep-app-reporting | 应收账龄与应付账龄两张基础表的取数；分档定义不由本 trait 承载，取用入口见第 4.5 节 |
+| ReconciliationItemQuery | ep-contract-finance | ep-app-ledger 的关账前强制校验、阶段 9a 交付的 ep-platform-recon 执行器 | 按法人与会计期间返回十项勾稽的子账侧合计，结构为 `ReconciliationItemView` |
+| SubledgerBalanceProvider | ep-contract-finance | 本阶段自用，由 ReconciliationItemQuery 组装 | `balance(snapshot: &dyn SnapshotCtx, legal_entity_id, accounting_period_id) -> Result<Money, AppError>`；按裁定 B-08 由本阶段定义，两个实现 `InventorySubledgerBalanceQuery` 与 `GrniSubledgerBalanceQuery` 由本阶段包装阶段 8 与阶段 7 各自提供的查询函数 |
+| SalesInvoiceQuery | ep-contract-invoice | ep-app-clm、ep-app-sales、ep-app-reporting | 销项发票与收款计划勾稽的只读查询，方法按裁定 C-16 固定为 `by_sales_order_line(tx, ctx, sales_order_line_id) -> Result<Vec<SalesInvoiceRef>, AppError>` |
+| InvoiceReversalStatusQuery | ep-contract-invoice | ep-app-sales、ep-app-procure | 方法按裁定 C-16 固定为 `is_fully_credit_noted(tx, ctx, sales_order_line_id, quantity: Quantity) -> Result<CreditNoteStatus, AppError>`，供销售退货与采购退货的前置校验，对应 PRD 第 6.5.4；阶段 6 的 `InvoiceStatusPort` 作废，阶段 6 先注入空实现，本阶段替换 |
+| ReceiptInvoiceMatchQueryPort | ep-contract-invoice | ep-app-procure | 按裁定 A-11 提供 `match_state` 与 `match_states` 两个方法，返回 `ReceiptInvoiceMatchState`；阶段 7 先注入 `NoopReceiptInvoiceMatchQueryPort`，本阶段替换 |
+| PurchaseCreditNotePort | ep-contract-invoice | ep-app-procure | 按裁定 A-11 提供 `register_credit_note(tx, ctx, cmd: RegisterPurchaseCreditNote) -> Result<PurchaseCreditNoteView, AppError>`，采购退货在采购发票已登记分支下由本端口登记红字进项发票；阶段 7 先注入 `NoopPurchaseCreditNotePort`，本阶段替换 |
+| TaxRateOptionQuery | ep-contract-invoice | ep-app-sales、ep-app-clm、ep-app-procure | 按裁定 C-11 提供 `default_rate(tx, ctx, legal_entity_id, item_id: uuid::Uuid) -> Result<Rate, AppError>` 与 `list(tx, ctx, legal_entity_id) -> Result<Vec<TaxRateOption>, AppError>`，是税率字典的唯一取用入口 |
 
 ---
 
@@ -841,8 +968,11 @@ OPEN 到 PARTIALLY_SETTLED 到 SETTLED，三条结清路径任一条都推进该
 | register_cash_document_reversal | 冲正单；全部反向核销行；台账条目回增；预收预付反向条目；资金腿反向明细；原单据置 REVERSED；凭证；审计；Outbox | 通知 |
 | settle_overbilling_by_write_off | 结清记录；挂账更新；凭证；审计；Outbox | 通知 |
 | match_overbilling_on_receipt | 结清记录；挂账更新；凭证附加腿。本用例由收货用例在其事务内调用，不自开事务 | |
-| register_payable_on_purchase_invoice | 应付条目；预付自动核销；超量开票挂账。本用例由采购发票登记用例在其事务内调用，不自开事务 | |
-| record_unbilled_ar_on_delivery | `finance.unbilled_ar_entries` DEBIT 行。由交付确认用例在其事务内调用 | |
+| register_purchase_invoice | 采购发票头表与行表；三单匹配结果；经 `InventoryVariancePort::split_variance` 得到的暂估回冲与价差金额回写行表；`register_payable_on_purchase_invoice` 的应付条目与预付自动核销；超量开票挂账；凭证；审计；Outbox | 附件正文读写；站内通知 |
+| register_payable_on_purchase_invoice | 应付条目；预付自动核销；超量开票挂账。本用例由本阶段的 register_purchase_invoice 用例在其事务内调用，不自开事务 | |
+| register_purchase_credit_note | 采购发票红字行；原采购发票 `reversed_by_id` 回写；应付条目冲回；超量开票路径二结清。本用例由阶段 7 的采购退货用例经 `PurchaseCreditNotePort` 在其事务内调用，不自开事务 | |
+| record_unbilled_ar_on_delivery | `finance.unbilled_ar_entries` DEBIT 行。由阶段 6 的 confirm_delivery 用例经 `UnbilledArPort::record_on_delivery` 在其事务内调用，不自开事务 | |
+| import_opening_balances | 四张台账表之一的期初条目，`source_doc_type` 取 MIGRATION_OPENING。逐行独立事务，不生成凭证，不写 Outbox | 通知 |
 | maintain_cash_account | 资金账户行；审计 | 审批在事务外 |
 
 一个 HTTP 请求内不开启多个写事务，按共享基线第 10.3 节。批量导入按行拆事务，是后台任务而不是单个 HTTP 请求，不违反该纪律。
@@ -859,7 +989,7 @@ OPEN 到 PARTIALLY_SETTLED 到 SETTLED，三条结清路径任一条都推进该
 
 写入幂等由共享基线第 5.4 节的 `platform_msg.idempotency_keys` 承担，与业务写入同事务。
 
-本阶段发布的 11 个事件写入 `platform_msg.outbox_events`，信封的 `posting_date` 与 `accounting_period_id` 取本次解析结果。消费者为 notify、reporting 投影与 search 索引，均不做过账，见第 0.1 节。
+本阶段发布的 12 个事件写入 `platform_msg.outbox_events`，信封的 `posting_date` 与 `accounting_period_id` 取本次解析结果。消费者为 notify、reporting 投影与 search 索引，均不做过账，见第 0.1 节。
 
 消费端幂等由 `platform_msg.inbox_consumptions` 的唯一约束保证。重投退避按共享基线第 6.2 节。
 
@@ -873,7 +1003,7 @@ OPEN 到 PARTIALLY_SETTLED 到 SETTLED，三条结清路径任一条都推进该
 
 #### 6.5 必测并发场景在本阶段的落点
 
-共享基线第 8.4 节固定的六组必测并发场景中，本阶段承担三组：同一单据的乐观锁冲突（发票申请单）、同一采购订单的并发发票匹配与暂估回冲（超量开票挂账侧）、Outbox 同一事件的重复投递不少于 3 次。另新增两组本阶段专有场景：同一应收条目被两笔到款并发核销、同一预收条目被开票自动核销与客户退款并发消费。
+共享基线第 8.4 节固定的六组必测并发场景中，本阶段承担三组：同一单据的乐观锁冲突（发票申请单）、同一采购订单的并发发票匹配与暂估回冲（本阶段同时承担发票侧与超量开票挂账侧，因为采购发票登记按裁定 A-10 已归本阶段）、Outbox 同一事件的重复投递不少于 3 次。另新增三组本阶段专有场景：同一应收条目被两笔到款并发核销、同一预收条目被开票自动核销与客户退款并发消费、同一收货行被两张采购发票并发匹配且只有一张成功登记。
 
 ---
 
@@ -898,9 +1028,9 @@ OPEN 到 PARTIALLY_SETTLED 到 SETTLED，三条结清路径任一条都推进该
 | EP__FINANCE__BANK_ACCOUNT__MASK_TAIL_DIGITS | u8 | 4 | 同上 |
 | EP__FINANCE__RECON__MAX_PERIODS_PER_QUERY | u8 | 12 | 同上，限制对账视图单次查询的期间跨度 |
 
-不进配置文件而进事务数据库并经配置发布通道的运行期业务参数：账龄分档（`finance.aging_bucket_definitions`）、税率可选值（`invoice.tax_rate_options`）、发票申请与开票的审批链、到款与付款的提醒规则。按共享基线第 7.1 节最后一段。
+不进配置文件而进事务数据库并经配置发布通道的运行期业务参数：账龄分档（本阶段为临时表 `finance.aging_bucket_definitions`，阶段 11 后迁至 `reporting.aging_bucket_profiles` 与 `reporting.aging_bucket_lines`）、税率可选值（`invoice.tax_rate_options`）、发票申请与开票的审批链、到款与付款的提醒规则。按共享基线第 7.1 节最后一段。发布通道按裁定 A-27 一律使用阶段 3b 交付的最小发布通道，本阶段不自建第二套。
 
-本阶段不新增启动自检项。共享基线第 7.3 节第 13 项“每个法人存在当前自然月的打开会计期间”由 ledger 阶段承担，本阶段在 `--check` 模式下额外输出两个法人的账龄分档与税率字典行数，只作报告不作判定。
+本阶段不新增启动自检项。按裁定 C-25，启动自检项一律按注册名标识而不用序号，共享基线第 7.3 节中“每个法人存在当前自然月的打开会计期间”一项的注册名为 `current-period-open`，由阶段 9a 承担。本阶段在 `--check` 模式下额外输出两个法人的账龄分档与税率字典行数，只作报告不作判定。
 
 ---
 
@@ -935,6 +1065,8 @@ OPEN 到 PARTIALLY_SETTLED 到 SETTLED，三条结清路径任一条都推进该
 18. 到款单与付款单的金额恒等式：核销合计加转预收等于到款金额。
 19. 资金账户：账户类型与科目匹配的四种组合、已产生资金流水后的修改拒绝、停用后不可选。
 20. 状态机：到款、付款、退款、冲正四个单据各自的合法与非法流转。
+21. 采购发票三单匹配：数量与订单相等、少于订单、超过累计收货、无采购订单的自由发票四个分支；`is_overbilling` 的置位与不置位；`cost_kind` 两种取值对暂估回冲的影响。
+22. 采购发票红字登记：全额红冲、用于超量开票结清、原发票已被红冲的拒绝三个分支。
 
 #### 8.2 领域属性测试
 
@@ -971,12 +1103,14 @@ OPEN 到 PARTIALLY_SETTLED 到 SETTLED，三条结清路径任一条都推进该
 14. 超量开票路径三之后到货：验证必须先冲回成本再走路径一。
 15. 资金单据冲正：到款冲正、付款冲正、退款冲正各一个用例，含预收已被消费时的拒绝。
 16. 会计期间顺延：在一次关账受理之后提交一笔到款，凭证与全部子账条目落入其后最早的可入账期间且 `deferred_from_period_id` 非空，两条检索路径均可查得，对应规格第 10.2 章的注入用例其一。
-17. 对账视图八项：正常态差额为零；逐项注入差额后差额非零并生成差异事项引用；差额清零后恢复。注入方式为直接对台账条目做受控 UPDATE，仅在测试库上执行。
+17. 对账视图十项：正常态差额为零；逐项注入差额后差额非零并生成差异事项引用；差额清零后恢复。存货与已收货未收票两项经 `SubledgerBalanceProvider` 的两个实现取数，其注入方式为改变阶段 8 与阶段 7 的子账侧样例数据。其余八项的注入方式为直接对台账条目做受控 UPDATE，仅在测试库上执行。
 18. 批量导入：2000 行成功、含 3 行失败的部分失败、重跑同批次不产生重复发票。
-19. 幂等：全部 8 个写端点各一次重放，返回首次结果并带 `Idempotent-Replay: true`；载荷不同时返回 409。
-20. 法人越权矩阵：并入独立测试目标 `tests/rls_matrix`，覆盖读取、写入、更新、删除、聚合、排序、报表投影与错误信息泄漏八类，本阶段追加 34 张表与 14 个视图的条目，另覆盖资金账户银行账号字段级权限的两种上下文。
+19. 幂等：全部 10 个写端点各一次重放，返回首次结果并带 `Idempotent-Replay: true`；载荷不同时返回 409。
+20. 法人越权矩阵：并入独立测试目标 `tests/rls_matrix`，覆盖读取、写入、更新、删除、聚合、排序、报表投影与错误信息泄漏八类，本阶段追加 36 张表与 17 个视图的条目，另覆盖资金账户银行账号字段级权限的两种上下文；八类断言函数名与 32 组矩阵按裁定 C-05 由阶段 1、阶段 2 与阶段 4 分段提供，本阶段只追加条目，不重复实现同名函数。
 21. 高风险操作：开票、付款、超量开票路径三三项验证重新认证缺失时拒绝、审批未完成时拒绝、申请人自审时拒绝。
 22. 并发：第 6.5 节列出的五组各一个用例，用两个连接交叉提交。
+23. 采购发票登记全链路：采购订单、收货、发票三单匹配通过，应付条目、暂估回冲、价差拆分、超量开票挂账与凭证五处逐项核对；采购退货经 `PurchaseCreditNotePort` 登记红字进项发票并冲回应付。
+24. 期初余额导入：应收、应付、预收、预付四个方向各一批，`source_doc_type` 为 MIGRATION_OPENING，导入后首个会计期间的八个 `finance.v_recon_*` 视图差额为零；失败行不回滚已成功行。
 
 #### 8.4 端到端测试
 
@@ -987,6 +1121,9 @@ OPEN 到 PARTIALLY_SETTLED 到 SETTLED，三条结清路径任一条都推进该
 - E2E-10-03：移动端按规格第 6.2 章矩阵为仅查看，验证移动端可查得本阶段全部单据与台账、且提交入口不可达。
 - E2E-10-04：供应商门户的收付款对账查询取数与内部应付台账同源，脱敏后返回，对应 PRD 第 4.9.6。
 - E2E-10-05：关账受理后提交到款并观察界面显式标注顺延期间，对应 PRD 第 6.1.4。
+- E2E-10-06：采购订单到收货到采购发票登记再到付款的连贯路径，三单匹配、暂估回冲、价差拆分与应付核销全程在应用内完成，对应裁定 A-10。
+
+按裁定 A-23，本阶段自交本模块四端界面，测试计划相应追加：invoice 与 finance 两个模块在规格第 6.2 章能力矩阵中取值为完整或简化的能力域，其桌面端用例用 Playwright 与 tauri-driver 驱动，移动端用例用 XCUITest 与 Espresso 驱动；取值为 VIEW_ONLY 的能力域只测只读视图；取值为 NOT_APPLICABLE 的不建入口。E2E-10-03 的移动端仅查看断言并入该组用例。
 
 #### 8.5 静态检查
 
@@ -1011,8 +1148,9 @@ OPEN 到 PARTIALLY_SETTLED 到 SETTLED，三条结清路径任一条都推进该
 | 应收账龄分析 | 常用报表 P95 在 10 秒内 | GET /api/v1/finance/receivable-agings |
 | 应付账龄分析 | 同上 | GET /api/v1/finance/payable-agings |
 | 收付款对账查询 | 门户交互 P95 在 2 秒内 | 门户经 `ep-contract-finance` 的供应商对账查询 |
+| 采购发票登记 | 普通交易提交 P95 在 3 秒内 | POST /api/v1/invoice/purchase-invoices |
 
-上述九项在基准数据集上必须无顺序扫描，阶段结束时提交对应查询的 `EXPLAIN (ANALYZE, BUFFERS)` 证据，按共享基线第 3.10 节最后一段。
+上述十项在基准数据集上必须无顺序扫描，阶段结束时提交对应查询的 `EXPLAIN (ANALYZE, BUFFERS)` 证据，按共享基线第 3.10 节最后一段。
 
 #### 8.7 覆盖率门槛
 
@@ -1034,24 +1172,34 @@ OPEN 到 PARTIALLY_SETTLED 到 SETTLED，三条结清路径任一条都推进该
 
 以下每一条都可由自动化用例或可核对的产物判定，全部达成才算本阶段完成。
 
-1. 34 张表与 14 个视图在空库上从零迁移成功，再按 `-- rollback:` 段全部回退成功，两次执行的迁移历史表状态一致。
+1. 36 张表与 17 个视图在空库上从零迁移成功，再按 `-- rollback:` 段全部回退成功，两次执行的迁移历史表状态一致。
 2. `--check` 模式在两个法人上通过，含全部带法人列的表已 `ENABLE` 且 `FORCE` 行级安全的自检项。
-3. 56 个端点全部有 OpenAPI 描述且描述与实现的字段名逐项一致，由契约测试断言。
-4. 第 8.1 节列出的 20 组单元测试分支全部通过。
+3. 58 个端点全部有 OpenAPI 描述且描述与实现的字段名逐项一致，由契约测试断言。
+4. 第 8.1 节列出的 22 组单元测试分支全部通过。
 5. 第 8.2 节列出的 8 组领域属性测试在 1000 次随机用例下全部通过。
-6. 第 8.3 节列出的 22 组集成测试全部通过。
+6. 第 8.3 节列出的 24 组集成测试全部通过。
 7. 规格第 17.2 章十五类必测分支中的第二、五、六、八、九、十三类在本阶段的用例中通过，第十三类的三条结清路径逐条通过。
-8. 十个勾稽项中本阶段承担的八项在基准数据集上差额为零；逐项注入差额后对账视图差额非零、可下钻、可追溯，清零后恢复为零，其中待处理超量开票一项以关账前余额非零的方式注入，对应规格第 10.2 章的发布验收口径。
+8. 十个勾稽项全部在基准数据集上差额为零；逐项注入差额后对账视图差额非零、可下钻、可追溯，清零后恢复为零，其中待处理超量开票一项以关账前余额非零的方式注入，对应规格第 10.2 章的发布验收口径；存货与已收货未收票两项经 `SubledgerBalanceProvider` 的两个实现接入并同样通过该判定。
 9. 规格第 10.2 章的顺延入账注入用例在本阶段的到款登记上通过：凭证与全部子账条目落入同一个顺延后的期间，两条检索路径均可查得。
 10. 法人越权测试集 `tests/rls_matrix` 追加本阶段条目后全部通过，八类判据无一泄漏。
 11. 三项高风险操作的重新认证与审批控制通过身份与访问控制测试，认证方式、待签内容摘要、时间与设备可在审计证据中查得。
 12. PRD 第 6.14.4 列出的 11 类动作全部写入审计，同一事实不只落日志，由审计探针逐项断言。
-13. 第 8.6 节九项性能度量在基准数据集上达标，且九项对应查询的执行计划无顺序扫描。
+13. 第 8.6 节十项性能度量在基准数据集上达标，且十项对应查询的执行计划无顺序扫描。
 14. 覆盖率达到第 8.7 节的分档门槛，工作区整体不低于 80%。
-15. `docs/error-codes.md` 的新增错误码与 `ep-foundation::error::codes` 常量表一致，CI 校验通过，无重复码；`docs/event-catalog.md` 的 11 个新增事件与实现一致。
+15. `docs/error-codes.md` 的新增错误码与 `ep-foundation::error::codes` 常量表一致，CI 校验通过，无重复码；`docs/event-catalog.md` 的 12 个新增事件与实现一致；`docs/data-dictionary.md` 的单据类型码一节含本阶段九码且 `xtask configdoc --check-doc-type-codes` 通过。
 16. 共享基线的四处回写完成：第 5.4 节幂等 `request_hash` 排除 `X-Reauth-Token`、第 9.2 节新增三个指标、第 11 节新增资金账户期初余额与资金单据冲正两项决定、第 0.2 节的规格缺口已提交规格修订建议。
 17. E2E-10-01 至 E2E-10-05 五个用例通过，其中 E2E-10-01 全程在应用内完成。
 18. 严重与高危缺陷为零，中危缺陷登记并给出规避方案与责任人，按规格第 17.2 章发布缺陷门禁的口径。
+19. invoice 与 finance 两个模块在规格第 6.2 章能力矩阵中取值为完整或简化的能力域，其四端界面已实现并通过 Playwright 与 tauri-driver 的桌面用例、XCUITest 与 Espresso 的移动用例；取值为 VIEW_ONLY 的能力域只实现只读视图；取值为 NOT_APPLICABLE 的不实现入口。
+20. 本模块数据集视图 `invoice.v_purchase_invoices_dataset`、`finance.v_receivable_ledger_entries`、`finance.v_payable_ledger_entries` 已发布并授予 `ep_analyst_ro`，列签名已同步给阶段 11，阶段 11 的自检项 `reporting-dataset-signature-matched` 在三者上通过。
+21. 本阶段全部路由的能力域码与动作类别常量已声明，`xtask configdoc` 通过。
+22. 本模块的 `InvoiceReferenceCounter`、`FinanceReferenceCounter`、`InvoiceSalesTradeHistoryProvider`、`InvoicePurchaseTradeHistoryProvider` 已实现并注册到阶段 5 提供的两个注册表。
+23. `finance.cash_accounts` 的银行账号查重经 `derive_blind_key` 与 `BlindIndex` 实现，唯一约束名为 `ux_cash_accounts_legal_entity_id_bank_account_no_bidx`，全库无第二套账号哈希实现。
+24. `platform_core.append_only_registry` 已登记本阶段七张表及其 `immutable_columns`，`db/checks/append_only_consistency.sql` 经 `xtask sqlcheck` 通过。
+25. `ledger.posting_trigger_event_types` 的八个 `event_type` 已按第 5.8 节末表回填，运行期自检与该表比对无差异。
+26. 八个反向依赖点的空实现已全部替换并端到端通过：阶段 6 注入的 `NoopUnbilledArPort`、`NoopReceivableExposureQuery` 与发票冲销状态查询空实现，阶段 7 注入的 `NoopPurchaseCreditNotePort`、`NoopReceiptInvoiceMatchQueryPort`、超量开票匹配、应付余额查询与供应商对账查询的空实现；阶段 6 顺延到本阶段的 `SALES.SALES_RETURN.INVOICE_NOT_CREDIT_NOTED` 判定与交付确认过渡科目净额断言在本阶段通过。
+27. 税率字典迁移 `V202611030955__invoice_backfill_migrate_tax_rates_from_mdm.sql` 执行成功，阶段 5 的 `MdmTaxRateStub` 已撤销，全库取默认税率只有 `TaxRateOptionQuery` 一条路径。
+28. 期初导入通道在四个方向上各通过一次，导入后首个会计期间的八个 `finance.v_recon_*` 视图差额为零，且该通道不产生任何凭证。
 
 ---
 
@@ -1063,7 +1211,7 @@ OPEN 到 PARTIALLY_SETTLED 到 SETTLED，三条结清路径任一条都推进该
 |---|---|
 | 5.2 财务条目 | 应收台账、应付台账、发票申请与审批与开具登记、与合同收付款计划及订单勾稽、按发票核销到款、分次到款与分次付款、一笔款项核销多张发票、客户退款与供应商返款、预收台账与预付台账、银行与现金账户档案、三类事件的资金腿明细视图、资金流水不得独立登记 |
 | 5.2 数电发票与税务条目 | 销项发票开具登记的八个字段、回写申请单状态与剩余可开比例、销项与进项两个方向的作废与红字冲销登记、回滚后按剩余可开比例重新开具、单一税种增值税、按实际开票结果登记的语义、人工录入与批量导入两条路径 |
-| 5.2 财务规则条目事件-分录表 | 开票、到款、付款、退款、红字冲销与作废五类事件的调用与落库；采购发票事件的应付腿与超量开票腿；交付确认与销售退货两类事件在过渡科目上的子账腿 |
+| 5.2 财务规则条目事件-分录表 | 开票、采购发票登记、到款、付款、退款、红字冲销与作废六类事件的调用与落库，其中采购发票登记的单据本体按裁定 A-10 也在本阶段；采购发票事件的应付腿与超量开票腿；交付确认与销售退货两类事件在过渡科目上的子账腿，交付确认腿经 `UnbilledArPort::record_on_delivery` 由阶段 6 调用 |
 | 5.2 到款与付款的核销顺序规则块 | 默认按单据到期日升序、同日按单据编号升序；人工指定写入审计 |
 | 5.2 超量开票的三条结清路径规则块 | 挂账登记与三条路径的完整实现，含路径三之后到货的先冲回再入账顺序 |
 | 5.2 总账功能与期末处理块 | 记账日期的取值与校验；凭证与子账共用同一会计期间字段；顺延只改变期间归属不改变取价；两个日期与两条检索路径 |
@@ -1077,7 +1225,7 @@ OPEN 到 PARTIALLY_SETTLED 到 SETTLED，三条结清路径任一条都推进该
 | 15.2 可靠任务 | 守恒违例、凭证不平、勾稽差额三类进入死信与人工修复 |
 | 16 与附录 A.1、A.2 | 第 8.6 节的九项度量 |
 | 17.2 财务内核测试 | 应收应付核销的三项、十五类必测分支中的第二、五、六、八、九、十三类 |
-| 17.3 强制不变量 | 应收应付核销守恒；子账与总账勾稽十项中的八项；已过账凭证不可覆盖由仅追加表与冲正路径承载 |
+| 17.3 强制不变量 | 应收应付核销守恒；子账与总账勾稽十项全部；已过账凭证不可覆盖由仅追加表与冲正路径承载 |
 
 #### 10.2 PRD 节
 
@@ -1089,14 +1237,14 @@ OPEN 到 PARTIALLY_SETTLED 到 SETTLED，三条结清路径任一条都推进该
 | 6.3 全节 | 发票申请单的十个字段、三项校验、审批要求、11 条状态流转、剩余可开比例、五种异常 |
 | 6.4 全节 | 开具登记的十二个字段、四项系统处理、五项输出变化、批量导入、销项发票状态机、七种异常 |
 | 6.5 全节 | 作废与红字冲销的八个字段、四项系统处理、与销售退货的先后关系、五种异常 |
-| 6.6 全节 | 进项发票台账的四项内容、进项方向的冲销登记、供应商价格调整与金额税额更正的登记路径、三种异常 |
+| 6.6 全节 | 进项发票台账的四项内容、采购发票登记与三单匹配、进项方向的冲销登记、供应商价格调整与金额税额更正的登记路径、三种异常；台账两张表由本阶段建立，见裁定 A-10 |
 | 6.7 全节 | 到款登记的九个字段、核销明细行与核销顺序的六条规则、剩余款项与预收账款、五项输出、状态机、七种异常 |
 | 6.8 全节 | 付款登记的读取信息、十个字段、核销与分次付款的五条规则、高风险控制、六项输出、状态机、七种异常 |
 | 6.9 全节 | 应收台账的九类信息、核销守恒、核销关系的四条规则、账龄的五条规则、查询与权限 |
-| 6.10 全节 | 应付台账同构内容；已收货未收票视图外壳；待处理超量开票视图 |
+| 6.10 全节 | 应付台账同构内容；已收货未收票视图完整实现，子账侧包装阶段 7 提供的查询函数；待处理超量开票视图 |
 | 6.11 全节 | 预收台账与预付台账的六条与五条规则、三条用户可见校验、无人工新增与调整入口 |
 | 6.12 全节 | 两类退款单的区分、十一个字段、四项校验、五项输出、状态机、直运情形、五种异常 |
-| 6.13 全节 | 十个勾稽项中的八项对账视图、三条用户可见规则、八条本节内部勾稽 |
+| 6.13 全节 | 十个勾稽项的对账视图全部、三条用户可见规则、八条本节内部勾稽 |
 | 6.14 全节 | 四类错误的应用、四类不平的死信处置、幂等与重复提交、11 类审计 |
 | 6.16 | 21 条待决项的临时取值与承载方式，见第 0.4 节 |
 | 4.7.3 与 4.7.4 | 付款登记完成后回写付款申请的已付金额与状态，经 `ep-contract-procure` 写端口 |
@@ -1106,7 +1254,7 @@ OPEN 到 PARTIALLY_SETTLED 到 SETTLED，三条结清路径任一条都推进该
 
 #### 10.3 本阶段明确不做的事
 
-按 PRD 第 6.15 节全部八条，不扩大也不收窄。另外，本阶段不实现凭证生成本身、不实现科目表与期间管理、不实现库存金额账、不实现采购发票单据与收货匹配、不实现销售退货与采购退货单据、不实现合同收付款计划，这六项分别属其他阶段。
+按 PRD 第 6.15 节全部八条，不扩大也不收窄。另外，本阶段不实现凭证生成本身、不实现科目表与期间管理、不实现库存金额账与任何取价、不实现收货单据本身、不实现销售退货与采购退货单据、不实现合同收付款计划，这六项分别属其他阶段。采购发票登记与三单匹配按裁定 A-10 已归本阶段，不再列入不做清单；三单匹配所需的收货行数据经采购模块的只读查询取得，价差与暂估回冲的金额经 `InventoryVariancePort::split_variance` 取得，本阶段不自行取价。
 
 ---
 
@@ -1116,24 +1264,24 @@ OPEN 到 PARTIALLY_SETTLED 到 SETTLED，三条结清路径任一条都推进该
 
 | 风险 | 影响 | 应对 |
 |---|---|---|
-| 第 0.1 节的同步过账口径若被整合结论推翻 | 七个用例的凭证腿需改为异步，PRD 三张异常表的行为描述需同步修订，核销上限校验需引入待过账占用量 | 把凭证生成收敛到一个 `PostingGateway` 抽象，用例只调用该抽象，改造面限制在一个文件；在阶段中期的整合评审上单列该议题 |
+| 本阶段是八个反向依赖点的替换方，阶段 6 与阶段 7 的相应验收顺延到本阶段 | 本阶段延期会连带阻断阶段 6 的交付确认过渡科目断言、销售退货红冲前置判定与阶段 7 的采购退货红字发票链路 | 八个空实现的注入行在阶段 6 与阶段 7 均带 `// TODO(stage-10): replace with real impl` 注释，本阶段开工第一周先完成替换与冒烟，再做本模块内部功能；第 9 节退出条件第 26 条对该清单逐项判定 |
 | 第 0.2 节的自动核销分录腿是本阶段的假设 | 若规格回写为其他形式，预收预付两项勾稽的实现需改 | 分录腿以 `AdditionalLeg` 参数传给 ledger 端口，不写死在本阶段；测试断言写在勾稽层而不是分录层 |
 | clm 收款计划已开票金额的回写方式未定 | 若 clm 只提供事件驱动接口，开票用例的事务边界被打破，需要补偿路径 | 在契约层同时定义同步写端口与事件两种形态，装配时择一；若走事件，追加一条补偿用例与一项死信监控 |
 | F-08 只允许全额红冲的临时取值 | 若财务负责人要求部分红冲，销项发票状态机需拆出部分红冲态，比例回滚公式需改，已落库数据需回填 | 已在 `invoice.sales_invoices` 上预留 `reversed_net_amount` 列，全额红冲时等于 `net_amount`，改为部分红冲时不需要加列 |
 | F-16 逐行落库的临时取值 | 若改为整体回滚，逐行幂等键设计作废 | 导入器把逐行处理与批次编排分离，切换只改编排层 |
 | 账龄查询在 6 万条应收条目与 12 个期间跨度下可能触及 10 秒线 | 附录 A.1 的两项报表度量不达标 | 账龄计算下推到数据库聚合而不是应用侧循环；分组键固定为四个；单次查询期间跨度由 `EP__FINANCE__RECON__MAX_PERIODS_PER_QUERY` 限制；不达标时按规格第 16 章执行性能整改，不放宽通过线 |
 | 守恒 CHECK 违例在高并发下成为主要失败源 | 用户看到较多 `BUSINESS_CONFLICT` | 先读后锁的复核路径在冲突时回带最新余额，界面可一键重取；冲突次数进指标 `ep_finance_settlement_conflicts_total`，超阈值时调整核销候选集的预取策略 |
-| 银行账号字段级加密与查重的组合 | 加盐哈希的盐若按法人固定，存在字典攻击面 | 盐取自法人数据加密密钥域派生，不落库；哈希只用于唯一约束，不用于检索 |
+| 银行账号字段级加密与查重的组合 | 盲索引密钥若按法人固定，存在字典攻击面 | 按裁定 B-04 直接使用阶段 2 提供的 `derive_blind_key` 与 `BlindIndex`，密钥自法人数据加密密钥域派生且不落库；盲索引只用于唯一约束，不用于检索；本阶段不实现任何自有哈希 |
 
 #### 11.2 为后续阶段预留的扩展点
 
-1. `ep-contract-finance` 的 `CreditExposureQuery` 端口返回应收未收金额与已交付未开票金额两项，销售阶段的客户信用额度校验直接消费，第三项在途订单金额由销售阶段自持，对应规格第 5.2 章客户信用额度校验条目的三部分构成。
-2. `finance.v_recon_inventory` 与 `finance.v_recon_grni` 两个视图外壳已建，库存与采购阶段只需实现子账侧契约查询即可接入，不改视图结构。
+1. `ep-contract-finance` 的 `ReceivableExposureQuery` 端口返回应收未收金额与已交付未开票金额两项，销售阶段在 `ep_contract_sales::CreditExposureQueryPort` 内消费该结果并补上在途订单金额，对外唯一入口为销售侧端口，对应规格第 5.2 章客户信用额度校验条目的三部分构成，见裁定 C-14。
+2. `finance.v_recon_inventory` 与 `finance.v_recon_grni` 两个视图在本阶段已完整接入，子账侧由本阶段把阶段 8 的 `InventorySubledgerBalanceQuery` 与阶段 7 的 `GrniSubledgerBalanceQuery` 包装为 `SubledgerBalanceProvider` 实现；后续版本新增子账来源时只需追加一个实现并在 wiring 注册，不改视图结构，见裁定 B-08。
 3. `finance.receivable_entries.source_doc_type` 与 `finance.payable_entries.source_doc_type` 是可扩展枚举，为后续版本的其他应收应付来源留位，首版只有一个取值。
 4. `invoice.sales_invoices` 不设明细行表，但 `invoice.invoice_receipt_plan_links` 已按多行结构建立，将来支持一张发票多行明细时只需新增 `invoice.sales_invoice_lines` 并把税额校验从头表下移到行表。
 5. `finance.cash_ledger_entries.source_doc_type` 为可扩展枚举，后续版本引入银企直连流水时新增取值即可，但资金流水不得独立登记的约束在首版必须保持。
 6. 对账视图的十项统一为同一 DTO 结构 `ReconciliationItemView { item_code, legal_entity_id, accounting_period_id, subsidiary_amount, ledger_amount, difference }`，内部对账组件与关账前强制校验直接消费该结构，不需要为每项写一套取数。
-7. 报表阶段的应收账龄与应付账龄两张基础表直接消费 `finance.v_receivable_aging` 与 `finance.v_payable_aging`，不另建一套口径。
+7. 报表阶段的应收账龄与应付账龄两张基础表直接消费 `finance.v_receivable_aging` 与 `finance.v_payable_aging`，不另建一套口径；分档定义按裁定 C-08 在阶段 11 迁到 `reporting.aging_bucket_profiles` 与 `reporting.aging_bucket_lines`，届时两个视图的分档取数改经 `ep_contract_reporting::AgingBucketQuery`。
 8. 门户阶段的供应商对账查询消费 `ep-contract-finance::SupplierStatementQuery`，脱敏投影在门户侧完成，本阶段不返回任何脱敏后的数据结构，避免两套口径。
 
 #### 11.3 需回写共享基线的项

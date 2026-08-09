@@ -1,6 +1,7 @@
 ## 阶段 13：四端客户端与低代码
 
 本阶段承接规格第 6 章客户端与用户体验、第 7.4 章可定制数据库、第 9 章低代码与规则与模块发布、第 3.1 章与第 3.6 章白标与分发、第 12.4 章按端的数据保护控制，以及 PRD 第 8.4 节、第 10.4 节、第 10.7 节。本阶段不产生任何会计分录，也不新增任何账务口径，涉及账务的一律指向规格第 5.2 章事件-分录表，由财务阶段承担。
+本阶段的交付边界按裁定 A-23 收窄：本阶段不交付任何业务界面，交付物只有客户端壳、路由注册表、能力矩阵闸、白标构建与四端制品；各业务模块的四端界面位于 `clients/desktop/src/modules/<module>/` 与 `clients/mobile/src/modules/<module>/`，由阶段 5 至阶段 12 各自交付，四端验收矩阵由阶段 14 汇总。裁定表中称为阶段 13b 的条目即本阶段。本阶段在调整后的阶段顺序 1 → 2 → 3a → 4 → 3b → 5 → 9a → 8 → 6 → 7 → 10 → 11 → 9b → 13 → 14 中排在阶段 11 之后、阶段 14 之前，阶段 12 在阶段 10 之后与阶段 11 并行。
 
 本计划遵守共享技术基线。凡基线已定死的取值直接引用，不重新决定。本阶段新增的决定在第 12 节集中列出，需在阶段结束时回写基线。
 
@@ -12,18 +13,18 @@
 
 #### 1.1 服务端可运行物
 
-1. core-server 内新增的低代码建模 API、配置发布 API、扩展登记 API、客户端引导 API 与能力闸中间件，全部经 `/api/v1/platform/...` 暴露，可用 `curl` 完成第 5 节全部端点的往返。
-2. job-worker 内新增的发布执行器、在线 DDL 执行器、派生存储重新打标任务、扩展自动停用巡检，可由 Outbox 事件驱动跑通一次含 DDL 的发布与一次回退。
+1. core-server 内新增的低代码建模 API、扩展登记 API、客户端引导 API 与能力闸中间件，以及在阶段 3b 最小发布通道之上扩展的配置发布 API，全部经 `/api/v1/platform/...` 暴露，可用 `curl` 完成第 5 节全部端点的往返。
+2. job-worker 内在阶段 3b 发布执行器之上扩展的 DDL 段编排、在线 DDL 执行器、派生存储重新打标任务、扩展自动停用巡检，可由 Outbox 事件驱动跑通一次含 DDL 的发布与一次回退。
 3. plugin-host 进程从空壳变为可用宿主：可加载签名 WASM Component、按能力清单裁剪输入、按资源限额中止执行、把结果经 `/run/ep/ipc/plugin.sock` 返回给 core-server 与 job-worker，且该进程的数据库连接数恒为 0。
-4. `platform_meta` 下 22 张新表与其迁移文件、回退说明、种子数据（能力等价矩阵 18 行）。
-5. `docs/error-codes.md` 新增 36 条错误码、`docs/event-catalog.md` 新增 10 个事件类型、`docs/data-dictionary.md` 新增 22 张表条目，三处与代码常量表由 CI 校验一致。
+4. `platform_meta` 下 19 张新表与其迁移文件、回退说明、种子数据（能力等价矩阵 18 行乘 4 端共 72 行），以及对阶段 3b 已建的 `config_packages`、`config_package_items`、`config_release_orders` 三张表的列扩展与状态扩展。
+5. `docs/error-codes.md` 新增 37 条错误码、`docs/event-catalog.md` 新增 10 个事件类型、`docs/data-dictionary.md` 新增 19 张表条目，三处与代码常量表由 CI 校验一致。本阶段引用但由阶段 1 登记的 `PLATFORM.CONCURRENCY.STALE_VERSION`、`PLATFORM.AUTHZ.NOT_FOUND_OR_DENIED` 与 `PLATFORM.DB.MIGRATION_WINDOW_CLOSED` 三条不计入本阶段条数，见裁定 C-24。
 
 #### 1.2 客户端可运行物
 
 6. Windows 客户端安装包（msi 与便携 exe 各一）、macOS 客户端安装包（dmg，已签名并公证）、iOS 客户端（ipa，企业签名通道与商店通道各一份配置）、Android 客户端（aab 与 apk）。四份制品均由同一份 `brand.toml` 驱动产出，均可完成登录、设备登记、按能力矩阵渲染入口、离线草稿保存与恢复后提交。
 7. 桌面端两个签名原生插件：打印机插件与 USB Key/智能卡插件，各自以独立子进程运行，含能力清单与本地登记表。
 8. 客户端 Rust 核心 crate 集合（第 2 节列出），含本地加密缓存库、增量同步、声明式规则解释器、原生插件宿主、统一网络出口与证书链校验。
-9. 四端共用的 React/TypeScript 界面包，含浅色、深色、高对比度三套主题，全键盘与命令面板，WCAG AA 自动检查零严重问题。
+9. 四端共用的 React/TypeScript 界面壳与共用组件包，含浅色、深色、高对比度三套主题，全键盘与命令面板，WCAG AA 自动检查零严重问题，以及按能力矩阵裁剪入口的路由注册表。按裁定 A-23，本包不含任何业务模块界面，业务模块界面由阶段 5 至阶段 12 交付到 `clients/desktop/src/modules/<module>/` 与 `clients/mobile/src/modules/<module>/`。
 
 #### 1.3 工具与流水线
 
@@ -46,14 +47,14 @@
 
 | crate | 归属进程 | 本阶段职责 | 依赖方向核对 |
 |---|---|---|---|
-| ep-platform-meta | core-server、job-worker | 自定义对象与字段与关系与索引与视图的建模、在线 DDL 计划与影响分析、界面布局、能力等价矩阵判定、声明式规则 AST 与解释器、自定义对象向权限与流程与搜索与报表的注册端口 | 只依赖 ep-foundation 与其他 ep-platform-*，无 sqlx、无 reqwest |
-| ep-platform-release | core-server、job-worker | 配置包模型、内容项差异算法、签名与验签、发布单状态机、发布与回退的编排、自动测试编排、`ConfigItemApplier` 端口 | 依赖 ep-foundation、ep-platform-meta、ep-platform-audit、ep-platform-outbox |
-| ep-adapter-wasm | plugin-host、core-server、job-worker | wasmtime Component 宿主、能力清单裁剪、燃料与内存与时限限额、编译缓存、宿主导入函数四件套；core-server 与 job-worker 侧只编入其 IPC 客户端 | adapter 层，可依赖 foundation 与 platform/domain 的端口 trait，不依赖 application |
+| ep-platform-meta | core-server、job-worker | 自定义对象与字段与关系与索引与视图的建模、在线 DDL 计划与影响分析、界面布局、能力等价矩阵判定、声明式规则 AST 与解释器实现 `AstRuleEvaluator`、自定义对象向权限与流程与搜索与报表的注册端口、六个 CUSTOM_ 与 UI_LAYOUT 类 `ConfigItemApplier` 实现 | 只依赖 ep-foundation 与其他 ep-platform-*，无 sqlx、无 reqwest |
+| ep-platform-release | core-server、job-worker | 本 crate 由阶段 3b 按裁定 A-27 交付最小发布通道，`ConfigItemApplier` 端口与 `ConfigItemApplierRegistry` 由阶段 3a 按裁定 A-19 交付；本阶段在其上扩展内容项差异算法、自动测试编排、十一态发布状态机、DDL 段编排与回退编排 | 依赖 ep-foundation、ep-platform-meta、ep-platform-audit、ep-platform-outbox |
+| ep-adapter-wasm | plugin-host、core-server、job-worker | wasmtime Component 宿主、能力清单裁剪、燃料与内存与时限限额、编译缓存、宿主导入函数四件套，实现类型 `PluginHostWasmCompute` 对应阶段 3b 定义的 `ep_platform_flow::port::WasmComputePort`，见裁定 B-05；core-server 与 job-worker 侧只编入其 IPC 客户端 | adapter 层，可依赖 foundation 与 platform/domain 的端口 trait，不依赖 application |
 | ep-adapter-ipc | plugin-host、core-server、job-worker | 复用基线第 2 节已定的帧格式，新增 plugin 通道的请求与响应类型 | 同上 |
-| ep-foundation | 全部 | 新增 `Redacted<T>` 之外不改动；若工作单元事务句柄抽象尚未存在，本阶段在 `port::tx` 中补齐 | 不依赖工作区内任何 crate |
+| ep-foundation | 全部 | 本阶段不新增也不改动 foundation 类型：`Tx`、`SnapshotCtx`、`UnitOfWork` 由阶段 1 按裁定 A-01 在 `port::tx` 中冻结，`SecurityContext` 与 `ClientKind` 按裁定 A-03 冻结，`ModuleCode`、`CapabilityDomain`、`ActionClass` 按裁定 A-20 冻结，`Redacted<T>` 同由阶段 1 提供，本阶段只引用 | 不依赖工作区内任何 crate |
 | ep-platform-obs | ops-agent | 注册本阶段 9 个新指标 | 只登记，不改结构 |
 
-本阶段不新增 platform crate，不新增业务模块 crate，不新增进程，不新增 schema，不新增错误分类。
+本阶段不新增 platform crate（`ep-platform-release` 与 `ep-platform-license` 均由阶段 3b 交付，本阶段只在前者之上扩展），不新增业务模块 crate，不新增进程，不新增 schema，不新增错误分类。
 
 #### 2.2 客户端 crate（不属八进程，位于 workspace 之外的独立 Cargo workspace）
 
@@ -73,9 +74,9 @@
 
 外壳与界面：
 
-- `/clients/shell-desktop`：Tauri 2 桌面壳，Windows 与 macOS 共用，暴露 Tauri IPC 命令给 WebView。
-- `/clients/shell-mobile`：Tauri 2 移动壳，iOS 与 Android 共用，含各自的生命周期与后台任务适配。
-- `/clients/ui`：React 加 TypeScript 界面包，四端共用同一套组件、权限模型与流程模型，仅按端切换布局密度与入口可见性。
+- `/clients/desktop`：Tauri 2 桌面壳，Windows 与 macOS 共用，暴露 Tauri IPC 命令给 WebView；其 `src/modules/<module>/` 为各业务模块的桌面界面目录，按裁定 A-23 由阶段 5 至阶段 12 各自填入，本阶段只交付壳、路由注册表与目录约定。
+- `/clients/mobile`：Tauri 2 移动壳，iOS 与 Android 共用，含各自的生命周期与后台任务适配；其 `src/modules/<module>/` 为各业务模块的移动界面目录，归属同上。
+- `/clients/ui`：React 加 TypeScript 共用组件包，四端共用同一套组件、权限模型与流程模型，仅按端切换布局密度与入口可见性；本包不含任何业务模块界面。
 - `/clients/plugins/printer`、`/clients/plugins/usbkey`：两个桌面端原生插件的独立可执行工程。
 
 #### 2.3 进程侧连接与账号的变化
@@ -98,6 +99,7 @@
 - 法人级运行台账表：带 `legal_entity_id`，按基线第 3.8 节模板建行级策略，列全。
 
 全部表带基线第 4 节公共列，顺序按基线；仅追加表按基线不带 `row_version`、`updated_at`、`updated_by`，改带 `reverses_id`。枚举一律 `text` 加 CHECK。时间列 `timestamptz`，日期列 `date`。主键 `uuid`，应用侧 UUIDv7。
+按裁定 A-27，`platform_meta.config_packages`、`platform_meta.config_package_items` 与 `platform_meta.config_release_orders` 三张表由阶段 3b 随最小发布通道建立，第 3.2.10 至 3.2.12 节所列列定义即阶段 3b 的落地口径，本阶段只做列扩展与状态扩展，不重复建表；`config_release_steps`（裁定 A-27 中称 `config_item_apply_logs`）、`config_autotest_runs`、`config_edit_locks` 与 `config_release_mutex` 四张由本阶段建立，本阶段因此新建 19 张表。阶段 3b 的发布状态机为 Draft、PendingReview、PendingApproval、Approved、Released、RolledBack 六态，本阶段扩展为第 3.2.10 节的十一态：追加裁定 A-27 明列的 PendingAutotest 与 TestPassed 两态，另追加 TestFailed、Rejected、SignedPendingRelease、Superseded 四态；阶段 3b 的 PendingReview 在本阶段由差异审查环节承载，不单列为状态，迁移把遗留的 PENDING_REVIEW 行改写为 DRAFT 后重建 CHECK。全部种子迁移与系统上下文写入的 `created_by` 一律取 `foundation::SYSTEM_PRINCIPAL_ID`，不得自选取值，见裁定 A-02。
 
 #### 3.2 表定义
 
@@ -127,6 +129,7 @@
 - `ck_custom_objects_status`：取值集合。
 - `ck_custom_objects_security_level`：取值 in (10,20,30,40)。
 - `ck_custom_objects_doc_type`：`is_document = false and doc_type_code is null` 或 `is_document = true and doc_type_code ~ '^[A-Z]{2,4}$'`。
+- 单据类型码的全局唯一性按裁定 C-26 由应用层校验：`doc_type_code` 必须与 `docs/data-dictionary.md` 单据类型码一节的全量表以及 `ep-platform-sequence` 的常量表逐项比对，重复即拒绝并返回 `PLATFORM.CUSTOM_OBJECT.DOC_TYPE_CODE_CONFLICT`，HTTP 409，category 为 BUSINESS_CONFLICT；`xtask configdoc --check-doc-type-codes` 同时覆盖内置码与已生效的自定义对象码两类。
 - `ck_custom_objects_name_len`：`char_length(name) <= 200`，按基线第 11.2 节。
 - 无行级策略。
 
@@ -212,6 +215,7 @@
 种子数据由迁移文件 backfill 写入，18 个能力域乘 4 端共 72 行，取值逐格照抄规格第 6.2 章矩阵。能力域码表见第 4.4 节。无行级策略。
 
 ##### 3.2.10 platform_meta.config_packages（部署级）
+本表由阶段 3b 按裁定 A-27 随最小发布通道建立，本节列定义即其落地口径；本阶段只做列扩展与状态扩展，追加 PENDING_AUTOTEST、TEST_FAILED、TEST_PASSED、REJECTED、SIGNED_PENDING_RELEASE、SUPERSEDED 六个状态取值与自动测试相关列，不重复建表。
 
 列：id、security_level、package_no text、name text、source text（IMPORTED、IN_PLACE）、git_ref text、manifest jsonb、content_hash text、item_count int、signature bytea、signature_key_ref text、signer_subject text、signed_at timestamptz、min_platform_version text、status text、rejected_reason text、公共列。
 
@@ -220,6 +224,7 @@ status 取值与 PRD 第 10.4.1 节状态表逐行对应：DRAFT（草稿）、P
 约束与索引：`pk_config_packages`、`ux_config_packages_package_no`、`ux_config_packages_content_hash`、`ix_config_packages_status_created_at`、`ck_config_packages_status`、`ck_config_packages_source`、`ck_config_packages_item_count`（`item_count between 1 and 2000`）、`ck_config_packages_signed`（status 为 SIGNED_PENDING_RELEASE 及之后时 `signature`、`signer_subject`、`signed_at` 三列均非空）。无行级策略。
 
 ##### 3.2.11 platform_meta.config_package_items（部署级）
+本表由阶段 3b 按裁定 A-27 随最小发布通道建立，本节列定义即其落地口径，`item_hash` 算法与第 4.7 节一致；本阶段只做列扩展，不重复建表。
 
 列：id、security_level、config_package_id uuid、item_kind text、item_code text、change_kind text（ADD、MODIFY、REMOVE）、applies_to_legal_entity_ids uuid[]（空数组表示全部法人）、before_spec jsonb、after_spec jsonb、item_hash text、sort_no int、公共列。
 
@@ -228,6 +233,7 @@ item_kind 取值封闭为 15 项：CUSTOM_OBJECT、CUSTOM_FIELD、CUSTOM_RELATIO
 约束与索引：`pk_config_package_items`、`fk_config_package_items_config_packages`、`ux_config_package_items_pkg_kind_code`、`ix_config_package_items_config_package_id_created_at`、`ck_config_package_items_item_kind`、`ck_config_package_items_change_kind`、`ck_config_package_items_specs`（ADD 时 `before_spec` 为空且 `after_spec` 非空，REMOVE 时相反，MODIFY 时两者均非空）。无行级策略。
 
 ##### 3.2.12 platform_meta.config_release_orders（部署级）
+本表由阶段 3b 按裁定 A-27 随最小发布通道建立，本节列定义即其落地口径；本阶段只做列扩展与状态扩展，不重复建表。
 
 列：id、security_level、order_no text、config_package_id uuid、action text（RELEASE、ROLLBACK）、rollback_to_package_id uuid、execution_mode text（ONLINE、MAINTENANCE_WINDOW）、submitted_by uuid、approved_by uuid、approval_ref text、reauth_ref text、scheduled_window_start timestamptz、status text（SUBMITTED、APPROVED、REJECTED、QUEUED、EXECUTING、SUCCEEDED、FAILED、COMPENSATED、CANCELLED）、started_at、finished_at、elapsed_ms int、failure_reason text、公共列。
 
@@ -359,9 +365,9 @@ create unique index ux_<code>_legal_entity_id_doc_no on ext.<code> (legal_entity
 | 3 | V202704060910__platform_meta_ui_layouts.sql | ui_layouts |
 | 4 | V202704060915__platform_meta_client_capability_values.sql | client_capability_values 建表 |
 | 5 | V202704060920__platform_meta_backfill_capability_matrix.sql | 72 行种子数据，逐格照抄规格第 6.2 章 |
-| 6 | V202704060925__platform_meta_config_package.sql | config_packages、config_package_items |
-| 7 | V202704060930__platform_meta_config_release.sql | config_release_orders、config_release_steps、config_autotest_runs、config_edit_locks、config_release_mutex |
-| 8 | V202704060935__platform_meta_backfill_release_mutex_row.sql | 互斥表单行种子 |
+| 6 | V202704060925__platform_meta_alter_config_package.sql | 对阶段 3b 已建的 config_packages 与 config_package_items 做列扩展：追加自动测试相关列，把遗留的 PENDING_REVIEW 行改写为 DRAFT 后按第 3.2.10 节的十一态重建 `ck_config_packages_status` |
+| 7 | V202704060930__platform_meta_config_release.sql | 对阶段 3b 已建的 config_release_orders 做列扩展与状态扩展（本阶段第 3.2.12 节列集相对最小通道的增量），并新建 config_release_steps、config_autotest_runs、config_edit_locks、config_release_mutex 四表 |
+| 8 | V202704060935__platform_meta_backfill_release_mutex_row.sql | 互斥表单行种子，`created_by` 取 `foundation::SYSTEM_PRINCIPAL_ID` |
 | 9 | V202704060940__platform_meta_brand_profiles.sql | brand_profiles |
 | 10 | V202704060945__platform_meta_client_releases.sql | client_releases |
 | 11 | V202704060950__platform_meta_extensions.sql | extensions、extension_capability_grants |
@@ -377,7 +383,7 @@ create unique index ux_<code>_legal_entity_id_doc_no on ext.<code> (legal_entity
 
 #### 4.1 核心结构体与枚举
 
-以下类型位于 `ep-platform-meta` 与 `ep-platform-release`，均只用 foundation 类型，不含任何 IO。
+以下类型位于 `ep-platform-meta` 与 `ep-platform-release`，均只用 foundation 类型，不含任何 IO。凡已在 `ep-foundation` 冻结的类型本阶段一律引用不再定义，见裁定 A-01、A-03 与 A-20。
 
 ```rust
 // ep-platform-meta::value
@@ -388,9 +394,8 @@ pub enum FieldDataType { Integer, Decimal { precision: u8, scale: u8 }, Float, B
 pub enum IndexKind { Single, Composite, Unique }
 pub enum Cardinality { OneToOne, OneToMany, ManyToMany }
 pub enum CapabilityValue { Full, Simplified, ViewOnly, NotApplicable }
-pub enum ClientKind { Win, Mac, Ios, Android, Portal, Ops }
-pub enum ActionClass { Read, Write, Submit, Approve, Export }
-pub struct CapabilityDomain(&'static str);
+// ClientKind 由阶段 1 按裁定 A-03 冻结，CapabilityDomain 与 ActionClass 由阶段 1 按裁定 A-20 冻结，
+// 三者均位于 ep-foundation，本阶段只 use 不再定义
 
 // ep-platform-meta::model
 pub struct CustomObject { id: Id, code: ObjectCode, security_level: SecurityLevel,
@@ -412,7 +417,7 @@ pub enum PackageStatus { Draft, PendingAutotest, TestFailed, TestPassed, Pending
     Rejected, Approved, SignedPendingRelease, Released, RolledBack, Superseded }
 pub enum ReleaseOrderStatus { Submitted, Approved, Rejected, Queued, Executing,
     Succeeded, Failed, Compensated, Cancelled }
-pub enum ItemKind { /* 15 项，见 3.2.11 */ }
+pub enum ItemKind { /* 15 项，见 3.2.11；本枚举与 ConfigPackageItem 由阶段 3a 在 crates/platform/release/src/port/config_item.rs 交付，见裁定 A-19 */ }
 pub enum ChangeKind { Add, Modify, Remove }
 ```
 
@@ -458,7 +463,7 @@ pub enum ChangeKind { Add, Modify, Remove }
 计划整体的执行模式取其中最严者。含 MAINTENANCE_WINDOW 语句的计划在未登记停机窗口时返回 `PLATFORM.DDL_PLAN.REQUIRES_MAINTENANCE_WINDOW`。
 
 4. 五项影响分析。索引项给出新增索引数、该对象索引总数与配额比对、按现有行数与平均行宽估算的索引体积；容量项给出新增列的行宽增量、`ext` 下对象总数与字段总数与配额比对、磁盘剩余量；性能项给出每条 `create index concurrently` 按现有行数与认证期实测吞吐外推的预计耗时与 30 分钟上限比对；安全项给出密级赋值核对结论、RLS 模板齐备结论、新增查询入口是否已纳入 RLS 矩阵测试的结论；迁移项给出可逆性判定与回退方式，不可逆的注明只能用升级前备份或影子表。五项写入 `ddl_plans` 的五个 jsonb 列，缺一不可。
-5. 执行。由 job-worker 建立一条 `ep_migrator` 连接，会话上执行 `set lock_timeout = '5s'` 与 `set statement_timeout = '30min'`。逐条语句在自动提交下执行，理由是 `create index concurrently` 不能在事务块内。每条语句执行前后各取一次 `clock_timestamp()`，把等待锁的时长与执行时长写入 `ddl_plan_steps`。
+5. 执行。DDL 段的第一步是调用 `ep_platform_release::MigrationWindowGuard::assert_open(tx)`，该守卫由阶段 2 提供，见裁定 B-03；未持有已打开的迁移窗口时不建立任何连接、不执行任何语句，返回 `PLATFORM.DB.MIGRATION_WINDOW_CLOSED`，HTTP 409，category 为 BUSINESS_CONFLICT，该错误码由阶段 1 登记，本阶段只引用。守卫通过后由 job-worker 建立一条 `ep_migrator` 连接，会话上执行 `set lock_timeout = '5s'` 与 `set statement_timeout = '30min'`。逐条语句在自动提交下执行，理由是 `create index concurrently` 不能在事务块内。每条语句执行前后各取一次 `clock_timestamp()`，把等待锁的时长与执行时长写入 `ddl_plan_steps`。
 6. 失败与回退。任一语句失败时立即停止，按已成功语句的逆序执行补偿语句：`create index concurrently` 对应 `drop index concurrently`，`add column` 对应 `drop column`，`create table` 对应 `drop table`，`create policy` 对应 `drop policy`，`validate constraint` 与 `add constraint` 对应 `drop constraint` 并恢复原 CHECK。补偿完成后计划置 ROLLED_BACK；若失败原因为 lock_timeout，计划另置 DEFERRED_TO_WINDOW 并把回退原因、操作对象与耗时写入审计，照抄规格第 7.4 章运行期口径，不判定为认证失败。
 7. 元数据与 DDL 的一致化。DDL 无法与元数据写入同事务，因此采用两阶段：先在一个事务内把相关 `custom_objects` 与 `custom_fields` 置 PENDING_DDL 并写审计；执行 DDL；成功后在一个事务内置 ACTIVE、递增 `definition_version`、写审计与 Outbox 事件；失败后在一个事务内置 DDL_FAILED 并写审计。第 7 节新增的启动自检项保证不存在 ACTIVE 元数据而物理表缺失、或物理表存在而未开启行级安全的组合，任一不成立进程拒绝启动。
 
@@ -466,7 +471,7 @@ pub enum ChangeKind { Add, Modify, Remove }
 
 #### 4.4 能力等价矩阵与移动端豁免的运行期判定
 
-能力域码表如下，与规格第 6.2 章矩阵 18 行一一对应，取值逐格照抄，不重述。
+能力域码由阶段 1 在 `ep-foundation` 的 `CapabilityDomain` 枚举中冻结，见裁定 A-20，本阶段不再定义。下表第 n 行的能力域码即该枚举第 n 个变体的序列化取值，与规格第 6.2 章矩阵 18 行一一对应，取值逐格照抄，不重述。
 
 | 序 | 能力域码 | 规格第 6.2 章矩阵行 |
 |---|---|---|
@@ -491,7 +496,7 @@ pub enum ChangeKind { Add, Modify, Remove }
 
 判定算法。
 
-1. 每个应用层用例在其所属 `ep-contract-<module>` 中声明 `capability_domain` 与 `action_class` 两个常量。同一用例同时落入两个能力域时按取值较低的所在行判定，照抄规格第 6.2 章。
+1. 常量由各业务阶段按裁定 A-20 在 `crates/contract/<module>/src/capability.rs` 中以 `<USECASE_SCREAMING>_DOMAIN` 与 `<USECASE_SCREAMING>_ACTION` 成对声明，本阶段只做运行期判定，不代其他阶段声明。本阶段自身平台路由的两个常量按同一命名规范声明在 `ep-platform-meta` 与 `ep-platform-release` 各自的 `capability.rs` 中，能力域一律取 `CapabilityDomain::PlatformAdminLowcodeOps`，由 `xtask configdoc` 断言每个路由都能解析到一对常量。同一用例同时落入两个能力域时按取值较低的所在行判定，照抄规格第 6.2 章。
 2. core-server 的能力闸中间件在授权判定之前执行，读取请求头 `X-Client`，从 `platform_meta.client_capability_values` 取该能力域该端的取值。`portal` 与 `ops` 两个取值不参与本判定，门户不纳入四端等价，运维端只访问 `ops-agent` 暴露的端点。
 3. 判定结果：
    - Full：放行。
@@ -510,6 +515,7 @@ pub enum ChangeKind { Add, Modify, Remove }
 4. 移动端遇到 `requires_wasm` 为真的规则时不求值，单据保存为本地草稿并置 `pending_central_validation`，不产生正式业务记录也不产生正式会计分录，照抄规格第 6.2 章与第 6.3 章。恢复连接后按该业务模块的正常提交端点提交，中心执行全部规则并把“该单据曾以待中心校验草稿提交”写入审计。
 5. 联网状态下客户端可调用 `POST /api/v1/platform/rule-evaluations/actions/evaluate` 获得与中心一致的预校验结果，该端点只读不写，不建立业务记录。
 6. 桌面端同样不在本地执行 WASM 计算，首版 WASM 宿主只在服务端 plugin-host 中存在，照抄规格第 9.3 章“首版服务端只有这一种扩展形态”。
+7. 实现类型按裁定 B-05 固定：规则求值实现类型为 `AstRuleEvaluator`，位于 `crates/platform/meta/src/rule/`，装配进 core-server，实现阶段 3b 定义的 `ep_platform_flow::port::RuleEvaluator`；WASM 计算实现类型为 `PluginHostWasmCompute`，位于 `crates/adapter/wasm/`，装配进 plugin-host，实现阶段 3b 定义的 `ep_platform_flow::port::WasmComputePort`。`POST /api/v1/platform/rule-evaluations/actions/evaluate` 只调用 `AstRuleEvaluator`，本阶段不新建第二条求值路径。
 
 #### 4.6 配置发布执行与回退算法
 
@@ -517,7 +523,7 @@ pub enum ChangeKind { Add, Modify, Remove }
 
 段一，DDL 段。仅当包含 CUSTOM_ 前缀内容项且存在结构差异时执行，按第 4.3 节。
 
-段二，元数据与配置段。在一个 `READ COMMITTED` 事务内，按 `sort_no` 升序对每个内容项调用对应的 applier。
+段二，元数据与配置段。在一个 `READ COMMITTED` 事务内，按 `sort_no` 升序对每个内容项调用对应的 applier。`ConfigItemApplier` 端口、`ItemKind` 枚举、`ConfigPackageItem` DTO 与 `ConfigItemApplierRegistry` 由阶段 3a 在 `crates/platform/release/src/port/config_item.rs` 交付，见裁定 A-19；下列签名即该文件的内容，其中 `Tx` 取自 `ep-foundation` 的 `port::tx`，见裁定 A-01。本阶段只实现 applier，不改端口签名。
 
 ```rust
 pub trait ConfigItemApplier: Send + Sync {
@@ -529,7 +535,7 @@ pub trait ConfigItemApplier: Send + Sync {
 }
 ```
 
-本阶段实现 CUSTOM_OBJECT、CUSTOM_FIELD、CUSTOM_RELATION、CUSTOM_INDEX、CUSTOM_VIEW、UI_LAYOUT 六个 applier。FLOW_DEFINITION、AUTHZ_ROLE、AUTHZ_POLICY、AUTHZ_FIELD_GRANT、REPORT_DEFINITION、METRIC_DEFINITION、DASHBOARD_DEFINITION、PRINT_TEMPLATE、NOTIFY_RULE 九个 applier 由流程、权限、报表、通知各自阶段实现，在 `apps/core-server/src/wiring.rs` 与 `apps/job-worker/src/wiring.rs` 注册。本阶段只定义端口与注册表，不定义那些阶段的表与接口。
+本阶段在 `ep-platform-meta` 中实现 CUSTOM_OBJECT、CUSTOM_FIELD、CUSTOM_RELATION、CUSTOM_INDEX、CUSTOM_VIEW、UI_LAYOUT 六个 applier。其余九个 applier 的归属按裁定 A-19 写死：FLOW_DEFINITION 的 `FlowDefinitionApplier` 与 NOTIFY_RULE 的 `NotifyRuleApplier` 由阶段 3b 在 `ep-platform-flow` 与 `ep-platform-notify` 实现；AUTHZ_ROLE 的 `AuthzRoleApplier`、AUTHZ_POLICY 的 `AuthzPolicyApplier`、AUTHZ_FIELD_GRANT 的 `AuthzFieldGrantApplier` 由阶段 4 在 `ep-platform-authz` 实现；REPORT_DEFINITION 的 `ReportDefinitionApplier`、METRIC_DEFINITION 的 `MetricDefinitionApplier`、DASHBOARD_DEFINITION 的 `DashboardDefinitionApplier`、PRINT_TEMPLATE 的 `PrintTemplateApplier` 由阶段 11 在 `ep-app-reporting` 实现。全部实现在 `apps/core-server/src/wiring.rs` 与 `apps/job-worker/src/wiring.rs` 注册到阶段 3a 提供的 `ConfigItemApplierRegistry`。本阶段不定义端口，也不定义那些阶段的表与接口。
 
 段二成功后在同一事务内写入：`config_release_orders` 置 SUCCEEDED、`config_packages` 置 RELEASED、上一 RELEASED 包置 SUPERSEDED、审计事件、Outbox 事件 `platform.config_release.released.v1`。
 
@@ -544,7 +550,7 @@ pub trait ConfigItemApplier: Send + Sync {
 回退算法：
 
 - 回退发布单以上一 RELEASED 包为目标，按 `sort_no` 逆序对当前包的内容项调用 `revert`，使用 `before_spec` 恢复。
-- 数据定制的回退取值（U-K-02 的临时取值）：新增字段与新增对象的回退只把元数据置 RETIRED，界面与 API 不再暴露该字段与该对象，物理列与物理表与其中数据一律保留，不执行 DROP。理由是 U-K-02 未决，而规格第 7.2 章与第 7.5 章要求业务数据只追加不覆盖，回退不得删掉已录入的业务数据。物理删除只能由单独的停机窗口计划发起，经双人审批，并走规格第 12.4 章的处置流程与处置清单。
+- 数据定制的回退取值（U-K-02 的临时取值）：新增字段与新增对象的回退只把元数据置 RETIRED，界面与 API 不再暴露该字段与该对象，物理列与物理表与其中数据一律保留，不执行 DROP。理由是 U-K-02 未决，而规格第 7.2 章与第 7.5 章要求业务数据只追加不覆盖，回退不得删掉已录入的业务数据。物理删除只能由单独的停机窗口计划发起，经双人审批，并按裁定 A-22 经 `ep_platform_file::port::disposal::DisposalPort` 交由阶段 14 的 `OpsDisposalService` 执行，走规格第 12.4 章的处置流程与处置清单；本阶段不实现任何物理删除路径。
 - 回退同样触发受影响派生存储的重新打标，照抄 PRD 第 10.4.5 节。
 - 可回退版本数与时间窗（U-K-02 的临时取值）：保留最近 10 个 RELEASED 包，且发布时间不早于 180 天；超出范围的包置 SUPERSEDED 且不可作为回退目标，尝试回退到该包返回 `PLATFORM.CONFIG_RELEASE_ORDER.ROLLBACK_TARGET_EXPIRED`。
 
@@ -665,7 +671,7 @@ pub trait ConfigItemApplier: Send + Sync {
 | POST /api/v1/platform/config-packages/{id}/actions/reject | `{reason}` | 包详情 | 同上 | 幂等键 | lowcode.config_package.approve |
 | POST /api/v1/platform/config-packages/{id}/actions/sign | 无 | 包详情含 `signer_subject` 与 `signed_at` | INFRASTRUCTURE 若密钥不可解引用 | 幂等键，已签名重复调用返回既有签名 | lowcode.config_package.sign |
 | POST /api/v1/platform/config-release-orders | `{config_package_id, action, rollback_to_package_id, execution_mode, scheduled_window_start}` | 发布单详情 | ROLLBACK_TARGET_EXPIRED、REQUIRES_MAINTENANCE_WINDOW | 幂等键 | lowcode.config_release.submit |
-| POST /api/v1/platform/config-release-orders/{id}/actions/execute | 无 | `{task_receipt_id}`，转后台任务 | CONCURRENT_RELEASE_IN_PROGRESS、DERIVED_STORE_REBUILD_REQUIRED | 幂等键，重复执行返回同一回执 | lowcode.config_release.execute |
+| POST /api/v1/platform/config-release-orders/{id}/actions/execute | 无 | `{task_receipt_id}`，转后台任务 | CONCURRENT_RELEASE_IN_PROGRESS、DERIVED_STORE_REBUILD_REQUIRED、PLATFORM.DB.MIGRATION_WINDOW_CLOSED | 幂等键，重复执行返回同一回执 | lowcode.config_release.execute |
 | POST /api/v1/platform/config-release-orders/{id}/actions/cancel | `{reason}` | 发布单详情 | BUSINESS_CONFLICT 若已进入 EXECUTING | 幂等键 | lowcode.config_release.execute |
 | GET /api/v1/platform/config-release-orders/{id} | 无 | 发布单详情含逐步执行记录 | 404 | 只读 | lowcode.config_release.view |
 
@@ -690,7 +696,7 @@ pub trait ConfigItemApplier: Send + Sync {
 | GET /api/v1/platform/brand-profiles/current | 无 | 品牌配置，含产品名、Logo 与启动页的附件对象标识、主题色 | 无 | 只读，任何已认证用户可读 | 无需权限项 |
 | GET /api/v1/platform/brand-profiles | 分页 | 品牌配置列表 | 无 | 只读 | brand.profile.view |
 | POST /api/v1/platform/brand-profiles | 全字段 | 品牌配置详情 | BRAND_PROFILE.ASSET_INVALID、STORE_POLICY_CHECK_FAILED | 幂等键 | brand.profile.manage |
-| POST /api/v1/platform/brand-profiles/{id}/actions/activate | 无 | 品牌配置详情 | BUSINESS_CONFLICT | 幂等键 | brand.profile.manage |
+| POST /api/v1/platform/brand-profiles/{id}/actions/activate | 无 | 品牌配置详情 | BUSINESS_CONFLICT、BRAND_PROFILE.ASSET_INVALID | 幂等键 | brand.profile.manage |
 | POST /api/v1/platform/client-releases | 全字段 | 版本详情 | VALIDATION | 幂等键 | client.release.manage |
 | POST /api/v1/platform/client-releases/{id}/actions/roll-out | `{rollout_percent, rollout_legal_entity_ids, rollout_department_ids}` | 版本详情 | VALIDATION | 幂等键 | client.release.manage |
 | POST /api/v1/platform/client-releases/{id}/actions/withdraw | `{reason}` | 版本详情 | 无 | 幂等键 | client.release.manage |
@@ -810,14 +816,14 @@ pub trait ConfigItemApplier: Send + Sync {
 
 敏感项按基线第 7.2 节只写 `secret://` 引用，内存中以 `secrecy::SecretString` 包装。
 
-启动自检的追加项（对基线第 7.3 节的追加，需回写基线）：
+启动自检的追加项按裁定 C-25 改为命名项，基线第 7.3 节的十三项固定项一并按注册名标识，本阶段不再以序号称呼，需回写基线：
 
-- 追加到第 4 项：`ext` schema 下全部表均已 `ENABLE` 且 `FORCE` 行级安全，且各自存在 `rls_<table>_le` 策略；`platform_meta.custom_objects` 中 status 为 ACTIVE 的每个对象在 `ext` 下均有对应物理表，反之不存在孤立物理表。
-- 第 14 项：`platform_meta.client_capability_values` 的内容哈希与二进制内置的冻结快照一致。
-- 第 15 项：`platform_meta.extensions` 中 status 为 ENABLED 的每条记录，其制品可读、哈希一致、签名可验、`capability_manifest` 未超出已授予能力。
-- 第 16 项：当前生效的品牌配置引用的附件对象均存在且可读。
+- `custom-object-ddl-consistent`：`ext` schema 下全部表均已 `ENABLE` 且 `FORCE` 行级安全，且各自存在 `rls_<table>_le` 策略；`platform_meta.custom_objects` 中 status 为 ACTIVE 的每个对象在 `ext` 下均有对应物理表，反之不存在孤立物理表。
+- `client-capability-matrix-frozen`：`platform_meta.client_capability_values` 的内容哈希与二进制内置的冻结快照一致。
 
-`--check` 模式一并执行 1 至 16 项。
+裁定 C-25 为本阶段固定了上述两个项名，因此原有的另外两项校验不再作为启动自检项：status 为 ENABLED 的扩展其制品可读、哈希一致、签名可验、`capability_manifest` 未超出已授予能力，改由第 4.8 节第 1 条的加载路径逐次校验，不通过即不加载并写审计；当前生效的品牌配置引用的附件对象存在且可读，改由 `POST /api/v1/platform/brand-profiles/{id}/actions/activate` 用例在激活前校验，不通过返回 `PLATFORM.BRAND_PROFILE.ASSET_INVALID`。
+
+`--check` 模式按 `SelfCheckRegistry` 的注册顺序一并执行全部注册项，基线十三项在前，本阶段两项在后。
 
 ---
 
@@ -841,7 +847,7 @@ pub trait ConfigItemApplier: Send + Sync {
 12. 插件能力裁剪：授予字段子集时输入报文只含子集；未授予任何 `READ_OBJECT_FIELDS` 时输入为空；声明超出授予的能力拒绝加载。
 13. 插件资源限额判定：燃料、内存、时限三类各自的中止分类映射。
 14. 品牌资源校验：产品名超长、颜色格式错误、应用标识不合规、Logo 尺寸不符四类各自拒绝。
-15. 编号生成：自定义单据对象的编号格式按基线第 11.1 节，法人加类型加年月三元组独立自增，流水溢出扩位。
+15. 编号生成：自定义单据对象的编号格式按基线第 11.1 节，法人加类型加年月三元组独立自增，流水溢出扩位；`doc_type_code` 与 `docs/data-dictionary.md` 单据类型码一节全量表重复时按裁定 C-26 拒绝并返回 `PLATFORM.CUSTOM_OBJECT.DOC_TYPE_CODE_CONFLICT`。
 
 #### 8.2 领域属性测试（proptest）
 
@@ -863,7 +869,7 @@ pub trait ConfigItemApplier: Send + Sync {
 | 3 | 新增可空列的锁持有 | 在 100 万行 `ext` 表上执行，`ddl_plan_steps.lock_wait_ms` 加执行时长不超过 5000 毫秒 |
 | 4 | 新增索引的执行时长 | 在附录 A.3 基准数据集规模的 `ext` 表上 `create index concurrently` 不超过 30 分钟；建成后目标查询的 `EXPLAIN` 无顺序扫描 |
 | 5 | 锁超时的自动回退 | 人为持有冲突锁使 `add column` 超时，计划置 ROLLED_BACK 与 DEFERRED_TO_WINDOW；审计事件含回退原因、操作对象与耗时；数据库结构无残留 |
-| 6 | 元数据与 DDL 的一致化 | 在 DDL 执行成功后、元数据置 ACTIVE 之前杀死 job-worker，重启后启动自检检出孤立物理表并拒绝启动；执行修复用例后自检通过 |
+| 6 | 元数据与 DDL 的一致化 | 在 DDL 执行成功后、元数据置 ACTIVE 之前杀死 job-worker，重启后启动自检项 `custom-object-ddl-consistent` 检出孤立物理表并拒绝启动；执行修复用例后该项通过 |
 | 7 | 导入包篡改 | 篡改任一内容项一个字节，导入返回 `ITEM_HASH_MISMATCH` 且不落库 |
 | 8 | 自动测试未通过阻止提交 | RLS_MATRIX 注入一条越权可读策略，suite 置 FAILED，提交发布单返回 `AUTOTEST_NOT_PASSED` |
 | 9 | 自审批拒绝 | 提交人调用 approve 返回 `SELF_APPROVAL_FORBIDDEN` |
@@ -872,20 +878,22 @@ pub trait ConfigItemApplier: Send + Sync {
 | 12 | 回退不删数据 | 发布新增字段、录入 1000 行数据、回退，字段元数据置 RETIRED，物理列与 1000 行数据仍可由 `ep_analyst_ro` 读出 |
 | 13 | 回退触发重新打标 | 权限类内容项回退后，搜索索引对应法人分区进入重建，重建期间检索入口返回 `DERIVED_STORE_REBUILD_REQUIRED`，重建完成后条数与来源一致 |
 | 14 | 派生存储越权 | 以跨法人与跨密级安全上下文对自定义对象发起检索、排序与分面计数，均不返回无权数据 |
-| 15 | 插件签名不符 | 篡改制品一个字节，enable 返回 `EXTENSION.SIGNATURE_INVALID`，且启动自检拒绝启动 |
+| 15 | 插件签名不符 | 篡改制品一个字节，enable 返回 `EXTENSION.SIGNATURE_INVALID`；对已 ENABLED 的扩展篡改制品后按第 4.8 节第 1 条不加载并写审计，后续调用返回 `PLATFORM.EXTENSION.DISABLED` |
 | 16 | 插件燃料耗尽 | 构造死循环插件，调用返回 `RESOURCE_LIMIT_EXCEEDED`，`extension_invocations.outcome` 为 FUEL_EXHAUSTED |
 | 17 | 插件自动停用 | 同一入口连续 3 次失败，扩展置 DISABLED，第 4 次调用返回 `EXTENSION.DISABLED`，审计与站内通知各一条 |
 | 18 | 插件无 IO 能力 | 构造尝试打开套接字与文件的插件，编译期即因缺少导入项失败；宿主导入表断言只有四个函数 |
 | 19 | plugin-host 零连接 | 断言 `pg_stat_activity` 中不存在来自 plugin-host 的连接；断言 plugin-host 的配置中不含数据库连接串 |
 | 20 | 插件在事务外调用 | 静态检查 `ep-app-*` 的用例函数中不出现 plugin IPC 客户端符号；运行期断言插件调用发生时当前连接无活动事务 |
 | 21 | 能力闸 | `X-Client: ios` 调用付款登记提交返回 403 与 `WRITE_NOT_AVAILABLE_ON_CLIENT` 并带 `X-Desktop-Handoff-Token`；`X-Client: win` 放行；`X-Client: ios` 调用扩展登记返回 404 |
-| 22 | 矩阵冻结 | 篡改 `client_capability_values` 一行，进程启动返回退出码 78 与 `MATRIX_HASH_MISMATCH` |
+| 22 | 矩阵冻结 | 篡改 `client_capability_values` 一行，启动自检项 `client-capability-matrix-frozen` 失败，进程启动返回退出码 78 与 `MATRIX_HASH_MISMATCH` |
 | 23 | 引导下发可审计 | 调用 `client-bootstrap` 一次，`client_bootstrap_dispatches` 增一行含对象清单与规则版本，审计事件增一条 |
 | 24 | ep_migrator 连接的启用与回收 | 一次含 DDL 的发布产生恰好两条审计事件（启用与回收）；发布前后 `pg_stat_activity` 中 `ep_migrator` 连接数为 0 |
 | 25 | 配额上限 | 对象数达 200、单对象字段数达 100、单对象索引数达 5 时，再新增返回 `QUOTA_EXCEEDED` |
 | 26 | 模块生命周期 | 对含自定义对象的模块执行停用与再启用，停用前后该对象的记录条数与校验和一致，停用期间授权查询与审计检索仍可执行，再启用后配置、权限授予与 Outbox 未投递条目差异为零 |
 | 27 | 编辑锁 | 两名配置管理员同时编辑同一对象，第二人返回 `CONFIG_EDIT_LOCK.HELD_BY_ANOTHER_USER`；锁过期后可取得 |
 | 28 | 关账期间暂停发布 | 受理一次关账请求后提交发布单执行，返回受理但排队；关账产生结论后自动继续执行 |
+| 29 | 迁移窗口未打开 | 未登记打开的迁移窗口时执行含 DDL 段的发布，`MigrationWindowGuard::assert_open` 拒绝，返回 409 与 `PLATFORM.DB.MIGRATION_WINDOW_CLOSED`，全程 `pg_stat_activity` 中不出现 `ep_migrator` 连接；打开窗口后同一发布单执行成功 |
+| 30 | 模块停用与再启用 | 经阶段 3b 的 `ModuleLicenseQuery::module_state` 把某模块置 INSTALLED_DISABLED 后，其定时任务不再触发、对外事件停止投递；再启用后两者恢复，配置、权限授予与 Outbox 未投递条目差异为零 |
 
 外部电子签章不在本阶段范围内，本阶段不使用 wiremock 打桩。
 
@@ -894,6 +902,7 @@ pub trait ConfigItemApplier: Send + Sync {
 桌面端用 Playwright 驱动桌面 WebView，用 tauri-driver 驱动桌面壳；移动端用 XCUITest 与 Espresso。
 
 四端矩阵覆盖按规格第 6.2 章：取值为完整或简化的能力域在该端跑通端到端场景；取值为仅查看或不适用的能力域按豁免清单载明的替代路径验证。
+按裁定 A-23，业务闭环类端到端用例随各业务阶段的四端界面交付：下表 E1 至 E6 由阶段 5 至阶段 12 在自己的第 8 节测试计划中执行，本阶段只交付其运行所需的客户端壳、路由注册表与能力闸，并对执行证据逐条汇总；E7 至 E12 属壳层、发布链路与白标制品，由本阶段自行执行，其中 E9 以本阶段的自定义对象单据为被测对象，不依赖任何业务模块界面。四端验收矩阵由阶段 14 汇总。
 
 | 序 | 用例 | 端 | 判据 |
 |---|---|---|---|
@@ -953,9 +962,9 @@ pub trait ConfigItemApplier: Send + Sync {
 1. 四端制品各一份存在且可安装，均由同一份 `brand.toml` 产出，白标构建流水线的商店政策合规检查门禁四项在流水线日志中逐项显示通过。
 2. 同一输入两次执行 `tools/epbrand` 产出的未签名制品哈希逐端一致。
 3. 附录 C.2 十二项门槛在附录 C.1 设备基线上复测完成，通过或已获产品负责人书面批准豁免；全部原始测量数据进入证据包。
-4. 规格第 6.2 章能力等价矩阵 18 行乘 4 端共 72 格逐格核对完成，取值为完整或简化的格在该端跑通端到端场景，取值为仅查看或不适用的格在豁免清单中有对应条目并按替代路径验证通过。
-5. `platform_meta.client_capability_values` 的内容哈希与二进制内置冻结快照一致，启动自检第 14 项通过；人为篡改一行后进程以退出码 78 拒绝启动。
-6. 五类定制各完成一次端到端发布与一次回退：数据定制与界面定制由本阶段的 applier 承担，流程、权限、报表三类由各自阶段的 applier 承担并在本阶段的发布通道上跑通，六个内容项类别之外的九个类别至少各有一次 apply 与一次 revert 的执行记录。
+4. 规格第 6.2 章能力等价矩阵 18 行乘 4 端共 72 格逐格核对完成：取值为完整或简化的格由该能力域所属业务阶段按裁定 A-23 在其阶段跑通端到端场景，本阶段汇总其执行证据；取值为仅查看或不适用的格在豁免清单中有对应条目并按替代路径验证通过；服务端能力闸对 72 格的判定由本阶段逐格覆盖。
+5. `platform_meta.client_capability_values` 的内容哈希与二进制内置冻结快照一致，启动自检项 `client-capability-matrix-frozen` 通过；人为篡改一行后进程以退出码 78 拒绝启动。
+6. 五类定制各完成一次端到端发布与一次回退：数据定制与界面定制由本阶段在 `ep-platform-meta` 实现的六个 applier 承担；FLOW_DEFINITION 与 NOTIFY_RULE 由阶段 3b 的 `FlowDefinitionApplier` 与 `NotifyRuleApplier` 承担，三个 AUTHZ_ 类由阶段 4 的三个 applier 承担，四个报表类由阶段 11 的四个 applier 承担，归属按裁定 A-19，均在本阶段扩展后的发布通道上跑通，这九个类别至少各有一次 apply 与一次 revert 的执行记录。
 7. 一次含 3 条 DDL 语句的在线发布在基准数据集上完成，单条语句锁持有不超过 5 秒，计划总执行时长不超过 30 分钟，`ddl_plan_steps` 中逐条有实测的锁等待与执行时长。
 8. 人为制造锁超时后计划自动回退并转停机窗口，审计事件含回退原因、操作对象与耗时，数据库结构无残留。
 9. 回退演练完成：按新增字段录入的业务数据在回退后仍可读出，字段元数据为 RETIRED，界面与 API 不再暴露该字段。
@@ -963,13 +972,16 @@ pub trait ConfigItemApplier: Send + Sync {
 11. plugin-host 的数据库连接数在全程为 0，宿主导入函数表只有四个函数，尝试网络与文件访问的插件在编译期即失败。
 12. 插件连续失败自动停用生效，停用事件写入审计并经站内通知送达。
 13. 桌面端打印机与 USB Key 各完成一次端到端验证；关闭原生插件加载后能力停用并显式降级，降级事件与范围记入客户端审计并按客户与设备登记。
-14. 移动端六个仅查看能力域无提交、审批与写入入口；进入写入路径给出桌面端完成的说明并可发送到桌面端继续。
+14. 服务端能力闸对移动端六个仅查看能力域的写入端点一律返回 403 与 `PLATFORM.CLIENT_CAPABILITY.WRITE_NOT_AVAILABLE_ON_CLIENT` 并带 `X-Desktop-Handoff-Token`，桌面接续令牌可拉起同一单据同一草稿；移动端界面上这六个能力域无提交、审批与写入入口一条按裁定 A-23 由各业务阶段随其界面验收，本阶段汇总其执行证据。
 15. 含受限 WASM 计算的规则在移动端只能保存为待中心校验草稿，恢复连接后由中心重新校验并写入审计，该场景在 iOS 与 Android 各执行一次。
 16. 覆盖率门槛按第 8.6 节逐项达成，CI 强制生效。
-17. 本阶段新增的 36 条错误码、10 个事件类型、22 张表、9 个指标、38 个配置项在 `docs/error-codes.md`、`docs/event-catalog.md`、`docs/data-dictionary.md` 与代码常量表中登记齐备，CI 一致性校验通过。
+17. 本阶段新增的 37 条错误码、10 个事件类型、19 张表、9 个指标、38 个配置项在 `docs/error-codes.md`、`docs/event-catalog.md`、`docs/data-dictionary.md` 与代码常量表中登记齐备，CI 一致性校验通过；本阶段引用但由阶段 1 按裁定 C-24 登记的 `PLATFORM.CONCURRENCY.STALE_VERSION`、`PLATFORM.AUTHZ.NOT_FOUND_OR_DENIED` 与 `PLATFORM.DB.MIGRATION_WINDOW_CLOSED` 不计入本阶段条数。
 18. 依赖方向自检脚本通过：客户端 crate 不依赖任何 `ep-app-*` 与 `ep-adapter-db*`；`ep-platform-meta` 与 `ep-platform-release` 不出现 sqlx、reqwest、`std::fs`、`std::net` 与 `SystemTime::now` 符号。
 19. 一次完整的配置发布与回退演练证据包归档，含差异审查记录、8 个 suite 的自动测试报告、审批与签名记录、执行耗时、锁持有时长、回退结果与审计链验证结论。
 20. 本阶段的偏离项与新增决定（第 12 节）已回写共享技术基线，基线更新经平台架构负责人确认。
+21. 模块许可的停用与再启用验收通过：按裁定 A-05，`ep-platform-license` 本体与其三张表由阶段 3b 交付，本阶段只保留一条验收，即某模块置 INSTALLED_DISABLED 后其定时任务停止、对外事件停发，再启用后两者恢复，执行记录见集成测试 30。
+22. 本阶段全部平台路由的能力域码与动作类别常量已按裁定 A-20 声明，`xtask configdoc` 通过；自定义单据对象的 `doc_type_code` 与 `docs/data-dictionary.md` 单据类型码一节的全量表无重复，`xtask configdoc --check-doc-type-codes` 通过。
+23. 含 DDL 段的发布在未打开迁移窗口时被 `ep_platform_release::MigrationWindowGuard::assert_open` 拒绝并返回 409 与 `PLATFORM.DB.MIGRATION_WINDOW_CLOSED`，留有一次拒绝与一次放行的执行记录；`ep_platform_flow::port::RuleEvaluator` 与 `WasmComputePort` 的实现类型 `AstRuleEvaluator` 与 `PluginHostWasmCompute` 已在 wiring 注册，规则求值端点只经 `AstRuleEvaluator`。
 
 ---
 
@@ -1034,16 +1046,16 @@ pub trait ConfigItemApplier: Send + Sync {
 |---|---|---|---|
 | Tauri 2 移动端成熟度不足，附录 C.2 门槛在本阶段复测未通过 | 四端等价验收不成立 | 阶段 1 已完成 PoC 判定并冻结 Rust 核心接口语义；本阶段的 UI 层与 Rust 核心之间只有 Tauri IPC 一层桥 | 按规格第 6.1 章切换 Flutter UI，返工范围限于 IPC 桥改 FFI 桥、移动端生命周期与后台任务适配、推送、深链、平台插件与外设适配层；Rust 核心九个 crate 不动 |
 | `create index concurrently` 在基准数据集上超过 30 分钟 | 新增索引失去在线变更能力，触及规格第 7.4 章的在线能力底线 | 影响分析的性能项在计划阶段外推并给出预警；单次计划语句数上限 200 | 该操作登记入停机窗口操作清单；若新增索引整体无法达到底线，按规格第 7.4 章交付说明必须明确降级为停机窗口变更，不得以在线 DDL 能力通过认证 |
-| DDL 与元数据无法同事务导致的中间态 | 出现 ACTIVE 元数据而物理表缺失，或物理表存在而未开启行级安全 | 两阶段写入加启动自检第 4 项扩展；集成测试 6 专测该场景 | 进程拒绝启动并给出具体对象清单，由修复用例把元数据置 DDL_FAILED 或补建策略 |
-| 插件执行占用同机资源影响交易时延 | 规格第 16 章 3 秒通过线受损 | plugin-host 独立 cgroup 与 5% 份额与三倍突发上限封顶；交易路径调用时限 2000 毫秒；调用在事务外 | 触及突发上限即限流其调用并记入运维中心；连续限流按规格第 15.3 章记录暴露窗口 |
+| DDL 与元数据无法同事务导致的中间态 | 出现 ACTIVE 元数据而物理表缺失，或物理表存在而未开启行级安全 | 两阶段写入加启动自检项 `custom-object-ddl-consistent`；集成测试 6 专测该场景 | 进程拒绝启动并给出具体对象清单，由修复用例把元数据置 DDL_FAILED 或补建策略 |
+| 插件执行占用同机资源影响交易时延 | 规格第 16 章 3 秒通过线受损 | plugin-host 独立 cgroup 与 5% 份额与三倍突发上限封顶；交易路径调用时限 2000 毫秒；调用在事务外 | 触及突发上限即限流其调用并记入运维中心；连续限流按规格第 15.3 章经 `ep_platform_obs::DegradationLedger` 的 `open` 与 `close` 登记降级窗口，降级类别取阶段 14 冻结的十八类之一，见裁定 A-26 |
 | WASM 宿主自身的漏洞成为越权入口 | 对应规格第 21.7 章风险 | 宿主导入函数只有四个且无网络、文件、密钥与数据库；能力清单与最小权限授予；输入按字段权限裁剪后才进入 IPC；plugin-host 数据库连接数为 0 | 按规格第 3.3 章在本实例内停用该扩展，停用决定、影响范围与恢复条件记入审计 |
 | 白标维护矩阵膨胀 | 对应规格第 21.8 章风险 | 单一核心加配置化品牌；客户不维护长期核心代码分支；构建、签名、灰度全流水线化；可复现构建使制品哈希可核对 | 品牌配置项清单冻结在 `brand_profiles` 的列集内，新增可配置项必须先改该表并回写 U-K-07 决策 |
-| 配置回退删掉已录入业务数据 | 对应 U-K-02 未决 | 本阶段取值为回退只停用元数据不执行 DROP | 该取值在 U-K-02 决策后按决策调整；若决策要求物理删除，改由单独的停机窗口计划加双人审批加规格第 12.4 章处置清单承担 |
+| 配置回退删掉已录入业务数据 | 对应 U-K-02 未决 | 本阶段取值为回退只停用元数据不执行 DROP | 该取值在 U-K-02 决策后按决策调整；若决策要求物理删除，改由单独的停机窗口计划加双人审批，并按裁定 A-22 经 `DisposalPort` 交由阶段 14 的 `OpsDisposalService` 按规格第 12.4 章处置清单承担 |
 | 生产环境内的就地创作与规格第 9.2 章开发测试生产隔离的张力 | 审计与合规口径受质疑 | 生产内的 DRAFT 状态配置对运行期一律不可见，运行期只读取 ACTIVE 版本；差异审查以 Git 中的声明式包为准；就地式包在签名后内容不可再改 | 若客户或审计要求更严，收窄为只接受 IMPORTED 来源的包，把 `source` 的可选取值在配置中限定为 IMPORTED |
 
 #### 11.2 为后续阶段预留的扩展点
 
-- `ConfigItemApplier` 端口的 `item_kind` 取值集合可扩展。新增一类定制内容项时只需实现该 trait 并在 wiring 注册，发布链路、差异算法、签名、审批与回退全部复用，不改本阶段任何表。
+- `ConfigItemApplier` 端口由阶段 3a 按裁定 A-19 交付，其 `item_kind` 取值集合可扩展。新增一类定制内容项时只需实现该 trait 并在 wiring 注册到 `ConfigItemApplierRegistry`，发布链路、差异算法、签名、审批与回退全部复用，不改本阶段任何表。
 - `CapabilityValue` 枚举与 `client_capability_values` 表结构支持新增能力域行与新增端列。恢复客户门户或经销商门户配套应用时，只需新增能力域行与新的 `client` 取值，不改判定算法。
 - `extension_capability_grants.capability` 的取值集合封闭在 4 项。恢复服务端隔离容器形态或新增外设适配时，新增取值并同步扩展宿主导入函数表；宿主导入函数表的断言测试是新增能力必须同步修改的强制点。
 - 客户端本地缓存的记录标签已按规格第 7.9 章口径携带，为后续恢复离线数据租约、租约到期锁定与撤销序列、离线草稿字段级合并预留了判定依据。
@@ -1058,7 +1070,7 @@ pub trait ConfigItemApplier: Send + Sync {
 | 编号 | 本阶段临时取值 | 切换代价 |
 |---|---|---|
 | U-K-01 | 配置包按整包发布；并发编辑按内容项粒度加编辑锁，TTL 1800 秒 | 改为按单对象发布需要拆分 `config_release_orders` 与互斥锁的粒度，影响第 6.2 节的串行化设计，工作量中等 |
-| U-K-02 | 保留最近 10 个已发布包且不早于 180 天；数据定制回退只停用元数据不删数据 | 改为物理删除需要新增停机窗口计划与双人审批路径，并接入规格第 12.4 章处置清单，工作量中等 |
+| U-K-02 | 保留最近 10 个已发布包且不早于 180 天；数据定制回退只停用元数据不删数据 | 改为物理删除需要新增停机窗口计划与双人审批路径，并按裁定 A-22 经 `DisposalPort` 交由阶段 14 的 `OpsDisposalService` 接入规格第 12.4 章处置清单，工作量中等 |
 | U-K-03 | 对象数 200、单对象字段数 100、单对象索引数 5 | 只改配置默认值，工作量小；但需重跑第 8.5 节的容量项 |
 | U-K-05 | 移动推送正文不携带任何业务字段，只含事项类型与关联编号 | 若允许携带需新增按密级的正文裁剪，工作量小 |
 | U-K-07 | 白标可配置项固定为 `brand_profiles` 的列集，含主题色、登录页背景与通知模板集 | 新增可配置项需要迁移该表并同步 `tools/epbrand`，工作量小 |
@@ -1072,17 +1084,17 @@ pub trait ConfigItemApplier: Send + Sync {
 
 按基线第 0 节，下列各项在基线中未覆盖或需要追加，本阶段显式登记，阶段结束时回写基线。
 
-1. 客户端代码位置与 crate 命名。基线第 1.1 节只覆盖服务端 workspace。本阶段新增 `/clients/` 为独立 Cargo workspace，crate 前缀 `ep-client-`，通过路径依赖复用 `ep-foundation`、`ep-contract-*` 与 `ep-platform-meta`，禁止依赖 `ep-app-*` 与 `ep-adapter-db*`。edition 2021，禁止 nightly，与基线一致。
+1. 客户端代码位置与 crate 命名。基线第 1.1 节只覆盖服务端 workspace。本阶段新增 `/clients/` 为独立 Cargo workspace，crate 前缀 `ep-client-`，通过路径依赖复用 `ep-foundation`、`ep-contract-*` 与 `ep-platform-meta`，禁止依赖 `ep-app-*` 与 `ep-adapter-db*`。edition 2021，禁止 nightly，与基线一致。桌面壳与移动壳分别位于 `/clients/desktop` 与 `/clients/mobile`，其 `src/modules/<module>/` 为业务模块界面目录，按裁定 A-23 由阶段 5 至阶段 12 各自交付，本阶段只建立目录约定与路由注册表。
 2. 非常驻工具目录。基线第 2 节的八个进程是常驻进程清单。本阶段新增 `/tools/` 目录承载 `epcfg`、`epbrand`、`epplug` 三个一次性命令行工具，不属于进程清单，不占用系统账户与 cgroup。
 3. 客户端本地加密缓存库选型。取 SQLCipher，经 rusqlite 的 bundled-sqlcipher 特性引入。理由是附录 C.2 要求本地加密数据库随机读写吞吐不低于 20 MB/s、10 万行查询 P95 不超过 1 秒，纯 Rust 的嵌入式库在加密路径上尚无同等实测证据。该选型只作用于客户端，不触及基线第 3 节的服务端数据库约定。
 4. 服务端 WASM 宿主选型。取 wasmtime 与 wasmtime-wasi，主版本在 workspace 根 `[workspace.dependencies]` 中锁定为 26 系列，只启用 Component Model，不启用任何 WASI 网络与文件能力。
-5. 部署级配置表的归类。本阶段的 20 张部署级表按基线第 3.8 节第四段归入“全局配置字典”类，不带 `legal_entity_id` 与 `data_scope_tags`，不建行级策略，其余公共列齐备。理由见第 3.1 节。
+5. 部署级配置表的归类。本阶段涉及的 20 张部署级表按基线第 3.8 节第四段归入“全局配置字典”类，不带 `legal_entity_id` 与 `data_scope_tags`，不建行级策略，其余公共列齐备。其中 17 张由本阶段建立，`config_packages`、`config_package_items` 与 `config_release_orders` 三张由阶段 3b 按裁定 A-27 建立并沿用同一归类。理由见第 3.1 节。
 6. 唯一约束中的空值替代取值。`custom_fields.owner_key` 与 `ui_layouts.role_key` 在语义为空时取 `'-'`，与基线第 11.4 节空批次标识的理由同构：该列是唯一索引的组成键，NULL 在唯一约束中的语义会使重复定义得以并存。
 7. 编辑锁的物理删除。基线第 3.6 节允许物理删除的表只有两类，本阶段追加第三类：`platform_meta.config_edit_locks` 的过期行由 job-worker 按 `expires_at` 清理。理由是它是短生命周期协作锁，不承载任何业务事实。
 8. 平台侧 API 路径段取 `platform`，自定义对象数据端点路径段取 `ext`。两者都不新增模块码，`ext` 与 schema 名一致。
 9. 自定义对象的领域事件统一为 `platform.custom_record.created.v1`、`platform.custom_record.updated.v1`、`platform.custom_record.state_changed.v1` 三个类型，具体对象由信封的 `aggregate_type` 承载为 `ext.<object_code>`。理由是不新增模块码。
 10. 幂等作用域中法人维度对部署级端点的取值。取请求头 `X-Legal-Entity-Id` 的值，理由见第 6.3 节。
-11. 启动自检追加第 14 至 16 项，并扩展第 4 项到 `ext` schema。
+11. 启动自检项按裁定 C-25 改为按注册名标识，不再以序号称呼。本阶段追加 `custom-object-ddl-consistent` 与 `client-capability-matrix-frozen` 两项，前者一并覆盖原第 4 项对 `ext` schema 的扩展；扩展制品校验与品牌附件校验不再作为启动自检项，改由第 4.8 节加载路径与品牌激活用例承担。
 12. 覆盖率门槛追加客户端 Rust 核心五个 crate 不低于 85%，TypeScript 界面包不低于 70%。
 13. 关账受理期间暂停新发布单执行，取值见第 6.5 节。
 14. 客户端本地缓存记录携带来源对象标识、版本、法人标识、密级与数据范围标签，与规格第 7.9 章派生存储同一口径。理由见第 4.10 节。

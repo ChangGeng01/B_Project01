@@ -13,7 +13,7 @@
 3. 售后工单的三个创建入口、六状态状态机、关联对象一致性校验、处理记录追加、时限提醒的触发登记。
 4. 退换修登记行的三类处理方式、与销售退货单和发货侧单据的挂接、由对方终态事件回写、三条追溯链路双向可达。
 5. 项目与项目任务的字段与状态机、合同生效派生项目任务的幂等消费、由项目任务提交采购需求的双向引用。
-6. 客户 360 聚合端点与区块提供者契约，本阶段自实现投诉、设备、工单三个区块。
+6. 客户 360 聚合端点与区块提供者契约的扩充，本阶段自实现投诉、设备、工单三个区块。按裁定 C-09，唯一端点 GET /api/v1/crm/customers/{id}/customer-360 与唯一契约 ep_contract_crm::Customer360SectionProvider 由阶段 5 建立，本阶段只追加区块取值与区块实现，不新增路径，不保留 /overview。
 
 本阶段明确不做的事，取值按 PRD 9.1.2 与规格第 5.2 章售后与 FSM、项目与 PPM 两个条目：现场派工与调度、服务权益与服务合同计费、售后知识库、独立服务 SLA 引擎、点检计划、维修工单、备件、设备成本、可靠性分析、预测维护、保修索赔与费用结算与延展销售、WBS 多层分解、资源与产能、工时填报、项目预算、项目风险、变更管理、挣值、工单成本归集。本阶段也不定义销售退货单、交付确认单、合同、采购需求、客户档案本身。
 
@@ -27,8 +27,8 @@
 |---|---|---|---|
 | D-01 | ep-contract-service、ep-domain-service、ep-app-service 三个 crate | 编译通过并被 core-server 与 job-worker 装配 | cargo build 与依赖自检脚本通过 |
 | D-02 | ep-contract-project、ep-domain-project、ep-app-project 三个 crate | 同上 | 同上 |
-| D-03 | ep-contract-crm 的客户 360 区块契约与 ep-app-crm 的聚合用例 | 编译通过并被 core-server 装配 | 同上 |
-| D-04 | service schema 的 13 张表与 project schema 的 5 张表 | db/migrations/service/ 与 db/migrations/project/ 下的迁移可离线执行并可回退 | refinery 迁移在空库上执行成功，且 --check 模式启动自检第 4 项通过 |
+| D-03 | 对阶段 5 已建立的 ep-contract-crm 客户 360 区块契约的扩充与 ep-app-crm 聚合用例的三个新区块 | 编译通过并被 core-server 装配 | 同上 |
+| D-04 | service schema 的 13 张表与 project schema 的 5 张表 | db/migrations/service/ 与 db/migrations/project/ 下的迁移可离线执行并可回退 | refinery 迁移在空库上执行成功，且 --check 模式下启动自检项 rls-enabled-and-forced 通过 |
 | D-05 | 售后侧 27 个 HTTP 端点、项目侧 12 个 HTTP 端点、客户 360 的 1 个端点 | core-server 暴露于 /api/v1/service、/api/v1/project、/api/v1/crm | 端点级集成测试全绿 |
 | D-06 | 25 个领域事件的发布与 2 个消费者 | Outbox 写入与 job-worker 消费 | 重复投递不少于 3 次的幂等测试通过 |
 | D-07 | 三张受控取值字典的出厂数据与配置发布通道接入 | 迁移回填 + 配置发布包 | 字典改动经签名发布后生效，且不触发 DDL |
@@ -36,7 +36,11 @@
 | D-09 | tests/rls_matrix 中本阶段 18 张带法人表的越权矩阵用例 | 独立测试目标 | 八类越权面全部返回 404 或 403，无内容回显 |
 | D-10 | 闭环第 12 步的端到端用例与三条追溯链路双向可达用例 | apps/core-server/tests/ 下的 E2E | 全绿 |
 | D-11 | 边界不变量用例 | 执行本阶段全部用例前后规格第 17.3 章三项取值不变 | 由 ep-platform-recon 语句集比对，差额为零 |
-| D-12 | docs/event-catalog.md、docs/error-codes.md、数据字典三处登记 | 文档 | CI 一致性校验通过 |
+| D-12 | docs/event-catalog.md、docs/error-codes.md、docs/data-dictionary.md 三处登记，其中数据字典含本阶段五个单据类型码 EQ、CPL、WO、PRJ、PT | 文档 | CI 一致性校验通过，且 xtask configdoc --check-doc-type-codes 通过 |
+| D-13 | project.v_projects_dataset 受治理数据集视图，dataset code 为 project_projects，grain 为 DOCUMENT | db/migrations/project/ 下的视图迁移 | 视图已发布并授予 ep_analyst_ro，列签名与 reporting.dataset_fields 的登记一致 |
+| D-14 | service 与 project 两个模块的四端界面 | clients/desktop/src/modules/service/、clients/desktop/src/modules/project/ 与 clients/mobile/src/modules/ 下的同名目录 | 四端 UI 用例全绿 |
+| D-15 | 本阶段全部路由的能力域码与动作类别常量 | crates/contract/service/src/capability.rs 与 crates/contract/project/src/capability.rs | xtask configdoc 通过 |
+| D-16 | ServiceReferenceCounter | crates/application/service/src/probe/master_reference.rs 与两个 wiring.rs 的注册行 | 阶段 5 的档案停用引用计数在 service 模块上有计数 |
 
 ---
 
@@ -53,22 +57,24 @@
 | ep-domain-project | crates/domain/project | 领域 | ep-foundation、ep-contract-project | core-server、job-worker |
 | ep-app-project | crates/application/project | 应用 | ep-foundation、ep-platform-*、ep-domain-project、ep-contract-（project、clm、procure、mdm） | core-server、job-worker |
 
+ep-contract-service 对外只暴露 ReturnRepairTraceQuery 一个 trait。按裁定 B-06 撤销 EquipmentQuery，不建 crates/contract/service/src/port/equipment.rs，设备的跨模块可见性只保留三条路径，见 5.1 节末段。ep-contract-project 对外不暴露任何命令 trait，按裁定 C-19 撤销 ProjectTaskDerivationPort，合同派生一律由本阶段消费事件后自行派生。本阶段依赖的三个跨模块 trait 及其提供方固定为：ep_contract_clm::ContractDerivationPlanQuery（裁定 A-16，阶段 6 提供）、ep_contract_sales::SalesReturnCommandPort（裁定 A-17，阶段 6 提供）、ep_contract_procure::PurchaseRequisitionIntakePort（裁定 C-17，阶段 7 提供）。三者的名字与签名以裁定为准，本阶段不另立第二套命名，也不在本计划中复述其字段之外的推测。
+
 #### 2.2 改动的既有 crate
 
 | crate | 改动 |
 |---|---|
-| ep-contract-crm | 新增 customer360 模块：Customer360SectionKind、Customer360Item、Customer360SectionProvider trait |
+| ep-contract-crm | 扩充阶段 5 已建立的 crm 契约：在既有 Customer360SectionProvider 上追加 Customer360SectionKind 的 Complaints、Equipments、WorkOrders 三个取值与配套的 Customer360Item 字段，不新增 trait，不新增端点 |
 | ep-app-crm | 新增 usecase/query_customer_360.rs，做区块扇出、超时降级与合并 |
 | ep-adapter-db-pg | 新增 repository/service/ 与 repository/project/ 两个目录，各仓储只访问自己模块的 schema |
-| ep-adapter-search | 新增五类对象的检索文档投影结构，写入方仍为全文检索阶段的消费者 |
-| apps/core-server/src/wiring.rs | 注册两个模块的仓储与用例，注册三个客户 360 区块提供者 |
-| apps/job-worker/src/wiring.rs | 注册两个 Outbox 消费者与一个定时器回调 |
-| ep-testkit | 新增 EquipmentRecordBuilder、WorkOrderBuilder、ComplaintBuilder、ProjectBuilder、ProjectTaskBuilder、ContractDerivationPlanFake、SalesReturnPortFake |
+| ep-adapter-search | 五类对象的检索文档投影一律产出 foundation::port::search::SearchDocument，object_type 取表全名如 service.equipment_records，写入方仍为 job-worker 的索引消费者，该消费者与 ep-adapter-search 本体按裁定 A-07 由阶段 3b 交付 |
+| apps/core-server/src/wiring.rs | 注册两个模块的仓储与用例，注册三个客户 360 区块提供者，并把 ServiceReferenceCounter 注册进阶段 5 提供的 MasterReferenceCounterRegistry |
+| apps/job-worker/src/wiring.rs | 注册两个 Outbox 消费者 project.contract_derivation 与 service_return_repair_writeback、一个定时器回调，并把 ServiceReferenceCounter 注册进 MasterReferenceCounterRegistry |
+| ep-testkit | 新增 EquipmentRecordBuilder、WorkOrderBuilder、ComplaintBuilder、ProjectBuilder、ProjectTaskBuilder、ContractDerivationPlanFake、SalesReturnPortFake，后两者分别按裁定 A-16 与 A-17 冻结的签名实现 |
 | ep-datagen | 基准数据集追加设备 5000 台、工单 20000 张、投诉 5000 条、项目 200 个、项目任务 4000 条 |
 
 #### 2.3 进程归属
 
-- core-server：全部交互式命令与查询、客户 360 聚合、退换修登记行提交时对 sales 的同步契约调用。
+- core-server：全部交互式命令与查询、客户 360 聚合、退换修登记行提交时对 ep-contract-sales 已交付数量查询的同步调用；销售退货单的创建命令不在 core-server 发起，见 4.6。
 - job-worker：合同生效派生项目任务的消费者、销售退货单终态与作废事件的消费者、工单时限提醒定时器的回调执行、检索索引传播事件的发布方。
 - 本阶段不新增进程，不使用 integration-gateway、plugin-host、portal-gateway。本阶段对象不进入供应商门户的受控能力 API。
 
@@ -90,17 +96,18 @@ order.toml 中业务 schema 顺序已固定为 mdm、cpq、clm、sales、procure
 | 2 | db/migrations/project/V202611020905__project_create_project_tasks.sql | 建 project.project_tasks |
 | 3 | db/migrations/project/V202611020910__project_create_task_requisition_links.sql | 建 project.project_task_purchase_requisition_links |
 | 4 | db/migrations/project/V202611020915__project_create_attachment_links.sql | 建 project.project_attachments、project.project_task_attachments |
-| 5 | db/migrations/service/V202611021000__service_create_dictionaries.sql | 建 service.equipment_statuses、service.work_order_types、service.complaint_channels |
-| 6 | db/migrations/service/V202611021005__service_create_equipment_records.sql | 建 service.equipment_records |
-| 7 | db/migrations/service/V202611021010__service_create_customer_complaints.sql | 建 service.customer_complaints |
-| 8 | db/migrations/service/V202611021015__service_create_work_orders.sql | 建 service.work_orders |
-| 9 | db/migrations/service/V202611021020__service_create_work_order_lines.sql | 建 service.work_order_lines |
-| 10 | db/migrations/service/V202611021025__service_create_work_order_logs.sql | 建 service.work_order_logs |
-| 11 | db/migrations/service/V202611021030__service_create_reminder_policies.sql | 建 service.work_order_reminder_policies |
-| 12 | db/migrations/service/V202611021035__service_create_attachment_links.sql | 建四张附件关联表 |
-| 13 | db/migrations/service/V202611021040__service_backfill_seed_dictionaries.sql | 回填三张字典的出厂取值，按法人逐个写入 |
+| 5 | db/migrations/project/V202611020920__project_create_dataset_views.sql | 建 project.v_projects_dataset 并授予 ep_analyst_ro，按裁定 A-18 |
+| 6 | db/migrations/service/V202611021000__service_create_dictionaries.sql | 建 service.equipment_statuses、service.work_order_types、service.complaint_channels |
+| 7 | db/migrations/service/V202611021005__service_create_equipment_records.sql | 建 service.equipment_records |
+| 8 | db/migrations/service/V202611021010__service_create_customer_complaints.sql | 建 service.customer_complaints |
+| 9 | db/migrations/service/V202611021015__service_create_work_orders.sql | 建 service.work_orders |
+| 10 | db/migrations/service/V202611021020__service_create_work_order_lines.sql | 建 service.work_order_lines |
+| 11 | db/migrations/service/V202611021025__service_create_work_order_logs.sql | 建 service.work_order_logs |
+| 12 | db/migrations/service/V202611021030__service_create_reminder_policies.sql | 建 service.work_order_reminder_policies |
+| 13 | db/migrations/service/V202611021035__service_create_attachment_links.sql | 建四张附件关联表 |
+| 14 | db/migrations/service/V202611021040__service_backfill_seed_dictionaries.sql | 回填三张字典的出厂取值，按法人逐个写入，created_by 取 foundation::SYSTEM_PRINCIPAL_ID |
 
-每个文件头部带 `-- rollback:` 段。前十二个文件的回退为对应的 drop table 与 drop policy，属可安全逆向；第十三个回填文件的回退为按 code 删除出厂行，若该行已被业务数据引用则拒绝回退并注明只能用升级前备份回退。全部文件按基线第 3.9 节固定 `SET lock_timeout = '5s'` 与 `SET statement_timeout = '30min'`，全部索引用 CREATE INDEX CONCURRENTLY，因此建表与建索引拆在同一文件的两个语句块而不放在同一事务内，文件内显式声明不使用隐式事务包裹。
+每个文件头部带 `-- rollback:` 段。前十三个文件的回退为对应的 drop table、drop view 与 drop policy，属可安全逆向；第十四个回填文件的回退为按 code 删除出厂行，若该行已被业务数据引用则拒绝回退并注明只能用升级前备份回退。全部文件按基线第 3.9 节固定 `SET lock_timeout = '5s'` 与 `SET statement_timeout = '30min'`，全部索引用 CREATE INDEX CONCURRENTLY，因此建表与建索引拆在同一文件的两个语句块而不放在同一事务内，文件内显式声明不使用隐式事务包裹。
 
 #### 3.2 公共列与统一约束
 
@@ -122,7 +129,7 @@ project.projects（单据类）
 | name | text | 否 | 无 | 项目名称，长度 ≤ 200 |
 | customer_id | uuid | 是 | 无 | 逻辑引用 mdm 客户，无外键 |
 | source_contract_id | uuid | 是 | 无 | 来源合同，逻辑引用 clm |
-| project_group_contract_id | uuid | 是 | 无 | 合同续签链的根合同，派生去重键，取值来源见 4.6 |
+| project_group_contract_id | uuid | 是 | 无 | 合同续签链的根合同，用于定位项目，取值取自 ContractDerivationPlan 的 project_group_contract_id，见 4.7 |
 | owner_user_id | uuid | 否 | 无 | 项目负责人 |
 | planned_start_on | date | 是 | 无 | 计划开始日期 |
 | planned_finish_on | date | 是 | 无 | 计划完成日期 |
@@ -145,8 +152,8 @@ project.project_tasks（单据类）
 | source | text | 否 | 无 | CHECK 取值 CONTRACT_DERIVED、MANUAL |
 | source_contract_id | uuid | 是 | 无 | 来源合同 |
 | source_contract_version_no | integer | 是 | 无 | 来源合同版本号 |
-| source_template_task_key | text | 是 | 无 | 合同模板给出的稳定派生键，≤ 64 |
-| derivation_batch_no | text | 是 | 无 | 派生批次标识，≤ 64，只用于追溯 |
+| derivation_unique_key | text | 是 | 无 | 取值为 ep_contract_clm::ContractDerivationItem 的 unique_key，格式按裁定 A-16 为 <contract_id>:<contract_version_no>:<item_kind>:<source_contract_line_id 或 milestone_no>，≤ 200 |
+| derivation_batch_no | integer | 是 | 无 | 取值为 ContractDerivationPlan 的 derivation_batch_no，只用于追溯 |
 | assignee_user_id | uuid | 是 | 无 | 任务负责人 |
 | planned_start_on | date | 是 | 无 | — |
 | planned_finish_on | date | 是 | 无 | — |
@@ -154,8 +161,8 @@ project.project_tasks（单据类）
 | description | text | 是 | 无 | ≤ 2000 |
 | cancel_reason | text | 是 | 无 | ≤ 2000 |
 
-约束：ck_project_tasks_status；ck_project_tasks_source；ck_project_tasks_derived_fields 为 `source <> 'CONTRACT_DERIVED' or (source_contract_id is not null and source_template_task_key is not null)`；ck_project_tasks_plan_range；ck_project_tasks_finish_when_completed 为 `status <> 'COMPLETED' or actual_finish_on is not null`；ck_project_tasks_cancel_reason 为 `status <> 'CANCELLED' or cancel_reason is not null`。
-索引：pk_project_tasks；ux_project_tasks_legal_entity_id_doc_no；ix_project_tasks_legal_entity_id_created_at；ux_project_tasks_le_contract_source_key 建于 (legal_entity_id, source_contract_id, source_template_task_key)，是派生幂等的数据库侧兜底，手工任务三列中后两列为 NULL 因而互不冲突；ix_project_tasks_project_id_status；ix_project_tasks_legal_entity_id_assignee_user_id_planned_finish_on。索引名长度均在 63 字节内，超长时按第 13 节登记的收缩规则处理。
+约束：ck_project_tasks_status；ck_project_tasks_source；ck_project_tasks_derived_fields 为 `source <> 'CONTRACT_DERIVED' or (source_contract_id is not null and derivation_unique_key is not null)`；ck_project_tasks_derivation_unique_key_len 为 `derivation_unique_key is null or char_length(derivation_unique_key) between 1 and 200`；ck_project_tasks_plan_range；ck_project_tasks_finish_when_completed 为 `status <> 'COMPLETED' or actual_finish_on is not null`；ck_project_tasks_cancel_reason 为 `status <> 'CANCELLED' or cancel_reason is not null`。
+索引：pk_project_tasks；ux_project_tasks_legal_entity_id_doc_no；ix_project_tasks_legal_entity_id_created_at；ux_project_tasks_le_derivation_unique_key 建于 (legal_entity_id, derivation_unique_key)，是派生幂等的数据库侧兜底，手工任务该列为 NULL 因而互不冲突；ix_project_tasks_legal_entity_id_source_contract_id；ix_project_tasks_project_id_status；ix_project_tasks_legal_entity_id_assignee_user_id_planned_finish_on。索引名长度均在 63 字节内，超长时按第 13 节登记的收缩规则处理。
 
 project.project_task_purchase_requisition_links（关联表）
 
@@ -201,8 +208,8 @@ service.equipment_records（档案类）
 | product_id | uuid | 是 | 无 | 逻辑引用 mdm 产品 |
 | batch_no | text | 否 | '-' | 未启用批次时取 '-'，按基线第 11.4 节 |
 | sales_order_line_id | uuid | 是 | 无 | 逻辑引用 sales |
-| delivery_confirmation_id | uuid | 是 | 无 | 路径一写入，只读 |
-| delivery_confirmation_line_id | uuid | 是 | 无 | 路径一写入，建档去重用 |
+| delivery_confirmation_id | uuid | 是 | 无 | 路径一写入，只读，逻辑引用 sales.delivery_confirmations，该表按裁定 A-09 由阶段 6 建立 |
+| delivery_confirmation_line_id | uuid | 是 | 无 | 路径一写入，建档去重用，逻辑引用 sales.delivery_confirmation_lines |
 | delivered_on | date | 是 | 无 | 交付日期 |
 | installed_on | date | 是 | 无 | 安装日期 |
 | current_status_code | text | 否 | 无 | 引用本 schema 字典的 code，同 schema 但不建外键，理由见下 |
@@ -346,6 +353,10 @@ PRD 9.3.4 要求状态变更记录变更前后取值、操作者、时间与原�
 
 规格第 12.3 章把联系方式列为行内敏感字段。投诉与工单上的联系方式按字段级信封加密存储于 `contact_info_enc bytea`，密钥经 ep-adapter-kms 在该法人密钥域下取用，`contact_info_key_ref` 记录密钥标识与版本。该列不参与过滤、排序、聚合、唯一约束与全文检索，检索文档投影中该字段以掩码写入。日志、错误消息与指标标签中一律不出现该字段，Rust 侧用 foundation::Redacted 包装。含该字段的列表导出按规格第 12.1 章敏感数据导出执行重新认证与审批，由平台导出能力承担，本阶段只声明字段敏感标记与密级。
 
+#### 3.7 受治理数据集视图
+
+按裁定 A-18，本阶段发布一个受治理数据集视图 project.v_projects_dataset，dataset code 为 project_projects，grain 为 DOCUMENT，由 db/migrations/project/V202611020920__project_create_dataset_views.sql 建立。视图取数为 project.projects，必须包含 legal_entity_id、security_level、data_scope_tags 三列，另含 id、doc_no、status、name、customer_id、source_contract_id、project_group_contract_id、owner_user_id、planned_start_on、planned_finish_on、completed_at、closed_at、created_at。同一迁移内执行 GRANT SELECT ON project.v_projects_dataset TO ep_analyst_ro，不授予 ep_app_rw 之外的任何写权限。视图的列名与类型签名必须与 reporting.dataset_fields 的登记一致，由阶段 11 的启动自检项 reporting-dataset-signature-matched 校验；该目录行由阶段 11 先播种，在本视图发布之前该自检项按已登记但未发布降级放行，本阶段结束后转为强制。本阶段不为 service schema 发布任何数据集视图，售后侧对外取数仍走 5.1 至 5.3 的端点与全文检索文档。
+
 ---
 
 ### 4. 领域模型与关键算法
@@ -354,7 +365,7 @@ PRD 9.3.4 要求状态变更记录变更前后取值、操作者、时间与原�
 
 ep-domain-service 的 model 目录一个聚合一个文件：EquipmentRecord、CustomerComplaint、WorkOrder（含 WorkOrderLine 与 WorkOrderLog 两个内部实体）。value 目录：WarrantyWindow、WarrantyStatus、HandlingMethod、WorkOrderStatus、ComplaintStatus、LineStatus、EquipmentStatusCode、BatchNo、SerialNo。rule 目录：warranty.rs、line_quantity.rs、work_order_guard.rs。port 目录：EquipmentRepository、ComplaintRepository、WorkOrderRepository、EquipmentStatusDictionary。
 
-ep-domain-project：model 下 Project 与 ProjectTask；value 下 ProjectStatus、TaskStatus、TaskSource、DerivationKey；rule 下 derivation.rs、project_guard.rs；port 下 ProjectRepository、ProjectTaskRepository。
+ep-domain-project：model 下 Project 与 ProjectTask；value 下 ProjectStatus、TaskStatus、TaskSource、DerivationUniqueKey（包装裁定 A-16 的 unique_key 字符串并校验其四段格式）；rule 下 derivation.rs、project_guard.rs；port 下 ProjectRepository、ProjectTaskRepository。
 
 WorkOrder 聚合边界包含其登记行与处理记录，理由是工单完成与取消的守卫必须在同一聚合内读取全部登记行状态；跨聚合的只有设备与投诉两个引用。
 
@@ -407,31 +418,31 @@ WorkOrder 聚合边界包含其登记行与处理记录，理由是工单完成�
 该校验是前置校验。权威校验在 sales 创建销售退货单时再执行一次，理由是已交付数量归 sales 所有且本模块不能对其加锁；两次判定不一致时以 sales 的结论为准，本模块把登记行退回 PENDING 并返回 SERVICE.WORK_ORDER_LINE.SALES_RETURN_REJECTED。
 
 三类处理方式的挂接：
-- RETURN：登记行提交后发布 service.work_order_line.registered.v1，job-worker 消费该事件并经 ep-contract-sales 的 SalesReturnCommandPort 发起销售退货单创建，成功后回写 sales_return_id 与 sales_return_line_id 并把行置为 LINKED。一条登记行最多关联一张销售退货单行，按 U-J-10 暂按一对一。
+- RETURN：登记行提交后发布 service.work_order_line.registered.v1，job-worker 消费该事件并在其事务内调用 `ep_contract_sales::SalesReturnCommandPort::create_sales_return(tx, ctx, cmd)` 发起销售退货单创建，成功后回写 sales_return_id 与 sales_return_line_id 并把行置为 LINKED。命令入参 CreateSalesReturn 按裁定 A-17 填写：customer_id 与 sales_order_id 取工单与登记行上的取值，return_reason 取登记行的 reason_note，return_warehouse_id 留空（本阶段不定义仓库），posting_date 取消费时点的中国标准时间自然日，source_ref 取 SalesReturnSourceRef { source_module: ModuleCode::Service, source_doc_type: "WO", source_doc_id: 工单 id, source_doc_line_id: 登记行 id }，lines 每项的 sales_order_line_id、quantity、batch_no、serial_nos 取登记行取值；登记行关联的设备带有 delivery_confirmation_line_id 时按 DeliveryLinkAssignedBy::Manual 填一条 delivery_links，否则 delivery_links 传空数组由 sales 按 AutoFifo 指派。返回的 SalesReturnView 用于回写单据编号与状态。一条登记行最多关联一张销售退货单行，按 U-J-10 暂按一对一。
 - EXCHANGE：同时挂接一张销售退货单行与一张发货侧单据行。本阶段只做登记意图、挂接与回写三件事，不定义两张单据本身。是否强制配对见第 12 节 U-J-08。
 - REPAIR：只做登记，填写 repair_result_note 与 repair_finished_on 后由处理人直接从 PENDING 置为 COMPLETED，不关联外部单据，不改变设备当前状态，不产生备件与成本。
 
-登记行状态机守卫：PENDING → LINKED 需 sales_return_id 或 outbound_document_id 至少一项非空；LINKED → COMPLETED 只能由对方单据终态事件驱动，接口层不暴露人工置完成的入口（REPAIR 除外）；LINKED → PENDING 由对方单据作废或驳回事件驱动，并向处理人发站内通知；任一状态 → VOIDED 需填写 void_reason 且调用者具备售后主管角色。RETURN 与 EXCHANGE 在未挂接单据时不得置为 COMPLETED，由 ck_work_order_lines_complete_needs_doc 与领域守卫双重拦截。
+登记行状态机守卫：PENDING → LINKED 需 sales_return_id 或 outbound_document_id 至少一项非空；LINKED → COMPLETED 只能由对方单据终态事件驱动，接口层不暴露人工置完成的入口（REPAIR 除外）；LINKED → PENDING 由对方单据作废或驳回事件驱动，并向处理人发站内通知；任一状态 → VOIDED 需填写 void_reason 且调用者具备售后主管角色。驱动这三条迁移的事件按裁定 A-17 固定为三个：sales.sales_return.closed.v1 驱动 LINKED → COMPLETED，sales.sales_return.cancelled.v1 与 sales.sales_return.rejected.v1 驱动 LINKED → PENDING，三者均由阶段 6 发布；既有的 sales.sales_return.registered.v1 只用于确认建单成功。RETURN 与 EXCHANGE 在未挂接单据时不得置为 COMPLETED，由 ck_work_order_lines_complete_needs_doc 与领域守卫双重拦截。
 
 追溯三链路：从工单查全部登记行及其关联单据由本模块自身查询满足；从销售退货单反查来源工单与登记行由 ep-contract-service 的 ReturnRepairTraceQuery 提供，sales 侧详情调用该 trait；从设备档案查该设备涉及的全部工单与登记行由 ix_work_orders_legal_entity_id_equipment_record_id 与 ix_work_order_lines_legal_entity_id_equipment_record_id 支撑。
 
 #### 4.7 合同生效派生项目任务
 
-触发：job-worker 消费 clm 发布的合同生效事件。派生项的内容不放在事件载荷里，理由是基线第 6.1 节要求 payload 只放最小必要数据与引用 ID；本阶段在消费时经 ep-contract-clm 的 ContractDerivationPlanQuery 读取该合同该版本的项目任务派生项，派生项由合同模板决定，本阶段不解释合同条款，与 PRD 9.7.1 的“只接收派生结果”一致。该 trait 由 clm 提供，登记在 needs。
+触发：job-worker 消费 clm 发布的 clm.contract.effective.v1，消费者名按裁定 C-19 固定为 project.contract_derivation。派生项的内容不放在事件载荷里，理由是基线第 6.1 节要求 payload 只放最小必要数据与引用 ID；本阶段在消费时调用 `ep_contract_clm::ContractDerivationPlanQuery::derivation_plan(tx, ctx, contract_id, contract_version_no)` 读取该合同该版本的派生计划，派生项由合同模板决定，本阶段不解释合同条款，与 PRD 9.7.1 的“只接收派生结果”一致。该 trait 及其 DTO 按裁定 A-16 由阶段 6 提供且形状已冻结，本阶段不再把它登记为待确认事项；按裁定 C-19 撤销 ep_contract_project::ProjectTaskDerivationPort，clm 不同步派生项目任务。该方法接受事务句柄，因此在消费者事务内调用。
 
-派生项的最小字段：project_group_contract_id（合同续签链的根合同，用于定位项目）、derivation_batch_no、contract_version_no、items 数组，每项含 source_template_task_key、name、planned_start_on、planned_finish_on、default_assignee_user_id。
+派生计划的字段按裁定 A-16 固定：ContractDerivationPlan 含 contract_id、contract_version_no、derivation_batch_no、project_group_contract_id、items；ContractDerivationItem 含 item_kind、unique_key、source_contract_line_id、milestone_no、name、promised_date、quantity、owner_user_id。本阶段只消费 item_kind 为 ProjectTask 的项，DeliveryMilestone、PurchaseRequisitionLine、PaymentScheduleLine 三类整项忽略并计入日志；quantity 与 milestone_no 不落库，只用于日志与排障。
 
 算法（单事务）：
-1. 幂等前置：向 platform_msg.inbox_consumptions 插入 (consumer='project_contract_derivation', event_id)，唯一冲突即整批跳过并置 DONE。
-2. 定位项目：按 (legal_entity_id, project_group_contract_id) 查 project.projects，存在则复用，不存在则取号新建，状态 IN_PROGRESS，来源合同与客户由派生项带入。续签合同因共用根合同 id 而复用同一项目，与 PRD 9.7.6 的“新派生的任务与原任务同属一个项目”一致。
+1. 幂等前置：向 platform_msg.inbox_consumptions 插入 (consumer='project.contract_derivation', event_id)，唯一冲突即整批跳过并置 DONE。
+2. 定位项目：取派生计划的 project_group_contract_id，为空时退回取 contract_id，按 (legal_entity_id, 该取值) 查 project.projects，存在则复用，不存在则取号新建，状态 IN_PROGRESS，来源合同与客户由派生计划带入。续签合同因共用根合同 id 而复用同一项目，与 PRD 9.7.6 的“新派生的任务与原任务同属一个项目”一致。
 3. 数量守卫：items 长度超过配置上限时整批失败，返回 PROJECT.PROJECT_TASK.DERIVATION_LIMIT_EXCEEDED 并进入死信，理由是避免一次错误配置在单机上产生不可控写入量。
-4. 逐项 upsert：按 (legal_entity_id, source_contract_id, source_template_task_key) 查既有任务。不存在则插入，状态 NOT_STARTED，source 取 CONTRACT_DERIVED；存在且状态属于 {COMPLETED, CANCELLED} 则跳过并计入 skipped_terminal，不覆盖终态任务；存在且状态属于 {NOT_STARTED, IN_PROGRESS} 则更新 name、计划日期、contract_version_no 与 derivation_batch_no，row_version 加一。
+4. 逐项 upsert：按 (legal_entity_id, derivation_unique_key) 查既有任务，键取 ContractDerivationItem 的 unique_key。不存在则插入，状态 NOT_STARTED，source 取 CONTRACT_DERIVED，name 取 item 的 name，planned_finish_on 取 promised_date，planned_start_on 留空，assignee_user_id 取 owner_user_id；存在且状态属于 {COMPLETED, CANCELLED} 则跳过并计入 skipped_terminal，不覆盖终态任务；存在且状态属于 {NOT_STARTED, IN_PROGRESS} 则更新 name、planned_finish_on、assignee_user_id 与 derivation_batch_no，row_version 加一。
 5. 写审计与 Outbox：逐条写 project.project_task.derived.v1，整批写一条 project.project.created.v1（仅新建项目时）。
 6. 事务提交。
 
 失败处理：按基线第 6.2 节的八次退避重试，全部失败置 DEAD 并写死信，死信按 legal_entity_id 可枚举，人工修复后记名重投，取值按规格第 15.2 章。派生的项目任务不参与规格第 8 章第 3 步的价格权限、库存可用量、交期与信用额度校验，因此不存在待放行的项目任务，派生完成即为 NOT_STARTED。
 
-重复投递判定：同一 event_id 重复投递由 inbox_consumptions 拦截；不同 event_id 但同一合同同一模板键的重复派生由 ux_project_tasks_le_contract_source_key 与第 4 步的 upsert 分支拦截。两层合起来保证重复投递不产生重复任务、重复事件与重复审计记录。
+重复投递判定：同一 event_id 重复投递由 inbox_consumptions 拦截；不同 event_id 但同一 unique_key 的重复派生由 ux_project_tasks_le_derivation_unique_key 与第 4 步的 upsert 分支拦截。两层合起来保证重复投递不产生重复任务、重复事件与重复审计记录，对应退出条件中派生任务按唯一键不重复一条。裁定 A-16 的 unique_key 含 contract_version_no，因此合同变更产生新版本时同一模板项得到新键并按新键新建任务，旧版本的非终态任务不再出现在新计划中，按 U-J-13 保留原状并在项目详情中标注为来源已变更；同一版本内的重复派生仍走第 4 步的更新分支。
 
 #### 4.8 项目与任务状态机
 
@@ -440,11 +451,11 @@ WorkOrder 聚合边界包含其登记行与处理记录，理由是工单完成�
 
 #### 4.9 由项目任务提交采购需求
 
-在一个事务内加载任务 FOR UPDATE，校验任务状态属于 {NOT_STARTED, IN_PROGRESS} 且其项目状态不为 CLOSED，经 ep-contract-procure 的 PurchaseRequisitionCommandPort 之外的路径不直接写对方表；由于该调用是跨模块同步命令且需要在同一业务事务内建立双向引用，本阶段采用两段式：本事务内只插入 link 表占位行并发布 project.project_task.requisition_requested.v1，由 job-worker 消费后调用 procure 的命令端口创建采购需求，回写 purchase_requisition_id 与 doc_no。理由是基线第 10.3 节禁止在事务内做跨模块的写编排，且一个用例一个事务。占位行的 purchase_requisition_id 在回写前不可为空这一约束因此改为：占位阶段不写 link 行，改在回写阶段一次性写入，link 表的 purchase_requisition_id 保持非空。任务侧在回写前展示为提交中，取值来源为该任务上未完成的 requisition_requested 事件，由 Outbox 状态查询给出。
+在一个事务内加载任务 FOR UPDATE，校验任务状态属于 {NOT_STARTED, IN_PROGRESS} 且其项目状态不为 CLOSED，跨模块入口只有 `ep_contract_procure::PurchaseRequisitionIntakePort::intake(tx, ctx, cmd)` 一个，按裁定 C-17 该端口由阶段 7 提供，本阶段不直接写对方表，也不使用 PurchaseRequisitionDerivationPort 一类的旧名。由于该调用是跨模块同步命令且需要建立双向引用，本阶段采用两段式：本事务内只发布 project.project_task.requisition_requested.v1，由 job-worker 消费后调用该端口创建采购需求，回写 purchase_requisition_id 与 doc_no。入参 PurchaseRequisitionIntake 按裁定 C-17 填写：source_module 取 ModuleCode::Project，source_doc_id 取 project_id，source_doc_line_id 取 project_task_id，material_id、quantity、required_on 取任务上的申请取值，unique_key 取 `project.project_tasks:<project_task_id>:<本次提交的 Idempotency-Key>`，由 procure 侧据此保证不重复建单。理由是基线第 10.3 节禁止在事务内做跨模块的写编排，且一个用例一个事务。占位行的 purchase_requisition_id 在回写前不可为空这一约束因此改为：占位阶段不写 link 行，改在回写阶段一次性写入，link 表的 purchase_requisition_id 保持非空。任务侧在回写前展示为提交中，取值来源为该任务上未完成的 requisition_requested 事件，由 Outbox 状态查询给出。阶段 7 交付前，本阶段在两个 wiring.rs 注入 NoopPurchaseRequisitionIntakePort 并加注释 `// TODO(stage-7): replace with real impl`。
 
 #### 4.10 客户 360 聚合
 
-契约（ep-contract-crm）：
+契约（ep-contract-crm，按裁定 C-09 由阶段 5 建立，本阶段只追加三个 SectionKind 取值与三个提供者实现，不新增 trait）：
 
 ```
 pub enum Customer360SectionKind { Contracts, Receipts, Complaints, Equipments, WorkOrders }
@@ -468,7 +479,7 @@ pub struct Customer360Item {
 4. 每区块内按 occurred_on 降序、object_id 降序截断到 size 条，size 默认 20、上限 50。
 5. 全部区块的字段级裁剪与密级过滤由 ep-platform-authz 在提供者内部完成，聚合层不做二次裁剪，也不做跨区块排序，避免通过排序位次间接暴露无权数据，取值按规格第 7.9 章。
 
-本阶段实现 Complaints、Equipments、WorkOrders 三个提供者，位于 ep-app-service；Contracts 与 Receipts 由 clm 与 finance 实现，登记在 needs。三个自实现提供者的取数各命中一条索引：ix_customer_complaints_legal_entity_id_customer_id_complaint_on、ix_equipment_records_legal_entity_id_customer_id、ix_work_orders_legal_entity_id_customer_id_created_at。
+本阶段实现 Complaints、Equipments、WorkOrders 三个提供者，位于 ep-app-service，其中 EquipmentsSectionProvider 是设备在客户 360 中的唯一可见路径，按裁定 B-06 不经任何跨模块 trait；Contracts 与 Receipts 由 ep-app-clm 与 ep-app-finance 实现。端点与契约在阶段 5 已启用并只挂载 mdm 自己的区块，本阶段接管后追加上述三个区块，未注册的区块按 3 的规则返回 NOT_AVAILABLE。三个自实现提供者的取数各命中一条索引：ix_customer_complaints_legal_entity_id_customer_id_complaint_on、ix_equipment_records_legal_entity_id_customer_id、ix_work_orders_legal_entity_id_customer_id_created_at。
 
 #### 4.11 与账务和库存的边界
 
@@ -480,20 +491,24 @@ pub struct Customer360Item {
 
 全部端点遵循基线第 5 节：路径前缀 /api/v1，字段 snake_case，成功与失败封套固定，写请求必带 Idempotency-Key、Authorization、X-Legal-Entity-Id、X-Device-Id、X-Client，分页参数 page 与 page_size（默认 20、上限 200），排序 sort 白名单，过滤 filter[<field>]=<op>:<value>。本阶段无高风险操作，因此不要求 X-Reauth-Token；含联系方式的导出除外，其重新认证由平台导出能力承担。
 
+按裁定 A-20，本阶段每个用例在 crates/contract/service/src/capability.rs 与 crates/contract/project/src/capability.rs 中声明一对常量 `<USECASE_SCREAMING>_DOMAIN` 与 `<USECASE_SCREAMING>_ACTION`，售后侧的能力域一律取 `CapabilityDomain::ServiceWorkorderEquipment`，项目侧一律取 `CapabilityDomain::ProjectTaskMilestone`，动作类别取 `ActionClass` 的 Read、Write、Submit 之一，本阶段没有 Approve 与 Export 路由。客户 360 端点的一对常量随 `CapabilityDomain::CrmCustomer360` 由阶段 5 在 crates/contract/crm/src/capability.rs 中声明，本阶段不重复声明。两个枚举由阶段 1 在 ep-foundation 冻结，`xtask configdoc` 断言每个 HTTP 路由都能解析到一对常量，缺失即构建失败。
+
 #### 5.1 设备档案
 
 | 方法与路径 | 说明 | 主要请求字段 | 响应 | 主要错误码 | 权限 |
 |---|---|---|---|---|---|
-| GET /api/v1/service/equipment-records | 设备列表 | filter 支持 customer_id、product_id、model、current_status_code、warranty_status、delivered_on(between)；sort 白名单 created_at、code、delivered_on | data 为设备摘要数组，warranty_status 实时计算，meta 为分页 | — | service.equipment_record.read |
-| GET /api/v1/service/equipment-records/{id} | 设备详情 | — | 含实时在保状态、状态变更历史（取自审计）、附件清单 | PLATFORM.AUTHZ.NOT_FOUND_OR_DENIED | 同上 |
-| POST /api/v1/service/equipment-records | 手工新增 | model、customer_id、serial_no、product_id、batch_no、delivered_on、installed_on、current_status_code、保修四项、remark | 201 与设备详情 | SERVICE.EQUIPMENT_RECORD.WARRANTY_RANGE_INVALID、INSTALL_BEFORE_DELIVERY、DELIVERY_DATE_IN_FUTURE、STATUS_UNKNOWN | service.equipment_record.create |
-| POST /api/v1/service/equipment-records/actions/create-from-delivery-batch | 从交付确认单逐台建档 | delivery_confirmation_id、lines 数组（line_id、count、model、保修四项），单次上限 200 | data 为生成的设备数组与跳过清单 | VALIDATION 超限、SERVICE.EQUIPMENT_RECORD.* | service.equipment_record.create |
-| PATCH /api/v1/service/equipment-records/{id} | 修改非保修字段 | 允许 model、product_id、serial_no、installed_on、remark；row_version 必填 | 设备详情 | PLATFORM.CONCURRENCY.STALE_VERSION | service.equipment_record.update |
-| POST /api/v1/service/equipment-records/{id}/actions/change-status | 变更当前状态 | to_status_code、reason、row_version | 设备详情 | SERVICE.EQUIPMENT_RECORD.STATUS_UNKNOWN | service.equipment_record.change-status |
-| POST /api/v1/service/equipment-records/{id}/actions/update-warranty | 维护保修信息 | 保修四项、reason、row_version | 设备详情 | SERVICE.EQUIPMENT_RECORD.WARRANTY_EDIT_FORBIDDEN、WARRANTY_RANGE_INVALID | service.equipment_record.maintain-warranty，仅售后主管 |
-| GET /api/v1/service/equipment-records/{id}/work-orders | 按设备查工单与登记行 | 分页 | 工单摘要与登记行摘要 | — | service.work_order.read |
+| GET /api/v1/service/equipments | 设备列表 | filter 支持 customer_id、product_id、model、current_status_code、warranty_status、delivered_on(between)；sort 白名单 created_at、code、delivered_on | data 为设备摘要数组，warranty_status 实时计算，meta 为分页 | — | service.equipment_record.read |
+| GET /api/v1/service/equipments/{id} | 设备详情 | — | 含实时在保状态、状态变更历史（取自审计）、附件清单 | PLATFORM.AUTHZ.NOT_FOUND_OR_DENIED | 同上 |
+| POST /api/v1/service/equipments | 手工新增 | model、customer_id、serial_no、product_id、batch_no、delivered_on、installed_on、current_status_code、保修四项、remark | 201 与设备详情 | SERVICE.EQUIPMENT_RECORD.WARRANTY_RANGE_INVALID、INSTALL_BEFORE_DELIVERY、DELIVERY_DATE_IN_FUTURE、STATUS_UNKNOWN | service.equipment_record.create |
+| POST /api/v1/service/equipments/actions/create-from-delivery-batch | 从交付确认单逐台建档，delivery_confirmation_id 指向 sales.delivery_confirmations | delivery_confirmation_id、lines 数组（line_id、count、model、保修四项），单次上限 200 | data 为生成的设备数组与跳过清单 | VALIDATION 超限、SERVICE.EQUIPMENT_RECORD.* | service.equipment_record.create |
+| PATCH /api/v1/service/equipments/{id} | 修改非保修字段 | 允许 model、product_id、serial_no、installed_on、remark；row_version 必填 | 设备详情 | PLATFORM.CONCURRENCY.STALE_VERSION | service.equipment_record.update |
+| POST /api/v1/service/equipments/{id}/actions/change-status | 变更当前状态 | to_status_code、reason、row_version | 设备详情 | SERVICE.EQUIPMENT_RECORD.STATUS_UNKNOWN | service.equipment_record.change-status |
+| POST /api/v1/service/equipments/{id}/actions/update-warranty | 维护保修信息 | 保修四项、reason、row_version | 设备详情 | SERVICE.EQUIPMENT_RECORD.WARRANTY_EDIT_FORBIDDEN、WARRANTY_RANGE_INVALID | service.equipment_record.maintain-warranty，仅售后主管 |
+| GET /api/v1/service/equipments/{id}/work-orders | 按设备查工单与登记行 | 分页 | 工单摘要与登记行摘要 | — | service.work_order.read |
 
 序列号重复不阻断提交，重复时在 meta.warnings 中回带 SERVICE.EQUIPMENT_RECORD.SERIAL_NO_DUPLICATED 与已存在的设备编号。
+
+按裁定 B-06，设备的跨模块可见性只保留三条路径：本节的 GET /api/v1/service/equipments 与 /{id}、全文检索索引中 object_type 为 service.equipment_records 的文档、以及本阶段自实现的 EquipmentsSectionProvider。不提供 ep-contract-service::EquipmentQuery，报表侧的设备取数一律经受治理数据集视图，低代码的设备引用经上述 HTTP 端点解析。
 
 #### 5.2 客户投诉
 
@@ -556,7 +571,7 @@ pub struct Customer360Item {
 
 #### 5.5 客户 360
 
-GET /api/v1/crm/customers/{id}/customer-360
+GET /api/v1/crm/customers/{id}/customer-360，该路径按裁定 C-09 在阶段 5 已启用，本阶段不新增路径
 
 查询参数：sections（可选，逗号分隔的区块名，默认全部五个）、section_size（默认 20，上限 50）。
 响应 data 结构：
@@ -583,7 +598,7 @@ section_status 取值为 OK、DEGRADED、NOT_AVAILABLE 三种。权限为 crm.cu
 
 #### 6.1 事务边界
 
-全部写用例按基线第 10.3 节的工作单元闭包表达，一个用例一个事务，隔离级别 READ COMMITTED，业务事务不超过 5 秒，读写池 statement_timeout 10 秒、lock_timeout 3 秒。事务内一律不做外部 HTTP 调用、不读写附件正文、不发通知、不等待用户输入。跨模块的同步查询（如取已交付数量、校验客户一致）在事务开始前完成并把结果作为入参传入闭包，理由是这些调用虽在同进程内但仍是跨模块调用，放在事务内会拉长事务并把对方模块的锁等待引入本事务。
+全部写用例按基线第 10.3 节的工作单元闭包表达，入口为 `UnitOfWork::transact(ctx, |tx| …)`，一个用例一个事务，隔离级别 READ COMMITTED，业务事务不超过 5 秒，读写池 statement_timeout 10 秒、lock_timeout 3 秒。事务内一律不做外部 HTTP 调用、不读写附件正文、不发通知、不等待用户输入。跨模块的只读同步查询（如取已交付数量、校验客户一致）在事务开始前完成并把结果作为入参传入闭包，理由是这些调用虽在同进程内但仍是跨模块调用，放在事务内会拉长事务并把对方模块的锁等待引入本事务。例外是按裁定 A-16、A-17、C-17 冻结签名中带 `&mut dyn Tx` 的三个调用 ContractDerivationPlanQuery::derivation_plan、SalesReturnCommandPort::create_sales_return 与 PurchaseRequisitionIntakePort::intake，三者按签名必须在调用方事务内执行，且三者都只出现在 job-worker 的消费者事务里，不出现在 core-server 的交互式用例里，事务句柄类型为 ep_foundation::port::Tx。
 
 一个事务内写入的内容固定为三类并集：业务状态、审计事件、Outbox 条目。三者同事务是规格第 8 章事务边界与基线第 6.2 节的硬要求。
 
@@ -598,12 +613,12 @@ section_status 取值为 OK、DEGRADED、NOT_AVAILABLE 三种。权限为 crm.cu
 #### 6.3 幂等
 
 - HTTP 写请求：四元组幂等键，存 platform_msg.idempotency_keys，与业务写入同事务，保留 7 天。重放返回首次结果并带 Idempotent-Replay: true；键相同而 request_hash 不同返回 409 与 PLATFORM.IDEMPOTENCY.PAYLOAD_MISMATCH。
-- 事件消费：两个消费者各自使用 platform_msg.inbox_consumptions 的 (consumer, event_id) 唯一约束，消费副作用与该行插入同事务。消费者名固定为 project_contract_derivation 与 service_return_repair_writeback。
-- 业务层兜底：项目任务按 (legal_entity_id, source_contract_id, source_template_task_key) 唯一；投诉升级按 (legal_entity_id, source_complaint_id) 唯一；采购需求引用按 (legal_entity_id, purchase_requisition_id) 唯一。三者使幂等不只依赖消息层。
+- 事件消费：两个消费者各自使用 platform_msg.inbox_consumptions 的 (consumer, event_id) 唯一约束，消费副作用与该行插入同事务。消费者名固定为 project.contract_derivation（按裁定 C-19）与 service_return_repair_writeback，后者消费裁定 A-17 冻结的三个销售退货终态事件。
+- 业务层兜底：项目任务按 (legal_entity_id, derivation_unique_key) 唯一；投诉升级按 (legal_entity_id, source_complaint_id) 唯一；采购需求引用按 (legal_entity_id, purchase_requisition_id) 唯一。三者使幂等不只依赖消息层。
 
 #### 6.4 与 Outbox 的关系
 
-本阶段发布的全部事件走 platform_msg.outbox_events，信封字段按基线第 6.1 节完整填写。本阶段的事件不承载会计语义，因此 posting_date 与 accounting_period_id 两个信封字段一律置空，且本阶段的事件不计入关账受理前提中的待消费过账条目数。这一点需在事件目录中对本阶段的 25 个事件逐条标注为非过账事件，避免关账受理判定把它们计入。
+本阶段发布的全部事件走 platform_msg.outbox_events，信封字段按基线第 6.1 节完整填写。本阶段的事件不承载会计语义，因此 posting_date 与 accounting_period_id 两个信封字段一律置空，且本阶段不向 ledger.posting_trigger_event_types 登记任何行。按裁定 C-28 的受理前提二判定语句，posting_date 为空且不命中该注册表的事件一律不计入待消费过账条目数，本阶段的事件因此两条都不满足计入条件。这一点需在事件目录中对本阶段的 25 个事件逐条标注为非过账事件，避免关账受理判定把它们计入。
 
 取件、批量 100、轮询 200 毫秒、退避 8 档、死信与重投一律沿用基线，不另建机制。
 
@@ -624,7 +639,7 @@ section_status 取值为 OK、DEGRADED、NOT_AVAILABLE 三种。权限为 crm.cu
 
 ### 7. 配置项
 
-全部键按基线第 7.1 节前缀 EP__、双下划线分层，结构体开启 deny_unknown_fields。运行期可变的业务参数不进配置文件，因此工单提醒阈值、三张字典的取值、列表默认列均落在数据库并经配置发布通道发布。
+全部键按基线第 7.1 节前缀 EP__、双下划线分层，结构体开启 deny_unknown_fields。运行期可变的业务参数不进配置文件，因此工单提醒阈值、三张字典的取值、列表默认列均落在数据库并经配置发布通道发布。该通道按裁定 A-27 由阶段 3b 提供，本阶段只作为使用方接入，不自建第二套发布路径。
 
 | 键 | 类型 | 默认值 | 生效方式 | 说明 |
 |---|---|---|---|---|
@@ -639,7 +654,7 @@ section_status 取值为 OK、DEGRADED、NOT_AVAILABLE 三种。权限为 crm.cu
 | EP__CRM__CUSTOMER_360__SECTION_TIMEOUT_MS | u32 | 1500 | 启动时读取 | 单区块超时，超时即 DEGRADED |
 | EP__CRM__CUSTOMER_360__PROVIDER_CONCURRENCY | u8 | 5 | 启动时读取 | 区块扇出并发上限，不超过只读分析池上限 10 的一半 |
 
-本阶段不引入新的机密引用，不改动机密库结构。本阶段在启动自检中不新增检查项；第 4 项（全部带法人列的表已 ENABLE 且 FORCE 行级安全）自然覆盖本阶段新增的 18 张表。
+本阶段不引入新的机密引用，不改动机密库结构。本阶段在启动自检中不新增检查项；按裁定 C-25 自检项一律按注册名标识，基线项 rls-enabled-and-forced 自然覆盖本阶段新增的 18 张表。
 
 ---
 
@@ -673,16 +688,17 @@ section_status 取值为 OK、DEGRADED、NOT_AVAILABLE 三种。权限为 crm.cu
 6. 投诉升级：成功一次；同一投诉第二次升级返回 409 并回带既有工单编号。
 7. 工单三个创建入口产生的对象与状态机一致（同一断言集跑三遍）。
 8. 关联一致性七条校验逐条命中：法人不一致、对象不可见、客户不一致、设备带出、订单行带出、终止状态、允许为空。
-9. 登记行三类处理方式：退货生成销售退货单（sales 端口用 ep-testkit 的 Fake 与 wiremock 双实现各跑一遍）、换货挂两张单据、维修直接完成。
-10. 回写：销售退货单终态事件驱动登记行到 COMPLETED；作废事件驱动退回 PENDING 并发通知；乱序与迟到事件的状态收敛。
+9. 登记行三类处理方式：退货经 SalesReturnCommandPort::create_sales_return 生成销售退货单（端口用 ep-testkit 的 SalesReturnPortFake 与 wiremock 双实现各跑一遍，两者均按裁定 A-17 的签名实现）、换货挂两张单据、维修直接完成。
+10. 回写：sales.sales_return.closed.v1 驱动登记行到 COMPLETED；sales.sales_return.cancelled.v1 与 sales.sales_return.rejected.v1 驱动退回 PENDING 并发通知；三个事件的乱序与迟到各一条状态收敛用例。
 11. 工单完成守卫：存在 PENDING 行时被拒并回带清单；全部行终态后通过。工单取消守卫同理。
-12. 派生：一次合同生效派生出 N 条任务与 1 个项目；同一事件重复投递 5 次仅一套任务、一套事件、一套审计记录；合同变更重新派生时终态任务被跳过、非终态任务被更新；续签合同复用同一项目。
+12. 派生：一次合同生效派生出 N 条任务与 1 个项目；同一事件重复投递 5 次仅一套任务、一套事件、一套审计记录；同一合同版本内重复派生时终态任务被跳过、非终态任务被更新；合同变更产生新版本时按新的 unique_key 建新任务而旧版本的非终态任务保持原状并标注为来源已变更；派生计划中 item_kind 非 ProjectTask 的项被整项忽略；续签合同复用同一项目。
 13. 派生失败：派生项查询持续失败，八次退避后进死信，死信按法人可枚举，重投成功后任务正确。
-14. 项目任务提交采购需求：回写建立双向引用；同一采购需求重复回写被唯一约束拦截。
+14. 项目任务提交采购需求：经 PurchaseRequisitionIntakePort::intake 回写建立双向引用；同一 unique_key 重复提交在 procure 侧不重复建单；同一采购需求重复回写被唯一约束拦截；阶段 7 交付前该用例跑 NoopPurchaseRequisitionIntakePort 分支并断言任务停留在提交中。
 15. 客户 360：三个自实现区块返回正确数据；未注册的合同与回款区块返回 NOT_AVAILABLE；人为注入超时的区块返回 DEGRADED 且其余区块正常。
 16. 处理记录只追加：追加成功、UPDATE 与 DELETE 语句在 CI 静态检查中被拦截、更正说明经 reverses_id 关联。
 17. 附件关联：四张附件表的挂接与解除挂接、附件正文不落业务表列。
 18. 字段级加密：联系方式写入为密文、按该字段过滤与排序的请求返回 VALIDATION、日志与错误响应中不出现明文。
+19. 受治理数据集视图：project.v_projects_dataset 存在且含 legal_entity_id、security_level、data_scope_tags 三列；ep_analyst_ro 可 SELECT 而任何写语句被拒；视图列名与类型签名与 reporting.dataset_fields 的登记逐列一致。
 
 RLS 与越权：本阶段 18 张表全部纳入 tests/rls_matrix，覆盖读取、写入、更新、删除、聚合、排序、报表投影与错误信息泄漏八类；另覆盖两个复制角色与内部对账系统安全上下文的入口借用测试。该测试目标属发布门禁项。
 
@@ -693,7 +709,7 @@ RLS 与越权：本阶段 18 张表全部纳入 tests/rls_matrix，覆盖读取�
 - E2E-01 闭环第 12 步：售后技术支持记录形成工单，关联原订单、合同、产品、批次、设备与保修并读取在保状态，工单与投诉进入客户 360 视图。这条用例是规格第 8 章闭环的第 12 步，必须在同一条合同的闭环用例内串接执行。
 - E2E-02 退换修打通：一条退货登记行生成销售退货单，退货单到终态后登记行回写为已完成；一条换货登记行挂接退货侧与发货侧两张单据；工单、销售退货单与设备档案三处追溯链路双向可达。
 - E2E-03 派生幂等：合同生效派生项目任务，重复投递不产生重复任务；派生失败进死信并可人工修复。
-- E2E-04 四端：售后工单与设备台账能力域在 Windows、macOS、iOS、Android 四端按完整取值执行同一场景集（Playwright 驱动桌面 WebView 与 tauri-driver 驱动壳，XCUITest 与 Espresso 驱动移动端）；项目任务与交付节点能力域桌面两端完整、移动两端简化；移动端相机扫码录入序列号与批次可用。
+- E2E-04 四端：售后工单与设备台账能力域在 Windows、macOS、iOS、Android 四端按完整取值执行同一场景集（Playwright 驱动桌面 WebView 与 tauri-driver 驱动壳，XCUITest 与 Espresso 驱动移动端）；项目任务与交付节点能力域桌面两端完整、移动两端简化；移动端相机扫码录入序列号与批次可用。界面代码按裁定 A-23 位于 clients/desktop/src/modules/service/、clients/desktop/src/modules/project/ 与 clients/mobile/src/modules/ 下的同名目录，客户 360 视图并入阶段 5 已建立的 crm 模块目录，均由本阶段交付；阶段 13 只提供客户端壳、路由注册表与能力矩阵闸，不交付本阶段的业务界面。
 - E2E-05 时限提醒：待受理停留超阈值向售后主管送达站内通知；期望完成时间临近与超出向处理人与售后主管送达；无移动推送通道的部署下站内通知照常送达。
 - E2E-06 客户 360：销售角色查询该客户的历史合同、回款、投诉、设备与服务记录；无权客户返回 404。
 
@@ -729,10 +745,10 @@ RLS 与越权：本阶段 18 张表全部纳入 tests/rls_matrix，覆盖读取�
 
 ### 9. 退出条件
 
-下列 18 项全部达成才算本阶段完成，每项均可客观判定。
+下列 22 项全部达成才算本阶段完成，每项均可客观判定。
 
 1. 18 张表的迁移在空库上顺序执行成功，回退段可执行，refinery 历史表记录完整。
-2. 18 张表全部 ENABLE 且 FORCE 行级安全，策略名与模板一致；启动自检第 4 项通过。
+2. 18 张表全部 ENABLE 且 FORCE 行级安全，策略名与模板一致；启动自检项 rls-enabled-and-forced 通过。
 3. tests/rls_matrix 中本阶段 18 张表的八类越权用例全绿，无内容回显、无排序与聚合侧信道。
 4. 40 个 HTTP 端点全部具备集成测试且全绿，封套、分页、排序白名单、过滤运算符、幂等头四项由统一的契约测试断言。
 5. 25 个事件在 docs/event-catalog.md 登记，命名为四段过去分词形式，信封字段完整，并逐条标注为非过账事件。
@@ -741,7 +757,7 @@ RLS 与越权：本阶段 18 张表全部纳入 tests/rls_matrix，覆盖读取�
 8. 工单六状态、投诉四状态、登记行四状态、任务四状态、项目三状态的全部迁移组合有单元测试断言，非法迁移一律 409。
 9. 在保状态判定的四取值与六个边界有测试，且属性测试通过。
 10. 投诉最多升级一次由数据库唯一索引保证，并有并发用例证明恰好一个成功。
-11. 派生幂等：同一事件重复投递 5 次只产生一套任务、事件与审计；终态任务不被覆盖；续签复用同一项目。
+11. 派生幂等：同一事件重复投递 5 次只产生一套任务、事件与审计；派生任务按裁定 A-16 的 unique_key 不重复；终态任务不被覆盖；续签复用同一项目。
 12. 派生失败进入死信并可记名重投，死信按法人可枚举。
 13. 三条追溯链路双向可达的 E2E 用例全绿。
 14. 闭环第 12 步在整条合同闭环用例内可执行且通过。
@@ -749,6 +765,10 @@ RLS 与越权：本阶段 18 张表全部纳入 tests/rls_matrix，覆盖读取�
 16. 四端 E2E 按规格第 6.2 章矩阵取值通过：售后工单与设备台账四端完整，项目任务与交付节点桌面完整、移动简化，移动端扫码可用。
 17. 覆盖率达到 8.6 节的五档门槛。
 18. 本阶段新增决定（第 13 节）已回写共享技术基线，未决事项（第 12 节）的临时取值已在代码中集中于一处常量或一张字典表，切换代价可核对。
+19. 本模块在规格第 6.2 章能力矩阵中取值为完整或简化的能力域，其四端界面已实现并通过 Playwright 与 tauri-driver 的桌面用例、XCUITest 与 Espresso 的移动用例；取值为 VIEW_ONLY 的能力域只实现只读视图；取值为 NOT_APPLICABLE 的不实现入口。
+20. project.v_projects_dataset 已发布并授予 ep_analyst_ro，dataset code 为 project_projects，列签名已同步给阶段 11，阶段 11 的启动自检项 reporting-dataset-signature-matched 对该视图由已登记但未发布的降级放行转为强制。
+21. 本阶段全部路由的能力域码与动作类别常量已声明，xtask configdoc 通过。
+22. 本模块的 MasterReferenceCounter 实现 ServiceReferenceCounter 已实现并注册进阶段 5 提供的 MasterReferenceCounterRegistry；按裁定 A-15 的实现清单，本阶段不承担任何 TradeHistoryProvider。
 
 ---
 
@@ -799,7 +819,7 @@ RLS 与越权：本阶段 18 张表全部纳入 tests/rls_matrix，覆盖读取�
 | 9.3.3 | 在保状态判定与两个读取时点 | 4.2 |
 | 9.3.4 | 当前状态的语义约束与终止状态确认 | 字典的 is_terminal 与 4.5 第 6 条 |
 | 9.3.5 | 保修信息维护 | update-warranty 端点，限售后主管，不回溯 |
-| 9.3.6 | 三个读取方 | 工单创建、客户 360、全文检索 |
+| 9.3.6 | 三个读取方 | 按裁定 B-06 只保留三条路径：GET /api/v1/service/equipments 与 /{id}、全文检索索引中 object_type 为 service.equipment_records 的文档、本阶段自实现的 EquipmentsSectionProvider；不设 ep-contract-service::EquipmentQuery |
 | 9.4.1–9.4.3 | 投诉入口、字段、状态机 | 5.2 与状态机表 |
 | 9.4.4 | 投诉与工单的关系 | 4.3 |
 | 9.5.1–9.5.4 | 工单入口、字段、校验、状态机 | 4.4、4.5、5.3 |
@@ -822,9 +842,9 @@ RLS 与越权：本阶段 18 张表全部纳入 tests/rls_matrix，覆盖读取�
 
 | 编号 | 风险 | 影响 | 缓解 |
 |---|---|---|---|
-| R-01 | sales 的销售退货单命令端口与终态事件未就绪，本阶段的退换修打通无法端到端验证 | E2E-02 与退出条件第 13 项阻塞 | 用 ep-testkit 的 SalesReturnPortFake 与事件夹具先行验证本侧全部分支；契约就绪后只替换装配，不改用例；把该依赖列入 needs 并在阶段计划评审时确认交付时点 |
-| R-02 | clm 的 ContractDerivationPlanQuery 形态与本阶段假设不一致（例如把任务清单放在事件载荷里） | 4.7 的算法需返工 | 派生项读取封装在一个 trait 与一个适配函数内，形态变化只改该处；已把接口形状写入 needs 供整合员核对 |
-| R-03 | 客户 360 的归属未定（U-C-04），可能被整合员移到主数据与 CRM 节 | 端点路径与 crate 归属变动 | 聚合逻辑与提供者契约分离，聚合用例在 ep-app-crm，移动归属只改路由与文档，不改契约 |
+| R-01 | sales 的销售退货单命令端口与终态事件交付晚于本阶段的联调窗口 | E2E-02 与退出条件第 13 项延后 | 接口按裁定 A-17 已冻结，testkit 的 SalesReturnPortFake 按该签名实现，三个终态事件用事件夹具先行验证本侧全部分支；契约就绪后只替换装配，不改用例；调整后的顺序中阶段 6 排在阶段 12 之前，不再存在接口形状未定的风险 |
+| R-02 | 派生计划的 unique_key 含 contract_version_no，合同变更后同一模板项得到新键 | 跨版本重新派生退化为新建任务，PRD 9.7.6 的更新语义只在同版本内成立 | 接口形状按裁定 A-16 已冻结，本阶段照此实现并把跨版本处置对齐 U-J-13：旧版本非终态任务保留并标注来源已变更；该退化已在 4.7 重复投递判定一段写明，留待人工复核键格式 |
+| R-03 | 客户 360 的区块注册顺序依赖阶段 5 已建立的契约与端点 | 区块缺位时用户看到 NOT_AVAILABLE | 归属按裁定 C-09 已定死：唯一端点与唯一契约由阶段 5 建立，本阶段只追加三个区块实现，不新增路径；未注册区块显式返回 NOT_AVAILABLE 而非报错 |
 | R-04 | 设备序列号唯一性未定（U-J-03），存量数据可能出现重复 | 决策落地后需去重再加唯一索引 | 现在即记录重复提示与被提示的设备对，落在审计中，决策后可据此批量核对 |
 | R-05 | 三张字典的取值集合未定（U-A-07、U-J-01、U-J-05），出厂取值可能与客户口径不符 | 统计与下钻维度不稳定 | 字典化而非 CHECK 枚举，改取值不触发 DDL；已引用的取值只允许停用不允许删除 |
 | R-06 | 客户 360 在 20 并发下扇出五个区块，可能击穿常规交互 2 秒通过线 | 附录 A 判定不过 | 区块并发上限与单区块超时可配；三个自实现区块各命中一条索引；必要时把 section_size 默认下调到 10，代价是一次配置变更 |
@@ -862,18 +882,18 @@ RLS 与越权：本阶段 18 张表全部纳入 tests/rls_matrix，覆盖读取�
 | U-J-09 维修完成确认方与附件 | 不阻塞 | 由处理人确认，不强制附件 | 若改为强制附件，加一条守卫与一条测试 |
 | U-J-10 登记行与退货单行基数 | 不阻塞 | 一对一 | 改为一对多需把两个引用列迁到关联表，属结构变更需停机窗口 |
 | U-J-11 任务与交付节点引用 | 不阻塞 | 不建立引用 | 见 11.2 |
-| U-J-12 派生任务负责人默认值 | 不阻塞 | 取派生项中的 default_assignee_user_id，为空即留空 | 若改为取合同负责人或项目负责人，只改 4.7 第 4 步的一处赋值 |
-| U-J-13 变更导致任务不再需要的处置 | 不阻塞 | 保留既有任务，不自动作废；派生项中不再出现的模板键对应的非终态任务保持原状并在项目详情中标注为来源已变更 | 若改为自动作废，加一个派生分支与一条事件，需补审计与通知 |
+| U-J-12 派生任务负责人默认值 | 不阻塞 | 取派生项中的 owner_user_id，字段名按裁定 A-16 冻结，为空即留空 | 若改为取合同负责人或项目负责人，只改 4.7 第 4 步的一处赋值 |
+| U-J-13 变更导致任务不再需要的处置 | 不阻塞 | 保留既有任务，不自动作废；派生计划中不再出现的 unique_key 对应的非终态任务保持原状并在项目详情中标注为来源已变更，合同升版后旧版本键必然不再出现，因而该分支是常态而非例外 | 若改为自动作废，加一个派生分支与一条事件，需补审计与通知 |
 | U-J-14 项目存在未终态任务时能否完成或关闭 | 不阻塞 | 阻断，守卫 P1 | 若改为允许，去掉守卫 P1 与两条测试 |
 | U-J-15 客户 360 区块条数与排序 | 不阻塞 | 每区块 20 条，按业务日期降序、对象 ID 降序 | 改默认配置值，无代码改动 |
 | U-J-16 设备是否纳入首批历史导入 | 不阻塞 | 纳入，source=MIGRATION 与 migration_batch_no 已就位；迁移对账项按规格第 7.10 章为条数与关系一致，不涉及金额与数量 | 若不纳入，关闭迁移接口即可 |
-| U-A-01 编号规则 | 不阻塞 | 按基线第 11.1 节，类型码 EQ、CPL、WO、PRJ、PT | 类型码变更只改常量与一次存量数据说明 |
+| U-A-01 编号规则 | 不阻塞 | 按基线第 11.1 节，类型码 EQ、CPL、WO、PRJ、PT，五个码按裁定 C-26 登记在 docs/data-dictionary.md 的单据类型码一节，并与 ep-platform-sequence 的常量表逐项一致，由 xtask configdoc --check-doc-type-codes 校验唯一 | 类型码变更需同改常量、数据字典一行与一次存量数据说明 |
 | U-A-03 文本长度 | 不阻塞 | 按基线第 11.2 节 | 放宽长度属在线变更，改 CHECK 即可 |
 | U-A-05 列表默认值 | 不阻塞 | 按基线第 11.5 节 | 无 |
 | U-A-11 提醒提前量 | 不阻塞 | 同 U-J-06 | 同上 |
 | U-A-15 附件上限 | 阻塞一项校验 | 本阶段不在业务侧设附件数量上限，由平台附件能力统一判定；决策前工单附件不设条数校验 | 决策后在平台侧加校验，本阶段不改 |
 | U-B-08 项目与客户维度授予粒度 | 不阻塞 | 本阶段只负责供给 data_scope_tags（project:<项目编号>、customer:<客户编码>），判定与叠加方式归权限模块 | 若标签形态变更，改一处标签生成函数 |
-| U-C-04 客户 360 归属 | 不阻塞 | 归 crm 模块，端点在 /api/v1/crm | 见 R-03 |
+| U-C-04 客户 360 归属 | 已关闭 | 按裁定 C-09 归 crm 模块，唯一端点 GET /api/v1/crm/customers/{id}/customer-360 与唯一契约 Customer360SectionProvider 由阶段 5 建立，本阶段扩充，CustomerPanelProvider 作废 | 无，归属已定死 |
 
 ---
 
@@ -896,10 +916,10 @@ RLS 与越权：本阶段 18 张表全部纳入 tests/rls_matrix，覆盖读取�
 
 下列七条是规格与 PRD 未定义而实现必须知道的事项，显式标注为假设并给出理由，不静默假定。
 
-- A-01 合同派生项的读取方式：假设 clm 提供 ContractDerivationPlanQuery，本阶段在消费合同生效事件后读取派生项，而不是从事件载荷中取任务清单。理由是基线第 6.1 节要求 payload 只放最小必要数据与引用 ID，把一份可能上百条的任务清单塞进事件载荷会使 Outbox 行体积不可控；PRD 9.7.1 的“只接收派生结果”指本阶段不解释合同条款，与读取方式无关。
-- A-02 项目与合同的对应关系：假设派生项携带 project_group_contract_id 即合同续签链的根合同标识，本阶段按该标识定位项目，使续签派生的任务与原任务落在同一项目。理由是 PRD 9.7.6 明确要求新派生任务与原任务同属一个项目，而续签会产生新的合同标识，只按 source_contract_id 定位无法满足该要求。
+- A-01 合同派生项的读取方式：该假设已由裁定 A-16 确认并冻结，clm 提供 ContractDerivationPlanQuery，本阶段在消费合同生效事件后读取派生计划，而不是从事件载荷中取任务清单。理由是基线第 6.1 节要求 payload 只放最小必要数据与引用 ID，把一份可能上百条的任务清单塞进事件载荷会使 Outbox 行体积不可控；PRD 9.7.1 的“只接收派生结果”指本阶段不解释合同条款，与读取方式无关。
+- A-02 项目与合同的对应关系：该假设已由裁定 A-16 确认，ContractDerivationPlan 携带 project_group_contract_id 即合同续签链的根合同标识，本阶段按该标识定位项目，该字段可空时退回取 contract_id，使续签派生的任务与原任务落在同一项目。理由是 PRD 9.7.6 明确要求新派生任务与原任务同属一个项目，而续签会产生新的合同标识，只按 contract_id 定位无法满足该要求。
 - A-03 客户 360 的实现形态：假设采用区块提供者扇出的实时查询而非物化投影。理由是首版不使用物化视图（基线第 3.2 节），且规格第 7.9 章对派生存储有 15 分钟传播窗口与安全继承要求，实时查询可避免引入第三处需要传播与越权测试的数据副本。
 - A-04 客户 360 的性能度量归属：假设按附录 A.1 末段“后续新增场景只增加度量项，不改变通过线”的规则，新增一个常规交互度量项，通过线沿用规格第 16 章常规交互 P95 2 秒。理由是附录 A.1 未单列该场景，而规格第 8 章第 12 步把它列为闭环验收内容，必须有可判定的时延口径。
 - A-05 设备档案的停用路径：假设首版不提供设备档案停用入口，is_active 恒为 true，deactivated_at 恒为空，两列按基线第 4 节档案类要求保留以便后续开通。理由是 PRD 9.3 只定义了设备当前状态（含终止状态），未定义档案层面的停用，两套语义并存会产生第三态并使工单可选设备的判据出现歧义。
-- A-06 项目任务提交采购需求的两段式：假设采用“本事务只发事件、由 job-worker 调用采购命令端口后回写引用”的两段式，而非在同一事务内同步调用。理由是基线第 10.3 节禁止事务内的跨模块写编排且要求一个用例一个事务，规格第 8 章事务边界要求跨领域流程使用 Outbox 与持久化工作流。
+- A-06 项目任务提交采购需求的两段式：假设采用“本事务只发事件、由 job-worker 调用 ep_contract_procure::PurchaseRequisitionIntakePort::intake 后回写引用”的两段式，而非在同一事务内同步调用。端口名按裁定 C-17 已冻结，两段式本身仍是本阶段的假设。理由是基线第 10.3 节禁止事务内的跨模块写编排且要求一个用例一个事务，规格第 8 章事务边界要求跨领域流程使用 Outbox 与持久化工作流。
 - A-07 处理记录不设行号：假设处理记录按 created_at 与 UUIDv7 的 id 给出稳定全序，不设独立行号列。理由是行号需要一个额外的串行化点，而处理记录是高频追加对象，串行化点会与工单行锁叠加形成不必要的争用。
