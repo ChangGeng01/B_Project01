@@ -32,7 +32,7 @@
 7. 一套可运行的批量导入：模板下载、上传、逐行校验、错误行清单下载、通过行落草稿、批量提交审批。
 8. 基准数据集生成器新增主数据分片，按规格附录 A.3 产出每法人客户、供应商、物料各 5000 条，产品 5000 条，价目表 20 张合计 5 万行明细。
 9. 三份文档更新并通过 CI 一致性校验：docs/data-dictionary/mdm.md 与 docs/data-dictionary/cpq.md、docs/event-catalog.md 新增条目、docs/error-codes.md 新增条目。
-10. 法人越权测试目标 tests/rls_matrix 中新增本阶段 29 张表的八类用例，全部通过。
+10. 法人越权测试目标 tests/rls_matrix 中新增本阶段 30 张表的八类用例，全部通过。
 11. 规格附录 A.1 中归属本阶段的四个度量项的 EXPLAIN 证据与 P95 实测记录：客户列表按条件过滤并翻页、客户详情打开、附件列表加载、全文检索返回首页结果，另加销售订单表单打开并带出默认值这一项中的取价子段实测。
 12. crates/foundation/src/port/doc.rs 按裁定 A-08 补齐 SheetSpec、ColumnSpec、CellValue、PdfSource、PrintLayout 五个类型与 SpreadsheetPort、DocTemplatePort、PdfRenderPort 三个 trait，并交付 ep-adapter-doc 的实现，覆盖导入模板生成、错误行清单渲染、XLSX 读写三项用途。
 13. mdm.v_customers_dataset、mdm.v_products_dataset、mdm.v_materials_dataset 三个受治理数据集视图已发布并授予 ep_analyst_ro，dataset code 依次为 mdm_customers、mdm_products、mdm_materials，grain 均为 DOCUMENT，按裁定 A-18 交付。
@@ -83,7 +83,7 @@
 
 #### 3.1 总览与迁移顺序
 
-新增两个 schema 下的 29 张表，其中 mdm 26 张、cpq 3 张。schema 与角色已在基线第 3.1 节登记，本阶段不新增 schema，不新增角色。db/migrations/order.toml 中 mdm 与 cpq 的相对顺序已由基线固定为 mdm 在 cpq 之前，本阶段不改动该文件的模块顺序。
+新增两个 schema 下的 30 张表，其中 mdm 27 张、cpq 3 张。schema 与角色已在基线第 3.1 节登记，本阶段不新增 schema，不新增角色。db/migrations/order.toml 中 mdm 与 cpq 的相对顺序已由基线固定为 mdm 在 cpq 之前，本阶段不改动该文件的模块顺序。
 
 迁移文件按下表顺序，路径 db/migrations/mdm/ 与 db/migrations/cpq/，命名按基线第 3.9 节。每个文件只做一件事，每个文件头部带 -- rollback: 段。
 
@@ -111,9 +111,9 @@
 | 20 | V202609011035__mdm_create_import_batch_rows.sql | 建 mdm.import_batch_rows |
 | 21 | V202609011040__mdm_create_export_jobs.sql | 建 mdm.export_jobs |
 | 22 | V202609011045__mdm_create_attachment_link_tables.sql | 建六张附件关联表 |
-| 23 | V202609011050__mdm_enable_rls.sql | 对 mdm 的 26 张表按基线第 3.8 节模板启用并强制行级安全 |
+| 23 | V202609011050__mdm_enable_rls.sql | 对 mdm 的 27 张表按基线第 3.8 节模板启用并强制行级安全 |
 | 24 | V202609011055__mdm_create_lookup_indexes.sql | 建本节声明的全部非基线索引，一律 CREATE INDEX CONCURRENTLY |
-| 25 | V202609011057__mdm_backfill_sensitive_field_registry.sql | 按裁定 A-28 向 platform_core.sensitive_field_registry 插入四行，逐行给全裁定 C-06 冻结的十一列取值，公共列另按基线第 4 节；四行 schema_name 均取 mdm，table_name 取 customer_invoice_profiles 与 supplier_payment_profiles，column_name 取 bank_name 与 bank_account_no 且为逻辑列名不带 _enc 后缀，category 均取 ACCOUNT，security_level 均取 30，is_field_encrypted 四行一律取 false，normalization 均取 TRIM_NFKC，release_ref 均取 MIGRATION 加本迁移版本号；bank_name 两行的 blind_index 取 NONE、blind_index_column 留空、mask_style 取 NONE，bank_account_no 两行的 blind_index 取 EXACT、blind_index_column 取 bank_account_no_bidx、mask_style 取 KEEP_LAST_4；created_by 取 foundation::SYSTEM_PRINCIPAL_ID |
+| 25 | V202609011057__mdm_backfill_sensitive_field_registry.sql | 按裁定 A-28 向 platform_core.sensitive_field_registry 插入四行，逐行给全裁定 C-06 冻结的十一列取值，公共列另按基线第 4 节；四行 schema_name 均取 mdm，table_name 取 customer_invoice_profiles 与 supplier_payment_profiles，column_name 取 bank_name 与 bank_account_no 且为逻辑列名不带 _enc 后缀，category 均取 ACCOUNT，security_level 均取 30，is_field_encrypted 取 bank_account_no 两行为 true 与 bank_name 两行为 false，normalization 均取 TRIM_NFKC，release_ref 均取 MIGRATION 加本迁移版本号；bank_name 两行的 blind_index 取 NONE、blind_index_column 留空、mask_style 取 NONE，bank_account_no 两行的 blind_index 取 EXACT、blind_index_column 取 bank_account_no_bidx、mask_style 取 KEEP_LAST_4；created_by 取 foundation::SYSTEM_PRINCIPAL_ID |
 | 26 | V202609011058__mdm_create_dataset_views.sql | 按裁定 A-18 建 mdm.v_customers_dataset、mdm.v_products_dataset、mdm.v_materials_dataset 三个视图，每个视图带 legal_entity_id、security_level、data_scope_tags 三列，并在同一迁移中 GRANT SELECT TO ep_analyst_ro |
 | 27 | V202609011100__cpq_create_price_lists.sql | 建 cpq.price_lists |
 | 28 | V202609011105__cpq_create_price_list_lines.sql | 建 cpq.price_list_lines |
@@ -202,11 +202,11 @@ mdm.customer_contacts 客户联系人。专有列：customer_id uuid 非空外�
 
 mdm.customer_addresses 客户收货地址。专有列：customer_id、address_line text 非空长度不超过 500、receiver_name text 可空、receiver_phone text 可空长度不超过 32、is_default、default_slot、sort_no、is_active、deactivated_at。约束与索引与 customer_contacts 同构。
 
-mdm.customer_invoice_profiles 客户开票要素，与客户一对一。专有列：customer_id、invoice_title text 可空、taxpayer_no text 可空长度不超过 64、registered_address text 可空长度不超过 500、registered_phone text 可空长度不超过 32、bank_name text 可空、bank_account_no text 可空长度不超过 64、bank_account_no_bidx bytea 可空。索引：pk、ix_..._legal_entity_id_created_at、ux_customer_invoice_profiles_legal_entity_id_customer_id。bank_name 与 bank_account_no 两列的字段级密级取 30，按裁定 A-28 登记在 platform_core.sensitive_field_registry，不改本表行级 security_level 默认值 20。bank_account_no 按裁定 A-28 取 is_field_encrypted 为假，这是 PRD 附录乙 U-A-12 未决期间的临时取值，因此 bank_name 与 bank_account_no 两列保持明文物理列，db/checks/11 不对这两列施加 bytea 与 _enc 后缀断言。等值定位与查重一律经盲索引列 bank_account_no_bidx，取值为 derive_blind_key(legal_entity_id, 'mdm.customer_invoice_profiles.bank_account_no', plaintext)，derive_blind_key 与 BlindIndex 由阶段 2 按裁定 B-04 提供，盲索引与 is_field_encrypted 的取值无关，照建不误，本阶段不自建第二套哈希，切换路径见第 13 节 U-A-12。
+mdm.customer_invoice_profiles 客户开票要素，与客户一对一。专有列：customer_id、invoice_title text 可空、taxpayer_no text 可空长度不超过 64、registered_address text 可空长度不超过 500、registered_phone text 可空长度不超过 32、bank_name text 可空、bank_account_no_enc bytea 可空、bank_account_no_key_ref text 可空、bank_account_no_tail text 可空、bank_account_no_bidx bytea 可空；本表不设同名明文列 bank_account_no。索引：pk、ix_..._legal_entity_id_created_at、ux_customer_invoice_profiles_legal_entity_id_customer_id。bank_name 与 bank_account_no 两列的字段级密级取 30，按裁定 A-28 登记在 platform_core.sensitive_field_registry，登记行的 column_name 取逻辑列名不带 _enc 后缀，不改本表行级 security_level 默认值 20。bank_account_no 按裁定 A-28 取 is_field_encrypted 为真，依据是规格第 7.8 章把行内敏感字段的字段级密钥定为强制项并把账户类属性列入最低覆盖面，该项不属待决；其物理形态固定为 bank_account_no_enc 承载密文、bank_account_no_key_ref 记录密钥标识与版本、bank_account_no_tail 承载掩码保留的后四位。bank_name 取 is_field_encrypted 为假并保持明文物理列，这是 PRD 附录乙 U-A-12 未决期间的临时取值。db/checks/11 按 is_field_encrypted 分支断言，对 bank_account_no 断言物理表上存在 bank_account_no_enc 且类型为 bytea 且不存在同名明文列，对 bank_name 只断言 mdm.customer_invoice_profiles.bank_name 三元组在 information_schema.columns 中命中实际列。等值定位与查重一律经盲索引列 bank_account_no_bidx，取值为 derive_blind_key(legal_entity_id, 'mdm.customer_invoice_profiles.bank_account_no', plaintext)，derive_blind_key 与 BlindIndex 由阶段 2 按裁定 B-04 提供；规格第 7.8 章禁止字段级密文直接用于唯一约束，盲索引是唯一的查重手段，本阶段不自建第二套哈希，待决范围见第 13 节 U-A-12。
 
 mdm.suppliers 供应商档案，档案类。列与 customers 同构，差异为：unified_social_credit_code 非空且长度等于 18，无 alternate_identifier 与 credit_limit，新增 supplier_category text 非空、portal_enabled boolean 非空默认 false、qualification_status text 非空默认 'VALID' 且 ck in ('VALID','EXPIRING','EXPIRED')。索引除与 customers 同构的七条外，新增 ix_suppliers_legal_entity_id_qualification_status。
 
-mdm.supplier_contacts 与 mdm.supplier_payment_profiles，结构分别与 customer_contacts 与 customer_invoice_profiles 同构，主体列为 supplier_id，supplier_payment_profiles 无注册地址与注册电话两列；银行字段的密级、登记行与盲索引列 bank_account_no_bidx 与 customer_invoice_profiles 同构，同样按裁定 A-28 取 is_field_encrypted 为假并保持明文物理列，盲索引的域串取 mdm.supplier_payment_profiles.bank_account_no。
+mdm.supplier_contacts 与 mdm.supplier_payment_profiles，结构分别与 customer_contacts 与 customer_invoice_profiles 同构，主体列为 supplier_id，supplier_payment_profiles 无注册地址与注册电话两列；银行字段的密级、登记行、物理列形态与盲索引列 bank_account_no_bidx 与 customer_invoice_profiles 同构，同样按裁定 A-28 取 bank_account_no 的 is_field_encrypted 为真，并以 bank_account_no_enc bytea 与 bank_account_no_key_ref text 与 bank_account_no_tail text 三列承载、不保留同名明文列，bank_name 取假并保持明文列，盲索引的域串取 mdm.supplier_payment_profiles.bank_account_no。
 
 mdm.supplier_qualifications 资质证照。专有列：supplier_id、qualification_type text 非空、qualification_no text 非空长度不超过 64、issuing_authority text 可空长度不超过 200、valid_from_date date 非空、valid_to_date date 可空、sort_no、is_active、deactivated_at。约束 ck_supplier_qualifications_period：valid_to_date is null or valid_to_date >= valid_from_date。索引：pk、ix_..._legal_entity_id_created_at、ux_supplier_qualifications_legal_entity_id_supplier_id_qualification_type_qualification_no、ix_supplier_qualifications_legal_entity_id_valid_to_date、fk_supplier_qualifications_suppliers。
 
@@ -284,7 +284,7 @@ cpq.price_list_customer_links 指定客户范围。专有列：price_list_id uui
 
 #### 3.5 RLS 策略
 
-29 张表全部带 legal_entity_id，全部按基线第 3.8 节的统一模板生成策略，策略名为 rls_<table>_le，策略由迁移生成器统一产出，不允许手写变体。本阶段不新增不带 legal_entity_id 的表。本阶段不使用 BYPASSRLS，跨法人查询按授权法人集合逐个法人设置会话变量后分别查询再在应用侧合并。
+30 张表全部带 legal_entity_id，全部按基线第 3.8 节的统一模板生成策略，策略名为 rls_<table>_le，策略由迁移生成器统一产出，不允许手写变体。本阶段不新增不带 legal_entity_id 的表。本阶段不使用 BYPASSRLS，跨法人查询按授权法人集合逐个法人设置会话变量后分别查询再在应用侧合并。
 
 ### 4 领域模型与关键算法
 
@@ -493,7 +493,7 @@ ep-contract-crm 定义 Customer360SectionProvider trait，含 section_key、sect
 
 全部端点遵循基线第 5 节：路径前缀 /api/v1，字段 snake_case，封套固定，分页排序过滤参数固定，全部写请求必带 Idempotency-Key，鉴权头固定集合。下表中的权限一列写的是所需的对象级权限动作，记录级与字段级由 ep-platform-authz 在用例内判定。
 
-每条路由另按裁定 A-20 在 crates/contract/<module>/src/capability.rs 中声明一对 <USECASE_SCREAMING>_DOMAIN 与 <USECASE_SCREAMING>_ACTION 常量，取值来自阶段 1 冻结的 foundation::CapabilityDomain 与 foundation::ActionClass。本阶段路由涉及的能力域为 MdmMasterData、CrmCustomer360、PlatformFullTextSearch 与 PlatformDocumentAttachment，价目表与取价路由取 SalesOrderFulfillment；动作类别按 Read、Write、Submit、Approve、Export 五类逐路由取值。xtask configdoc 断言每条 HTTP 路由都能解析到一对常量，缺失即构建失败，本阶段不在阶段 13 之外重复定义能力域码。
+每条路由另按裁定 A-20 在 crates/contract/<module>/src/capability.rs 中声明一对 <USECASE_SCREAMING>_DOMAIN 与 <USECASE_SCREAMING>_ACTION 常量，取值来自阶段 1 冻结的 foundation::CapabilityDomain 与 foundation::ActionClass。本阶段路由涉及的能力域为 MdmMasterData、CrmCustomer360、PlatformFullTextSearch 与 PlatformDocumentAttachment，价目表与取价路由取 SalesOrderFulfillment；动作类别按 Read、Write、Submit、Approve、Export 五类逐路由取值。xtask configdoc 断言每个 /api/v1/ 路由都能解析到一对常量，缺失即构建失败；ci-probe feature 门控的探针路由与 /internal/v1/ 下不对四端暴露的内部端点不参与判定，不声明常量。本阶段只引用 foundation::CapabilityDomain，不重新定义能力域码。
 
 #### 5.1 四类档案的通用端点
 
@@ -676,8 +676,8 @@ ep-contract-crm 定义 Customer360SectionProvider trait，含 section_key、sect
 
 使用真实 PostgreSQL 16，每个用例独占一个数据库，用例结束即删库。禁止用内存库或 mock 替代数据库。场景清单如下。
 
-1. RLS 矩阵：tests/rls_matrix 中新增 29 张表的读取、写入、更新、删除、聚合、排序、报表投影与错误信息泄漏八类用例，八个断言函数 assert_read、assert_write、assert_update、assert_delete、assert_aggregate、assert_sort、assert_report_projection、assert_error_leak 由阶段 1 在 testkit/src/rls_matrix.rs 提供，本阶段只补数据与用例，不重复实现同名函数，按裁定 C-05 执行。删除一类验证业务 schema 上的 DELETE 被拒绝。错误信息泄漏一类验证跨法人访问返回 404 而非 403，且响应中不含目标记录的任何字段值。
-2. 会话变量缺失时的默认拒绝：连接未设置 app.legal_entity_id 时对 29 张表的读写全部返回零行或被拒绝。
+1. RLS 矩阵：tests/rls_matrix 中新增 30 张表的读取、写入、更新、删除、聚合、排序、报表投影与错误信息泄漏八类用例，八个断言函数 assert_read、assert_write、assert_update、assert_delete、assert_aggregate、assert_sort、assert_report_projection、assert_error_leak 由阶段 1 在 testkit/src/rls_matrix.rs 提供，本阶段只补数据与用例，不重复实现同名函数，按裁定 C-05 执行。删除一类验证业务 schema 上的 DELETE 被拒绝。错误信息泄漏一类验证跨法人访问返回 404 而非 403，且响应中不含目标记录的任何字段值。
+2. 会话变量缺失时的默认拒绝：连接未设置 app.legal_entity_id 时对 30 张表的读写全部返回零行或被拒绝。
 3. 唯一性并发：20 个并发事务同时以同一编码建档，恰好 1 个成功，其余 19 个返回 MDM.CUSTOMER.CODE_DUPLICATED，无一例返回内部错误。
 4. 变更申请单例并发：20 个并发请求同时对同一档案发起变更申请，恰好 1 个成功，其余返回 MDM.CHANGE_REQUEST.ALREADY_OPEN。
 5. 乐观锁冲突：两个会话读取同一档案后先后提交，后者返回 PLATFORM.CONCURRENCY.STALE_VERSION 并回带当前版本号与最后修改人。该项对应基线第 8.4 节六组必测并发场景中的同一单据乐观锁冲突一组。
@@ -695,7 +695,7 @@ ep-contract-crm 定义 Customer360SectionProvider trait，含 section_key、sect
 17. 附件关联：解除关联后再重新关联同一附件对象成功，验证空槽写法在附件表上的行为。
 18. 搜索索引传播：档案生效后 15 分钟内索引可查，停用后索引中的可引用标记同步更新，跨法人检索不返回无权数据，对应规格第 7.9 章的派生存储越权与传播测试。
 19. 受治理数据集视图：三个视图在 ep_analyst_ro 角色下可读、在其他只读角色下不可读，返回列含 legal_entity_id、security_level、data_scope_tags 三列，列名与类型签名与阶段 11 的 reporting.dataset_fields 登记一致，按裁定 A-18 执行。
-20. 敏感字段登记与盲索引：第 25 号迁移执行后 platform_core.sensitive_field_registry 中存在 mdm.customer_invoice_profiles 与 mdm.supplier_payment_profiles 的 bank_name 与 bank_account_no 共四行，四行的 category 均为 ACCOUNT、security_level 均为 30、is_field_encrypted 均为假，bank_account_no 两行的 blind_index 为 EXACT 且 blind_index_column 为 bank_account_no_bidx，db/checks/11 返回零行；以同一明文两次计算 derive_blind_key 得到相同结果，跨法人得到不同结果，按裁定 A-28 与 B-04 执行。
+20. 敏感字段登记与盲索引：第 25 号迁移执行后 platform_core.sensitive_field_registry 中存在 mdm.customer_invoice_profiles 与 mdm.supplier_payment_profiles 的 bank_name 与 bank_account_no 共四行，四行的 category 均为 ACCOUNT、security_level 均为 30，bank_account_no 两行的 is_field_encrypted 为真且 blind_index 为 EXACT 且 blind_index_column 为 bank_account_no_bidx，bank_name 两行的 is_field_encrypted 为假；两张表上存在 bank_account_no_enc bytea 与 bank_account_no_key_ref text 与 bank_account_no_tail text 三列且不存在同名明文列 bank_account_no，db/checks/11 返回零行；以同一明文两次计算 derive_blind_key 得到相同结果，跨法人得到不同结果，按裁定 A-28 与 B-04 执行。
 
 外部依赖只有电子签章一类，本阶段不涉及，因此本阶段不引入 wiremock 打桩。
 
@@ -749,8 +749,8 @@ ep-contract-crm 定义 Customer360SectionProvider trait，含 section_key、sect
 
 下列各条可客观判定，全部达成才算本阶段完成。
 
-1. 29 张表与 31 个迁移文件在空库上一次执行成功，逆向执行成功，再次正向执行成功，结构逐对象比对一致。
-2. 全部 29 张表已 ENABLE 且 FORCE 行级安全，命名自检项 rls-enabled-and-forced 在本阶段表上通过。
+1. 30 张表与 31 个迁移文件在空库上一次执行成功，逆向执行成功，再次正向执行成功，结构逐对象比对一致。
+2. 全部 30 张表已 ENABLE 且 FORCE 行级安全，命名自检项 rls-enabled-and-forced 在本阶段表上通过。
 3. tests/rls_matrix 中本阶段的八类用例全部通过，零跳过。
 4. 第 8.1 至 8.4 节列出的全部用例通过，无长期跳过项。
 5. 覆盖率达到第 8.6 节的四档门槛，CI 门禁通过。
@@ -768,7 +768,7 @@ ep-contract-crm 定义 Customer360SectionProvider trait，含 section_key、sect
 17. 本阶段全部路由的能力域码与动作类别常量已声明，常量分别位于 crates/contract/mdm/src/capability.rs、crates/contract/cpq/src/capability.rs 与 crates/contract/crm/src/capability.rs，xtask configdoc 通过；按裁定 A-20 阶段 6 只对 crates/contract/cpq/src/capability.rs 追加常量，不重定义本阶段已声明的常量。
 18. crates/foundation/src/port/doc.rs 的五个类型与三个 trait 已按裁定 A-08 冻结，ep-adapter-doc 的实现覆盖导入模板生成、错误行清单渲染与 XLSX 读写三项，后续阶段无需新增 trait。
 19. mdm.classification_items 中不存在 TAX_RATE_PRESET 取值，字典桩 MdmTaxRateStub 已交付并在代码注释与本计划中标注其撤销时点为阶段 10 交付 invoice.tax_rate_options 之日。
-20. platform_core.sensitive_field_registry 中存在 mdm.customer_invoice_profiles 与 mdm.supplier_payment_profiles 的 bank_name 与 bank_account_no 共四行，四行的 is_field_encrypted 均为假，db/checks/11 返回零行；本阶段不引用 platform_meta 的任何对象。
+20. platform_core.sensitive_field_registry 中存在 mdm.customer_invoice_profiles 与 mdm.supplier_payment_profiles 的 bank_name 与 bank_account_no 共四行，bank_account_no 两行的 is_field_encrypted 为真、bank_name 两行为假；两张表上不存在同名明文列 bank_account_no，bank_account_no_enc 为 bytea 且 bank_account_no_key_ref 与 bank_account_no_tail 两列齐备，db/checks/11 返回零行；本阶段不引用 platform_meta 的任何对象。
 21. 顺延项已登记且各有承接阶段：物料三项条件冻结的完整性验收顺延到阶段 8，产品一项顺延到阶段 6，停用引用计数完整性顺延到阶段 12 结束，历史成交资料完整性顺延到阶段 10，四处均已在本阶段以空实现装配并留 TODO(stage-<n>) 注释。
 
 ### 10 与规格和 PRD 的对应
@@ -789,7 +789,7 @@ ep-contract-crm 定义 Customer360SectionProvider trait，含 section_key、sect
 | 7.2 数据所有权 | mdm 为四类主数据的唯一权威写入者；本阶段不写总账、不写库存、不写发票台账 |
 | 7.4 可定制数据库 | 本阶段全部迁移落在公共能力基线内的类型与索引，全部属在线变更范围，无停机窗口操作 |
 | 7.5 文件与归档 | 档案附件按版本保存、不覆盖旧版本、不提供覆盖与原地删除接口 |
-| 7.7 法人行级隔离 | 29 张表按统一模板建策略；跨法人查询逐法人设置会话变量后合并；不使用 BYPASSRLS |
+| 7.7 法人行级隔离 | 30 张表按统一模板建策略；跨法人查询逐法人设置会话变量后合并；不使用 BYPASSRLS |
 | 7.9 派生存储安全继承 | 档案事件携带 security_level 与 data_scope_tags；搜索索引正文不含开票要素与银行信息；删除与更正在 15 分钟内传播 |
 | 7.10 历史数据导入 | 明确日常批量导入与迁移通道互不混用，本阶段只交付前者；按裁定 A-24 不设独立数据迁移阶段，期初与历史数据导入通道分别归阶段 9a、阶段 10 与阶段 8 |
 | 8 黄金业务闭环第 1 步 | 建单时自动带出客户、产品、价目与历史成交资料四项中的全部四项的服务端取数 |
@@ -897,7 +897,7 @@ R8 枚举字典化与固定枚举的切换。四类分类取值由 mdm.classific
 | U-A-08 | 默认审批链 | 阻塞演示不阻塞开发 | 出厂预置一条单节点审批链，审批人取该对象类型的主数据审批人角色 | 改审批链配置 |
 | U-A-09 | 导入模板列、最大行数、失败语义 | 不阻塞 | 最大 5000 行，通过行落库，错误行不落库，错误清单逐行标注 | 改配置项与校验分支 |
 | U-A-11 | 提醒提前量 | 不阻塞 | 资质到期提前 30 天 | 改配置项，决策后改为低代码定时器配置 |
-| U-A-12 | 银行字段是否列入敏感清单 | 不阻塞 | 待决，裁定表不代拍。临时取值为不列入规格第 7.8 章的行内敏感字段，即不做字段级加密，第 25 号迁移四行的 is_field_encrypted 一律取假，两张 profiles 表的银行列保持明文；字段级密级仍取 30，列表与详情掩码保留后 4 位，导出触发重新认证，并按裁定 B-04 建盲索引列 bank_account_no_bidx，登记落在 platform_core.sensitive_field_registry | 决策为纳入时在一次变更内同时完成三件事：把 bank_account_no 两行的 is_field_encrypted 改为真，把物理列改为 bank_account_no_enc bytea 并补 bank_account_no_key_ref 与承载掩码后四位的 bank_account_no_tail 两列，删去同名明文列；bank_name 两行是否同改由该决策一并给出，两列取值可以不同；缺一 db/checks/11 必然判负。决策人为安全负责人与产品负责人 |
+| U-A-12 | 开户银行是否同列敏感清单、三场景脱敏形态、导出是否触发重新认证 | 不阻塞 | 待决范围只有三问，裁定表与本阶段均不代拍：开户银行是否同列敏感字段清单、列表与详情与导出三场景的脱敏形态、导出是否触发重新认证。银行账号纳入行内敏感字段并做字段级加密由规格第 7.8 章强制，不在待决范围内，第 25 号迁移中 bank_account_no 两行的 is_field_encrypted 取真，物理列为 bank_account_no_enc 与 bank_account_no_key_ref 与 bank_account_no_tail 三列且不保留同名明文列。三问的临时取值依次为：开户银行纳入并登记两行，其 is_field_encrypted 取假、物理列保持 bank_name text 明文；bank_account_no 两行的 mask_style 取 KEEP_LAST_4 且后四位取自 bank_account_no_tail，bank_name 两行取 NONE，三场景同形态并一律经阶段 4 的 FieldProjector 渲染；导出是否触发重新认证不由本表列承载，统一指向阶段 4 的重新认证判定函数，该函数对这四列判真。四行的 security_level 与 mask_style 同为未决期间的临时取值 | 第一问改判为不纳入时删除或改写 bank_name 两行，属数据行变更，不改代码也不改表；改判为开户银行也做字段级加密时，须在一次变更内同时把 bank_name 两行的 is_field_encrypted 改为真、把物理列改为 bank_name_enc bytea 并补 bank_name_key_ref text、删去同名明文列，缺一 db/checks/11 必然判负。第二问改判只改这四行的 mask_style，不改代码。第三问改判限于阶段 4 判定函数的入参配置，本阶段不在表列上另给第二套答案。决策人为安全负责人与产品负责人，截止点按总览 R12 的 M3 之前关闭 U-A 组 |
 | U-B-05 | 权限求值顺序 | 不阻塞 | 按基线第 11.3 节，显式拒绝优先 | 无 |
 | U-B-06 | 字段权限是否有脱敏中间态 | 不阻塞 | 假定存在可见但脱敏中间态，掩码保留后 4 位 | 改字段元数据 |
 | U-B-07 | 记录级权限授予方式 | 不阻塞 | 假定按责任人授予，因此四类档案均建 owner_user_id 索引 | 若改为按创建人或显式共享，索引仍可用，只改判定策略 |

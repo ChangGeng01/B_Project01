@@ -175,8 +175,9 @@ archive-writer 与 backup-writer 在本阶段不改动，本阶段只为其提�
 | 30 | `V202611020944__platform_file_create_scan_results.sql` | platform_file | 3b |
 | 31 | `V202611020950__platform_file_create_watermark_views.sql` | platform_file | 3b |
 | 32 | `V202611020960__platform_msg_create_ops_views.sql` | platform_msg | 3b |
+| 33 | `V202611020970__platform_msg_backfill_append_only_registry.sql` | platform_msg | 3b |
 
-第 9 至 14 号在 `platform_flow` 内的顺序保证被引用方先建，第 6 至 8 号在 `platform_meta` 内同理保证 `config_packages` 早于 `config_package_items` 与 `config_release_orders`；跨 schema 不建外键，故 `platform_flow` 早于 `platform_audit` 与 `platform_msg` 不构成引用问题。第 31 与 32 两个视图文件跨 schema 取数，按裁定通则第五条放在所涉 schema 中位次靠后的那个目录：第 31 号建 `platform_file` 与 `platform_audit` 两个 schema 的视图，放在 `db/migrations/platform_file/`；第 32 号建 `platform_msg`、`platform_flow` 与 `platform_audit` 三个 schema 的视图，放在 `db/migrations/platform_msg/`。第 1 号属 3a 段，号段排在阶段 4 的 `V202610…` 之前；第 2 至 32 号属 3b 段，号段排在其后；两个号段互不重叠，也不与阶段 2 已占用的 `V20260901…` 号段冲突。
+第 9 至 14 号在 `platform_flow` 内的顺序保证被引用方先建，第 6 至 8 号在 `platform_meta` 内同理保证 `config_packages` 早于 `config_package_items` 与 `config_release_orders`；跨 schema 不建外键，故 `platform_flow` 早于 `platform_audit` 与 `platform_msg` 不构成引用问题。第 31 与 32 两个视图文件跨 schema 取数，按裁定通则第五条放在所涉 schema 中位次靠后的那个目录：第 31 号建 `platform_file` 与 `platform_audit` 两个 schema 的视图，放在 `db/migrations/platform_file/`；第 32 号建 `platform_msg`、`platform_flow` 与 `platform_audit` 三个 schema 的视图，放在 `db/migrations/platform_msg/`。第 33 号是本阶段唯一的数据回填文件，按裁定 B-02 向 `platform_core.append_only_registry` 登记三张仅追加表并挂接触发器，所涉 schema 为 `platform_core`、`platform_audit` 与 `platform_msg`，按裁定通则第五条取三者中位次最靠后的 `platform_msg`，放在 `db/migrations/platform_msg/`，登记行取值与挂接次序见第 3.3.7 节。第 1 号属 3a 段，号段排在阶段 4 的 `V202610…` 之前；第 2 至 33 号属 3b 段，号段排在其后；两个号段互不重叠，也不与阶段 2 已占用的 `V20260901…` 号段冲突。
 
 #### 3.3.2 公共列的适用口径
 
@@ -606,8 +607,9 @@ archive-writer 与 backup-writer 在本阶段不改动，本阶段只为其提�
 | user_id | uuid | not null |
 | device_id | uuid | not null，逻辑引用阶段 4 的设备登记 |
 | platform | text | not null，ck 取值 `ios`、`android` |
-| token_ciphertext | bytea | not null，按法人密钥域字段级加密 |
-| token_fingerprint | text | not null，用于唯一约束的盲索引 |
+| token_enc | bytea | not null，按法人密钥域字段级加密的令牌密文 |
+| token_key_ref | text | not null，记录密钥标识与版本，与 token_enc 同生共死 |
+| token_bidx | bytea | not null，令牌盲索引，取阶段 2 的 `derive_blind_key` 派生值 |
 | is_active | boolean | not null default true |
 | deactivated_at | timestamptz | null |
 | last_success_at / last_failure_at | timestamptz | null |
@@ -616,7 +618,7 @@ archive-writer 与 backup-writer 在本阶段不改动，本阶段只为其提�
 
 索引：`pk_push_registrations`；`ux_push_registrations_le_user_id_device_id_platform`；`ix_push_registrations_le_created`；`ix_push_registrations_le_user_id_is_active`。
 
-推送令牌属于规格第 7.8 章意义上的行内敏感属性，按字段级密钥加密存储，唯一性用同一法人密钥域下的盲索引 `token_fingerprint` 承担，密文不直接进入唯一约束，这一点是规格第 7.8 章的明确要求。
+推送令牌属于规格第 7.8 章意义上的行内敏感属性，按字段级密钥加密存储，密文与密钥引用分列承载；同一令牌的查重用同一法人密钥域下的盲索引 `token_bidx` 承担，密文不直接进入任何索引与唯一约束，这一点是规格第 7.8 章的明确要求。物理列命名按裁定 A-28 的全库唯一一套取 `<语义>_enc`、`<语义>_key_ref` 与 `<语义>_bidx`，本阶段不另起 `_cipher` 或 `_ciphertext` 一套。
 
 **表 20 `platform_file.attachment_objects`**
 
@@ -795,6 +797,22 @@ archive-writer 与 backup-writer 在本阶段不改动，本阶段只为其提�
 `platform_audit.v_evidence_write_inputs`：输出 `legal_entity_id`、`audit_segment_id`、`anchor_id`、`evidence_path`、`evidence_written_at`，供 archive-writer 按 15 分钟周期把审计证据存储写出到服务器之外落点。
 
 两个视图是本阶段与备份归档阶段之间唯一的接缝，不通过表结构耦合。
+
+#### 3.3.7 仅追加表的登记与触发器挂接
+
+按裁定 B-02，本阶段有三张仅追加表须在 `platform_core.append_only_registry` 中显式登记并挂接触发器。登记表、`platform_core.assert_append_only`、`platform_core.assert_immutable_columns` 与 `platform_core.attach_table_guards` 四者均由阶段 2 交付，本阶段只写登记行并调用挂接函数，不重复定义机制。登记行的列集为 `schema_name`、`table_name`、`mode`、`mutable_columns`，逐行取值如下，不得增行删行，也不得改取值。
+
+| schema_name | table_name | mode | mutable_columns |
+|---|---|---|---|
+| platform_audit | audit_events | APPEND_ONLY | `'{}'` |
+| platform_msg | outbox_events | IMMUTABLE_COLUMNS | `status`、`attempts`、`available_at`、`locked_by`、`locked_until`、`last_error` |
+| platform_msg | dead_letters | IMMUTABLE_COLUMNS | `state`、`repaired_by`、`repaired_at`、`approval_ref`、`discard_reason` |
+
+三行登记与三次挂接落在第 33 号一个迁移文件内，文件内先按上表插入三行登记，再依次调用 `platform_core.attach_table_guards('platform_audit','audit_events')`、`platform_core.attach_table_guards('platform_msg','outbox_events')`、`platform_core.attach_table_guards('platform_msg','dead_letters')`，顺序不得颠倒：挂接函数读登记表取可变列白名单，先挂接后登记取不到 `mutable_columns`。该文件的 `-- rollback:` 段为删除该三行并 drop 对应触发器。
+
+三处取值各有理由。`audit_events` 无任何更新路径，取 `APPEND_ONLY` 与空白名单。`outbox_events` 的六列白名单与表 13 的投递控制列逐项相同，信封与载荷不在其内，与第 3.12.2 节澄清二的仅追加口径一致。`dead_letters` 的五列必须取全，第 3.5.4 节的三个处置端点分别写入这五列中的不同子集，白名单少一列即在上线后拒绝该列的写入，修复完成与丢弃两条路径直接失败。`platform_audit.audit_segments` 有 `state`、`last_anchor_seq` 与 `last_anchored_at` 的正常更新，按裁定 B-02 不进登记清单，登记为仅追加会拒绝第 3.4.3 节阶段 A 的锚定写入。
+
+登记与物理表上实际挂接的触发器是否逐项一致，由 `db/checks/append_only_consistency.sql` 断言，`xtask sqlcheck` 执行，返回零行为通过。
 
 ---
 
@@ -1426,7 +1444,7 @@ Outbox：信封必填项的逐字段缺失、`security_level` 与 `data_scope_ta
 
 Outbox 可靠投递，对应规格第 7.3 章必含项：至少一次投递、重复投递去重（同一事件强制投递 5 次）、崩溃恢复后不丢不重（在取件后投递前、投递后写 `inbox_consumptions` 前、写后置 `DONE` 前三个点终止 job-worker）。
 
-审计链，对应规格第 17.2 章“审计链与不可变存储测试”：20 并发写入 5000 条事件后链验证全通过；跨自然日边界的段切换；锚定在 KMS 不可用时的重试与恢复；证据文件被外部改写后验证报告定位到该锚定；证据路径的覆盖与删除尝试被应用层拒绝并写审计；`audit_events` 上的 `UPDATE` 与 `DELETE` 被 CI 的 SQL 静态检查与数据库权限双重拒绝。
+审计链，对应规格第 17.2 章“审计链与不可变存储测试”：20 并发写入 5000 条事件后链验证全通过；跨自然日边界的段切换；锚定在 KMS 不可用时的重试与恢复；证据文件被外部改写后验证报告定位到该锚定；证据路径的覆盖与删除尝试被应用层拒绝并写审计；`audit_events` 上的 `UPDATE` 与 `DELETE` 被 `assert_append_only` 触发器、数据库权限与 CI 的 SQL 静态检查三重拒绝；`outbox_events` 与 `dead_letters` 上白名单之外的列更新被 `assert_immutable_columns` 触发器拒绝，白名单之内的投递控制列与处置列更新正常通过。
 
 流程引擎认证套件的阶段必过项，对应规格第 17.2 章：崩溃恢复（在步骤执行前、执行中、提交后、补偿过程中随机终止 job-worker 各不少于 20 次）；重复投递不少于 3 次时业务效果、外发事件与审计记录只产生一次；定时器幂等与可重放（进程重启、模拟升级重启、从备份恢复三种重放场景下不漏触发不重复触发）；流程定义版本升级（运行中实例继续用旧版本，新实例用新版本，显式迁移与回退各一次）；补偿正确性（逆序、幂等重试、部分失败后进人工任务队列并告警，用合成聚合与合成不变量验证）。
 
@@ -1489,9 +1507,9 @@ E2E-6 配置发布最小通道（3b 段）：创建含一个 `FLOW_DEFINITION` �
 
 ### 3.9 退出条件
 
-下列 29 项全部达成才算本阶段完成，每项都可由 CI 产物或测试报告客观判定。第 29 项是 3a 段的独立闸门，必须在阶段 4 开工前达成；其余各项在 3b 段结束时判定。
+下列 30 项全部达成才算本阶段完成，每项都可由 CI 产物或测试报告客观判定。第 29 项是 3a 段的独立闸门，必须在阶段 4 开工前达成；其余各项在 3b 段结束时判定。
 
-1. 32 个迁移文件在空库上按 `order.toml` 顺序执行成功，每个文件的 `-- rollback:` 段可执行或已注明只能用备份回退；3a 段的第 1 号与 3b 段的第 2 至 32 号在含阶段 4 迁移的合并环境上按版本号单调应用成功。
+1. 33 个迁移文件在空库上按 `order.toml` 顺序执行成功，每个文件的 `-- rollback:` 段可执行或已注明只能用备份回退；3a 段的第 1 号与 3b 段的第 2 至 33 号在含阶段 4 迁移的合并环境上按版本号单调应用成功。
 2. 30 张新表中，24 张带 `legal_entity_id` 的表全部 `ENABLE` 且 `FORCE` 行级安全，策略按统一模板生成，`tests/rls_matrix` 的本阶段部分八类全通过；六张部署级表按裁定 A-05 与 A-27 不带 `legal_entity_id`、不建策略，且已断言其可见性不随 `app.legal_entity_id` 变化。
 3. 运行期账号 `ep_app_rw` 在本阶段表上无 DDL、无策略管理权限，`--check` 的 `rls-enabled-and-forced` 与 `runtime-role-privileges-bounded` 两项通过。
 4. `--check` 的十七个命名项（基线第 7.3 节十三项加本阶段四项 `audit-evidence-store-writable`、`audit-signing-key-usable`、`attachment-store-ready`、`event-catalog-consistent`）在部署环境上全部通过并输出结构化报告，其中基线项 `license-and-modules-consistent` 已由本阶段 3b 段从 Pending 换成实现。
@@ -1520,6 +1538,7 @@ E2E-6 配置发布最小通道（3b 段）：创建含一个 `FLOW_DEFINITION` �
 27. `DisposalPort` 的 trait 与两个 DTO 已定义在 `crates/platform/file/src/port/disposal.rs`，两个 wiring 已注入 `NoopDisposalPort` 并标注 `// TODO(stage-14): replace with real impl`，实现由阶段 14 的 `OpsDisposalService` 交付。
 28. 附件的幂等收敛任务在四个崩溃点上收敛，且不产生任何对账差异事项、不实现 `ReconCheck`、不依赖 `ep-platform-recon`。
 29. 3a 段闸门：`platform_msg.idempotency_keys` 与 `IdempotencyStore` 实现、`crates/platform/release/src/port/config_item.rs` 端口与注册表两项已完成并通过各自单元测试，且该段不引入对 `ep-platform-identity` 与 `ep-platform-authz` 的任何依赖，`cargo metadata` 自检通过。
+30. 按裁定 B-02，`platform_core.append_only_registry` 中存在 `platform_audit.audit_events`、`platform_msg.outbox_events` 与 `platform_msg.dead_letters` 三行登记，`mode` 与 `mutable_columns` 按第 3.3.7 节的取值表逐项一致，三张表上的 `assert_append_only` 与 `assert_immutable_columns` 触发器已按登记挂接，`xtask sqlcheck` 执行 `db/checks/append_only_consistency.sql` 返回零行。
 
 ---
 
@@ -1533,7 +1552,7 @@ E2E-6 配置发布最小通道（3b 段）：创建含一个 `FLOW_DEFINITION` �
 | 第 5.1 章 低代码流程、审批、定时器、补偿和 SLA | 持久化流程引擎运行时；表单、规则表达式完整能力与 WASM 计算不在本阶段 |
 | 第 5.1 章 审计与变更留痕 | 审计事件模型、哈希链、分段签名、链验证工具、审计查询端点 |
 | 第 6.5 章 大文件 | 单文件上限 5 GB、分片上传、断点续传、带宽限制、法人密钥域与密级子域加密、不做去重、发布前类型识别与恶意内容检查 |
-| 第 7.2 章 已过账分录、库存流水、审批证据与审计证据不可覆盖 | 仅追加表设计、`ep-adapter-file` 的不可删除不可覆盖命名空间、CI 的 SQL 静态检查 |
+| 第 7.2 章 已过账分录、库存流水、审批证据与审计证据不可覆盖 | 三张仅追加表按 `append_only_registry` 登记挂接 `assert_append_only` 与 `assert_immutable_columns` 触发器、不授予 DELETE、`ep-adapter-file` 的不可删除不可覆盖命名空间、CI 的 SQL 静态检查 |
 | 第 7.3 章 Outbox 可靠投递测试项 | 三组测试作为数据库认证套件的输入 |
 | 第 7.5 章 文件、分析与归档 | 事务库只存对象 ID、版本、哈希、大小、类型、密级、密钥引用与业务关联；上传五段流程；应用级不可变五项要求中的前四项；审计证据与附件使用独立存储路径与独立保留策略 |
 | 第 7.7 章 法人行级隔离 | 本阶段 24 张表的统一策略模板；后台扫描按法人逐轮 |
@@ -1597,7 +1616,7 @@ E2E-6 配置发布最小通道（3b 段）：创建含一个 `FLOW_DEFINITION` �
 
 风险十，3b 段的范围因裁定 A-05、A-07、A-19 与 A-27 扩大到许可、检索与配置发布三项，工期与评审面随之扩大。控制手段是三项一律按最小集交付：许可只交付表、状态机与 `ModuleLicenseQuery`，不交付运行期操作端点；检索只交付端口、适配与消费者，不交付任何业务对象的投影函数；配置发布只交付六态与两个 applier，不交付自动测试、编辑锁与在线 DDL。残余风险是阶段 13b 扩展时要在已发布的三张配置表上做列扩展与 CHECK 扩展，该扩展按基线第 3.9 节的在线 DDL 约束执行，并须持有阶段 2 提供的迁移窗口。
 
-风险十一，3a 与 3b 拆段后迁移号段跨越阶段 4。若排期变动使 3b 早于阶段 4 落地，第 2 至 32 号的时间戳必须一并前移，否则会出现已应用版本号大于待应用版本号的乱序。控制手段是把号段与阶段顺序的对应关系写入第 3.3.1 节，并在 CI 中断言本阶段 3b 号段严格大于阶段 4 的最大版本号。
+风险十一，3a 与 3b 拆段后迁移号段跨越阶段 4。若排期变动使 3b 早于阶段 4 落地，第 2 至 33 号的时间戳必须一并前移，否则会出现已应用版本号大于待应用版本号的乱序。控制手段是把号段与阶段顺序的对应关系写入第 3.3.1 节，并在 CI 中断言本阶段 3b 号段严格大于阶段 4 的最大版本号。
 
 #### 3.11.2 为后续阶段预留的扩展点
 
@@ -1676,7 +1695,7 @@ U-A-01 与 U-A-02 已由共享技术基线第 11.1 节取值，本阶段直接�
 
 依赖一，工程基线（阶段 1）：Cargo workspace 骨架、`rust-toolchain.toml`；`ep-foundation` 的 `Id`、`Money`、`Clock`、`IdGen`、`Rng`、`SecurityLevel`、`AppError`、`ErrorCode`、`DomainEvent` 信封，按裁定 A-03 冻结的 19 字段 `SecurityContext` 与两个构造函数，按裁定 A-01 冻结的 `port::tx` 三件套 `Tx`、`SnapshotCtx`、`UnitOfWork`（两个方法 `transact` 与 `snapshot_transact`）与 `id::marker` 的 22 个标记类型，按裁定 A-02 冻结的 `SYSTEM_PRINCIPAL_ID` 与 `SYSTEM_DEVICE_ID`，按裁定 A-05 冻结的 `ModuleCode`，按裁定 A-20 冻结的 `CapabilityDomain` 与 `ActionClass`，以及 `port::search` 的空模块文件；按裁定 C-24 由阶段 1 登记的七个平台错误码；按裁定 C-07 的 `IdempotencyKeyHeaderGuard`；按裁定 C-05 的 `tests/rls_matrix` CI 目标与八个断言函数；按裁定 C-23 注册的两个数据库连接池指标；`ep-adapter-db` 的连接池与 `ep-adapter-db-pg` 的会话变量注入与归还清除钩子，refinery Runner 与 `db/migrations/order.toml` 的骨架，CI 的依赖方向自检与 SQL 静态检查，`ep-testkit` 与 `ep-datagen` 骨架。缺失则本阶段无法开工，无临时替代。
 
-依赖二，密钥与密码（阶段 2）：`ep-adapter-kms` 的信封加密（AES-256-GCM 数据密钥的派生与解封）与签名验签（ECDSA P-256），每法人数据加密密钥域与密级子域的建立，以及按裁定 B-04 由阶段 2 提供的盲索引派生函数 `derive_blind_key` 与 `BlindIndex`，本阶段的 `push_registrations.token_fingerprint` 取其派生值，不自建第二套哈希。缺失时以内存桩实现开发，但第 3.9 节退出条件的第 9、10、13 项必须在真实实现上判定。
+依赖二，密钥与密码（阶段 2）：`ep-adapter-kms` 的信封加密（AES-256-GCM 数据密钥的派生与解封）与签名验签（ECDSA P-256），每法人数据加密密钥域与密级子域的建立，以及按裁定 B-04 由阶段 2 提供的盲索引派生函数 `derive_blind_key` 与 `BlindIndex`，本阶段的 `push_registrations.token_bidx` 取其派生值，不自建第二套哈希。缺失时以内存桩实现开发，但第 3.9 节退出条件的第 9、10、13 项必须在真实实现上判定。
 
 依赖三，法人与组织（阶段 2）：`ep-platform-tenancy::LegalEntityDirectory::list_active`（供后台按法人轮转）与其返回的 `LegalEntityRef`，编号格式的法人段取该结构的 `entity_no`（2 位数字）。缺失时以固定两法人的测试夹具替代，退出条件不受影响，但编号格式的法人段无法在真实数据上验收。
 

@@ -132,7 +132,7 @@
 | 23 | `V202609011050__ext_create_schema.sql` | 低代码扩展 schema |
 | 24 至 38 | `V2026090111{00,05,10,15,20,25,30,35,40,45,50,55}__…` 与 `V2026090112{00,05,10}__…` | 15 个业务 schema 的建 schema 与授权，文件名 slug 为 `<schema>_create_schema` |
 
-合计 38 个迁移文件。本阶段不向 `platform_core.sensitive_field_registry` 预置任何行，阶段 5 按 A-28 以 `db/migrations/mdm/` 下的 backfill 迁移插入 `mdm.customer_invoice_profiles` 与 `mdm.supplier_payment_profiles` 两表的 `bank_name` 与 `bank_account_no` 共四行；`platform_core.append_only_registry` 的登记行按 B-02 由阶段 7、阶段 8、阶段 9a 与阶段 10 各自在本模块迁移中插入，本阶段只建登记表与一致性检查脚本。
+合计 38 个迁移文件。本阶段不向 `platform_core.sensitive_field_registry` 预置任何行，阶段 5 按 A-28 以 `db/migrations/mdm/` 下的 backfill 迁移插入 `mdm.customer_invoice_profiles` 与 `mdm.supplier_payment_profiles` 两表的 `bank_name` 与 `bank_account_no` 共四行，其中 `bank_account_no` 两行的 `is_field_encrypted` 取真；`platform_core.append_only_registry` 的登记行按 B-02 合计十四行，由阶段 3b、阶段 7、阶段 8、阶段 9a 与阶段 10 各自在本模块迁移中插入，本阶段只建登记表与一致性检查脚本。
 
 #### 3.5 本阶段自有表逐表定义
 
@@ -203,7 +203,7 @@
 | `category` | text not null | `ck_..._category` 取 `IDENTITY`、`CONTACT`、`ACCOUNT`、`TAX_ID`、`PAYMENT_TOKEN`、`LEGAL`、`HEALTH`，对应规格第 7.8 章至少覆盖的六类加法律与健康 |
 | `security_level` | smallint not null | 10、20、30、40；未赋值时按所属对象取值的规则由 `platform_core.effective_level()` 承载 |
 | `blind_index` | text not null default 'NONE' | `ck_..._bidx` 首版只放行 `NONE` 与 `EXACT`，`PREFIX` 登记为预留且当前不放行 |
-| `is_field_encrypted` | boolean not null default false | 该列在物理表上是否为信封密文；取 true 时物理列名以 `_enc` 结尾，由 `db/checks/11` 断言 |
+| `is_field_encrypted` | boolean not null default false | 该列在物理表上是否为信封密文；取 true 时物理列集按 A-28 为 `<column_name>_enc bytea` 与 `<column_name>_key_ref text`，需要保留掩码尾数的再加 `<column_name>_tail text`，需要查重的再加 `<column_name>_bidx bytea`，且不保留同名明文列，由 `db/checks/11` 断言 |
 | `blind_index_column` | text null | 盲索引列名；`blind_index` 取 `NONE` 时为空，取 `EXACT` 时形如 `bank_account_no_bidx` |
 | `mask_style` | text not null default 'NONE' | 掩码样式；取值语义由阶段 4 的字段级授权解释，本阶段只承载登记 |
 | `normalization` | text not null default 'TRIM_NFKC' | 取 `NONE`、`TRIM_NFKC`、`TRIM_NFKC_LOWER`、`DIGITS_ONLY` |
@@ -338,7 +338,7 @@ begin
 end $$;
 ```
 
-强制手段有三层。第一层是 `db/checks/03_rls_conformance.sql`，把 `pg_policies` 的 `qual` 与 `with_check` 规范化后与规范文本全等比较，任何变体即报违规。第二层是 `db/checks/02_rls_enabled.sql`，断言凡有 `legal_entity_id` 列的表 `relrowsecurity` 与 `relforcerowsecurity` 均为 true，且策略数恰为 1。第三层是运行期启动自检第 4 项。
+强制手段有三层。第一层是 `db/checks/03_rls_conformance.sql`，把 `pg_policies` 的 `qual` 与 `with_check` 规范化后与规范文本全等比较，任何变体即报违规。第二层是 `db/checks/02_rls_enabled.sql`，断言凡有 `legal_entity_id` 列的表 `relrowsecurity` 与 `relforcerowsecurity` 均为 true，且策略数恰为 1。第三层是运行期启动自检项 `rls-enabled-and-forced`。
 
 会话变量在连接取用时按固定顺序设置四条：`app.legal_entity_id`、`app.user_id`、`app.request_id`、`app.trace_id`，用 `select set_config($1, $2, false)`；归还前逐项设回空串。不使用 `DISCARD ALL`。变量缺失时 `current_setting(..., true)` 返回 NULL，比较结果为 NULL，行不可见也不可写，即默认拒绝。
 
@@ -355,7 +355,7 @@ end $$;
 | `platform_core.assert_immutable_columns()` | BEFORE UPDATE 触发器函数，比对 `append_only_registry.mutable_columns` 之外的列有变化即 raise |
 | `platform_core.attach_table_guards(p_schema text, p_table text)` | 由各阶段迁移调用，按登记表自动挂接上述触发器并调用 `apply_le_rls` |
 
-`assert_append_only` 用于凭证、凭证行、库存数量流水、库存金额流水、审计事件；`assert_immutable_columns` 用于 Outbox 与死信，其可变列白名单为 `status`、`attempts`、`available_at`、`locked_by`、`locked_until`、`last_error` 与死信的 `state`、`repaired_by`、`approval_ref`。这些表的定义属其他阶段，本阶段只交付机制与登记表，并在集成测试中用合成表验证。
+`assert_append_only` 用于凭证、凭证行、库存数量流水、库存金额流水、审计事件；`assert_immutable_columns` 用于 Outbox 与死信，Outbox 的可变列白名单为 `status`、`attempts`、`available_at`、`locked_by`、`locked_until`、`last_error`，死信的可变列白名单按 B-02 取 `state`、`repaired_by`、`repaired_at`、`approval_ref`、`discard_reason` 五列，少登记一列即在上线后拒绝修复完成与丢弃两条路径的写入。这些表的定义与其登记行属阶段 3b、7、8、9a 与 10，本阶段只交付机制与登记表，并在集成测试中用合成表验证。
 
 触发器成本在 20 并发下可忽略，其收益是把基线第 3.7 节的乐观锁写法与第 3.6 节的仅追加口径从代码纪律变成数据库约束，代码路径遗漏时立即失败而不是静默写坏。
 
@@ -367,9 +367,9 @@ end $$;
 
 #### 3.9 合规断言清单
 
-`db/checks/` 十一项编号断言，全部返回 0 行为通过：01 公共列齐备；02 RLS 已启用且强制；03 策略文本与模板全等；04 时间列类型（`_at` 为 timestamptz、`_date` 与 `_on` 为 date）；05 数值精度后缀；06 命名前缀；07 标识符长度；08 无 PostgreSQL enum 类型、无函数索引、无部分索引、无 JSON 路径索引；09 无 `current_date` 与无跨 schema 外键、无 `ON DELETE CASCADE`；10 基线索引齐备；11 敏感字段登记项在物理表上为 `bytea` 且列名以 `_enc` 结尾，且不存在同名明文列。
+`db/checks/` 十一项编号断言，全部返回 0 行为通过：01 公共列齐备；02 RLS 已启用且强制；03 策略文本与模板全等；04 时间列类型（`_at` 为 timestamptz、`_date` 与 `_on` 为 date）；05 数值精度后缀；06 命名前缀；07 标识符长度；08 无 PostgreSQL enum 类型、无函数索引、无部分索引、无 JSON 路径索引；09 无 `current_date` 与无跨 schema 外键、无 `ON DELETE CASCADE`；10 基线索引齐备；11 按 `platform_core.sensitive_field_registry` 的 `is_field_encrypted` 分支断言，取真的登记项断言物理表上存在 `<column_name>_enc` 列且类型为 `bytea` 且不存在同名明文列 `<column_name>`，取假的登记项只断言 `<schema_name>.<table_name>.<column_name>` 三元组在 `information_schema.columns` 中命中实际列，不施加 `bytea` 与 `_enc` 后缀断言。
 
-另有一个不编号的脚本 `db/checks/append_only_consistency.sql`，按 B-02 断言 `platform_core.append_only_registry` 的登记与物理表上实际挂接的触发器逐项一致，由 `xtask sqlcheck` 执行，不计入 `ep-migrate check` 的十一项。阶段 7、阶段 8、阶段 9a 与阶段 10 追加登记行后由该脚本兜底。
+另有一个不编号的脚本 `db/checks/append_only_consistency.sql`，按 B-02 断言 `platform_core.append_only_registry` 的登记与物理表上实际挂接的触发器逐项一致，由 `xtask sqlcheck` 执行，不计入 `ep-migrate check` 的十一项。阶段 3b、阶段 7、阶段 8、阶段 9a 与阶段 10 追加合计十四行登记后由该脚本兜底。
 
 ---
 
@@ -797,7 +797,7 @@ PRD 条目逐条。
 | 11.9 降级状态的用户可见性 | 数据基座自检失败项的结构化结论输出，供运维中心台账取用 |
 | 附录乙 U-A-03 | 文本长度上限以 `text` 加 CHECK 表达，取值按基线第 11.2 节；本阶段被该项的业务侧决策阻塞程度为零，因为改 CHECK 属在线变更范围 |
 | 附录乙 U-A-04 | 数量、单价、金额、税率的小数位数与舍入规则的两侧一致实现；业务侧若另有决策，改动范围限于列类型与 `Money` 的 scale 常量，切换代价为一次停机窗口内的列类型变更 |
-| 附录乙 U-A-12 与 6.16 的 F-17 | 开户银行与银行账号是否纳入敏感字段清单尚待决策，本阶段以 `sensitive_field_registry` 承载该决策，不预置任何行；被阻塞程度为零，因为登记是插入一行而非代码变更。按 A-28，阶段 5 以 `db/migrations/mdm/` 下的 backfill 迁移插入 `mdm.customer_invoice_profiles` 与 `mdm.supplier_payment_profiles` 两表的 `bank_name` 与 `bank_account_no` 共四行，四行的 `is_field_encrypted` 在该事项决策前一律取假；按 A-27，本阶段不接入配置发布通道 |
+| 附录乙 U-A-12 与 6.16 的 F-17 | 开户银行是否纳入敏感字段清单尚待决策，银行账号按规格第 7.8 章强制纳入并做字段级加密；本阶段以 `sensitive_field_registry` 承载该决策，不预置任何行；被阻塞程度为零，因为登记是数据行变更而非代码变更。按 A-28，阶段 5 以 `db/migrations/mdm/` 下的 backfill 迁移插入 `mdm.customer_invoice_profiles` 与 `mdm.supplier_payment_profiles` 两表的 `bank_name` 与 `bank_account_no` 共四行，`bank_account_no` 两行的 `is_field_encrypted` 取真、`bank_name` 两行取假，后者与四行的 `security_level` 与 `mask_style` 同为该事项决策前的临时取值；按 A-27，本阶段不接入配置发布通道 |
 | 附录乙 U-B-05 | 权限求值顺序中显式拒绝优先的结论，本阶段只落实第一步法人授权，其余四步属授权阶段 |
 
 ---
@@ -820,7 +820,7 @@ R-07 复制槽的 `max_slot_wal_keep_size` 取值依赖附录 A.4 实测的事�
 
 R-08 幂等键的三段职责按 C-07 已经拆定，本阶段只定义端口，请求头校验属阶段 1，表与重放判定属阶段 3a，因此本阶段不再登记为被阻塞。残余风险是判等口径必须只在阶段 3a 一处实现，本阶段与阶段 1 都不得自行判等，由第 6 节的端口签名与 CI 依赖图断言约束；阶段 3a 交付后重跑本阶段四个写端点的用例。
 
-为后续阶段预留的扩展点，逐项给出位置。一是 `attach_table_guards` 与 `assert_baseline_indexes` 两个函数，各业务阶段建表时调用一次即自动获得策略、触发器与索引断言，无需重复实现。二是 `sensitive_field_registry` 与 `append_only_registry` 两张登记表，新增受保护列或仅追加表只是插入一行，不改代码；按 A-27 本阶段不接入配置发布通道，登记经迁移或端点直接写入，发布通道接入由阶段 3b 反向补齐，登记行分别由阶段 5（A-28）与阶段 7、8、9a、10（B-02）插入。三是 `KmsBackend` trait 的 `hsm` 实现位点，客户提供硬件密码机时只切换配置；`derive_blind_key` 是盲索引取值的唯一计算入口，阶段 5 与阶段 10 按 B-04 直接取用。四是 `UnitOfWork::snapshot_transact` 与语句集签名校验位点，供阶段 9a 的 `ep-platform-recon` 直接承接。五是 `db/migrations/<schema>/concurrent/` 目录，供后续阶段在有数据的表上加索引，其在线 DDL 执行段按 B-03 须先调用 `MigrationWindowGuard::assert_open`。六是 `ep-datagen` 的模块生成器注册点。七是 `CipherEnvelope` 的算法标识字段预留 `0x02` 起的取值，供后续版本恢复商用密码档位时扩展，本阶段不实现也不验收。八是 `key_domains.domain_kind` 的 `GROUP_SHARED` 取值已在类型中存在但 CHECK 不放行，供后续版本恢复跨法人能力时放开。九是 `LegalEntityDirectory` 与 `DepartmentClosureQuery` 两个 trait 与 `DegradationLedger` 端口，阶段 3 至阶段 14 直接注入取用，不自建同义接口。
+为后续阶段预留的扩展点，逐项给出位置。一是 `attach_table_guards` 与 `assert_baseline_indexes` 两个函数，各业务阶段建表时调用一次即自动获得策略、触发器与索引断言，无需重复实现。二是 `sensitive_field_registry` 与 `append_only_registry` 两张登记表，新增受保护列或仅追加表只是插入一行，不改代码；按 A-27 本阶段不接入配置发布通道，登记经迁移或端点直接写入，发布通道接入由阶段 3b 反向补齐，登记行分别由阶段 5（A-28）与阶段 3b、7、8、9a、10（B-02）插入。三是 `KmsBackend` trait 的 `hsm` 实现位点，客户提供硬件密码机时只切换配置；`derive_blind_key` 是盲索引取值的唯一计算入口，阶段 5 与阶段 10 按 B-04 直接取用。四是 `UnitOfWork::snapshot_transact` 与语句集签名校验位点，供阶段 9a 的 `ep-platform-recon` 直接承接。五是 `db/migrations/<schema>/concurrent/` 目录，供后续阶段在有数据的表上加索引，其在线 DDL 执行段按 B-03 须先调用 `MigrationWindowGuard::assert_open`。六是 `ep-datagen` 的模块生成器注册点。七是 `CipherEnvelope` 的算法标识字段预留 `0x02` 起的取值，供后续版本恢复商用密码档位时扩展，本阶段不实现也不验收。八是 `key_domains.domain_kind` 的 `GROUP_SHARED` 取值已在类型中存在但 CHECK 不放行，供后续版本恢复跨法人能力时放开。九是 `LegalEntityDirectory` 与 `DepartmentClosureQuery` 两个 trait 与 `DegradationLedger` 端口，阶段 3 至阶段 14 直接注入取用，不自建同义接口。
 
 ---
 
@@ -858,4 +858,4 @@ R-08 幂等键的三段职责按 C-07 已经拆定，本阶段只定义端口，
 
 假设五，复制交叉核对周期取 300 秒，即规格第 7.7 章所称不长于 5 分钟的上界。规格给了上界未给取值，本阶段取上界本身，理由是该核对只读两张统计视图，代价与业务数据量无关，更密的周期不带来额外收益而只增加连接占用。配置大于 300 即拒绝启动。
 
-被业务决策阻塞的判定：本阶段无被阻塞项。U-A-03、U-A-04、U-A-12 与 F-17 四项虽与本阶段相关，但其载体分别是 CHECK 约束、列类型与登记表，三者的变更都在在线变更或登记行插入范围内，切换代价分别为一次在线迁移、一次停机窗口内的列类型变更与一次登记行插入，均不构成本阶段的开工前提。幂等键一项按 C-07 是三段分工而非阻塞，见第 6 节与 R-08。
+被业务决策阻塞的判定：本阶段无被阻塞项。U-A-03、U-A-04、U-A-12 与 F-17 四项虽与本阶段相关，但其载体分别是 CHECK 约束、列类型与登记表，三者的变更都在在线变更或登记行变更范围内，切换代价分别为一次在线迁移、一次停机窗口内的列类型变更与一次登记行变更；U-A-12 若决策为开户银行也做字段级加密，按 A-28 另需在同一次变更内改物理列并删去同名明文列，该代价落在阶段 5 而不落在本阶段。四项均不构成本阶段的开工前提。幂等键一项按 C-07 是三段分工而非阻塞，见第 6 节与 R-08。

@@ -16,7 +16,7 @@
 
 #### 0.2 被 PRD 附录乙未决事项覆盖的部分与临时取值
 
-本阶段被 12 条未决事项直接覆盖。12 条均不阻塞开工，理由是每一条只决定取值而不决定结构。逐条给出临时取值与切换代价。
+本阶段被 13 条未决事项直接覆盖。13 条均不阻塞开工，理由是每一条都能以临时取值先行实现，决策只改取值不改本阶段的开工前提；其中 U-C-12、U-I-06 与 U-I-08 三条的反向切换属结构变更，代价在下表逐条写明并在第 11.1 节 R-7 复核。逐条给出临时取值与切换代价。
 
 | 编号 | 临时取值 | 切换代价 |
 |---|---|---|
@@ -31,7 +31,8 @@
 | U-I-09 自定义指标可引用范围 | 只能引用已登记受治理数据集的字段；不得引用未分摊差异桶、预置指标本身与总账科目余额数据集；自定义指标不进入规格第 22 章第 6 条一致性验收 | 放宽只需在数据集注册表上打开三个数据集的可引用标记，代价低 |
 | U-I-10 存在未清零对账差异事项时的标记 | 指标卡级标记，粒度为法人加会计期间。该组合存在未清零对账差异事项时，收入、成本、利润三张卡加标记，交付卡不加 | 改粒度需改一次查询的分组键，代价低 |
 | U-I-11 导出格式与是否一律触发高风险 | 报表与指标导出一律按敏感数据导出处理，需重新认证与审批；格式为 XLSX、CSV、PDF 三种；单次上限 50000 行，取自基线第 11.5 节 | 若改为按数据范围分级判定，需依赖 U-B-18 的敏感字段清单，属新增判定，代价中 |
-| U-I-12 状态名称、版本号与回退粒度 | 状态取 PRD 第 8.4.5 节的 DRAFT、PENDING_APPROVAL、PUBLISHED、DEACTIVATED 四个；版本号为整数 version_no 自 1 递增；回退粒度为对象版本级 | 与第 10 节配置发布通道一并决策，代价低 |
+| U-C-12 个人自用报表是否与企业级报表走同一发布通道 | 不区分个人与企业级，报表定义、自定义指标、仪表盘、打印模板四类对象一律按第 4.6 节四状态机提交审批，并经第 4.8 节的 ep-platform-release 通道跨环境发布，不设免审批旁路 | 若改为双通道，需新增个人自用对象类型与一条免审批发布路径，并同步改第 4.6 节状态机守卫、第 4.8 节四个 ConfigItemApplier 的 item_kind 映射与第 6.3 节配置对象生命周期的事务与权限判定，属结构变更，代价中 |
+| U-I-12 状态名称、版本号与回退粒度 | 状态取 PRD 第 8.4.5 节的 DRAFT、PENDING_APPROVAL、PUBLISHED、DEACTIVATED 四个；版本号为整数 version_no 自 1 递增；回退粒度为对象版本级 | 与 U-C-12 同源，须与 PRD 第 10 节的配置发布通道一并决策，代价低 |
 
 另有四条未决事项落在别的阶段但会改变本阶段的取数结果，本阶段按下列假定实现并在退出条件中留出核对项：U-D-11 账龄分档由本阶段承载配置结构，取值见第 3.4 节；U-D-12 到期日取值来源由财务阶段给出，本阶段只消费台账视图上的 due_date 列；U-C-09 已退货未冲回成本的置位方尚未决策，本阶段只提供 is_returned_not_reversed 列、CostReturnMarkPort 与按该标注的筛选，不指名调用方，第 8.5 节第十五类用例经该端口直接置位，该事项关闭后由其指定的阶段接入调用；U-F-06 直接费用类采购单据的合同订单项目字段是否至少必填其一直接决定未分摊差异桶的大小，本阶段不做假定，字段为空即归入未分摊差异。
 
@@ -121,7 +122,7 @@ ep-domain-costing 只依赖 ep-foundation 与 ep-contract-costing。ep-app-costi
 | voucher_line_id | uuid | 否 | 逻辑引用 ledger，不建外键 |
 | account_id | uuid | 否 | 成本科目，逻辑引用 ledger |
 | amount | numeric(18,2) | 否 | 借方为正，贷方冲回为负，ck_cost_entries_amount_nonzero |
-| source_document_type | text | 否 | ck_cost_entries_source_document_type，取值 DELIVERY_CONFIRMATION、PURCHASE_INVOICE、PURCHASE_RETURN、RED_LETTER_INVOICE、OVER_INVOICE_SETTLEMENT、SALES_RETURN；取值为 DELIVERY_CONFIRMATION 时 source_document_id 与 source_document_line_id 指向阶段 6 按裁定 A-09 在 sales schema 交付的 sales.delivery_confirmations 与 sales.delivery_confirmation_lines，成本下钻与跳转原单据以这两张表为准 |
+| source_document_type | text | 否 | ck_cost_entries_source_document_type，取值 DELIVERY_CONFIRMATION、PURCHASE_INVOICE、PURCHASE_RETURN、RED_LETTER_INVOICE、OVER_INVOICE_SETTLEMENT、SALES_RETURN；取值为 DELIVERY_CONFIRMATION 时 source_document_id 与 source_document_line_id 指向阶段 6 按裁定 A-09 在 sales schema 交付的 sales.delivery_confirmations 与 sales.delivery_confirmation_lines，成本下钻按裁定 A-09 以这两张表为来源单据，并经这两列跳转原单据；下钻返回的明细行取自本模块的 costing.cost_entries，跳转由客户端按 jump_target 调用阶段 6 的交付确认查询端点完成，分析 SQL 中不出现这两个基表名，与 D-11-01 一致 |
 | source_document_id | uuid | 否 | 逻辑引用来源模块 |
 | source_document_line_id | uuid | 否 | 无明细行时写全零 UUID 哨兵，理由见 0.3 A-5 |
 | contract_id | uuid | 是 | 归集维度 |
@@ -509,7 +510,7 @@ apply 的幂等：按 code 与 spec_hash 定位，已存在同 code 且 spec_has
 
 全部路径前缀 /api/v1，头集合按基线第 5.6 节。分析类查询一律为 GET，不需要 Idempotency-Key；写请求与导出任务为 POST，必须带 Idempotency-Key。响应封套按基线第 5.2 节。无权访问已存在记录一律 404 与 PLATFORM.AUTHZ.NOT_FOUND_OR_DENIED，对象类型完全无权 403 与 PLATFORM.AUTHZ.OBJECT_FORBIDDEN，法人未授权由平台在安全上下文建立阶段拒绝。
 
-本节全部路由在 ep-contract-costing 与 ep-contract-reporting 的 src/capability.rs 中按用例声明一对常量，命名为 <USECASE_SCREAMING>_DOMAIN 与 <USECASE_SCREAMING>_ACTION，取值取自 ep-foundation 的 CapabilityDomain 与 ActionClass 两个枚举。本阶段全部路由的能力域码取 CapabilityDomain::ReportingReportPrint，动作类别按只读查询取 ActionClass::Read、导出与打印取 Export、设计与修改取 Write、提交发布取 Submit、审批与驳回取 Approve。xtask configdoc 断言每个路由都能解析到一对常量，缺失即构建失败。
+本节全部路由在 ep-contract-costing 与 ep-contract-reporting 的 src/capability.rs 中按用例声明一对常量，命名为 <USECASE_SCREAMING>_DOMAIN 与 <USECASE_SCREAMING>_ACTION，取值取自 ep-foundation 的 CapabilityDomain 与 ActionClass 两个枚举。本阶段全部路由的能力域码取 CapabilityDomain::ReportingReportPrint，动作类别按只读查询取 ActionClass::Read、导出与打印取 Export、设计与修改取 Write、提交发布取 Submit、审批与驳回取 Approve。xtask configdoc 断言每个 /api/v1/ 路由都能解析到一对常量，缺失即构建失败。
 
 #### 5.1 成本归集
 
@@ -709,7 +710,7 @@ tests/analytics_isolation 新增测试目标，承担规格第 17.2 章派生存
 - 第十三类超量开票转成本：经审批确认不再冲回并转当期主营业务成本后，当期毛利与成本归集查询同步变动。
 - 第十五类直运订单退货：供应商不接受退回时该成本保留，并在成本归集查询中按原合同、订单、项目维度标注为已退货未冲回成本，可按该标注筛选，且带标注金额仍计入成本合计。
 
-另加规格第 8 章闭环第 14 步的完整用例：一条合同从建单走到管理层看数，断言收入、成本、利润三项取数与总账科目余额差额为零（法人、会计期间与科目合计层面），下钻合计加未分摊差异等于总额（客户、产品、合同、订单四个维度各一次），交付指标与合同交付节点、订单分批交付单据逐项一致（期间、客户、合同三个层面），按产品与订单下钻时交付指标只与订单分批交付单据逐项一致。该用例即规格第 22 章第 6 条的经营指标验收证据。
+另加规格第 8 章闭环第 14 步的指标一致性用例，不含第 12 步与期间关账，整条链路的贯通验收由阶段 9b 的 testkit/scenarios/golden_loop_14_steps.rs 承担：断言收入、成本、利润三项取数与总账科目余额差额为零（法人、会计期间与科目合计层面），下钻合计加未分摊差异等于总额（客户、产品、合同、订单四个维度各一次），交付指标与合同交付节点、订单分批交付单据逐项一致（期间、客户、合同三个层面），按产品与订单下钻时交付指标只与订单分批交付单据逐项一致。该用例即规格第 22 章第 6 条的经营指标验收证据。
 
 #### 8.6 性能测试
 
@@ -748,7 +749,7 @@ tests/analytics_isolation 新增测试目标，承担规格第 17.2 章派生存
 15. 附录 A.1 中属本阶段的三项常用报表 P95 在 10 秒内，样本不少于 200 次，含备份负载条件，EXPLAIN 证据显示无顺序扫描。
 16. 覆盖率达到第 8 节门槛，无长期 ignore 用例。
 17. docs/error-codes.md 新增 36 条、docs/event-catalog.md 新增 3 条、docs/data-dictionary 两节、五份 ADR 全部提交；docs/data-dictionary.md 的单据类型码一节含本阶段的 RT 一行且 xtask configdoc --check-doc-type-codes 通过；基线回写完成，含 5 个指标、13 个配置键、D-11-01 至 D-11-05 五条。
-18. 规格第 17.2 章十五类必测分支中的第四、七、十三、十五类端到端通过，规格第 8 章闭环第 14 步用例通过，执行记录纳入发布证据包。
+18. 规格第 17.2 章十五类必测分支中的第四、七、十三、十五类端到端通过，规格第 8 章闭环第 14 步的指标一致性用例通过，执行记录纳入发布证据包；闭环十四步整条链路的贯通验收由阶段 9b 的 testkit/scenarios/golden_loop_14_steps.rs 承担，不在本阶段判定。
 19. 四个报表类 ConfigItemApplier 已实现并注册进阶段 3a 交付的 ConfigItemApplierRegistry；四类对象各经阶段 3b 的配置发布通道完成一次发布与一次回退，apply 幂等、rollback 不删除版本行。
 20. costing 与 reporting 两个模块在规格第 6.2 章能力矩阵中取值为完整或简化的能力域，其四端界面已实现并通过 Playwright 与 tauri-driver 的桌面用例、XCUITest 与 Espresso 的移动用例；取值为 VIEW_ONLY 的能力域只实现只读视图；取值为 NOT_APPLICABLE 的不实现入口。
 21. 本阶段全部路由的能力域码与动作类别常量已在 ep-contract-costing 与 ep-contract-reporting 的 src/capability.rs 声明，xtask configdoc 通过。
@@ -814,7 +815,7 @@ tests/analytics_isolation 新增测试目标，承担规格第 17.2 章派生存
 | R-4 A-1 与 A-2 两条假设把捕获绑死在 ledger 的过账用例上，而该用例由阶段 9a 先行交付 | 本阶段要在别的模块的既有用例内追加调用点，可能与其事务边界或科目判定冲突，改不动即无法在同事务捕获 | 调用点、两个捕获实现与 wiring 注入由本阶段同批交付，见第 2.2 节 ep-app-ledger 一行、第 2.3 节与第 4.2 节；阶段 9a 不预留空实现，本阶段也不向其派工；接口形状由本阶段在 ep-contract-costing 自定，改动范围限于过账用例内的一段调用与一条 crate 依赖，依赖方向由 CI 的 cargo metadata 断言脚本守住；退路为 Outbox 异步补写，代价是正常运行期出现秒级差额，需要同时放宽 PRD 第 8.3.2 节的差额为零判定到关账时点判定，属口径变更，必须由财务负责人批准 |
 | R-5 高级只读 SQL 的白名单可能被绕过，成为越权入口，对应规格第 21.7 章 | 报表成为越权读取通道 | AST 白名单而不是正则黑名单；执行只在受行级策略约束的 ep_analyst_ro 上，即使解析层被绕过，法人隔离仍由数据库承担；模糊测试对解析器施加不少于 10 万条变异输入；tests/analytics_isolation 属发布门禁项 |
 | R-6 未分摊差异桶可能显著偏大，取决于 U-F-06 的决策 | 管理层下钻可用性下降，指标被质疑 | 本阶段在成本归集查询响应中固定返回 unallocated_ratio，实施期可据此度量；不做任何分摊，也不隐藏 |
-| R-7 12 条未决事项若在阶段末仍未决策，交付的是临时取值 | 客户验收期返工 | 全部临时取值集中在配置键与两处纯函数中，第 0.2 节已逐条给出切换代价；U-I-06 与 U-I-08 两条属结构性，若决策与临时取值相反需要重新评估工期 |
+| R-7 13 条未决事项若在阶段末仍未决策，交付的是临时取值 | 客户验收期返工 | 除 U-C-12 外的临时取值集中在配置键与两处纯函数中，第 0.2 节已逐条给出切换代价；U-C-12、U-I-06 与 U-I-08 三条属结构性，若决策与临时取值相反需要重新评估工期，其中 U-C-12 的临时取值落在第 4.6 节状态机与第 4.8 节四个 ConfigItemApplier 上 | 
 
 #### 11.2 为后续阶段预留的扩展点
 

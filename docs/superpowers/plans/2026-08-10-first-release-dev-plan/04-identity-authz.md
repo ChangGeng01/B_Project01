@@ -384,7 +384,7 @@ X-Reauth-Token 的消费是一次条件更新：`update platform_core.reauth_cha
 
 #### 4.7 字段投影
 
-FieldProjector 输入为对象类型、对象的原始行（serde_json::Value）与 SecurityContext，输出为新的 Value，不修改输入。掩码规则：FULL 输出固定字符串六个星号；KEEP_LAST_4 保留末四位其余替换为星号，长度不足 8 位时退化为 FULL；KEEP_DOMAIN 用于电子邮箱，保留 at 之后的部分。掩码后的值不参与排序与聚合，任何列表端点如果按 MASKED 或 HIDDEN 字段排序，一律返回 VALIDATION 与 PLATFORM.AUTHZ.SORT_FIELD_FORBIDDEN，这是 PRD 第 10.2.4 节“不得通过排序位次间接暴露”的实现点。分面计数同理：计数的分组键若含无权字段，该分面整体不返回。
+FieldProjector 输入为对象类型、对象的原始行（serde_json::Value）与 SecurityContext，输出为新的 Value，不修改输入。掩码规则：FULL 输出固定字符串六个星号；KEEP_LAST_4 保留末四位其余替换为星号，长度不足 8 位时退化为 FULL；KEEP_DOMAIN 用于电子邮箱，保留 at 之后的部分。字段在 platform_core.sensitive_field_registry 中登记且 is_field_encrypted 为真时物理列是密文，上述三条不施加于密文：KEEP_LAST_4 的后四位直接取自同表的 `<column_name>_tail` 列，FULL 与 HIDDEN 既不读密文也不解密；只有字段权限为 READ 或 WRITE 且用户 clearance_level 不低于该字段密级时，才在投影前经 SensitiveFieldDecryptor 解密后输出，全库只有这一处解密位点。按 A-28，首版命中该分支的是 mdm.customer_invoice_profiles、mdm.supplier_payment_profiles 与 finance.cash_accounts 三处的 bank_account_no，其 mask_style 取 KEEP_LAST_4，物理列与登记行由阶段 5 与阶段 10 交付，本阶段只按登记行渲染，不建表也不写登记行。字段在 field_permissions 中无授权行时按默认拒绝处理，不进入响应键集合，与阶段二的默认拒绝一致；各模块字段的授权行按 A-19 的 AUTHZ_FIELD_GRANT applier 经配置发布通道在其所属阶段之后写入。掩码后的值不参与排序与聚合，任何列表端点如果按 MASKED 或 HIDDEN 字段排序，一律返回 VALIDATION 与 PLATFORM.AUTHZ.SORT_FIELD_FORBIDDEN，这是 PRD 第 10.2.4 节“不得通过排序位次间接暴露”的实现点。分面计数同理：计数的分组键若含无权字段，该分面整体不返回。
 #### 4.8 权限配置对象的配置包 applier
 
 按 A-19，ConfigItemApplier trait、含 15 项的 ItemKind 枚举、ConfigPackageItem 与 ConfigItemApplierRegistry 由阶段 3a 在 `crates/platform/release/src/port/config_item.rs` 交付，其中的事务句柄类型取自 ep-foundation。本阶段实现其中三个 item_kind，实现类型全部落在 ep-platform-authz。
@@ -402,7 +402,7 @@ FieldProjector 输入为对象类型、对象的原始行（serde_json::Value）
 ### 5. API 契约
 
 全部端点前缀为 /api/v1/platform，门户侧为 /api/v1/portal。请求头、封套、分页、排序、过滤、幂等键一律按基线第 5 章，本节只写差异与逐端点的语义。
-本节全部路由按 A-20 逐路由声明一对常量，命名为 `<USECASE_SCREAMING>_DOMAIN` 与 `<USECASE_SCREAMING>_ACTION`，类型分别取 `ep_foundation::CapabilityDomain` 与 `ep_foundation::ActionClass`，两个枚举由阶段 1 冻结，本阶段不自定义能力域码也不在本阶段内重新定义枚举；`xtask configdoc` 断言每个 HTTP 路由都能解析到一对常量，缺失即构建失败。本阶段全部路由落在 `/api/v1/platform/` 与 `/api/v1/portal/` 两段，按 A-20 为本阶段指名的承载 crate，两段的常量一律声明在 `crates/platform/authz/src/capability.rs`，其中 `/api/v1/platform/` 下路由的能力域按 A-20 一律取 `CapabilityDomain::PlatformAdminLowcodeOps`。第 4.1 节的 Action 六值与 ActionClass 五值是两个不同的东西：前者是权限项的动作粒度，参与授权判定阶段二；后者是客户端能力矩阵的动作类别，由阶段 13 的能力矩阵闸使用，两者按 View 对 Read、Create 与 Update 对 Write、Submit 对 Submit、Approve 对 Approve、Export 对 Export 映射。
+本节全部路由按 A-20 逐路由声明一对常量，命名为 `<USECASE_SCREAMING>_DOMAIN` 与 `<USECASE_SCREAMING>_ACTION`，类型分别取 `ep_foundation::CapabilityDomain` 与 `ep_foundation::ActionClass`，两个枚举由阶段 1 冻结，本阶段不自定义能力域码也不在本阶段内重新定义枚举；`xtask configdoc` 断言每个 `/api/v1/` 路由都能解析到一对常量，缺失即构建失败，`ci-probe` feature 门控的探针路由与 `/internal/v1/` 下不对四端暴露的内部端点不参与判定也不声明常量。本阶段全部路由落在 `/api/v1/platform/` 与 `/api/v1/portal/` 两段，按 A-20 为本阶段指名的承载 crate，两段的常量一律声明在 `crates/platform/authz/src/capability.rs`，其中 `/api/v1/platform/` 下路由的能力域按 A-20 一律取 `CapabilityDomain::PlatformAdminLowcodeOps`，第 5.8 节 `/api/v1/portal/` 下的三个路由取 `CapabilityDomain::PortalSupplierWeb`。第 4.1 节的 Action 六值与 ActionClass 五值是两个不同的东西：前者是权限项的动作粒度，参与授权判定阶段二；后者是客户端能力矩阵的动作类别，由阶段 13 的能力矩阵闸使用，两者按 View 对 Read、Create 与 Update 对 Write、Submit 对 Submit、Approve 对 Approve、Export 对 Export 映射。
 
 #### 5.1 认证前端点的头豁免
 
@@ -612,7 +612,7 @@ roles、role-permission-grants、access-policies、field-permissions、sod-rules
 
 职责分离与链校验：五类管理员两两组合共 10 对的互斥判定、CONFIG 与 SECURITY 互斥、自审检测在 ROLE 与 POSITION 与 DEPT_MANAGER 三种展开下各一条、节点号空洞、quorum 越界、节点展开为空。
 
-摘要与掩码：待签摘要的规范化对键顺序、Decimal 表示、空值三类输入稳定；掩码的边界（长度不足 8 位、空串、非 ASCII）。
+摘要与掩码：待签摘要的规范化对键顺序、Decimal 表示、空值三类输入稳定；掩码的边界（长度不足 8 位、空串、非 ASCII）；登记为 is_field_encrypted 的字段其 KEEP_LAST_4 取自 `<column_name>_tail` 列且不触发解密，字段权限为 READ 时经解密位点输出、为 MASKED 时不调用解密位点，两条各一例。
 
 领域属性测试（proptest）：任取角色集合与策略集合，若其中存在任一 DENY 命中，则判定结果必为 Deny；任取用户与对象，判定结果对同一输入恒定；任取字段权限集合，投影后的键集合是原键集合的子集且不含任何 HIDDEN 字段。这三条是本阶段对基线第 8.1 节领域属性测试的补充，不占用其五组财务不变量的名额。
 
@@ -752,7 +752,7 @@ roles、role-permission-grants、access-policies、field-permissions、sod-rules
 | 4.10 权限与职责分离 | 付款申请提交人不可作为该申请的任一审批节点 |
 | 11.2 并发与规模上限 | 20 人合计并发的准入实现 |
 | 11.7 访问入口约束 | 门户会话与内部会话的分离；门户账号的法人范围限定 |
-| 附录乙 U-B-05 至 U-B-18 | 逐条给出临时取值，见第 11.3 节 |
+| 附录乙 U-B-05 至 U-B-18 | 逐条给出临时取值，见第 12.3 节 |
 
 ---
 
@@ -777,7 +777,7 @@ roles、role-permission-grants、access-policies、field-permissions、sod-rules
 3. 策略模拟与影响分析。POST /api/v1/platform/authz-decisions/actions/evaluate 已具备对任意主体求值的能力，模拟只需在其上加一层“以候选配置版本求值”的入参，判定内核不变。
 4. 仓库维度（U-B-10）。若安全负责人决定新增仓库维度，落点是 object_scope_bindings 增加一列 warehouse_col 与 user_scope_grants 的 scope_kind 增加一个取值，但规格第 12.2 章的七个维度必须先修订，PRD 层不得自行增加维度。
 5. 破窗授权流程。受控应急本地账号的 allowed_action_set 是一个 text[] 加 CHECK，通用破窗恢复时可放宽该 CHECK，但规格第 12.1 章明确首版不含通用破窗，因此本阶段不预留 API。
-6. 字段级加密的解密位点。FieldProjector 在投影前调用一个 SensitiveFieldDecryptor trait，首版由 KMS 阶段提供实现；盲索引与受控投影按规格第 7.8 章由其所属阶段建设，本阶段只保证解密发生在统一前置路径上而不是散落在各模块。
+6. 字段级加密的覆盖面。解密位点本身不是预留项：按 A-28 首版已有实际加密字段，口径与唯一解密位点见第 4.7 节，SensitiveFieldDecryptor 的实现基于阶段 2 交付的 ep-adapter-kms，本阶段不自建第二套解封路径。预留的是覆盖面，U-A-12 决策把开户银行或其他字段改为字段级加密时，只增加登记行与物理列，本阶段的投影器与判定流水线不改；盲索引与受控投影按规格第 7.8 章由其所属阶段建设。
 7. 移动端“把任务发送到桌面端继续”（U-K-08）。high_risk_requests 的 CLIENT_NOT_ALLOWED 错误响应中预留 advice 字段承载跳转说明，产品决策后只改文案不改逻辑。
 
 ---
@@ -826,6 +826,6 @@ roles、role-permission-grants、access-policies、field-permissions、sod-rules
 | U-B-17 | CONFIG 职责与 SECURITY 互斥，与其余四类可兼 | 否 | 改互斥关系只需改种子 SoD 规则行 |
 | U-B-18 | 敏感导出的判定为：结果集含敏感字段清单内任一字段，或对象密级不低于 30，或单次导出行数不低于 1000，三者任一成立即为敏感导出；审计记录导出计入 | 否 | 阈值为配置项，判定条件的增删改一个纯函数 |
 | U-L-01 | 并发定义为最近 60 秒内有请求的不同用户数；达上限排队，等待 10 秒超时返回 503 | 否 | 改为不限制只记录需去掉信号量并保留计数器 |
-| U-A-12 | 该项待决，裁定表不代拍。技术侧临时取值按 A-28：`mdm.customer_invoice_profiles` 与 `mdm.supplier_payment_profiles` 的 `bank_name` 与 `bank_account_no` 共四行登记为 ACCOUNT 类且密级 30，`bank_account_no` 的 mask_style 取 KEEP_LAST_4、`bank_name` 取 NONE，四行 is_field_encrypted 均为假，即首版不做字段级加密；导出是否触发重新认证按 U-B-18 的判定函数计算 | 否 | 登记行是数据行，取值切换按 A-28 的切换路径在一次变更内完成，本阶段的字段投影器与 U-B-18 判定函数不改 |
+| U-A-12 | 该项待决，裁定表不代拍，待决范围只有三问：开户银行是否同列敏感字段清单、列表与详情与导出三场景的脱敏形态、导出是否触发重新认证；银行账号的纳入与其字段级加密按规格第 7.8 章强制落地，不在待决范围内。技术侧临时取值按 A-28：`mdm.customer_invoice_profiles` 与 `mdm.supplier_payment_profiles` 的 `bank_name` 与 `bank_account_no` 共四行登记为 ACCOUNT 类且密级 30，`bank_account_no` 两行 is_field_encrypted 取真、mask_style 取 KEEP_LAST_4 且后四位取自 `bank_account_no_tail`，`bank_name` 两行取假、mask_style 取 NONE；导出是否触发重新认证按 U-B-18 的判定函数计算，该函数对这四列判真 | 否 | 登记行是数据行，取值切换按 A-28 的切换路径在一次变更内完成，本阶段的字段投影器与 U-B-18 判定函数不改 |
 
 以上 17 条均不阻塞本阶段实施。原先登记的唯一阻塞项已解除：SecurityContext 的 19 个字段与三个配套枚举按 A-03、SYSTEM_PRINCIPAL_ID 与 SYSTEM_DEVICE_ID 按 A-02、CapabilityDomain 与 ActionClass 按 A-20，均由阶段 1 在 ep-foundation 冻结并排在本阶段之前，本阶段只负责填充与引用，本计划不再存在需要标注为阻塞的前置项。

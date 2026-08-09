@@ -36,7 +36,7 @@
 #### 1.4 证据物
 
 14. 附录 C.2 十二项门槛在 C.1 设备基线上的复测报告与全部原始测量数据。
-15. 规格第 6.2 章能力等价矩阵 18 行、豁免清单每条替代路径的逐条核对表，含四端 E2E 执行证据。
+15. 规格第 6.2 章能力等价矩阵 18 行、豁免清单每条替代路径的逐条核对表，含四端 E2E 执行证据；按裁定 A-23，业务闭环类用例的执行证据由阶段 5 至阶段 12 提交，本阶段只汇总，不自行执行。
 16. 一次完整的配置发布与回退演练证据包：含差异审查记录、自动测试报告、审批与签名记录、执行耗时、锁持有时长、回退结果与审计链验证结论。
 
 ---
@@ -373,9 +373,8 @@ create unique index ux_<code>_legal_entity_id_doc_no on ext.<code> (legal_entity
 | 11 | V202704060950__platform_meta_extensions.sql | extensions、extension_capability_grants |
 | 12 | V202704060955__platform_meta_extension_invocations.sql | extension_invocations 含 RLS |
 | 13 | V202704061000__platform_meta_client_bootstrap_dispatches.sql | client_bootstrap_dispatches 含 RLS |
-| 14 | V202704061005__platform_meta_grant_ext_schema.sql | 为 ep_migrator 授予 ext schema 的 DDL 权限，为 ep_app_rw 授予 ext schema 的表数据读写默认权限，为 ep_analyst_ro 授予只读默认权限 |
 
-每个文件头部带 `-- rollback:` 段。第 14 个文件的回退说明注明只能用升级前备份，理由是撤回 schema 级默认权限会使已建的自定义对象表不可访问。
+每个文件头部带 `-- rollback:` 段。本阶段不再追加任何 `ext` schema 级授权迁移：`ext` schema 本身、其属主角色以及对 `ep_app_rw` 与 `ep_analyst_ro` 的 USAGE 与表默认权限由阶段 2 按裁定 C-01 随二十四个 schema 一次建立，`ep_migrator` 在阶段 2 已被授予全部 `ep_mod_*` 角色成员资格，因而在 `ext` 下具备 DDL 权限；自定义对象表的数据读写授权由第 4.3 节的 DDL 计划在 `create policy` 之后逐表发出，不经默认权限，理由见第 4.3 节边界条件。
 
 ---
 
@@ -453,7 +452,7 @@ pub enum ChangeKind { Add, Modify, Remove }
 
 | 差异 | 生成语句 | 执行模式 |
 |---|---|---|
-| 新增对象 | create table、enable rls、force rls、create policy、三条基线索引 | ONLINE |
+| 新增对象 | create table、enable rls、force rls、create policy、逐表 grant、三条基线索引 | ONLINE |
 | 新增可空列 | alter table add column，无默认或常量非易失默认 | ONLINE |
 | 新增索引 | create index concurrently | ONLINE |
 | 放宽长度 | drop constraint 旧 CHECK，add constraint 新 CHECK not valid，validate constraint | ONLINE |
@@ -465,7 +464,7 @@ pub enum ChangeKind { Add, Modify, Remove }
 4. 五项影响分析。索引项给出新增索引数、该对象索引总数与配额比对、按现有行数与平均行宽估算的索引体积；容量项给出新增列的行宽增量、`ext` 下对象总数与字段总数与配额比对、磁盘剩余量；性能项给出每条 `create index concurrently` 按现有行数与认证期实测吞吐外推的预计耗时与 30 分钟上限比对；安全项给出密级赋值核对结论、RLS 模板齐备结论、新增查询入口是否已纳入 RLS 矩阵测试的结论；迁移项给出可逆性判定与回退方式，不可逆的注明只能用升级前备份或影子表。五项写入 `ddl_plans` 的五个 jsonb 列，缺一不可。
 5. 执行。DDL 段的第一步由 job-worker 的 DDL 执行器在把控制交给 `ep-platform-release` 的编排之前，调用经装配注入的 `ep_adapter_db::port::MigrationWindowGuard` 实例的 `assert_open(tx)`，该端口与其唯一实现 `PgMigrationWindowGuard` 均由阶段 2 交付并已在两个 wiring 注入，`ep-platform-release` 不引用该 trait，见裁定 B-03；未持有已打开的迁移窗口时不建立任何连接、不执行任何语句，返回 `PLATFORM.DB.MIGRATION_WINDOW_CLOSED`，HTTP 409，category 为 BUSINESS_CONFLICT，该错误码由阶段 1 登记，本阶段只引用。守卫通过后由 job-worker 建立一条 `ep_migrator` 连接，会话上执行 `set lock_timeout = '5s'` 与 `set statement_timeout = '30min'`。逐条语句在自动提交下执行，理由是 `create index concurrently` 不能在事务块内。每条语句执行前后各取一次 `clock_timestamp()`，把等待锁的时长与执行时长写入 `ddl_plan_steps`。
 6. 失败与回退。任一语句失败时立即停止，按已成功语句的逆序执行补偿语句：`create index concurrently` 对应 `drop index concurrently`，`add column` 对应 `drop column`，`create table` 对应 `drop table`，`create policy` 对应 `drop policy`，`validate constraint` 与 `add constraint` 对应 `drop constraint` 并恢复原 CHECK。补偿完成后计划置 ROLLED_BACK；若失败原因为 lock_timeout，计划另置 DEFERRED_TO_WINDOW 并把回退原因、操作对象与耗时写入审计，照抄规格第 7.4 章运行期口径，不判定为认证失败。
-7. 元数据与 DDL 的一致化。DDL 无法与元数据写入同事务，因此采用两阶段：先在一个事务内把相关 `custom_objects` 与 `custom_fields` 置 PENDING_DDL 并写审计；执行 DDL；成功后在一个事务内置 ACTIVE、递增 `definition_version`、写审计与 Outbox 事件；失败后在一个事务内置 DDL_FAILED 并写审计。第 7 节新增的启动自检项保证不存在 ACTIVE 元数据而物理表缺失、或物理表存在而未开启行级安全的组合，任一不成立进程拒绝启动。
+7. 元数据与 DDL 的一致化。DDL 无法与元数据写入同事务，因此采用两阶段：先在一个事务内把相关 `custom_objects` 与 `custom_fields` 置 PENDING_DDL 并写审计；执行 DDL；成功后在一个事务内置 ACTIVE、递增 `definition_version`、写审计与 Outbox 事件；失败后在一个事务内置 DDL_FAILED 并写审计。第 7 节按裁定 C-25 追加的自检项 `custom-object-ddl-consistent` 保证不存在 ACTIVE 元数据而物理表缺失、或物理表存在而未开启行级安全的组合，任一不成立进程拒绝启动。
 
 边界条件：单次计划的语句数上限 200；同一时刻只允许一份 EXECUTING 的计划，由发布互斥锁保证；`ext` 表在 RLS 策略创建成功之前不对任何应用账号开放，`grant` 语句排在 `create policy` 之后。
 
@@ -496,7 +495,7 @@ pub enum ChangeKind { Add, Modify, Remove }
 
 判定算法。
 
-1. 常量由各业务阶段按裁定 A-20 在 `crates/contract/<module>/src/capability.rs` 中以 `<USECASE_SCREAMING>_DOMAIN` 与 `<USECASE_SCREAMING>_ACTION` 成对声明，本阶段只做运行期判定，不代其他阶段声明。本阶段自身的平台路由，即 `/api/v1/platform/` 与 `/api/v1/ext/` 两段，按裁定 A-20 为每个用例成对声明常量，落点固定为 `crates/platform/meta/src/capability.rs` 与 `crates/platform/release/src/capability.rs` 两个文件，能力域一律取 `CapabilityDomain::PlatformAdminLowcodeOps`，由 `xtask configdoc` 断言每个 `/api/v1/` 路由都能解析到一对常量，缺失即构建失败。同一用例同时落入两个能力域时按取值较低的所在行判定，照抄规格第 6.2 章。
+1. 常量由各业务阶段按裁定 A-20 在 `crates/contract/<module>/src/capability.rs` 中以 `<USECASE_SCREAMING>_DOMAIN` 与 `<USECASE_SCREAMING>_ACTION` 成对声明，本阶段只做运行期判定，不代其他阶段声明。本阶段自身的路由分 `/api/v1/platform/` 与 `/api/v1/ext/` 两段，两段同属裁定 A-20 的第二类落点即平台路由，不构成第三类，按 A-20 为每个用例成对声明常量，能力域一律取 `CapabilityDomain::PlatformAdminLowcodeOps`；落点按承载该路由处理器的 crate 归位，第 5.3 节配置包与发布单两段落 `crates/platform/release/src/capability.rs`，第 5.1、5.2、5.4、5.5 各段与 `/api/v1/ext/` 的五个路由形状落 `crates/platform/meta/src/capability.rs`。由 `xtask configdoc` 断言每个 `/api/v1/` 路由都能解析到一对常量，缺失即构建失败。同一用例同时落入两个能力域时按取值较低的所在行判定，照抄规格第 6.2 章。
 2. core-server 的能力闸中间件在授权判定之前执行，读取请求头 `X-Client`，从 `platform_meta.client_capability_values` 取该能力域该端的取值。`portal` 与 `ops` 两个取值不参与本判定，门户不纳入四端等价，运维端只访问 `ops-agent` 暴露的端点。
 3. 判定结果：
    - Full：放行。
@@ -539,7 +538,7 @@ pub trait ConfigItemApplier: Send + Sync {
 
 段二成功后在同一事务内写入：`config_release_orders` 置 SUCCEEDED、`config_packages` 置 RELEASED、上一 RELEASED 包置 SUPERSEDED、审计事件、Outbox 事件 `platform.config_release.released.v1`。
 
-段三，传播段。由 job-worker 消费 Outbox 事件执行，包含：任一 applier 的 `requires_derived_store_rebuild` 为真时按法人逐个重建内置搜索索引分区，重建期间该分区停止对外服务，重建后重放待处理的删除与更正事件并与来源做条数一致性校验与哈希抽样对账，照抄规格第 7.9 章；客户端引导数据版本号递增，使在线客户端在下一次引导时拉到新配置；站内通知按 PRD 第 10.5.2 节送达配置管理员。
+段三，传播段。由 job-worker 消费 Outbox 事件执行，包含：任一 applier 的 `requires_derived_store_rebuild` 为真时按法人逐个重建内置搜索索引分区，重建经阶段 3b 按裁定 A-07 交付的 `ep-adapter-search` 执行，本阶段只按 `ep_foundation::port::search::SearchDocument` 产出投影并经 `SearchIndexPort` 写入，不自建第二条写入路径，重建期间该分区停止对外服务，重建后重放待处理的删除与更正事件并与来源做条数一致性校验与哈希抽样对账，照抄规格第 7.9 章；客户端引导数据版本号递增，使在线客户端在下一次引导时拉到新配置；站内通知按 PRD 第 10.5.2 节送达配置管理员。
 
 失败与补偿：
 
@@ -615,7 +614,7 @@ pub trait ConfigItemApplier: Send + Sync {
 
 ### 5. API 契约
 
-全部端点遵守基线第 5 章：路径前缀 `/api/v1`，JSON 字段 snake_case，成功与失败封套按基线第 5.2 节，写请求必带 `Idempotency-Key`，请求头集合按基线第 5.6 节。平台侧路径段取 `platform`；若平台阶段已确定另一取值，本阶段无条件改用其取值，该取值不影响本阶段其他设计。自定义对象的通用数据端点路径段取 `ext`，与 schema 名一致，不新增模块码。
+全部端点遵守基线第 5 章：路径前缀 `/api/v1`，JSON 字段 snake_case，成功与失败封套按基线第 5.2 节，写请求必带 `Idempotency-Key`，请求头集合按基线第 5.6 节。平台侧路径段取 `platform`，该取值已由阶段 2 的九个平台路由按裁定 A-20 落定，本阶段沿用不再另议。自定义对象的通用数据端点路径段取 `ext`，与 schema 名一致，不新增模块码。
 
 下表的权限要求列写权限项名，具体角色映射由权限阶段承担。全部端点在授权判定之前先过第 4.4 节的能力闸，能力域为 `platform.admin_lowcode_ops`，四端取值为完整、完整、仅查看、仅查看，因此下表全部写端点在 iOS 与 Android 上返回 403 与 `PLATFORM.CLIENT_CAPABILITY.WRITE_NOT_AVAILABLE_ON_CLIENT`。
 
@@ -833,10 +832,10 @@ pub trait ConfigItemApplier: Send + Sync {
 
 覆盖分支逐项列出。
 
-1. DDL 计划生成器：七类差异各自的语句序列与执行模式判定；混合差异时整体执行模式取最严者；语句数超 200 时拒绝。
+1. DDL 计划生成器：第 4.3 节第 3 步映射表六行差异各自的语句序列与执行模式判定；混合差异时整体执行模式取最严者；语句数超 200 时拒绝。
 2. 基线校验器：11 种字段类型逐个通过、超出基线的类型逐个拒绝；3 种索引类型逐个通过、函数索引与局部索引与 JSON 路径索引的表达一律无法构造；JSON 列建索引拒绝；JSON 列设 CHECK 拒绝。
 3. 密级校验：对象级为空拒绝；字段级为空时继承对象级；两者均为空拒绝。
-4. 保留列名：公共列九项加八个专属列共十七个名字逐个拒绝。
+4. 保留列名：公共列九项加第 3.2.2 节列出的九个专属列共十八个名字逐个拒绝。
 5. 影响分析五项：各自在空差异、单表小差异、多表大差异三种输入下的输出结构完整性。
 6. 配置包状态机：11 个状态、第 4.2 节表列出的 11 条合法迁移全部通过；任意两状态之间的非法迁移全部返回对应错误码；自审批拒绝。
 7. 发布单状态机：9 个状态与其合法迁移；回退目标过期拒绝；回退目标非上一 RELEASED 包拒绝。
@@ -889,11 +888,10 @@ pub trait ConfigItemApplier: Send + Sync {
 | 23 | 引导下发可审计 | 调用 `client-bootstrap` 一次，`client_bootstrap_dispatches` 增一行含对象清单与规则版本，审计事件增一条 |
 | 24 | ep_migrator 连接的启用与回收 | 一次含 DDL 的发布产生恰好两条审计事件（启用与回收）；发布前后 `pg_stat_activity` 中 `ep_migrator` 连接数为 0 |
 | 25 | 配额上限 | 对象数达 200、单对象字段数达 100、单对象索引数达 5 时，再新增返回 `QUOTA_EXCEEDED` |
-| 26 | 模块生命周期 | 对含自定义对象的模块执行停用与再启用，停用前后该对象的记录条数与校验和一致，停用期间授权查询与审计检索仍可执行，再启用后配置、权限授予与 Outbox 未投递条目差异为零 |
+| 26 | 模块生命周期 | 经阶段 3b 的 `ModuleLicenseQuery::module_state` 把含自定义对象的模块置 INSTALLED_DISABLED，其定时任务不再触发、对外事件停止投递，停用前后该对象的记录条数与校验和一致，停用期间授权查询与审计检索仍可执行；再启用后定时任务与对外事件投递恢复，配置、权限授予与 Outbox 未投递条目差异为零 |
 | 27 | 编辑锁 | 两名配置管理员同时编辑同一对象，第二人返回 `CONFIG_EDIT_LOCK.HELD_BY_ANOTHER_USER`；锁过期后可取得 |
 | 28 | 关账期间暂停发布 | 受理一次关账请求后提交发布单执行，返回受理但排队；关账产生结论后自动继续执行 |
 | 29 | 迁移窗口未打开 | 未登记打开的迁移窗口时执行含 DDL 段的发布，`MigrationWindowGuard::assert_open` 拒绝，返回 409 与 `PLATFORM.DB.MIGRATION_WINDOW_CLOSED`，全程 `pg_stat_activity` 中不出现 `ep_migrator` 连接；打开窗口后同一发布单执行成功 |
-| 30 | 模块停用与再启用 | 经阶段 3b 的 `ModuleLicenseQuery::module_state` 把某模块置 INSTALLED_DISABLED 后，其定时任务不再触发、对外事件停止投递；再启用后两者恢复，配置、权限授予与 Outbox 未投递条目差异为零 |
 
 外部电子签章不在本阶段范围内，本阶段不使用 wiremock 打桩。
 
@@ -902,11 +900,11 @@ pub trait ConfigItemApplier: Send + Sync {
 桌面端用 Playwright 驱动桌面 WebView，用 tauri-driver 驱动桌面壳；移动端用 XCUITest 与 Espresso。
 
 四端矩阵覆盖按规格第 6.2 章：取值为完整或简化的能力域在该端跑通端到端场景；取值为仅查看或不适用的能力域按豁免清单载明的替代路径验证。
-按裁定 A-23，业务闭环类端到端用例随各业务阶段的四端界面交付：下表 E1 至 E6 由阶段 5 至阶段 12 在自己的第 8 节测试计划中执行，本阶段只交付其运行所需的客户端壳、路由注册表与能力闸，并对执行证据逐条汇总；E7 至 E12 属壳层、发布链路与白标制品，由本阶段自行执行，其中 E9 以本阶段的自定义对象单据为被测对象，不依赖任何业务模块界面。四端验收矩阵由阶段 14 汇总。
+按裁定 A-23，业务闭环类端到端用例随各业务阶段的四端界面交付：下表 E1 由阶段 9b 在其 `testkit/scenarios/golden_loop_14_steps.rs` 之上执行，E2 至 E6 由其所属业务阶段在自己的第 8 节测试计划中执行，其中 E5 跨六个仅查看能力域，由各能力域所属阶段分别执行，本阶段只交付其运行所需的客户端壳、路由注册表与能力闸，并对执行证据逐条汇总；E7 至 E12 属壳层、发布链路与白标制品，由本阶段自行执行，其中 E9 以本阶段的自定义对象单据为被测对象，不依赖任何业务模块界面。四端验收矩阵由阶段 14 汇总。
 
 | 序 | 用例 | 端 | 判据 |
 |---|---|---|---|
-| E1 | 黄金业务闭环 14 步全程 | Windows、macOS | 全程可执行，记录、校验、审计与结果与服务端集成测试一致 |
+| E1 | 黄金业务闭环 14 步全程 | Windows、macOS | 整条链路的贯通验收由阶段 9b 的 `testkit/scenarios/golden_loop_14_steps.rs` 承担，本阶段只汇总其在 Windows 与 macOS 两端的走查证据；记录、校验、审计与结果与服务端集成测试一致 |
 | E2 | 库存台账与收发扫码完整闭环 | 四端 | 移动端连续扫码 100 次识别率不低于 99%，单次识别不超过 1 秒 |
 | E3 | 售后工单与设备台账完整闭环 | 四端 | 同一操作在任一端发起产生的记录与审计相同 |
 | E4 | 审批待办与站内通知完整闭环 | 四端 | 站内通知在四端均可查看、跳转与标记，无权时按权限拒绝处理 |
@@ -979,8 +977,8 @@ pub trait ConfigItemApplier: Send + Sync {
 18. 依赖方向自检脚本通过：客户端 crate 不依赖任何 `ep-app-*` 与 `ep-adapter-db*`；`ep-platform-meta` 与 `ep-platform-release` 不出现 sqlx、reqwest、`std::fs`、`std::net` 与 `SystemTime::now` 符号。
 19. 一次完整的配置发布与回退演练证据包归档，含差异审查记录、8 个 suite 的自动测试报告、审批与签名记录、执行耗时、锁持有时长、回退结果与审计链验证结论。
 20. 本阶段的偏离项与新增决定（第 12 节）已回写共享技术基线，基线更新经平台架构负责人确认。
-21. 模块许可的停用与再启用验收通过：按裁定 A-05，`ep-platform-license` 本体与其三张表由阶段 3b 交付，本阶段只保留一条验收，即某模块置 INSTALLED_DISABLED 后其定时任务停止、对外事件停发，再启用后两者恢复，执行记录见集成测试 30。
-22. 本阶段全部平台路由的能力域码与动作类别常量已按裁定 A-20 声明在 `crates/platform/meta/src/capability.rs` 与 `crates/platform/release/src/capability.rs` 两个文件中，能力域取 `CapabilityDomain::PlatformAdminLowcodeOps`，`xtask configdoc` 通过；自定义单据对象的 `doc_type_code` 与 `docs/data-dictionary.md` 单据类型码一节的全量表无重复，`xtask configdoc --check-doc-type-codes` 通过。
+21. 模块许可的停用与再启用验收通过：按裁定 A-05，`ep-platform-license` 本体与其三张表由阶段 3b 交付，本阶段只保留一条验收，即某模块置 INSTALLED_DISABLED 后其定时任务停止、对外事件停发，再启用后两者恢复，执行记录见集成测试 26。
+22. 本阶段全部 `/api/v1/` 路由，即 `/api/v1/platform/` 与 `/api/v1/ext/` 两段，其能力域码与动作类别常量已按裁定 A-20 声明：第 5.3 节配置包与发布单两段落 `crates/platform/release/src/capability.rs`，其余各段与 `/api/v1/ext/` 的五个路由形状落 `crates/platform/meta/src/capability.rs`，能力域一律取 `CapabilityDomain::PlatformAdminLowcodeOps`，`xtask configdoc` 通过；自定义单据对象的 `doc_type_code` 与 `docs/data-dictionary.md` 单据类型码一节的全量表无重复，`xtask configdoc --check-doc-type-codes` 通过。
 23. 含 DDL 段的发布在未打开迁移窗口时被经装配注入的 `ep_adapter_db::port::MigrationWindowGuard` 实例的 `assert_open` 拒绝并返回 409 与 `PLATFORM.DB.MIGRATION_WINDOW_CLOSED`，留有一次拒绝与一次放行的执行记录；`ep_platform_flow::port::RuleEvaluator` 与 `WasmComputePort` 的实现类型 `AstRuleEvaluator` 与 `PluginHostWasmCompute` 已在 wiring 注册，规则求值端点只经 `AstRuleEvaluator`。
 
 ---

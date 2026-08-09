@@ -131,7 +131,7 @@ schema 固定为 `inventory`，属主角色 `ep_mod_inventory`，运行期读写
 | quantity | numeric(18,6) | 否 | 与同源数量流水同值，VALUE_ADJUST 时为 0 |
 | amount | numeric(18,2) | 否 | ck 不等于 0，入库为正、出库为负、调整可正可负 |
 | applied_unit_price | numeric(18,6) | 否 | 本次实际取价，VALUE_ADJUST 时为 0 |
-| pricing_branch | text | 否 | ck 取值见下文八项 |
+| pricing_branch | text | 否 | ck 取值见下文九项 |
 | value_balance_after | numeric(18,2) | 否 | |
 | qty_balance_after | numeric(18,6) | 否 | 该法人该仓库该物料全批次合计结存 |
 | moving_avg_unit_price_after | numeric(18,6) | 否 | |
@@ -444,7 +444,7 @@ I5，未覆盖上界：`0 ≤ uncovered_quantity ≤ value_balance.quantity`。
 
 二是 `ep_contract_mdm::MasterReferenceCounter`，trait 与注册表 `MasterReferenceCounterRegistry` 由阶段 5 定义（裁定 A-15）。实现类型固定为 `InventoryReferenceCounter`，位于 `crates/application/inventory/src/probe/reference_counter.rs`，`module_code()` 返回 `ModuleCode::Inventory`，`count_open_documents` 在 `MasterObjectKind::Material` 下返回该物料非零结存的仓库物料批次组合数，其余 object_kind 返回 0。本阶段不承担任何 `SalesTradeHistoryProvider` 或 `PurchaseTradeHistoryProvider` 实现。
 
-三是 `ep_platform_recon::ReconCheck`，trait、注册表 `ReconRegistry` 与执行器由阶段 9a 交付（裁定 A-06）。本阶段实现两个检查并在 `apps/job-worker/src/wiring.rs` 经 `ReconRegistry::register` 注册，两个即裁定 A-06 给本阶段固定的校验项数，不多也不少：库存数量守恒，`category()` 取 `INVARIANT`；存货项子账与总账勾稽，`category()` 取 `SUBLEDGER_VS_LEDGER`。两个取值逐字取自裁定 A-06 中 `platform_core.recon_check_definitions.category` 的三项 CHECK 取值，`ReconCategory` 的判别式与该三项一一对应，本阶段不另取名。两者的 `blocks_period_close()` 均返回 true，`run_batch` 的快照入参为 `&dyn SnapshotCtx`，分批规模取第 7 节的 `EP__INVENTORY__RECON__BATCH_SIZE`，差异事项写入 `platform_core.recon_discrepancies`。第 3.1 节与第 4.6 节提到的 R2、R3 两组判据落在这两个实现内，不另起第三个检查。
+三是 `ep_platform_recon::ReconCheck`，trait、注册表 `ReconRegistry` 与执行器由阶段 9a 交付（裁定 A-06）。本阶段实现两个检查并在 `apps/job-worker/src/wiring.rs` 经 `ReconRegistry::register` 注册，两个即裁定 A-06 给本阶段固定的校验项数，不多也不少：库存数量守恒，`category()` 取 `INVARIANT`；存货项子账与总账勾稽，`category()` 取 `SUBLEDGER_VS_LEDGER`。两个取值逐字取自裁定 A-06 中 `platform_core.recon_check_definitions.category` 的三项 CHECK 取值，`ReconCategory` 的判别式与该三项一一对应，本阶段不另取名。两者的 `blocks_period_close()` 均返回 true，`run_batch` 的快照入参为 `&dyn SnapshotCtx`，分批规模取第 7 节的 `EP__INVENTORY__RECON__BATCH_SIZE`，差异事项写入 `platform_core.recon_discrepancies`。第 3.1 节与第 4.6 节提到的 R2、R3 两组判据落在这两个实现内，不另起第三个检查。本阶段九张表上的 `source_doc_id`、`source_doc_line_id`、`warehouse_id`、`material_id` 四类跨模块逻辑引用不另建 `CROSS_MODULE_LINK` 校验项，其存在性由写入时经 ep-contract-mdm 与来源模块契约校验，依据为裁定 A-06 与总览 R14。
 
 四是存货子账侧余额查询函数（裁定 B-08）。实现类型固定为 `InventorySubledgerBalanceQuery`，位于 `crates/application/inventory/src/projection/subledger_balance.rs`，返回该法人该会计期间的存货金额账合计，其方法签名与阶段 10 定义的 `ep_contract_finance::SubledgerBalanceProvider::balance(snapshot: &dyn SnapshotCtx, legal_entity_id, accounting_period_id) -> Result<Money, AppError>` 逐字一致。本阶段不依赖 ep-contract-finance，阶段 10 交付时把本类型包装为该 trait 的实现并接线到 `finance.v_recon_inventory` 视图。
 
@@ -560,7 +560,7 @@ pub trait WarehouseDeactivationCheckPort: Send + Sync {
 }
 ```
 
-三条调用约定随签名一并冻结。其一，交付确认的库存腿（裁定 A-09）：ep-app-sales 在 confirm_delivery 的同一事务内以 `OutboundPosting { reason: MovementReason::DeliveryConfirmation, pricing: OutboundPricing::MovingAverage, source: SourceRef { doc_type: DELIVERY_CONFIRMATION, .. }, lines }` 调用 `post_outbound`，本阶段按行返回 `cogs_amount` 与 `stock_movement_id`；`is_drop_ship` 为真时由 sales 侧整段跳过该调用。其二，`available` 与第 5 节端点 A2 共用同一投影函数，`reserved_quantity` 按第 11.2 节 U-G-01 的临时取值恒为零；`on_hand` 是阶段 7 采购退货结存充足性前置校验的取数入口。其三，能力域码与动作类别（裁定 A-20）：第 5 节十个端点的能力域码一律取 `CapabilityDomain::InventoryLedgerScan`，动作类别一律取 `ActionClass::Read`，常量按 `<USECASE_SCREAMING>_DOMAIN` 与 `<USECASE_SCREAMING>_ACTION` 声明在 `crates/contract/inventory/src/capability.rs`，`xtask configdoc` 断言每个路由都能解析到一对常量，缺失即构建失败。
+三条调用约定随签名一并冻结。其一，交付确认的库存腿（裁定 A-09）：ep-app-sales 在 confirm_delivery 的同一事务内以 `OutboundPosting { reason: MovementReason::DeliveryConfirmation, pricing: OutboundPricing::MovingAverage, source: SourceRef { doc_type: DELIVERY_CONFIRMATION, .. }, lines }` 调用 `post_outbound`，本阶段按行返回 `cogs_amount` 与 `stock_movement_id`；`is_drop_ship` 为真时由 sales 侧整段跳过该调用。其二，`available` 与第 5 节端点 A2 共用同一投影函数，`reserved_quantity` 按第 11.2 节 U-G-01 的临时取值恒为零；`on_hand` 是阶段 7 采购退货结存充足性前置校验的取数入口。其三，能力域码与动作类别（裁定 A-20）：第 5 节十个端点的能力域码一律取 `CapabilityDomain::InventoryLedgerScan`，动作类别一律取 `ActionClass::Read`，常量按 `<USECASE_SCREAMING>_DOMAIN` 与 `<USECASE_SCREAMING>_ACTION` 声明在 `crates/contract/inventory/src/capability.rs`，`xtask configdoc` 断言每个 `/api/v1/` 路由都能解析到一对常量，缺失即构建失败。
 
 ### 6. 并发与事务边界
 
@@ -615,8 +615,8 @@ pub trait WarehouseDeactivationCheckPort: Send + Sync {
 
 | 键名 | 类型 | 默认值 | 生效方式 | 说明 |
 |---|---|---|---|---|
-| EP__INVENTORY__POSTING__MAX_LINES | u32 | 200 | 进程启动时加载，变更需重启 | 单次过账的明细行上限，与基线第 5.1 节批量操作上限 200 对齐；core-server 与 job-worker 各自读取 |
-| EP__INVENTORY__POSTING__MAX_SERIALS_PER_LINE | u32 | 1000 | 同上 | 单行序列号条数上限，防止单条明细行的序列号数组撑爆事务预算 |
+| EP__INVENTORY__POSTING__MAX_LINES | u32 | 200 | 进程启动时加载，变更需重启 | 单次过账的明细行上限，与基线第 5.1 节批量操作上限 200 对齐；core-server 与 job-worker 各自读取；该上限属 PRD 附录乙未决事项 U-A-10 的临时取值，见第 11.2 节 |
+| EP__INVENTORY__POSTING__MAX_SERIALS_PER_LINE | u32 | 1000 | 同上 | 单行序列号条数上限，防止单条明细行的序列号数组撑爆事务预算；该上限属 PRD 附录乙未决事项 U-A-10 的临时取值，见第 11.2 节 |
 | EP__INVENTORY__RECON__BATCH_SIZE | u32 | 2000 | 同上 | 对账检查的分批规模，单位为仓库与物料的组合数；该取值按规格第 10.2 章由附录 A.4 认证期实测冻结，本处默认值只是认证前的初值 |
 
 不新增允许负结存的配置项。理由是该口径属未决事项 U-G-02，把未决业务口径落成运行期可变参数会制造一个永远无人负责取值的开关；本阶段硬编码为阻断，切换代价见第 11 节。
@@ -707,7 +707,9 @@ pub trait WarehouseDeactivationCheckPort: Send + Sync {
 
 本阶段自测部分：桌面端经 Playwright 与 tauri-driver 驱动 `clients/desktop/src/modules/inventory/`，覆盖 A1 至 A10 的十个查询页面在法人切换、字段级金额权限有无两种身份下的展示差异；移动端按规格第 6.2 章能力矩阵第 597 行库存台账与收发扫码四端取值均为完整，对 `clients/mobile/src/modules/inventory/` 执行 XCUITest 与 Espresso 各一个场景，覆盖扫码录入批次与序列号的即时校验反馈（调用 A6 与 A7）。
 
-联调部分：规格第 8 章黄金业务闭环十四步中的第 5 步收货、第 8 步交付确认发货、第 11 步退货三步的库存侧断言，在采购与销售两个阶段完成后由联调用例执行，本阶段提供断言库 `ep-testkit::inventory_assertions`，含两账同源、守恒、勾稽三组断言函数，供后续阶段直接引用而不各写一套。
+联调部分：规格第 8 章黄金业务闭环十四步中的第 5 步收货、第 8 步交付确认发货、第 11 步退货三步的库存侧断言，由阶段 9b 的 `testkit/scenarios/golden_loop_14_steps.rs` 执行，本阶段提供断言库 `ep-testkit::inventory_assertions`，含两账同源、守恒、勾稽三组断言函数，供该用例与后续阶段直接引用而不各写一套。
+
+里程碑 M5 的演示口径由本阶段的只读边界决定。收货、交付确认发货与价差拆分三条写入路径的调用方分别落在阶段 7、阶段 6 与阶段 10，本阶段又不提供任何库存写端点，因此 M5 的写入侧一律经 `ep-testkit` 的 `InventoryPostingDriver` 调用第 5.1 节的过账端口驱动，不得直接写库；读出侧一律经第 5 节十个只读端点与本阶段四端界面验证，其中端点 A6 与 A7 的扫码即时反馈由移动端真实调用。真实采购收货单登记路径顺延到阶段 7，真实进项发票价差拆分路径顺延到 M7。该例外由总览第 5 节逐条列举，本阶段不扩大其范围。
 
 #### 8.4 性能相关项
 
@@ -756,10 +758,10 @@ pub trait WarehouseDeactivationCheckPort: Send + Sync {
 12. 两个 `ep_platform_recon::ReconCheck` 实现已在 job-worker 的 `ReconRegistry` 注册并可按法人与会计期间执行，注入三类差异后差异事项写入 `platform_core.recon_discrepancies` 且可追溯，注入清零后校验通过。
 13. 第 5 节错误码表中的 21 个错误码在 `docs/error-codes.md` 与 `ep-foundation::error::codes` 两处一致，CI 的重复码校验通过。
 14. 2 个事件在 `docs/event-catalog.md` 登记，信封字段完整，缺少 `security_level` 或 `data_scope_tags` 时入队被拒绝的用例通过。
-15. 6 个指标在 ops-agent 的 9101 端点可抓取，标签基数纪律通过（不含 user_id、doc_no、trace_id）。
+15. 本阶段新增的指标在 ops-agent 的 9101 端点可抓取，标签基数纪律通过（不含 user_id、doc_no、trace_id）。
 16. 数据字典中九张表逐列登记，含第 3.4 节三项新增命名决定与其缩写词表。
 17. 第 4.6 节的偏离项已在阶段交付物中单列一节，并提交基线第 3.5 节的修订建议，由平台架构负责人签署。
-18. 第 11 节列出的五项未决事项的临时取值已逐项写入 `docs/pending-decisions-stage-8.md`，含切换代价估算，并与 PRD 附录乙的 U-G-01 至 U-G-07 编号对齐。
+18. 第 11 节列出的六项未决事项的临时取值已逐项写入 `docs/pending-decisions-stage-8.md`，含切换代价估算，并与 PRD 附录乙的 U-G-01 至 U-G-07 与 U-A-10 编号对齐。
 19. inventory 模块在规格第 6.2 章能力矩阵中取值为完整或简化的能力域，其四端界面已实现并通过 Playwright 与 tauri-driver 的桌面用例、XCUITest 与 Espresso 的移动用例；取值为 VIEW_ONLY 的能力域只实现只读视图；取值为 NOT_APPLICABLE 的不实现入口。
 20. `inventory.v_stock_value_entries` 已发布并授予 `ep_analyst_ro`，列签名已同步给阶段 11 且与 `reporting.dataset_fields` 的登记一致。
 21. 本阶段全部路由的能力域码与动作类别常量已在 `crates/contract/inventory/src/capability.rs` 声明，`xtask configdoc` 通过。
@@ -845,6 +847,7 @@ R6，序列号唯一性范围与设备档案的冲突（U-G-07、U-J-03）。本
 | U-G-03 批次号与序列号的长度字符集 | 长度上限 64、字符集 `[A-Za-z0-9._-]`、批次号手工录入、唯一性范围为法人加仓库加物料 | 不阻塞 | 放宽长度属基线第 7.4 章在线变更范围，改 CHECK 即可；收紧字符集需回填校验 |
 | U-G-04 序列号状态语义 | 两状态 IN_STOCK 与 SHIPPED，退货入库后可再次发出且允许换仓入库 | 不阻塞 | 若增加已退回等第三状态，需扩 CHECK 取值与状态机守卫，约 1 个文件加 6 个用例 |
 | U-G-06 关账是否固化快照 | 不固化，已关闭期间按实时聚合取数 | 不阻塞 | 若改为固化，新增一张快照表与一个 job-worker 任务，A9 与 A10 的响应结构不变，扩展点见第 11.3 节 |
+| U-A-10 单据明细行数与序列号条数上限 | 单次过账明细行上限取 200，见第 7 节 `EP__INVENTORY__POSTING__MAX_LINES`，与基线第 5.1 节批量操作上限一致；单行序列号条数上限取 1000，见第 7 节 `EP__INVENTORY__POSTING__MAX_SERIALS_PER_LINE`，该值在规格与基线中均无出处，是本阶段按基线第 10.3 节事务预算估算的技术侧临时取值；单次连续扫码条数不单独设限，连续扫码为逐次调用端点 A6 与 A7，单次批量校验的条数由第 5 节 A7 的 `filter[serial_no]=in:` 上限 200 个约束 | 不阻塞 | 改两个配置项的默认值并重启即可，不改表结构、不改 API 契约、不改端口签名；上调任一取值须重跑第 8.2 节并发测试 C-01 与第 8.4 节普通交易提交的 P95 度量项，不达标时按第 11.1 节 R3 收窄取值而不拆事务；`EP__INVENTORY__POSTING__MAX_LINES` 上调超过 200 会突破基线第 5.1 节批量操作上限，须同步提出基线修订，不得只在本阶段偏离 |
 
 U-A-04 数量单价金额的小数位与舍入、U-G-05 空批次标识两项已由基线第 3.5 节与第 11.4 节定死，本阶段直接照用，不再另行取值。
 

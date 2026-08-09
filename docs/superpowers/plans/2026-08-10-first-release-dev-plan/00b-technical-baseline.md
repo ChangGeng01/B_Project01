@@ -745,7 +745,7 @@ let result = uow.transact(ctx, |tx| async move {
 ## 12. 各阶段必须遵守的落地纪律
 
 - 新增一张表、一个接口、一个事件、一个错误码、一个指标之前，先在本基线对应章节登记，再实现。阶段计划中出现未登记的以上五类，评审时按不通过处理。
-- 各阶段在 `crates/contract/<module>/src/capability.rs` 中为本模块每个用例声明一对常量 `<USECASE_SCREAMING>_DOMAIN` 与 `<USECASE_SCREAMING>_ACTION`，取值分别为第 1.4 节 `CapabilityDomain` 与 `ActionClass` 的成员，例如 `CONFIRM_DELIVERY_DOMAIN: CapabilityDomain = CapabilityDomain::SalesOrderFulfillment` 与 `CONFIRM_DELIVERY_ACTION: ActionClass = ActionClass::Submit`。`xtask configdoc` 断言每个 HTTP 路由都能解析到一对常量，缺失即构建失败。任何阶段不得在阶段内重新定义能力域码，客户端能力矩阵的运行期判定只读这两个枚举。
+- 各阶段为本阶段每个用例声明一对常量 `<USECASE_SCREAMING>_DOMAIN` 与 `<USECASE_SCREAMING>_ACTION`，取值分别为第 1.4 节 `CapabilityDomain` 与 `ActionClass` 的成员，例如 `CONFIRM_DELIVERY_DOMAIN: CapabilityDomain = CapabilityDomain::SalesOrderFulfillment` 与 `CONFIRM_DELIVERY_ACTION: ActionClass = ActionClass::Submit`；常量声明在承载该路由处理器的 crate 的 `src/capability.rs` 中，落点只有两类，不设第三类：业务模块的路由落 `crates/contract/<module>/src/capability.rs`，`/api/v1/platform/` 下的平台路由落裁定 A-20 为该阶段指名的 platform crate 的 `src/capability.rs` 并一律取 `CapabilityDomain::PlatformAdminLowcodeOps`。`ci-probe` feature 门控的探针路由与 `/internal/v1/` 下不对四端暴露的内部端点不参与判定，不声明常量。`xtask configdoc` 断言每个 `/api/v1/` 路由都能解析到一对常量，缺失即构建失败。任何阶段不得在阶段内重新定义能力域码，客户端能力矩阵的运行期判定只读这两个枚举。
 - 任何阶段不得新增进程、不得新增 schema、不得新增模块码、不得新增错误分类、不得新增依赖方向。
 - 任何阶段不得引入第二套命名风格、第二套封套、第二套分页参数、第二套幂等机制。
 - 凡阶段计划需要偏离本基线，必须在计划中单列一节写明偏离项、理由与影响范围，并同步提出本基线的修订，不得只在实现里偏离。

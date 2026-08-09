@@ -84,7 +84,7 @@
 
 全部表带 `legal_entity_id`，因此全部按基线第 3.8 节的模板生成四条行级安全语句，模板由迁移生成器统一产出，不手写变体。策略名一律 `rls_<table>_le`。
 
-跨 schema 引用一律不建数据库外键，只留逻辑引用列，存在性由 `ep-app-procure` 与 `ep-app-portal` 在写入前经对方模块契约校验，并由第 8.6 小节的对账语句按周期核对。同一 schema 内的引用建真实外键，`ON DELETE RESTRICT`。
+跨 schema 引用一律不建数据库外键，只留逻辑引用列，存在性由 `ep-app-procure` 与 `ep-app-portal` 在写入前经对方模块契约校验，并由第 8.6 小节的 `ReconCheck` 按周期核对，其中跨模块逻辑引用由 `category` 取 `CROSS_MODULE_LINK` 的 R-PROC-04 一条一次覆盖，不按引用逐条建校验项。同一 schema 内的引用建真实外键，`ON DELETE RESTRICT`。
 
 金额列一律 `numeric(18,2)`，单价列一律 `numeric(18,6)`，数量列一律 `numeric(18,6)`，税率列一律 `numeric(9,6)`。批次列与序列号列在物料未启用相应管理时取固定值 `'-'`，按基线第 11.4 节。
 
@@ -184,7 +184,7 @@
 | expense_item_code | text | 是 | |
 | quantity | numeric(18,6) | 否 | CHECK 大于零 |
 | unit_price_untaxed | numeric(18,6) | 否 | CHECK 大于等于零 |
-| tax_rate | numeric(9,6) | 否 | 取值来自税率字典，字典归平台配置 |
+| tax_rate | numeric(9,6) | 否 | 取值来自税率字典，唯一出处按裁定 C-11 为阶段 10 的 `invoice.tax_rate_options`，阶段 10 之前的默认值由阶段 5 的字典桩 `MdmTaxRateStub` 提供，本阶段不自建税率字典 |
 | agreed_delivery_date | date | 否 | CHECK 不早于订单日期，由应用层校验并在写入时冗余 `order_date` 以支撑表级 CHECK |
 | order_date | date | 否 | 冗余自订单头，仅为表级 CHECK 与索引服务 |
 | warehouse_id | uuid | 是 | 物料类必填，逻辑引用 |
@@ -254,7 +254,7 @@
 | source_purchase_invoice_line_id | uuid | 是 | `OVERBILL_REVERSE_MATCH` 时非空，逻辑引用 `invoice.purchase_invoice_lines` |
 | reverses_id | uuid | 是 | 冲销引用 |
 
-取值由库存契约在过账时返回，`ep-app-procure` 不自行计算取价。同一收货行可产生一条或两条分配记录，两条时其数量合计等于该行 `quantity`，该断言由领域层与对账语句 R-PROC-05 双重校验。索引：`pk_`；`ix_goods_receipt_line_costings_legal_entity_id_created_at`；`ix_goods_receipt_line_costings_legal_entity_id_goods_receipt_line_id`。
+取值由库存契约在过账时返回，`ep-app-procure` 不自行计算取价。同一收货行可产生一条或两条分配记录，两条时其数量合计等于该行 `quantity`，该断言由领域层与 `ReconCheck` R-PROC-05 双重校验。索引：`pk_`；`ix_goods_receipt_line_costings_legal_entity_id_created_at`；`ix_goods_receipt_line_costings_legal_entity_id_goods_receipt_line_id`。
 
 ##### 3.2.11 procure.goods_receipt_line_serials
 
@@ -785,7 +785,7 @@ portal-gateway 在每个请求上做四件事：会话校验（结果按第 7 �
 
 写请求的 `Idempotency-Key` 与业务写入同事务，存储在 `platform_msg.idempotency_keys`，保留 7 天。本阶段的全部领域事件与业务状态、审计事件写入同一事务，事务提交前不发起任何外部调用。消费端幂等由 `platform_msg.inbox_consumptions` 的唯一约束保证，消费副作用与该行插入同事务。
 
-本阶段的 Outbox 事件信封一律携带 `posting_date` 与 `accounting_period_id` 两个字段：收货过账与采购退货过账事件取其单据上的实际取值，其余事件取空值。`procure.goods_receipt.posted.v1` 与 `procure.purchase_return.posted.v1` 两个事件在 `ledger.posting_trigger_event_types` 中的登记行按裁定 A-21 由阶段 9a 的种子迁移一次写入，本阶段不新增回填迁移，只在启动自检中经 `ep_contract_ledger::PostingTriggerRegistry::register` 对这两个事件做幂等 upsert 比对，与种子行不一致即以退出码 78 启动失败；因此它们在 PENDING 或 DISPATCHING 状态下进入关账受理前提二的统计，`posting_date` 为空的其余事件不计入该统计。
+本阶段的 Outbox 事件信封一律携带 `posting_date` 与 `accounting_period_id` 两个字段：收货过账与采购退货过账事件取其单据上的实际取值，其余事件取空值。`procure.goods_receipt.posted.v1` 与 `procure.purchase_return.posted.v1` 两个事件在 `ledger.posting_trigger_event_types` 中的登记行按裁定 A-21 由阶段 9a 的种子迁移一次写入，本阶段不新增回填迁移，只在启动自检中经 `ep_contract_ledger::PostingTriggerRegistry::assert_registered` 对这两个事件做只读断言比对，该方法不写任何行，缺行或 `ledger_event_kind` 或 `registered_by_module` 与种子行不符即以退出码 78 启动失败、不经 HTTP 返回；因此它们在 PENDING 或 DISPATCHING 状态下进入关账受理前提二的统计，`posting_date` 为空的其余事件不计入该统计。
 
 #### 6.6 失败重试与补偿
 
@@ -952,7 +952,7 @@ E2E-T-01 至 E2E-T-04 逐条对应规格第 19 章阶段 3 门户条目的四项
 
 `tests/rls_matrix` 中新增本阶段的三十张表，覆盖读取、写入、更新、删除、聚合、排序、报表投影与错误信息泄漏八类，另新增门户维度的两类：以门户账号跨供应商访问，以门户账号跨授权法人访问。该测试目标属发布门禁项。
 
-#### 8.6 对账语句与不变量校验
+#### 8.6 对账与不变量校验
 
 本阶段在 `ep-app-procure` 实现六个 `ep_platform_recon::ReconCheck`，并按裁定 A-06 全部在 `apps/job-worker/src/wiring.rs` 中经 `ReconRegistry::register` 注册，由 ep-platform-recon 的执行器按法人逐轮遍历、在其提供的快照上分批执行，差额非零即生成对账差异事项并按规格第 10.2 章拦截关账。裁定 A-06 固定的五个注册方十六个校验项中，本阶段承担六个。六个 check 的 `code()` 取值即下表编号，`blocks_period_close()` 一律为真，`category()` 除 R-PROC-04 取 `ReconCategory::CrossModuleLink` 外一律取 `ReconCategory::Invariant`，两个变体的落库文本分别为 `CROSS_MODULE_LINK` 与 `INVARIANT`。
 
@@ -961,7 +961,7 @@ E2E-T-01 至 E2E-T-04 逐条对应规格第 19 章阶段 3 门户条目的四项
 | R-PROC-01 | 采购订单行的 `received_quantity` 等于该行全部已过账收货行的数量合计 |
 | R-PROC-02 | 收货行的 `returned_quantity` 等于关联该行的全部已过账退货行数量合计，且不超过该行 `quantity` |
 | R-PROC-03 | 采购需求的 `ordered_quantity` 等于关联采购订单行的数量合计，且不超过 `required_quantity` |
-| R-PROC-04 | `payable_reservations.reserved_amount` 等于该发票被未关闭付款申请行占用的金额合计；付款申请的 `paid_amount` 不超过 `requested_amount` |
+| R-PROC-04 | `payable_reservations.reserved_amount` 等于该发票被未关闭付款申请行占用的金额合计；付款申请的 `paid_amount` 不超过 `requested_amount`；`procure` 与 `portal` 两个 schema 上全部跨模块逻辑引用列所指对象存在，一次覆盖本模块的跨模块逻辑引用，不按引用逐条建校验项 |
 | R-PROC-05 | 收货行的入账分配数量合计等于该行 `quantity`，且分配金额合计等于逐条 `quantity` 乘以经 `InventoryPricingLookupPort::original_unit_price_by_source_line` 回查的单价按 2 位 round 后的合计 |
 | R-PORT-01 | 送货通知行的 `received_quantity` 等于引用该行的已过账收货行数量合计，且不超过通知行 `quantity` |
 
@@ -969,7 +969,7 @@ E2E-T-01 至 E2E-T-04 逐条对应规格第 19 章阶段 3 门户条目的四项
 
 #### 8.7 性能相关项
 
-本阶段对应附录 A.1 的六个度量项，各自的度量端点在第 5 节已列出。
+本阶段对应附录 A.1 的八个度量项，各自的度量端点在第 5 节已列出。
 
 | 度量项 | 端点 | 通过线 |
 |---|---|---|
@@ -1104,7 +1104,7 @@ E2E-T-01 至 E2E-T-04 逐条对应规格第 19 章阶段 3 门户条目的四项
 
 风险四：门户字段白名单一旦遗漏即构成数据外发。遏制手段是第 8.2 小节第 16 项的全字段快照测试，任何新增字段都会导致快照失败，必须显式更新快照并经评审。U-F-10 未决之前，白名单以本阶段第 4.7 小节的取值为准，发布前必须取得安全负责人批准，这是本阶段唯一的阻塞项。
 
-风险五：`payable_reservations` 是本阶段引入的第二处金额状态，与财务侧的应付未核销余额存在漂移可能。遏制手段是 R-PROC-04 对账语句按周期核对，并在申请的每一次状态迁移上以同一事务内的加减维护，不做异步同步。
+风险五：`payable_reservations` 是本阶段引入的第二处金额状态，与财务侧的应付未核销余额存在漂移可能。遏制手段是 R-PROC-04 这条 `ReconCheck` 按周期核对，并在申请的每一次状态迁移上以同一事务内的加减维护，不做异步同步。
 
 风险六：本阶段的八个业务参数取的是临时值，其中超收容差与转审批阈值（U-F-04）直接影响收货的拦截行为，若客户在实施期改值，历史已过账收货不重算。该性质须在交付说明中写明。
 
@@ -1114,9 +1114,9 @@ E2E-T-01 至 E2E-T-04 逐条对应规格第 19 章阶段 3 门户条目的四项
 
 假设 A1：采购需求是单行单据。理由是 PRD 第 4.3.2 小节的字段表只有单个物料与单个数量，没有明细行的结构。切换代价为新增一张 `procure.purchase_requisition_lines` 表与一次数据回填迁移，属中等代价，因此在整合期确认。
 
-假设 A2：收货与采购退货的采购单据、库存两账与总账凭证在同一个数据库事务内同步写入，不经 Outbox 异步过账。理由有三条：规格第 17.3 章要求存货金额账合计等于总账存货科目余额；PRD 第 4.5.3 小节把凭证号列为收货登记的输出；PRD 第 4.5.6 小节要求库存或财务侧写入不一致时界面返回明确失败。三条同时成立只有同事务一种实现。由此产生的推论是：规格第 10.2 章关账受理前提下不存在收货与退货的异步过账路径，受理前提二统计的是这两个事件的未投递条目而不是未生成的凭证。本阶段仍在 Outbox 信封上携带 `posting_date` 与 `accounting_period_id`，两个事件在 `ledger.posting_trigger_event_types` 中的登记行按裁定 A-21 由阶段 9a 的种子迁移写入、本阶段只做运行期比对，使该统计可枚举。总账与库存的契约端口按 A-01 接受 `&mut dyn Tx`，已由阶段 1 提供。
+假设 A2：收货与采购退货的采购单据、库存两账与总账凭证在同一个数据库事务内同步写入，不经 Outbox 异步过账。理由有三条：规格第 17.3 章要求存货金额账合计等于总账存货科目余额；PRD 第 4.5.3 小节把凭证号列为收货登记的输出；PRD 第 4.5.6 小节要求库存或财务侧写入不一致时界面返回明确失败。三条同时成立只有同事务一种实现。由此产生的推论是：规格第 10.2 章关账受理前提下不存在收货与退货的异步过账路径，受理前提二统计的是这两个事件的未投递条目而不是未生成的凭证。本阶段仍在 Outbox 信封上携带 `posting_date` 与 `accounting_period_id`，两个事件在 `ledger.posting_trigger_event_types` 中的登记行按裁定 A-21 由阶段 9a 的种子迁移写入、本阶段只在启动自检中经 `PostingTriggerRegistry::assert_registered` 做只读断言比对，使该统计可枚举。总账与库存的契约端口按 A-01 接受 `&mut dyn Tx`，已由阶段 1 提供。
 
-假设 A3：采购退货在「采购发票已登记」分支下调用 `ep_contract_invoice::PurchaseCreditNotePort::register_credit_note`，进项红字发票由 invoice 模块登记，采购侧只提供 `RegisterPurchaseCreditNote` 所需的供应商、原采购发票、退货单标识、过账日期与逐行的原发票行、收货行、数量、净额、税额。理由是 PRD 第 4.6.2 小节的字段表没有红字发票字段，而规格第 5.2 章采购退货事件要求按红字发票价税合计入账。该端口由阶段 10 交付，本阶段注入 `NoopPurchaseCreditNotePort`，该分支的端到端验收顺延到 M7。同一小节的「供应商不接受退回而不冲回成本」对应 U-C-09，本阶段的取值是：该标注由 invoice 模块在其成本冲回入口上接收，采购侧不置位，理由是它影响的是成本归集查询而不是采购单据。该取值须在整合期与成本阶段对齐。
+假设 A3：采购退货在「采购发票已登记」分支下调用 `ep_contract_invoice::PurchaseCreditNotePort::register_credit_note`，进项红字发票由 invoice 模块登记，采购侧只提供 `RegisterPurchaseCreditNote` 所需的供应商、原采购发票、退货单标识、过账日期与逐行的原发票行、收货行、数量、净额、税额。理由是 PRD 第 4.6.2 小节的字段表没有红字发票字段，而规格第 5.2 章采购退货事件要求按红字发票价税合计入账。该端口由阶段 10 交付，本阶段注入 `NoopPurchaseCreditNotePort`，该分支的端到端验收顺延到 M7。同一小节的「供应商不接受退回而不冲回成本」对应 U-C-09，该事项属 PRD 待决且规格未强制，本阶段不代拍置位方与撤销规则，只取一条临时取值：采购侧不置位，理由是它影响的是成本归集查询而不是采购单据。切换代价是在采购退货过账用例内增加一次置位调用，不改本阶段的表结构与迁移。
 
 假设 A4（对应 U-C-08）：供应商的资质证照、价格资料、交期资料与风险记录唯一存储在 mdm 的供应商档案及其版本与子表上，`procure` 只存准入结论与质量记录两类；风险记录按裁定 C-10 一律经 `ep_contract_mdm::SupplierRiskRecordPort::append` 与 `::list` 读写，`procure.supplier_risk_records` 已撤销，见第 3.2.2 小节。理由是 PRD 第 2.4.1 小节与第 2.4.3 小节已把这四类定义为供应商档案的字段与子表，而 PRD 第 4.8.1 小节只是从采购视角复述。切换代价为把四张表从 mdm 迁到 procure 并改门户提交的写入目标，属中等代价。准入结论存于 procure 的理由是它只被采购侧读取且带自己的状态机。
 
@@ -1141,6 +1141,8 @@ E2E-T-01 至 E2E-T-04 逐条对应规格第 19 章阶段 3 门户条目的四项
 假设 A14（对应 U-F-03）：本阶段不实现采购需求的合并与拆分，一张采购订单可关联多条同法人同供应商的需求（多对一由订单行上的 `purchase_requisition_id` 表达），但不产生合并后的新需求单。理由是合并键与回写方式未决，而多对一的表达已足够支撑需求侧分批与订单侧分批两种形态。切换代价为新增一张合并关系表。
 
 假设 A15（对应 U-A-07、U-A-08、U-A-11）：退货原因、风险类型、付款条件三个字典与本阶段四条审批链的出厂配置由平台配置承载，本阶段只登记字典键与审批链标识，不定义取值内容。审批链为空时全部提交动作直接进入下一态，这一降级路径必须可用，理由是出厂即无可用审批配置时闭环不得中断。
+
+假设 A16（对应 U-F-06、U-F-07、U-F-08、U-F-09）：四项均属 PRD 待决且规格未强制，本阶段不代拍，只给临时取值，四项都不阻塞本阶段。U-F-06 取直接费用类的合同、销售订单、项目三个归集字段至少一项非空，由 `ck_purchase_requisitions_type_fields` 与 `ck_purchase_order_lines_type_fields` 两条 CHECK 表达，切换代价是放宽这两条 CHECK 并由阶段 11 把三项全空的行归入未分摊差异。U-F-07 取首次收货登记或首次采购发票登记之前允许改采购类型、其后由 `is_type_locked` 锁定，切换代价是把该列的置位时点提前到订单下达，属一处守卫改动。U-F-08 取第 4.2.6 小节的五态与三条守卫，切换代价是改 `admission_status` 的 CHECK 取值与三条守卫分支。U-F-09 取质量记录的字段按第 3.2.2 小节、由采购退货过账经 Outbox 消费者自动生成，拒收与手工两类来源经第 5.6 小节的补录端点登记，风险类型字典按假设 A15 归平台配置，切换代价是增改生成消费者与字段列。
 
 #### 11.3 为后续阶段预留的扩展点
 
