@@ -38,7 +38,7 @@
 
 七是账表查询可用：科目余额表、总账、明细账、试算平衡、会计恒等取数五个只读端点，可按会计期间字段与按原始业务日期两条路径检索，顺延入账的凭证在两条路径上均可查得。
 
-八是文档产物：docs/error-codes.md 新增 LEDGER 段共 32 个错误码；docs/event-catalog.md 新增 ledger 段共 8 个事件；docs/data-dictionary/ledger.md 新增 12 张表的数据字典，docs/data-dictionary/platform_core.md 增补对账三张表的数据字典；docs/adr/ 新增 3 篇本阶段决定的 ADR。
+八是文档产物：docs/error-codes.md 新增 LEDGER 段共 36 个错误码；docs/event-catalog.md 新增 ledger 段共 8 个事件；docs/data-dictionary/ledger.md 新增 12 张表的数据字典，docs/data-dictionary/platform_core.md 增补对账三张表的数据字典；docs/adr/ 新增 3 篇本阶段决定的 ADR。
 
 九是测试产物：ep-domain-ledger 与 ep-app-ledger 的单元测试与领域属性测试、crates/application/ledger/tests 下的集成测试、tests/rls_matrix 中新增的 ledger 越权用例、apps/core-server/tests 下的关账与顺延入账端到端用例、9b 段的 testkit/scenarios/golden_loop_14_steps.rs，以及 A.1 度量清单中总账凭证过账与月度科目余额表两项的 EXPLAIN 证据文件。
 十是对账框架本体：ep-platform-recon crate、platform_core.recon_check_definitions 与 platform_core.recon_runs 与 platform_core.recon_discrepancies 三张表、ReconCheck 与 ReconRegistry 与 ReconExecutor 三个契约、job-worker 内的分批执行器与每日对账调度、签名语句集校验。按 A-06 该本体归本阶段 9a 段，注册方为阶段 7、8、9b、10、11 五个，各自在其上实现自己的 ReconCheck，不另起对账框架。
@@ -100,13 +100,15 @@ job-worker 承载：期间自动建立定时任务、ep-platform-recon 的分批
 | 13 | V202611031000__ledger_create_ledger_views.sql | 建 ledger.v_account_period_balances 与 ledger.v_pending_posting_backlog |
 | 14 | V202611031005__ledger_backfill_posting_trigger_event_types.sql | 按 A-21 一次写全 ledger.posting_trigger_event_types 的 13 行并直接填入 event_type 与 registered_by_module，清单见第 9.3.11 节；业务阶段不再追加任何回填迁移 |
 | 15 | V202611031010__ledger_create_dataset_views.sql | 按 A-18 重建 ledger.v_account_period_balances 使其输出 legal_entity_id、security_level、data_scope_tags 三列，并 GRANT SELECT ON ledger.v_account_period_balances TO ep_analyst_ro |
-| 16 | V202611031015__ledger_backfill_append_only_registry.sql | 按 B-02 向 platform_core.append_only_registry 登记 ledger.vouchers、ledger.voucher_lines 与 platform_core.recon_runs 三行，三行的 mode 一律取 APPEND_ONLY、mutable_columns 取空数组。本文件同时写入 ledger 与 platform_core 两个 schema 的登记对象，按裁定通则第五条放在两者中位次靠后的 db/migrations/ledger/ 目录下 |
+| 16 | V202611031015__ledger_backfill_append_only_registry.sql | 按 B-02 向 platform_core.append_only_registry 登记 ledger.vouchers、ledger.voucher_lines 与 platform_core.recon_runs 三行，三行的 mode 一律取 APPEND_ONLY、mutable_columns 取空数组。文件内先插三行登记，再依次调用 platform_core.attach_table_guards('ledger','vouchers')、('ledger','voucher_lines')、('platform_core','recon_runs')，顺序不得颠倒，挂接函数读登记表取可变列白名单，先挂接后登记取不到 mutable_columns。第 1 至 13 号迁移一律不调用 attach_table_guards，这三张仅追加表的触发器只在本文件内挂接；platform_core.recon_runs 的建表迁移在 db/migrations/platform_core/ 目录且位次早于 ledger，本文件执行时该表已存在，跨目录挂接可行。本文件同时写入 ledger 与 platform_core 两个 schema 的登记对象，按裁定通则第五条放在两者中位次靠后的 db/migrations/ledger/ 目录下 |
 
-每个文件头部按基线第 3.9 节写 -- rollback: 段。建表类的回退语句为 drop table；第 13 号的回退为 drop view；第 14 号为按 ledger_event_kind 与 event_type 删除本次插入的 13 行；第 15 号为按第 13 号的定义重建视图并 REVOKE SELECT ON ledger.v_account_period_balances FROM ep_analyst_ro；第 16 号为按 schema_name 与 table_name 删除本次登记的三行。第 6、7 号文件另注明其中的 REVOKE 语句无法安全逆向，回退须用升级前备份。
+每个文件头部按基线第 3.9 节写 -- rollback: 段。建表类的回退语句为 drop table；第 13 号的回退为 drop view；第 14 号为按 ledger_event_kind 与 event_type 删除本次插入的 13 行；第 15 号为按第 13 号的定义重建视图并 REVOKE SELECT ON ledger.v_account_period_balances FROM ep_analyst_ro；第 16 号为按 schema_name 与 table_name 删除本次登记的三行，并 drop 该三张表上由本文件挂接的 assert_append_only 触发器。第 6、7 号文件另注明其中的 REVOKE 语句无法安全逆向，回退须用升级前备份。
 
 上表第 9、10、11 号三个文件属 9b 段，其余十三个属 9a 段。两段之间隔着阶段 8 至 11，因此 9b 段三个文件的编号按其执行日期取，排在这些阶段的迁移之后，ledger 目录内的相对次序仍按上表。第 2 号表上的 closed_by_close_request_id 外键随第 10 号文件在 9b 段补建，该列在 9a 段保持可空且无外键。
 
 对账框架的三张表按 A-06 建在 platform_core schema，迁移文件放在 db/migrations/platform_core/，按该目录既有编号顺延，slug 依次为 platform_core_create_recon_check_definitions、platform_core_create_recon_runs、platform_core_create_recon_discrepancies，三者同属 9a 段。列按 A-06 的定义：recon_check_definitions 不带法人列，属全局配置字典类，不建行级策略；recon_runs 与 recon_discrepancies 带 legal_entity_id 并按基线第 3.8 节模板建策略；recon_runs 为仅追加表，recon_discrepancies 为可更新表并带 row_version；recon_discrepancies.recon_run_id 为同 schema 真实外键，两表的 accounting_period_id 为跨 schema 逻辑引用不建外键，理由是 platform_core 在 order.toml 中的位次早于 ledger。
+
+本阶段的跨模块逻辑引用不建 CROSS_MODULE_LINK 校验项，依据为裁定 A-06 与总览 R14，这是首版的已知边界。ledger.vouchers 的 source_document_type 与 source_document_id 由过账入口在同一事务内与来源单据行一并写入，其存在性不依赖写入时查证；release_package_id 与 approval_ref 两类平台侧逻辑引用分别由配置发布入口与审批入口保证。9b 段自带并注册的四个校验项按第 9.4.7 节无一取 CROSS_MODULE_LINK。
 
 公共列在下列各表中一律按基线第 4 节的顺序排列，即 id、legal_entity_id、security_level、data_scope_tags、row_version、created_at、created_by、updated_at、updated_by。仅追加表按基线同节去掉 row_version、updated_at、updated_by，改带 reverses_id。为节省篇幅，下表只列公共列之外的列，并在每表注明其归类。
 
@@ -773,7 +775,7 @@ E-12 覆盖率门槛达成：ledger 三个 crate 行覆盖率不低于 85%，新
 
 E-13 总账凭证过账 P95 不超过 3 秒、月度科目余额表 P95 不超过 10 秒，各不少于 200 次样本；七个查询的 EXPLAIN 证据无顺序扫描。
 
-E-14 docs/error-codes.md 的 32 个 LEDGER 错误码、docs/event-catalog.md 的 8 个 ledger 事件、docs/data-dictionary/ledger.md 的 12 张表与 2 个视图、docs/data-dictionary/platform_core.md 中对账三张表全部登记，CI 的一致性校验通过，无重复码。
+E-14 docs/error-codes.md 的 LEDGER 段与 crates/contract/ledger 的错误码常量表逐条对齐，无重复码，无仅文档侧或仅代码侧存在的码；docs/event-catalog.md 的 8 个 ledger 事件、docs/data-dictionary/ledger.md 的 12 张表与 2 个视图、docs/data-dictionary/platform_core.md 中对账三张表全部登记，CI 的一致性校验通过。
 
 E-15 新增的 4 个指标在 ops-agent 的 127.0.0.1:9101 上可抓取，标签基数符合基线第 9.2 节纪律。
 

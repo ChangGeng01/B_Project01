@@ -10,7 +10,7 @@
 
 ### 1.1 工作区根布局
 
-仓库为单一 Cargo workspace，路径固定如下。
+仓库为单一 Cargo workspace。Cargo workspace 成员路径固定如下。
 
 ```
 /Cargo.toml                     workspace 根，唯一的 [workspace.dependencies]
@@ -26,7 +26,11 @@
 /testkit/                       ep-testkit，测试夹具与构造器
 /datagen/                       ep-datagen，基准数据集生成器
 /docs/                          规格、PRD、ADR、数据字典、错误码表、事件目录
+/xtask/                         ep-xtask，结构门禁与文档校验工具，只在开发期运行，不进制品
+/tools/<name>/                  工具 crate，tools/ep-migrate 随制品交付，tools/bench 与 tools/release-gate 按 B-11 排除出制品
 ```
+
+非 workspace 成员的仓库顶层目录固定如下：`/db/bootstrap/` 数据库引导脚本，`/db/checks/` SQL 断言脚本，`/scripts/` 运维与校验脚本，`/deploy/` 单机编排文件与 systemd slice drop-in 及 `quotas.generated.toml` 的生成落点，`/clients/desktop/` 与 `/clients/mobile/` 四端客户端源码。以上两段合起来即全部顶层目录，新增顶层目录必须先改本节。
 
 crate 命名前缀统一为 `ep-`，crate 目录名不带前缀，`Cargo.toml` 中的 `name` 带前缀。二进制 crate 不带前缀，名字与进程名、systemd 单元名、cgroup slice 名一一对应。edition 固定 2021。禁止 nightly，禁止在成员 crate 中写版本号，成员一律 `dep.workspace = true`。
 
@@ -51,6 +55,9 @@ crate 命名前缀统一为 `ep-`，crate 目录名不带前缀，`Cargo.toml` �
 | ep-platform-file | 附件对象元数据、版本、上传流水线状态机、正文引用。 |
 | ep-platform-recon | 内部对账与强制不变量校验的语句集、分批与快照口径、差异事项模型。 |
 | ep-platform-obs | 日志字段约定、指标注册表、追踪上下文、运维中心台账模型。 |
+| ep-platform-runtime | 进程生命周期状态机、分层配置加载、第 7.3 节的 `SelfCheckRegistry`、健康与就绪端点，以及以 trait 表达的服务器骨架。具体 HTTP 与 IPC 传输实现分别留在对应的 ep-adapter-*，由 apps 在 wiring.rs 注入，本 crate 不依赖任何 ep-adapter-*。 |
+
+本表为平台底座 crate 的完整清单，共 16 个，新增一行必须先改本节。阶段 1 退出条件第 2 条中 archcheck 对 crate 清单逐项一致的断言以本表为唯一判据。
 
 契约、领域、应用三层按业务模块各一个 crate，模块码固定为下表 15 个，任何阶段不得新增模块码。
 
@@ -196,6 +203,8 @@ pub const SYSTEM_DEVICE_ID: &str = "SYSTEM";
 
 配套枚举同在 ep-foundation 冻结：`AccountKind { Human, System, Portal }`；`ClientKind { Win, Mac, Ios, Android, Portal, Ops }`，序列化取值与第 5.6 节 X-Client 头的六个取值一一对应；`DepartmentScope { All, Subtree(Id<Department>), Explicit(Arc<[Id<Department>]>) }`。构造函数只有 `SecurityContext::human(..)` 与 `SecurityContext::system(legal_entity_id, request_id, trace_id)` 两个，后者用上面两个常量填 user_id 与 device_id，account_kind 取 System。不提供任何 with_ 前缀的变换方法。第 18 与第 19 两个字段的存在理由是第 3.8 节要求连接取用时写入 `app.request_id` 与 `app.trace_id` 两条会话变量，取数只能来自安全上下文。
 
+上表中的七个非通用字段类型同在 `crates/foundation/src/security/context.rs` 冻结，任何阶段不得改名、改形态或另立第二处定义。`DeviceId(Arc<str>)`，取值为长度 1 至 64 的 `[A-Za-z0-9_-]`，必须能由 `&'static str` 无损构造，`SecurityContext::system` 即以 `SYSTEM_DEVICE_ID` 填该字段。`RoleCode(Arc<str>)`，取值为长度 1 至 64 的 `[A-Z0-9_]`，与 `platform_authz.roles.code` 逐字一致。`DutyClass { System, Data, Security, Audit, Key, Config }`，序列化取值依次为 SYSTEM、DATA、SECURITY、AUDIT、KEY、CONFIG，与 `platform_authz.roles.duty_class` 的六个字符串逐字一致；该列为空的业务角色不产生任何项，`Arc<[DutyClass]>` 允许为空数组，不设 None 变体，职责分离的两两互斥关系是种子规则行的内容，不进本枚举。`RecordShare { object_type: Arc<str>, object_id: uuid::Uuid, grant: RecordShareGrant }` 与 `RecordShareGrant { Read, Write }`，`object_type` 与第 6.1 节事件信封的 `aggregate_type` 同形，即 `<module>.<table>` 的小写下划线形态；本结构体只表达一条具体记录被显式共享给当前主体这一事实，不含任何判定语义，记录范围的编译结果与谓词类型留在 ep-platform-authz，不前移进本 crate。`DataScopeTag(Arc<str>)`，形态为 `<kind>:<value>`，kind 取 `[a-z0-9_-]`，value 取 `[A-Za-z0-9_-]`，总长上限 128；其 `Display` 与 serde 输出即为第 4 节公共列 `data_scope_tags text[]` 的元素形态与第 6.1 节事件信封 `data_scope_tags` 的元素形态，两处不得各自编解码。`RequestId(Arc<str>)`，取值为长度 8 至 64 的 `[A-Za-z0-9_-]`，服务端按第 5.6 节自生成时取 UUIDv7 的无连字符小写十六进制。`TraceId(Arc<str>)`，取值为 32 位小写十六进制，与 W3C trace-context 的 trace-id 同形。
+
 模块码枚举 `ModuleCode` 按第 1.2 节的 15 个模块码冻结，取值为 Mdm、Crm、Cpq、Clm、Sales、Procure、Inventory、Costing、Project、Service、Finance、Ledger、Invoice、Portal、Reporting。
 
 能力域码与动作类别位于 `crates/foundation/src/capability.rs`。
@@ -237,7 +246,7 @@ pub enum ActionClass { Read, Write, Submit, Approve, Export }
 - core-server 与 integration-gateway 是两个进程，但同处 app-core.slice，slice 内不再细分配额。
 - archive-writer 与 backup-writer 各自独立进程与独立 cgroup，不共享 CPU、内存与磁盘 IO 预算，不持有运行期应用账号，不读业务表。
 - 各进程以标准 OCI 容器交付，由 Docker Compose 或 Podman 加 systemd 编排，cgroup 取值按规格第 13.1 章配额表，客户不得在部署时单方调高。
-- 八个系统账户互不复用，同属组 `ep`，落点写出凭据只由 archive-writer 与 backup-writer 的系统账户持有。
+- 八个系统账户互不复用，同属组 `ep`，落点写出凭据只由 archive-writer 与 backup-writer 的系统账户持有。`tools/ep-migrate` 另有独立系统账户 `ep-migrate`，与上述八个不复用，同属组 `ep`，只在迁移窗口内使用。
 
 进程间接口，本基线取值。承载方式为 Unix domain socket，帧格式为 4 字节大端长度前缀加 JSON 体，路径 `/run/ep/ipc/<name>.sock`，权限 0660，属主为对应系统账户，组为 `ep`。不使用本机 TCP，理由是避免任何一个接口意外可从网络到达。archive-writer 与 backup-writer 经该接口向 core-server 上报的内容固定为四类：写出结果、校验结论、失败事件、连接与复制槽与基础备份的起止；core-server 不可用期间在写出进程本地 `/var/lib/ep/<proc>/spool/` 暂存并在恢复后补写，暂存不阻塞写出。
 
@@ -280,7 +289,7 @@ pub enum ActionClass { Read, Write, Submit, Approve, Export }
 - 主键列名一律 `id`，类型 `uuid`，取值为应用侧生成的 UUIDv7。理由是时间有序使 B-tree 插入局部性好，且可在事务开始前生成以构造聚合内引用，避免往返取号。数据库侧不设默认值，缺失即为应用缺陷。
 - 外键列名为被引用表单数加 `_id`，如 `customer_id`、`sales_order_line_id`。
 - 同一 schema 内的引用建真实外键约束，`ON DELETE RESTRICT`，不使用级联删除。
-- 跨 schema 即跨模块的引用不建数据库外键，只留逻辑引用列，理由是模块隔离要求禁止跨模块直接读写业务表，外键会把两个模块的迁移与停用绑死，与规格第 5.6 章模块生命周期冲突。跨模块引用的存在性由 application 层在写入前经对方模块契约校验，并由内部对账组件按周期核对。
+- 跨 schema 即跨模块的引用不建数据库外键，只留逻辑引用列，理由是模块隔离要求禁止跨模块直接读写业务表，外键会把两个模块的迁移与停用绑死，与规格第 5.6 章模块生命周期冲突。跨模块引用的存在性由 application 层在写入前经对方模块契约校验；是否另设周期性核对不按模块普遍要求，只有在 `platform_core.recon_check_definitions` 中登记了 `category` 为 `CROSS_MODULE_LINK` 的校验项的那些引用才由内部对账组件按周期核对，登记方与校验项以裁定 A-06 为唯一出处，本节不复述也不给计数；未登记的跨模块逻辑引用在首版只做写入时存在性校验，属首版的已知边界，未覆盖面在总览 R14 一处登记。
 - 任何跨法人的引用一律禁止，写入前校验两侧 `legal_entity_id` 相等。
 - 业务编号列：单据类为 `doc_no text`，档案类为 `code text`，唯一约束一律带法人，即 `(legal_entity_id, doc_no)`。
 
@@ -388,7 +397,7 @@ create policy rls_<table>_le on <schema>.<table>
 - 单据类表另加 `doc_no text not null` 与 `status text not null`，`status` 带 CHECK 约束枚举该单据状态机的全部取值。
 - 档案类表另加 `code text not null` 与 `is_active boolean not null default true`、`deactivated_at timestamptz null`。
 - 会计相关表另加 `posting_date date` 或 `business_date date` 与 `accounting_period_id uuid`，取值规则见第 3.4 节。
-- 仅追加表即凭证、凭证行、库存数量流水、库存金额流水、审计事件、Outbox 与死信不带 `row_version`、`updated_at`、`updated_by`，改带 `reverses_id uuid null` 表示本记录是对哪条记录的冲销或更正。
+- 仅追加表不带 `row_version`、`updated_at`、`updated_by`。是否带 `reverses_id uuid null` 由该表有无业务冲销或更正语义决定：有的必须带，并在表定义处写明它指向哪张表的哪条记录；没有的一律不得带，不得为满足列约定而保留一个恒为 NULL 的该列。每张仅追加表由所属阶段在其表定义处逐表写明取舍与理由，本节不再列举表名；新增仅追加表按第 12 节纪律先登记再实现。`platform_audit.audit_events` 的列集以第 9.4 节为准，本节不另给它加列。
 - 不设 `tenant_id` 或 `customer_id` 列。理由是规格第 7.1 章已规定每个客户一个独立事务数据库实例，客户隔离由部署承担，再加一列只会制造第二套隔离口径与两处越权测试面。
 - 附件引用不落在业务表列上，一律经 `<主表单数>_attachments` 关联表，列为 `owner_id`、`attachment_object_id`、`purpose`、`sort_no` 与公共列。
 
@@ -625,7 +634,7 @@ create policy rls_<table>_le on <schema>.<table>
 ### 9.2 指标
 
 - 由 ops-agent 在 127.0.0.1:9101 暴露 Prometheus 文本格式，仅内网可达，可对接客户已有的 Prometheus 与 Grafana。
-- 命名 `ep_<subsystem>_<metric>_<unit>`。固定的基线指标：`ep_http_request_duration_seconds`（直方图，桶为 0.05、0.1、0.25、0.5、1、2、3、5、10、30，标签 route、method、status_class、client）、`ep_db_pool_connections`（gauge，标签 pool 取 rw、ro、worker、integ、ops）、`ep_db_statement_duration_seconds`（直方图，标签 pool 与 statement_kind）、`ep_db_tx_retries_total`（counter，标签 pool 取 rw、ro、worker、integ、ops，标签 sqlstate 取 40001、40P01）、`ep_outbox_pending_events`、`ep_outbox_dispatch_attempts_total`、`ep_dead_letters_open`、`ep_archive_write_lag_seconds`、`ep_attachment_write_lag_seconds`、`ep_replication_crosscheck_age_seconds`（gauge，标签 channel 取 archive、backup）、`ep_audit_anchor_age_seconds`、`ep_backup_last_success_timestamp_seconds`、`ep_recon_run_duration_seconds`、`ep_recon_unfinished_total`、`ep_period_close_rejected_total`、`ep_quota_throttled_total`、`ep_degradation_windows_open`。指标名全量登记在 `docs/metrics-catalog.md`，唯一性由 CI 校验，同一指标只能由一个阶段注册，重复登记即构建失败。
+- 命名 `ep_<subsystem>_<metric>_<unit>`。固定的基线指标：`ep_http_request_duration_seconds`（直方图，桶为 0.05、0.1、0.25、0.5、1、2、3、5、10、30，标签 route、method、status_class、client）、`ep_db_pool_connections`（gauge，标签 pool 取 rw、ro、worker、integ、ops）、`ep_db_statement_duration_seconds`（直方图，标签 pool 与 statement_kind）、`ep_db_tx_retries_total`（counter，标签 pool 取 rw、ro、worker、integ、ops，标签 sqlstate 取 40001、40P01）、`ep_outbox_pending_events`、`ep_outbox_dispatch_attempts_total`、`ep_dead_letters_open`、`ep_archive_write_lag_seconds`、`ep_attachment_write_lag_seconds`、`ep_replication_crosscheck_age_seconds`（gauge，标签 channel 取 archive、backup）、`ep_audit_anchor_age_seconds`、`ep_backup_last_success_timestamp_seconds`、`ep_recon_run_duration_seconds`、`ep_recon_unfinished_total`、`ep_period_close_rejected_total`、`ep_quota_throttled_total`、`ep_degradation_windows_open`、`ep_build_info`（gauge，标签 version 与 git_commit）、`ep_selfcheck_pending_items`（gauge，标签 process）。指标名全量登记在 `docs/metrics-catalog.md`，唯一性由 CI 校验，同一指标只能由一个阶段注册，重复登记即构建失败。
 - 标签基数纪律：禁止把 `user_id`、`doc_no`、`trace_id` 作为标签；`legal_entity_id` 允许，因为首版只有 2 个法人；`route` 用模板路径而非实例路径。
 - 规格第 15.3 章要求的降级与暴露窗口台账既进数据库表 `platform_ops.degradation_windows`，也各出一个 gauge，两处不得只有其一。
 
@@ -689,12 +698,13 @@ let result = uow.transact(ctx, |tx| async move {
     let order = repo.load_for_update(tx, order_id).await?;
     let events = order.confirm_delivery(cmd, clock.now())?;
     repo.save(tx, &order).await?;
-    audit.record(tx, ctx, &events).await?;
     outbox.enqueue(tx, &events).await?;
+    audit.record(tx, ctx, &events).await?;
     Ok(order.into_view())
 }).await?;
 ```
 
+- 审计写入必须是工作单元闭包内的最后一次数据库写入，理由是审计段行是全局串行化点且其排他锁持有到事务提交。任何阶段不得在审计写入之后再发起任何数据库写入，包括 Outbox 入队、投影回填与同事务内的站内通知写入。上面示例的次序即唯一合法次序。
 - 工作单元的唯一定义是 `ep_foundation::port::UnitOfWork`，方法只有两个：读写事务用 `transact`，只读快照事务用 `snapshot_transact`，后者配合 `SET TRANSACTION SNAPSHOT` 使用，签名见第 1.4 节。任何阶段不得新增第三个方法，也不得使用 `transact_repeatable_read` 一类的旧名。
 - 一个用例一个事务。禁止在一个 HTTP 请求内开启多个写事务，需要多步的一律拆用例并由 Outbox 串接。
 - 事务内禁止：外部 HTTP 调用、文件正文读写、发送通知、长时计算、等待用户输入。

@@ -34,7 +34,7 @@
 | D-07 | 三张受控取值字典的出厂数据与配置发布通道接入 | 迁移回填 + 配置发布包 | 字典改动经签名发布后生效，且不触发 DDL |
 | D-08 | 工单时限提醒的定时器登记与站内通知送达 | 经 ep-platform-flow 定时器与 ep-platform-notify | 两类提醒的端到端测试通过 |
 | D-09 | tests/rls_matrix 中本阶段 18 张带法人表的越权矩阵用例 | 独立测试目标 | 八类越权面全部返回 404 或 403，无内容回显 |
-| D-10 | 闭环第 12 步的端到端用例与三条追溯链路双向可达用例 | apps/core-server/tests/ 下的 E2E | 全绿 |
+| D-10 | 闭环第 12 步的用例片段与三条追溯链路双向可达用例 | 前者为 testkit/scenarios/stage12_service_step12.rs 中的步骤函数与断言，供阶段 9b 的 testkit/scenarios/golden_loop_14_steps.rs 在第 12 步引用；后者为 apps/core-server/tests/ 下的 E2E | 两者在本阶段各自跑通全绿，整条链路的串接通过由阶段 9b 的该用例判定 |
 | D-11 | 边界不变量用例 | 执行本阶段全部用例前后规格第 17.3 章三项取值不变 | 由 ep-platform-recon 语句集比对，差额为零 |
 | D-12 | docs/event-catalog.md、docs/error-codes.md、docs/data-dictionary.md 三处登记，其中数据字典含本阶段五个单据类型码 EQ、CPL、WO、PRJ、PT | 文档 | CI 一致性校验通过，且 xtask configdoc --check-doc-type-codes 通过 |
 | D-13 | project.v_projects_dataset 受治理数据集视图，dataset code 为 project_projects，grain 为 DOCUMENT | db/migrations/project/ 下的视图迁移 | 视图已发布并授予 ep_analyst_ro，列签名与 reporting.dataset_fields 的登记一致 |
@@ -69,7 +69,7 @@ ep-contract-service 对外只暴露 ReturnRepairTraceQuery 一个 trait。按裁
 | ep-adapter-search | 五类对象的检索文档投影一律产出 foundation::port::search::SearchDocument，object_type 取表全名如 service.equipment_records，写入方仍为 job-worker 的索引消费者，该消费者与 ep-adapter-search 本体按裁定 A-07 由阶段 3b 交付 |
 | apps/core-server/src/wiring.rs | 注册两个模块的仓储与用例，注册三个客户 360 区块提供者，并把 ServiceReferenceCounter 注册进阶段 5 提供的 MasterReferenceCounterRegistry |
 | apps/job-worker/src/wiring.rs | 注册三个 Outbox 消费者 project.contract_derivation、project.requisition_intake 与 service.return_repair_writeback、一个定时器回调，并把 ServiceReferenceCounter 注册进 MasterReferenceCounterRegistry |
-| ep-testkit | 新增 EquipmentRecordBuilder、WorkOrderBuilder、ComplaintBuilder、ProjectBuilder、ProjectTaskBuilder、ContractDerivationPlanFake、SalesReturnPortFake，后两者分别按裁定 A-16 与 A-17 冻结的签名实现 |
+| ep-testkit | 新增 EquipmentRecordBuilder、WorkOrderBuilder、ComplaintBuilder、ProjectBuilder、ProjectTaskBuilder、ContractDerivationPlanFake、SalesReturnPortFake，后两者分别按裁定 A-16 与 A-17 冻结的签名实现；另新增 testkit/scenarios/stage12_service_step12.rs，内含闭环第 12 步的步骤函数与断言，由阶段 9b 的 testkit/scenarios/golden_loop_14_steps.rs 引用 |
 | ep-datagen | 基准数据集追加设备 5000 台、工单 20000 张、投诉 5000 条、项目 200 个、项目任务 4000 条 |
 
 #### 2.3 进程归属
@@ -706,7 +706,7 @@ RLS 与越权：本阶段 18 张表全部纳入 tests/rls_matrix，覆盖读取�
 
 #### 8.3 端到端测试
 
-- E2E-01 闭环第 12 步：售后技术支持记录形成工单，关联原订单、合同、产品、批次、设备与保修并读取在保状态，工单与投诉进入客户 360 视图。这条用例是规格第 8 章闭环的第 12 步，必须在同一条合同的闭环用例内串接执行。
+- E2E-01 闭环第 12 步：售后技术支持记录形成工单，关联原订单、合同、产品、批次、设备与保修并读取在保状态，工单与投诉进入客户 360 视图。本阶段只交付该步的用例片段，落点为 testkit/scenarios/stage12_service_step12.rs 中的步骤函数与断言，由阶段 9b 的 testkit/scenarios/golden_loop_14_steps.rs 在第 12 步引用；整条链路的串接执行归该用例，本阶段不另建第二条链路用例。
 - E2E-02 退换修打通：一条退货登记行生成销售退货单，退货单到终态后登记行回写为已完成；一条换货登记行挂接退货侧与发货侧两张单据；工单、销售退货单与设备档案三处追溯链路双向可达。
 - E2E-03 派生幂等：合同生效派生项目任务，重复投递不产生重复任务；派生失败进死信并可人工修复。
 - E2E-04 四端：售后工单与设备台账能力域在 Windows、macOS、iOS、Android 四端按完整取值执行同一场景集（Playwright 驱动桌面 WebView 与 tauri-driver 驱动壳，XCUITest 与 Espresso 驱动移动端）；项目任务与交付节点能力域桌面两端完整、移动两端简化；移动端相机扫码录入序列号与批次可用。界面代码按裁定 A-23 位于 clients/desktop/src/modules/service/、clients/desktop/src/modules/project/ 与 clients/mobile/src/modules/ 下的同名目录，客户 360 视图并入阶段 5 已建立的 crm 模块目录，均由本阶段交付；阶段 13 只提供客户端壳、路由注册表与能力矩阵闸，不交付本阶段的业务界面。
@@ -760,7 +760,7 @@ RLS 与越权：本阶段 18 张表全部纳入 tests/rls_matrix，覆盖读取�
 11. 派生幂等：同一事件重复投递 5 次只产生一套任务、事件与审计；派生任务按裁定 A-16 的 unique_key 不重复；终态任务不被覆盖；续签复用同一项目。
 12. 派生失败进入死信并可记名重投，死信按法人可枚举。
 13. 三条追溯链路双向可达的 E2E 用例全绿。
-14. 闭环第 12 步在整条合同闭环用例内可执行且通过。
+14. 闭环第 12 步的用例片段已交付为 testkit/scenarios/stage12_service_step12.rs 中的步骤函数与断言，其自身在本阶段单独跑通，并可被阶段 9b 的 testkit/scenarios/golden_loop_14_steps.rs 引用；整条链路的串接通过由阶段 9b 的该用例承担，不在本阶段判定。
 15. 执行本阶段全部用例前后，规格第 17.3 章三项不变量取值不变，且凭证与库存流水四张表的行数与校验和不变。
 16. 四端 E2E 按规格第 6.2 章矩阵取值通过：售后工单与设备台账四端完整，项目任务与交付节点桌面完整、移动简化，移动端扫码可用。
 17. 覆盖率达到 8.6 节的五档门槛。
@@ -867,7 +867,7 @@ RLS 与越权：本阶段 18 张表全部纳入 tests/rls_matrix，覆盖读取�
 
 ### 12. 未决事项的临时取值与切换代价
 
-本阶段被 PRD 附录乙的 16 条 U-J 事项与 U-A、U-B、U-C 三组的 7 条触及。逐条给出是否阻塞、临时取值与切换代价。未列出的事项与本阶段无关。
+本阶段被 PRD 附录乙的 16 条 U-J 事项与 U-A、U-B、U-C 三组的 8 条触及。逐条给出是否阻塞、临时取值与切换代价。未列出的事项与本阶段无关。
 
 | 编号 | 是否阻塞 | 临时取值 | 切换代价 |
 |---|---|---|---|
@@ -894,6 +894,7 @@ RLS 与越权：本阶段 18 张表全部纳入 tests/rls_matrix，覆盖读取�
 | U-A-15 附件上限 | 阻塞一项校验 | 本阶段不在业务侧设附件数量上限，由平台附件能力统一判定；决策前工单附件不设条数校验 | 决策后在平台侧加校验，本阶段不改 |
 | U-B-08 项目与客户维度授予粒度 | 不阻塞 | 本阶段只负责供给 data_scope_tags（project:<项目编号>、customer:<客户编码>），判定与叠加方式归权限模块 | 若标签形态变更，改一处标签生成函数 |
 | U-C-04 客户 360 视图无定义节 | 不阻塞 | 技术落点已由裁定 C-09 定死，唯一端点 GET /api/v1/crm/customers/{id}/customer-360 与唯一契约 Customer360SectionProvider 由阶段 5 建立，本阶段在同一端点上追加区块，不新增路径，CustomerPanelProvider 作废；PRD 附录乙 U-C-04 在需求侧仍为待决，视图的承载节与区块清单由产品负责人决策，本阶段不代拍 | 落点变更无代价；区块清单若由产品另定，按增量注册增减区块实现，不改契约 |
+| U-C-10 设备档案是否在交付确认时自动生成与生成粒度 | 不阻塞 | 不自动生成：本阶段不为 sales.delivery.confirmed.v1 注册消费者，第 6.3 节的消费者仍为三个，建档一律由 POST /api/v1/service/equipments/actions/create-from-delivery-batch 人工发起；粒度为逐台一行，每行台数由入参 lines 数组的 count 指定，不按交付确认单明细行汇总成一行，序列号不作为建档判据，见 U-J-03；单次上限取 EP__SERVICE__EQUIPMENT__CREATE_FROM_DELIVERY_MAX_ROWS 默认 200；重复建档由应用层按 delivery_confirmation_line_id 判定并跳过，取数走普通索引 ix_equipment_records_le_delivery_conf_line，不建唯一约束 | 改判为交付确认时自动生成：为 sales.delivery.confirmed.v1 新增一个本模块的 job-worker 消费者并按 platform_msg.inbox_consumptions 补幂等键，同时把 ix_equipment_records_le_delivery_conf_line 升为唯一索引以防重复投递产生重复建档；改判为按明细行粒度：改 service.equipment_records 的行粒度语义与建档入参，即去掉 lines 数组的 count 改为每行只生成一条，并改第 8.2 节第 1 与第 2 两条用例 |
 
 ---
 

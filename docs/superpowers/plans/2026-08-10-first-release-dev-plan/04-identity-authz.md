@@ -119,7 +119,7 @@ ep-platform-identity 承载本地账号目录、凭据、多因子、设备登�
 
 表 3-6 platform_core.reauth_challenges：id、user_id、session_id、operation_type text not null（六类枚举）、subject_digest bytea not null（待签内容摘要的 SHA-256）、subject_summary jsonb not null（规范化后的摘要结构，敏感字段已掩码）、nonce bytea not null、credential_kind_used text null、status text not null（ISSUED、VERIFIED、CONSUMED、FAILED、EXPIRED、ABANDONED）、token_hash bytea null、issued_at、expires_at、verified_at、consumed_at、failure_count int not null default 0、公共列。索引 pk、ux_reauth_challenges_token_hash、ix_reauth_challenges_user_id_status_expires_at。
 
-表 3-7 platform_core.login_attempts（仅追加）：id、user_id uuid null、login_name_hash bytea not null、outcome text not null（SUCCESS、CREDENTIAL_INVALID、ACCOUNT_LOCKED、ACCOUNT_INACTIVE、MFA_REQUIRED、MFA_INVALID、DEVICE_UNREGISTERED、ADMISSION_REJECTED）、client text、source_addr text、occurred_at timestamptz not null、created_by。索引 ix_login_attempts_occurred_at、ix_login_attempts_user_id_occurred_at。登录名以哈希存储，理由是失败尝试中的登录名可能是攻击者构造的任意串，明文入库会把一张运行数据表变成半个外部输入落点。
+表 3-7 platform_core.login_attempts（仅追加）：id、user_id uuid null、login_name_hash bytea not null、outcome text not null（SUCCESS、CREDENTIAL_INVALID、ACCOUNT_LOCKED、ACCOUNT_INACTIVE、MFA_REQUIRED、MFA_INVALID、DEVICE_UNREGISTERED、ADMISSION_REJECTED）、client text、source_addr text、occurred_at timestamptz not null、created_by。索引 ix_login_attempts_occurred_at、ix_login_attempts_user_id_occurred_at。本表不带 row_version、updated_at、updated_by，也不带 reverses_id，理由是登录尝试没有冲销或更正语义。登录名以哈希存储，理由是失败尝试中的登录名可能是攻击者构造的任意串，明文入库会把一张运行数据表变成半个外部输入落点。
 
 表 3-8 platform_core.account_lockouts：user_id uuid pk（一人一行）、failure_count int not null default 0、window_started_at timestamptz、locked_until timestamptz null、last_failure_at timestamptz、row_version、created_*、updated_*。索引 pk_account_lockouts、ix_account_lockouts_locked_until。
 
@@ -253,6 +253,25 @@ pub struct SecurityContext {
 
 SecurityContext 的构造入口只有 `SecurityContext::human(..)` 与 `SecurityContext::system(legal_entity_id, request_id, trace_id)` 两个，后者按 A-02 用 SYSTEM_PRINCIPAL_ID 与 SYSTEM_DEVICE_ID 填 user_id 与 device_id，account_kind 取 System。SecurityContext 一经构造不再修改，任何“提权”都必须重新走一次会话建立，不提供任何 with_ 前缀的变换方法。配套枚举同在 ep-foundation 冻结：AccountKind 取 Human、System、Portal 三值，platform_core.user_accounts.account_kind 的四个取值按 EMPLOYEE 与 BREAKGLASS 映射为 Human、PORTAL 映射为 Portal、SYSTEM 映射为 System，映射函数落在 identity 仓储内；ClientKind 取 Win、Mac、Ios、Android、Portal、Ops 六值，与 user_devices.client 的六个取值以及基线第 5.6 节 X-Client 头一一对应；DepartmentScope 取 All、Subtree、Explicit 三个变体，第 4.2 节阶段三的部门范围编译结果落在该枚举上。request_id 与 trace_id 两个字段是基线第 3.8 节要求写入 app.request_id 与 app.trace_id 两条会话变量的取数来源，安全上下文之外不得另设第二处取数。
 
+ep-foundation 侧还须冻结上表出现的七个字段类型，它们与 SecurityContext 同处 `crates/foundation/src/security/context.rs`，按 A-03 由阶段 1 一并实现，本阶段只填充不定义；A-03 的字段表以本节的结构体成文，因此这七个类型的形状与取值域也在本节给全，阶段 1 照此冻结。
+
+```rust
+pub struct DeviceId(Arc<str>);
+pub struct RoleCode(Arc<str>);
+pub struct DataScopeTag(Arc<str>);
+pub struct RequestId(Arc<str>);
+pub struct TraceId(Arc<str>);
+
+pub enum DutyClass { System, Data, Security, Audit, Key, Config }
+
+pub struct RecordShare {
+    pub object_type: Arc<str>,
+    pub object_id: uuid::Uuid,
+}
+```
+
+五个字符串 newtype 的构造入口一律为 `parse(&str) -> Result<Self, AppError>`，不提供绕过校验的构造，也不实现 `From<String>`。DeviceId 长度 1 至 64，字符集为大小写字母、数字、下划线、连字符与点，与 platform_core.user_devices.device_id 列和基线第 5.6 节 X-Device-Id 头同域，基线第 1.4 节的 SYSTEM_DEVICE_ID 能通过该校验，`SecurityContext::system` 由此构造该字段。RoleCode 长度 1 至 64，字符集为小写字母、数字、下划线与点，与 platform_authz.roles.code 同域，该列的写入一律经 RoleCode 解析后落库，数据库侧不另设第二套字符集校验。DutyClass 六个变体的序列化取值与 platform_authz.roles.duty_class 的六个字符串逐字一致，该列为空的业务角色不产生任何变体，因此 duty_classes 允许为空数组，不设表示无职责的第七个变体；互斥关系不进枚举定义，它是第 4.5 节种子 SoD 规则行的内容。RecordShare 只表达某条记录被显式共享给当前主体，object_type 与 platform_authz.object_scope_bindings.object_type 同域，第 4.2 节阶段三的 shared_record_ids 由它按 object_type 过滤后取 object_id 汇成；记录级的动作粒度由阶段二的权限项动作承担、字段粒度由阶段四承担，因此本结构不带授予方式与可否转授两类字段，U-B-07 改判只增加 ScopeCompiler 的谓词分支，不改本结构。RecordScope 与 RecordPredicate 不进 ep-foundation，留在 ep-platform-authz，理由是两者含判定语义，前移即违反基线第 1.3 节的依赖方向。DataScopeTag 的形态为 `<kind>:<value>`，kind 取小写字母、数字、下划线与连字符，value 取大小写字母、数字、下划线与连字符，总长上限 128，其 Display 与 serde 输出即基线第 4 节公共列 data_scope_tags 的元素形态与基线第 6.1 节事件信封 data_scope_tags 的元素形态，两处不得各自编解码。RequestId 长度 8 至 64，字符集为大小写字母、数字、下划线与连字符，与基线第 5.6 节 X-Request-Id 头同域，服务端自生成时取 UUIDv7 的无连字符三十二位小写十六进制。TraceId 固定为三十二位小写十六进制，与 W3C trace-context 的 trace-id 同形，也与结构化日志的 trace_id 字段同域。
+
 ep-platform-authz 侧：
 
 ```rust
@@ -384,7 +403,7 @@ X-Reauth-Token 的消费是一次条件更新：`update platform_core.reauth_cha
 
 #### 4.7 字段投影
 
-FieldProjector 输入为对象类型、对象的原始行（serde_json::Value）与 SecurityContext，输出为新的 Value，不修改输入。掩码规则：FULL 输出固定字符串六个星号；KEEP_LAST_4 保留末四位其余替换为星号，长度不足 8 位时退化为 FULL；KEEP_DOMAIN 用于电子邮箱，保留 at 之后的部分。字段在 platform_core.sensitive_field_registry 中登记且 is_field_encrypted 为真时物理列是密文，上述三条不施加于密文：KEEP_LAST_4 的后四位直接取自同表的 `<column_name>_tail` 列，FULL 与 HIDDEN 既不读密文也不解密；只有字段权限为 READ 或 WRITE 且用户 clearance_level 不低于该字段密级时，才在投影前经 SensitiveFieldDecryptor 解密后输出，全库只有这一处解密位点。按 A-28，首版命中该分支的是 mdm.customer_invoice_profiles、mdm.supplier_payment_profiles 与 finance.cash_accounts 三处的 bank_account_no，其 mask_style 取 KEEP_LAST_4，物理列与登记行由阶段 5 与阶段 10 交付，本阶段只按登记行渲染，不建表也不写登记行。字段在 field_permissions 中无授权行时按默认拒绝处理，不进入响应键集合，与阶段二的默认拒绝一致；各模块字段的授权行按 A-19 的 AUTHZ_FIELD_GRANT applier 经配置发布通道在其所属阶段之后写入。掩码后的值不参与排序与聚合，任何列表端点如果按 MASKED 或 HIDDEN 字段排序，一律返回 VALIDATION 与 PLATFORM.AUTHZ.SORT_FIELD_FORBIDDEN，这是 PRD 第 10.2.4 节“不得通过排序位次间接暴露”的实现点。分面计数同理：计数的分组键若含无权字段，该分面整体不返回。
+FieldProjector 输入为对象类型、对象的原始行（serde_json::Value）与 SecurityContext，输出为新的 Value，不修改输入。掩码规则：FULL 输出固定字符串六个星号；KEEP_LAST_4 保留末四位其余替换为星号，长度不足 8 位时退化为 FULL；KEEP_DOMAIN 用于电子邮箱，保留 at 之后的部分。字段在 platform_core.sensitive_field_registry 中登记且 is_field_encrypted 为真时物理列是密文，上述三条不施加于密文：KEEP_LAST_4 的后四位直接取自同表的 `<column_name>_tail` 列，FULL 与 HIDDEN 既不读密文也不解密；只有字段权限为 READ 或 WRITE 且用户 clearance_level 不低于该字段密级时，才在投影前经 SensitiveFieldDecryptor 解密后输出，字段投影路径上只有这一处解密位点，不经字段投影而需要明文的解密由需要它的那个阶段在其计划内自行指名位点，同样调用 SensitiveFieldDecryptor，全库不得出现第二套解封路径。按 A-28，命中该分支的字段以 platform_core.sensitive_field_registry 中 is_field_encrypted 为真的登记行为准，本阶段不另列第二份清单；登记行与其物理列由引入该列的模块阶段在同一迁移内交付，本阶段只按登记行渲染，不建表也不写登记行；登记行的 mask_style 取 KEEP_LAST_4 时该表必须同时存在 `<column_name>_tail` 列，没有该列的只能取 FULL。字段在 field_permissions 中无授权行时按默认拒绝处理，不进入响应键集合，与阶段二的默认拒绝一致；各模块字段的授权行按 A-19 的 AUTHZ_FIELD_GRANT applier 经配置发布通道在其所属阶段之后写入。掩码后的值不参与排序与聚合，任何列表端点如果按 MASKED 或 HIDDEN 字段排序，一律返回 VALIDATION 与 PLATFORM.AUTHZ.SORT_FIELD_FORBIDDEN，这是 PRD 第 10.2.4 节“不得通过排序位次间接暴露”的实现点。分面计数同理：计数的分组键若含无权字段，该分面整体不返回。
 #### 4.8 权限配置对象的配置包 applier
 
 按 A-19，ConfigItemApplier trait、含 15 项的 ItemKind 枚举、ConfigPackageItem 与 ConfigItemApplierRegistry 由阶段 3a 在 `crates/platform/release/src/port/config_item.rs` 交付，其中的事务句柄类型取自 ep-foundation。本阶段实现其中三个 item_kind，实现类型全部落在 ep-platform-authz。
@@ -704,7 +723,7 @@ roles、role-permission-grants、access-policies、field-permissions、sod-rules
 11. crates/platform/identity 与 crates/platform/authz 的行覆盖率均不低于 85%，工作区整体不低于 80%。
 12. 依赖方向自检脚本通过：两个新 crate 不出现对 domain、application、adapter 的依赖，ep-platform-authz 不依赖 ep-platform-identity。
 13. docs/error-codes.md、docs/event-catalog.md 与数据字典的本阶段增量已提交，CI 的错误码一致性校验与事件登记校验通过。
-14. 本阶段的 3 处偏离项与 9 处新增决定已写入基线修订提案并经平台架构负责人签字，未签字项在计划中标注为阻塞。
+14. 本阶段的 3 处偏离项与 10 处新增决定已写入基线修订提案并经平台架构负责人签字，未签字项在计划中标注为阻塞。
 15. clippy 以 -D warnings 通过，非测试代码中不出现 unwrap、expect、panic!、数组越界索引与整数溢出运算；单文件不超过 800 行、函数不超过 50 行、嵌套不超过 4 层。
 16. 按 A-19 应交付的三个 applier 已在 ep-platform-authz 实现：AuthzRoleApplier、AuthzPolicyApplier、AuthzFieldGrantApplier，三者实现阶段 3a 提供的 ConfigItemApplier 端口并注册到 ConfigItemApplierRegistry，单元测试覆盖三者的写入与版本推进在同一事务内完成；配置包经发布通道审批签名后生效的端到端验收顺延到阶段 3b。
 17. 本阶段全部路由的能力域码与动作类别常量已声明在 `crates/platform/authz/src/capability.rs`，`xtask configdoc` 通过。
@@ -777,7 +796,7 @@ roles、role-permission-grants、access-policies、field-permissions、sod-rules
 3. 策略模拟与影响分析。POST /api/v1/platform/authz-decisions/actions/evaluate 已具备对任意主体求值的能力，模拟只需在其上加一层“以候选配置版本求值”的入参，判定内核不变。
 4. 仓库维度（U-B-10）。若安全负责人决定新增仓库维度，落点是 object_scope_bindings 增加一列 warehouse_col 与 user_scope_grants 的 scope_kind 增加一个取值，但规格第 12.2 章的七个维度必须先修订，PRD 层不得自行增加维度。
 5. 破窗授权流程。受控应急本地账号的 allowed_action_set 是一个 text[] 加 CHECK，通用破窗恢复时可放宽该 CHECK，但规格第 12.1 章明确首版不含通用破窗，因此本阶段不预留 API。
-6. 字段级加密的覆盖面。解密位点本身不是预留项：按 A-28 首版已有实际加密字段，口径与唯一解密位点见第 4.7 节，SensitiveFieldDecryptor 的实现基于阶段 2 交付的 ep-adapter-kms，本阶段不自建第二套解封路径。预留的是覆盖面，U-A-12 决策把开户银行或其他字段改为字段级加密时，只增加登记行与物理列，本阶段的投影器与判定流水线不改；盲索引与受控投影按规格第 7.8 章由其所属阶段建设。
+6. 字段级加密的覆盖面。解密位点本身不是预留项：按 A-28 首版已有实际加密字段，口径与字段投影路径上的唯一解密位点见第 4.7 节，SensitiveFieldDecryptor 的实现基于阶段 2 交付的 ep-adapter-kms，本阶段不自建第二套解封路径。预留的是覆盖面，U-A-12 决策把开户银行或其他字段改为字段级加密时，只增加登记行与物理列，本阶段的投影器与判定流水线不改；盲索引与受控投影按规格第 7.8 章由其所属阶段建设。
 7. 移动端“把任务发送到桌面端继续”（U-K-08）。high_risk_requests 的 CLIENT_NOT_ALLOWED 错误响应中预留 advice 字段承载跳转说明，产品决策后只改文案不改逻辑。
 
 ---
@@ -792,11 +811,12 @@ roles、role-permission-grants、access-policies、field-permissions、sod-rules
 2. 平台内核端点的模块段取 platform，路径为 /api/v1/platform/...。回写基线第 5.1 节。该段与已有的 /api/v1/portal/... 同类。
 3. 平台事件的模块段取 platform，事件名如 platform.authz_policy.published.v1。回写基线第 6.1 节。
 4. 平台事件的 posting_date 与 accounting_period_id 取 null；关账受理前提二的判定语句按 C-28 由阶段 9a 定死，本阶段第 6.3 节逐字采用，posting_date 为空的平台事件一律不计入。回写基线第 6.1 节。
-5. 本阶段的两张仅追加表（user_password_history、login_attempts）不属于基线第 4 节列举的六类仅追加表，按仅追加处理但不带 reverses_id，理由是它们没有冲销语义。回写基线第 4 节。
+5. 本阶段的两张仅追加表（user_password_history、login_attempts）不在基线第 4 节列举的六类之内，两表均无冲销或更正语义，因此按仅追加处理且不带 reverses_id，取舍与理由已逐表写在第 3.2 节表 3-3 与表 3-7 的定义处。回写基线第 4 节，把该节仅追加表一条改为：仅追加表一律不带 row_version、updated_at、updated_by；是否带 reverses_id uuid null 由该表有无业务冲销或更正语义决定，有的必须带并在表定义处写明它指向哪张表的哪条记录，没有的不得为满足列约定而保留恒为 NULL 的该列；取舍与理由由所属阶段在其表定义处逐表写明，该节不再列举表名。
 6. 启动自检新增 duty-class-exclusivity、forbidden-permission-items-absent、authz-snapshot-loadable 三个命名项，按 C-25 以注册名标识，不用序号。回写基线第 7.3 节。
-7. 新增指标九个：ep_authn_login_attempts_total、ep_authn_active_sessions、ep_authz_decision_duration_seconds、ep_authz_denied_total、ep_authz_scope_truncated_total、ep_reauth_challenges_total、ep_high_risk_requests_open、ep_breakglass_active_sessions、ep_session_admission_queue_wait_seconds、ep_session_admission_rejected_total。标签只用 legal_entity_id、operation_type、outcome、reason 四类，不用 user_id 与 doc_no。回写基线第 9.2 节。
+7. 新增指标十个：ep_authn_login_attempts_total、ep_authn_active_sessions、ep_authz_decision_duration_seconds、ep_authz_denied_total、ep_authz_scope_truncated_total、ep_reauth_challenges_total、ep_high_risk_requests_open、ep_breakglass_active_sessions、ep_session_admission_queue_wait_seconds、ep_session_admission_rejected_total。标签只用 legal_entity_id、operation_type、outcome、reason 四类，不用 user_id 与 doc_no。回写基线第 9.2 节。
 8. 登录用例的独立并发上限取 4，与准入信号量分设。回写基线第 11.6 节。
 9. 权限动作枚举固定为 VIEW、CREATE、UPDATE、SUBMIT、APPROVE、EXPORT 六个，不多不少。回写基线第 11 节。
+10. SecurityContext 十九个字段中的 DeviceId、RoleCode、DutyClass、RecordShare、DataScopeTag、RequestId、TraceId 七个类型，其形状与取值域由第 4.1 节给全，按 A-03 由阶段 1 与该结构体同处冻结在 ep-foundation，本阶段只填充不定义。回写基线第 1.4 节安全上下文一段与裁定 A-03 的提供方一句，两处的交付范围由该结构体与三个配套枚举改为该结构体、三个配套枚举与这七个类型。
 
 #### 12.2 偏离项（与基线冲突，需批准）
 
@@ -828,4 +848,4 @@ roles、role-permission-grants、access-policies、field-permissions、sod-rules
 | U-L-01 | 并发定义为最近 60 秒内有请求的不同用户数；达上限排队，等待 10 秒超时返回 503 | 否 | 改为不限制只记录需去掉信号量并保留计数器 |
 | U-A-12 | 该项待决，裁定表不代拍，待决范围只有三问：开户银行是否同列敏感字段清单、列表与详情与导出三场景的脱敏形态、导出是否触发重新认证；银行账号的纳入与其字段级加密按规格第 7.8 章强制落地，不在待决范围内。技术侧临时取值按 A-28：`mdm.customer_invoice_profiles` 与 `mdm.supplier_payment_profiles` 的 `bank_name` 与 `bank_account_no` 共四行登记为 ACCOUNT 类且密级 30，`bank_account_no` 两行 is_field_encrypted 取真、mask_style 取 KEEP_LAST_4 且后四位取自 `bank_account_no_tail`，`bank_name` 两行取假、mask_style 取 NONE；导出是否触发重新认证按 U-B-18 的判定函数计算，该函数对这四列判真 | 否 | 登记行是数据行，取值切换按 A-28 的切换路径在一次变更内完成，本阶段的字段投影器与 U-B-18 判定函数不改 |
 
-以上 17 条均不阻塞本阶段实施。原先登记的唯一阻塞项已解除：SecurityContext 的 19 个字段与三个配套枚举按 A-03、SYSTEM_PRINCIPAL_ID 与 SYSTEM_DEVICE_ID 按 A-02、CapabilityDomain 与 ActionClass 按 A-20，均由阶段 1 在 ep-foundation 冻结并排在本阶段之前，本阶段只负责填充与引用，本计划不再存在需要标注为阻塞的前置项。
+以上 17 条均不阻塞本阶段实施。原先登记的唯一阻塞项已解除：SecurityContext 的 19 个字段、三个配套枚举与第 4.1 节给全的七个字段类型按 A-03、SYSTEM_PRINCIPAL_ID 与 SYSTEM_DEVICE_ID 按 A-02、CapabilityDomain 与 ActionClass 按 A-20，均由阶段 1 在 ep-foundation 冻结并排在本阶段之前，本阶段只负责填充与引用，本计划不再存在需要标注为阻塞的前置项。

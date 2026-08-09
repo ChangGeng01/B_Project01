@@ -18,7 +18,7 @@
 | D-02 | 八个空壳进程二进制，各自可启动、可健康、可优雅停机 | `--check` 返回 0，健康端点返回 200，SIGTERM 后 30 秒内退出码 0 |
 | D-03 | `tools/ep-migrate` CLI 骨架与退出码约定，五个子命令为 apply、status、check、gen-rls、open-window，子命令实现由阶段 2 交付 | 五个子命令的参数解析可运行，退出码 0 成功、2 参数错误、3 迁移窗口未打开、4 校验和不符、5 版本不一致、78 环境自检失败各有一个用例 |
 | D-04 | 集群引导脚本的目录约定与执行顺序约定，文件名为 `db/bootstrap/00_database.sql`、`01_roles.sql`、`02_cluster_params.sql`、`03_role_defaults.sql`、`04_pg_hba.fragment`，脚本内容由阶段 2 交付 | 目录与文件名约定被 `xtask sqlcheck` 断言，自检项 rls-enabled-and-forced 与 runtime-role-privileges-bounded 的代码路径以测试库探针表为被测对象通过 |
-| D-05 | 单机编排骨架，Podman Quadlet 与 Docker Compose 两套等价文件，含八个 slice 与配额 | 一条命令起全栈，`systemctl status` 全部 active |
+| D-05 | 单机编排骨架，`deploy/` 下的 Podman Quadlet 与 Docker Compose 两套等价文件，含八个 slice 与配额 | 一条命令起全栈，`systemctl status` 全部 active |
 | D-06 | cgroup 配额生成器与配额清单文件 | 生成结果与规格第 13.1 章配额表逐行一致，自检项 cgroup-quota-matched 通过 |
 | D-07 | 一条绿色 CI 流水线，共 11 个阶段，全部门禁可离线执行 | 全量运行不超过 60 分钟，返回 0 |
 | D-08 | 结构门禁工具 `xtask`，含 archcheck、sqlcheck、codecheck、errorcodes、eventcatalog、configdoc、coverage、sbom、sign、reproduce、e2e 十一个子命令 | 每条规则有一个故意违反的负样例，负样例必须失败 |
@@ -151,6 +151,7 @@ create policy rls_probe_records_le on ci_probe.probe_records
 | SecurityLevel | 枚举 10/20/30/40，序列化为数字 | 未知取值反序列化失败 |
 | SecurityContext | 按 A-03 冻结的 19 个字段，顺序为 user_id、account_kind、session_id、legal_entity_id、device_id、client、clearance_level、roles、duty_classes、department_scope、position_ids、project_scope、customer_scope、record_shares、data_scope_tags、snapshot_version、is_breakglass、request_id、trace_id，位于 `crates/foundation/src/security/context.rs` | 构造函数只有 `human` 与 `system` 两个，后者用 SYSTEM_PRINCIPAL_ID 与 SYSTEM_DEVICE_ID 填 user_id 与 device_id 且 account_kind 取 System；不提供任何 with_ 前缀的变换方法；字段不得增删改名 |
 | AccountKind、ClientKind、DepartmentScope | `AccountKind { Human, System, Portal }`；`ClientKind { Win, Mac, Ios, Android, Portal, Ops }`，序列化取值与基线第 5.6 节 X-Client 头一一对应；`DepartmentScope { All, Subtree(Id<Department>), Explicit(Arc<[Id<Department>]>) }` | 未知取值反序列化失败 |
+| DeviceId、RoleCode、DutyClass、RecordShare、DataScopeTag、RequestId、TraceId | 按 A-03 与第 13 节新增决定十二冻结，与 SecurityContext 同在 `crates/foundation/src/security/context.rs`：`DeviceId(Arc<str>)` 取长度 1 至 64 的 `[A-Za-z0-9_-]` 且可由 `&'static str` 无损构造；`RoleCode(Arc<str>)` 取长度 1 至 64 的 `[A-Z0-9_]`；`DutyClass { System, Data, Security, Audit, Key, Config }` 的序列化取值为 SYSTEM、DATA、SECURITY、AUDIT、KEY、CONFIG；`RecordShare { object_type: Arc<str>, object_id: uuid::Uuid, grant: RecordShareGrant }` 与 `RecordShareGrant { Read, Write }`，object_type 取 `<module>.<table>` 小写下划线形态并与事件信封 aggregate_type 同形；`DataScopeTag(Arc<str>)` 取 `<kind>:<value>` 形态，kind 为 `[a-z0-9_-]`、value 为 `[A-Za-z0-9_-]`，总长上限 128；`RequestId(Arc<str>)` 取长度 8 至 64 的 `[A-Za-z0-9_-]`，服务端自生成时取 UUIDv7 的无连字符十六进制；`TraceId(Arc<str>)` 取 32 位小写十六进制，与 W3C trace-context 的 trace-id 同形 | 七者只承载取值，不含任何判定逻辑，`RecordScope` 与 `RecordPredicate` 留在 ep-platform-authz 不前移；不合形态的字符串构造失败并返回 VALIDATION，未知枚举取值反序列化失败；`Arc<[DutyClass]>` 允许为空数组，`platform_authz.roles.duty_class` 为空的业务角色不产生条目，不设 None 变体；`DataScopeTag` 的序列化输出即公共列 `data_scope_tags text[]` 与事件信封 `data_scope_tags` 的元素形态，两处不得各自编解码 |
 | AppError | code、category、message、details、retryable、incident_no、occurred_at、advice、source | Display 不输出 source 链，避免内部信息外泄 |
 | DomainEvent | 基线第 6.1 节信封字段的强类型表达，payload 为泛型 | 信封字段增删会导致编译失败，事件目录不一致由 CI 检出 |
 | Redacted\<T\> | Debug 与 Display 均输出 `***`，serde 序列化为 `"***"` | 任何 secrecy 之外的敏感值统一包这一层 |
@@ -158,7 +159,7 @@ create policy rls_probe_records_le on ci_probe.probe_records
 | id::marker | `crates/foundation/src/id/marker.rs`，22 个零大小标记类型，清单为 LegalEntity、UserAccount、Session、Department、Position、Project、Customer、Supplier、Material、Product、Warehouse、Contract、ContractLine、SalesOrder、SalesOrderLine、DeliveryConfirmation、DeliveryConfirmationLine、PurchaseOrder、GoodsReceiptLine、PurchaseInvoice、PurchaseInvoiceLine、AccountingPeriod | 无字段、无方法、无 trait 实现，只承载类型身份，供 `Id<T>` 在契约层表达跨模块引用；清单固定 22 项，任何阶段不得增删，见第 13 节偏离二 |
 | SYSTEM_PRINCIPAL_ID、SYSTEM_DEVICE_ID | `crates/foundation/src/principal.rs`，取值分别为 `00000000-0000-7000-8000-000000000001` 与 `SYSTEM` | 取值符合 UUIDv7 的版本位与变体位校验且不可能与 IdGen 生成值碰撞；各阶段在种子迁移与系统上下文写 created_by 时一律引用该常量，不得自选取值 |
 | ModuleCode | 按基线第 1.2 节 15 个模块码冻结的枚举，取值为 Mdm、Crm、Cpq、Clm、Sales、Procure、Inventory、Costing、Project、Service、Finance、Ledger、Invoice、Portal、Reporting | 未知取值反序列化失败；许可、对账、跨模块来源标注一律引用该枚举 |
-| CapabilityDomain、ActionClass | `crates/foundation/src/capability.rs`，`CapabilityDomain` 18 项，序列化取值与阶段 13 第 4.4 节能力域码表的 18 个字符串逐字一致且顺序与该表序号一致；`ActionClass { Read, Write, Submit, Approve, Export }` | 本阶段只定义枚举，不做任何运行期判定；各业务阶段在 `crates/contract/<module>/src/capability.rs` 中为每个用例声明 `<USECASE_SCREAMING>_DOMAIN` 与 `<USECASE_SCREAMING>_ACTION` 一对常量，`xtask configdoc` 断言每个 HTTP 路由都能解析到一对常量，缺失即构建失败 |
+| CapabilityDomain、ActionClass | `crates/foundation/src/capability.rs`，`CapabilityDomain` 18 项，序列化取值与阶段 13 第 4.4 节能力域码表的 18 个字符串逐字一致且顺序与该表序号一致；`ActionClass { Read, Write, Submit, Approve, Export }` | 本阶段只定义枚举，不做任何运行期判定；各阶段按裁定 A-20 的两类落点，在承载该路由处理器的 crate 的 `src/capability.rs` 中为每个用例声明 `<USECASE_SCREAMING>_DOMAIN` 与 `<USECASE_SCREAMING>_ACTION` 一对常量，业务模块的路由落 `crates/contract/<module>/src/capability.rs`，`/api/v1/platform/` 下的平台路由落 A-20 逐阶段指名的 platform crate 的 `src/capability.rs` 并一律取 `CapabilityDomain::PlatformAdminLowcodeOps`，不设第三类落点；`ci-probe` feature 门控的探针路由与 `/internal/v1/` 下不对四端暴露的内部端点不参与判定，不声明常量；`xtask configdoc` 断言每个 `/api/v1/` 路由都能解析到一对常量，缺失即构建失败 |
 
 端口 trait：`Clock`（now 与 today_cn）、`IdGen`（new_id）、`Rng`（fill_bytes）、`IncidentNoGen`（next）。domain 层禁止绕过这四个端口，由 `xtask archcheck` 的符号禁令强制。另在 `crates/foundation/src/port/` 下建 `search.rs` 与 `doc.rs` 两个空文件，本阶段只写模块注释：按 A-07，`SearchDocument`、`SearchQuery`、`SearchHit`、`SearchIndexPort`、`SearchQueryPort` 由阶段 3b 补齐；按 A-08，`SheetSpec`、`ColumnSpec`、`CellValue`、`PrintLayout`、`SpreadsheetPort`、`DocTemplatePort`、`PdfRenderPort` 由阶段 5 补齐。两个文件的路径在本阶段固定，后续阶段只补内容不改位置。
 
@@ -435,16 +436,16 @@ UUIDv7：同毫秒内序列递增、序列溢出自旋、时钟回拨不倒退�
 | IT-19 | 封套一致性 | 成功与失败两种响应用 insta 快照固定字段集合与顺序 |
 | IT-20 | 请求头校验 | 四个固定头逐个缺失与逐个格式错误共 8 个用例 |
 | IT-21 | 幂等头 | 写请求缺 Idempotency-Key 返回 KEY_REQUIRED；带非 UUIDv7 时返回 VALIDATION |
-| IT-22 | 并发闸门 | 21 并发下第 21 个等待并在 10 秒后返回 CONCURRENCY_LIMIT，指标加一 |
+| IT-22 | 并发闸门 | 21 并发下第 21 个等待并在 10 秒后返回 CONCURRENCY_LIMIT，`ep_quota_throttled_total` 加一 |
 | IT-23 | 同步等待上限 | delay_ms 超过 8000 时返回 SYNC_TIMEOUT |
 | IT-24 | panic 捕获 | 触发 panic 的探针路径返回 INTERNAL_ERROR 且进程仍存活 |
 | IT-25 | 日志字段 | 每请求一条访问日志，17 个固定字段齐全，敏感值为掩码 |
-| IT-26 | 指标端点 | 七个基线指标名存在，标签基数纪律断言（无 user_id、doc_no、trace_id 标签，route 为模板路径） |
+| IT-26 | 指标端点 | 第 13 节新增决定五登记的六个指标名 `ep_build_info`、`ep_selfcheck_pending_items`、`ep_db_pool_connections`、`ep_db_statement_duration_seconds`、`ep_http_request_duration_seconds`、`ep_quota_throttled_total` 均存在，标签基数纪律断言（无 user_id、doc_no、trace_id 标签，route 为模板路径） |
 | IT-27 | IPC | 帧编解码往返、超长帧拒绝、未知方法返回错误、socket 权限为 0660 与属主正确 |
 | IT-28 | spool | core 不可用时落盘、恢复后补写、超上限丢最旧并记 ERROR |
 | IT-29 | 优雅停机 | SIGTERM 后在途请求完成、新请求被拒、退出码 0、drain 超时路径 |
 | IT-30 | 探针表模板一致性 | RLS 模板生成器输出与黄金文件逐字节一致 |
-| IT-31 | ICU collation | 判定位在 `check` 子命令中就位并有一个负样例夹具；库的 datcollversion 与引导时记录的比对归阶段 2，因引导脚本由阶段 2 交付 |
+| IT-31 | collation 一致性 | 判定位在 `check` 子命令中就位并有一个负样例夹具，判据为 `pg_database` 的 `datcollate` 与 `datctype` 均为 `C` 且 `datlocprovider` 为 `c`；对生产库的实际比对归阶段 2，因引导脚本由阶段 2 交付 |
 
 #### 9.3 端到端用例
 
@@ -492,13 +493,13 @@ E2E 在单机编排上跑，覆盖规格第 17.2 章中本阶段可达的部分�
 下列每条都能由一条命令或一份自动产出的报告客观判定，全部达成才算本阶段完成。
 
 1. `cargo build --workspace --locked --offline --release` 成功，零 warning，`-D warnings` 生效。
-2. crate 清单与基线第 1.2 节逐项一致，命名前缀、目录名与 `Cargo.toml` 中的 name 三处一致，由 archcheck 断言。
+2. crate 清单与基线第 1.2 节按退出条件 20 完成回写后的内容逐项一致，其中 `ep-platform-runtime` 一行由本阶段按偏离一回写基线第 1.2 节平台底座表后进入比对面，命名前缀、目录名与 `Cargo.toml` 中的 name 三处一致，由 archcheck 断言。
 3. 依赖方向的七条禁止项各有一个负样例，负样例构建必须失败；正样例全部通过。
 4. 八个二进制启动、就绪、优雅停机、崩溃重启四条路径在 E2E 中全绿。
 5. `ep-migrate` 的五个子命令 apply、status、check、gen-rls、open-window 参数解析齐备，六个退出码各有一个用例；迁移清单哈希在探针目录上比对通过且篡改后失败；`db/migrations/` 下 24 个空目录与只含注释与顺序数组骨架的 `order.toml` 存在。空库上 24 个 schema 与 24 张历史表的存在性判定归阶段 2。
 6. 七项已实现自检各自的通过与失败分支均有集成测试，自检项一律以注册名标识；六项 Pending 项 `secrets-resolvable`、`audit-chain-verifiable`、`file-store-writable`、`offsite-sink-requirements`、`license-and-modules-consistent`、`current-period-open` 在报告中如实标注，且有一条 CI 断言保证未注册项数量只减不增。
 7. 十三条错误码在 `docs/error-codes.md` 与代码常量表中一致，重复码或缺失码即构建失败，其中 C-24 列明的七条由本阶段独家登记。
-8. 七个指标在指标端点上可见，标签基数纪律断言通过。
+8. 第 13 节新增决定五登记的六个指标名在指标端点上可见，其中 `ep_db_pool_connections` 与 `ep_db_statement_duration_seconds` 按 C-23 本阶段只注册不填充，判据为指标名存在而非有非零样本，标签基数纪律断言通过。
 9. 全部配置键在 `docs/config-reference.md` 中有条目，代码与文档逐键一致。
 10. 结构门禁十一个子命令各自有负样例，负样例必须失败。
 11. SQL 静态检查的全部规则各有负样例，至少覆盖 DELETE 禁令、varchar 禁令、enum 禁令、current_date 禁令、跨 schema 外键禁令、ON DELETE CASCADE 禁令、rollback 注释缺失、公共列缺失与顺序错误、命名规范违反、迁移单一职责违反十项。
@@ -511,10 +512,10 @@ E2E 在单机编排上跑，覆盖规格第 17.2 章中本阶段可达的部分�
 18. 六份文档骨架存在，ADR 至少含工具链冻结、collation 选型、musl 静态链接、CI 平台选型、新增 crate 五篇。
 19. 源码仓库、制品与离线依赖仓库的加密备份脚本可执行，且完成一次恢复验证并留下记录。
 20. 本计划第 13 节列出的偏离与新增决定全部回写共享技术基线，回写内容经评审通过。
-21. ep-foundation 的跨阶段冻结项齐备且逐项与裁定一致：`port::tx` 的 `Tx`、`SnapshotCtx`、`UnitOfWork` 三者与 `TxId`、`IsolationKind`，`id::marker` 的 22 项标记类型，`principal` 的两个常量，`security::context` 的 19 个字段与三个配套枚举，`ModuleCode` 15 项，`CapabilityDomain` 18 项与 `ActionClass` 5 项；`crates/foundation/src/port/search.rs` 与 `doc.rs` 两个空模块文件存在；`xtask archcheck` 断言 `downcast_mut::<PgTx>` 只出现在 `crates/adapter/db-pg/`。
+21. ep-foundation 的跨阶段冻结项齐备且逐项与裁定一致：`port::tx` 的 `Tx`、`SnapshotCtx`、`UnitOfWork` 三者与 `TxId`、`IsolationKind`，`id::marker` 的 22 项标记类型，`principal` 的两个常量，`security::context` 的 19 个字段、三个配套枚举与七个字段类型 `DeviceId`、`RoleCode`、`DutyClass`、`RecordShare`、`DataScopeTag`、`RequestId`、`TraceId` 及其配套枚举 `RecordShareGrant`，`ModuleCode` 15 项，`CapabilityDomain` 18 项与 `ActionClass` 5 项；`crates/foundation/src/port/search.rs` 与 `doc.rs` 两个空模块文件存在；`xtask archcheck` 断言 `downcast_mut::<PgTx>` 只出现在 `crates/adapter/db-pg/`。
 22. `testkit/src/rls_matrix.rs` 的八个断言函数存在，函数名与 C-05 逐字一致，且在探针表上全绿；本阶段不实现阶段 2 与阶段 4 的追加函数。
 23. `docs/data-dictionary.md` 的单据类型码一节存在，`xtask configdoc --check-doc-type-codes` 通过，判据为该节与 `ep-platform-sequence` 的常量表逐项一致且无重复。
-24. `docs/metrics-catalog.md` 的指标名唯一性校验在 `xtask` 中实现并通过，`ep_build_info`、`ep_selfcheck_pending_items`、`ep_db_pool_connections`、`ep_db_statement_duration_seconds` 四个指标已注册，`ep_db_retries_total` 与 `ep_tx_retry_total` 两个名字不出现在任何登记文件与代码中。
+24. `docs/metrics-catalog.md` 的指标名唯一性校验在 `xtask` 中实现并通过，`ep_build_info`、`ep_selfcheck_pending_items`、`ep_db_pool_connections`、`ep_db_statement_duration_seconds`、`ep_http_request_duration_seconds`、`ep_quota_throttled_total` 六个指标已注册，`ep_db_retries_total` 与 `ep_tx_retry_total` 两个名字不出现在任何登记文件与代码中。
 
 ### 11. 与规格和 PRD 的对应
 
@@ -565,7 +566,7 @@ R-05，八个系统账户与 rootless 容器的 UID 映射。用户命名空间�
 
 R-06，签名密钥在本阶段是软件密钥。正式签名要求硬件密码机与双人控制，本阶段用软件 ECDSA 密钥打通流程，存在把临时密钥误带入正式发布的风险。缓解是签名脚本对密钥来源做硬校验，非 HSM 来源的签名在制品元数据中标注 `signing_authority=dev` 并使发布流水线拒绝放行，只允许内部阶段制品使用。
 
-R-07，`max_slot_wal_keep_size` 的 20GB 是假设值。规格第 7.3 章要求本机事务日志保留量有硬上限并在断链用例中实测峰值，实测值可能高于该假设。缓解是把该参数列为部署参数并在归档阶段按实测回填，本阶段在配置参考中标注为假设值。
+R-07，复制槽的本机事务日志保留上限依赖实测。按 C-01，`max_slot_wal_keep_size` 的取值与其落地脚本 `db/bootstrap/02_cluster_params.sql` 均归阶段 2，取值按规格附录 A.3 的连续归档本机保留子项等量取 350GB，本阶段不自带取值，也不进本阶段的配置参考。缓解是规格第 7.3 章的两个断链用例实测本机 pg_wal 峰值并与该子项对照，实测速率使该取值不足以支撑部署记录约定的落点不可写时长时，按附录 A.3 同一构成上调该子项并重算容量下限，回填由归档阶段执行。
 
 R-08，覆盖率门槛在骨架阶段可能诱发为覆盖而写的空测试。缓解是结构门禁与负样例制度并行，且 A 档只覆盖 foundation，其余按实际代码量分档。
 
@@ -579,34 +580,34 @@ R-09，CI 平台选型属本阶段新增决定，若客户或团队后续改用�
 
 按基线第 0 节与第 12 节的要求，本节单列全部偏离项与新增决定，每项给出理由与影响范围，并同步提出基线修订。本阶段不接受只在实现里偏离。
 
-偏离一，新增 crate `ep-platform-runtime`。基线第 1.2 节的平台底座清单没有承载进程运行时装配的 crate。若不新增，配置加载、自检注册表、信号处理、HTTP 与 IPC 服务器骨架、健康与就绪端点这一整套代码要在八个二进制里各写一份，与文件规模纪律和单一事实源冲突。该 crate 归入 platform 层，只依赖 foundation 与其他 platform，apps 依赖它，不改变任何既有依赖方向。影响范围是基线第 1.2 节的平台底座表增加一行。
+偏离一，新增 crate `ep-platform-runtime`。基线第 1.2 节的平台底座清单没有承载进程运行时装配的 crate，而基线第 7.3 节已把 `SelfCheckRegistry` 的落点写死在 `crates/platform/runtime/src/selfcheck/registry.rs`，两处自相矛盾。若不新增，配置加载、自检注册表、信号处理、生命周期状态机、健康与就绪端点这一整套代码要在八个二进制里各写一份，与文件规模纪律和单一事实源冲突。该 crate 只承载进程生命周期状态机、分层配置加载、`SelfCheckRegistry`、健康与就绪端点、HTTP 服务器与中间件栈骨架，以及以 trait 表达的 IPC 服务端接口；IPC 的具体传输实现仍留在 `ep-adapter-ipc`，由 apps 在 `wiring.rs` 注入，因此本 crate 只依赖 foundation 与其他 platform，apps 依赖它，不改变任何既有依赖方向。影响范围有两处：基线第 1.2 节的平台底座表增加 `ep-platform-runtime` 一行，职责列取上句；该表末补一句本表为平台底座 crate 的完整清单，新增一行必须先改本节，使退出条件 2 的逐项一致有可判定的比对面。
 偏离二，`ep-foundation` 承载 22 个实体标记类型。按 A-01，`crates/foundation/src/id/marker.rs` 集中声明跨模块被引用实体的零大小标记类型，清单固定 22 项。这是对基线第 1.3 节禁止 foundation 承载业务概念一条的一处受限例外，标记类型无字段、无方法、无 trait 实现，只承载类型身份，供 `Id<T>` 在契约层表达跨模块引用。不采用该例外的代价是每个 ep-contract crate 各自声明一份标记类型，同一实体在不同 crate 中的 `Id<T>` 互不相容，跨模块方法签名无法表达。影响范围是基线第 1.3 节增加一条受限例外，并注明清单为 22 项、任何阶段不得增删。
 
-新增决定一，新增两个非交付或运维用途的 workspace 成员：`xtask` 是纯开发期工具，不进任何制品；`tools/ep-migrate` 是一次性运维工具，随制品交付，以 systemd 的 oneshot 单元在升级窗口内执行。二者都不是常驻进程，不监听端口，不属于八进程清单，不改变基线第 2 节。运行 `ep-migrate` 的操作系统账户为 `ep-migrate`，与八个进程账户互不复用，同属组 ep。影响范围是基线第 1.1 节的目录布局与第 2 节的账户说明各增加一条注记。
+新增决定一，新增两个非交付或运维用途的 workspace 成员：`xtask` 是纯开发期工具，不进任何制品；`tools/ep-migrate` 是一次性运维工具，随制品交付，以 systemd 的 oneshot 单元在升级窗口内执行。二者都不是常驻进程，不监听端口，不属于八进程清单，不改变基线第 2 节。运行 `ep-migrate` 的操作系统账户为 `ep-migrate`，与八个进程账户互不复用，同属组 ep。影响范围有两处：基线第 1.1 节的目录布局改为两段，第一段是 workspace 成员路径，在既有八条之外增加 `/xtask/` 与 `/tools/<name>/`，第二段是非 workspace 成员的仓库目录，列 `/db/bootstrap/`、`/db/checks/`、`/deploy/`、`/scripts/`、`/clients/desktop/`、`/clients/mobile/` 六条，并在节末写明本两段即全部顶层目录，新增顶层目录必须先改本节；基线第 2 节的账户说明增加一条，`ep-migrate` 账户与八个进程账户互不复用且同属组 ep。
 
-新增决定二，数据库 collation 提供者固定为 ICU 且 locale 为 `zh-Hans-CN`，并删除 public schema。基线第 3 节未覆盖排序与 public schema。理由是 glibc 版本变化会静默改变排序结果并使 B-tree 索引失效，而升级要求回退后数据一致性零差异，ICU 的 collation 版本可由 `pg_database.datcollversion` 检出；删除 public schema 是为了让基线第 3.2 节的全限定名约定没有例外出口。按 C-01，该决定的落地脚本由阶段 2 交付，本阶段只保留决定本身与其基线回写。影响范围是基线第 3.1 节增加两条取值。
+新增决定二，数据库建库参数固定为 `LOCALE_PROVIDER icu` 加 `ICU_LOCALE 'zh-Hans-CN'` 加 `LC_COLLATE 'C'` 与 `LC_CTYPE 'C'`，即默认排序取字节序、ICU 只作为按需显式指定 `COLLATE` 时的提供者，取值以阶段 2 的 `db/bootstrap/00_database.sql` 为准，本阶段不另行取值，并删除 public schema。基线第 3 节未覆盖排序与 public schema。理由是 C 排序只按字节比较，不随 glibc 或 ICU 的 collation 版本变化而改变，B-tree 索引不会因操作系统或 ICU 升级静默失效，与升级要求回退后数据一致性零差异一致；代价是中文按 UTF-8 字节序而不是拼音序排序，档案列表的中文排序不合阅读习惯，属首版已知边界，需要拼音序的场景由应用层以显式排序键表达，不改库级 collation；另一处后果是库排序为 C 时普通 B-tree 索引直接支持 like 前缀匹配走索引，各阶段不再另建 `text_pattern_ops` 操作符类索引。删除 public schema 是为了让基线第 3.2 节的全限定名约定没有例外出口。按 C-01，该决定的落地脚本由阶段 2 交付，其 `db/bootstrap/00_database.sql` 已按本决定写为 `CREATE DATABASE ep ENCODING 'UTF8' LC_COLLATE 'C' LC_CTYPE 'C' TEMPLATE template0` 并 `DROP SCHEMA public`，本阶段只保留决定本身与其基线回写。影响范围是基线第 3.1 节增加两条取值。
 
 新增决定三，`shared_preload_libraries` 开启 `pg_stat_statements`。理由是附录 A.1 的查询证据与慢查询定位需要，开销可控。按 C-01，落地由阶段 2 的集群参数脚本交付。影响范围是基线第 3 节增加一条数据库实例参数。
 
 新增决定四，运行期账号在 22 个 schema 上不授予 DELETE，仅在 platform_msg 与 platform_ops 上授予。按 C-01，该决定连同其迁移文件一并移交阶段 2，由阶段 2 计划第 12 节的偏离与新增决定接收并负责回写基线，本阶段不再承担其落地与回写。此处只保留决定的来源与理由：这是把基线第 3.6 节的软删除口径从 CI 静态检查升级为数据库强制，基线允许的两处清理即 platform_msg 的过期幂等键与 platform_ops 的过期指标快照通过对这两个 schema 单独授权保留，不放宽任何既有约束。
 
-新增决定五，本阶段注册四个指标：`ep_build_info`（gauge，标签为 version 与 git_commit）、`ep_selfcheck_pending_items`（gauge，标签为 process）、`ep_db_pool_connections`（gauge，标签为 pool）、`ep_db_statement_duration_seconds`（histogram，标签为 pool 与 statement_kind）。四者均在 `crates/platform/obs/src/metrics/registry.rs` 中由本阶段一次性注册，其中后两个按 C-23 由本阶段注册、由阶段 2 填充。按 C-21，事务重试指标统一为 `ep_db_tx_retries_total`，注册与填充均归阶段 2，本阶段原拟的 `ep_db_retries_total` 登记撤销。`docs/metrics-catalog.md` 的指标名唯一性校验在本阶段的 `xtask` 中实现。四者均不违反标签基数纪律。影响范围是基线第 9.2 节的基线指标清单增加四项。
+新增决定五，本阶段注册六个指标：`ep_build_info`（gauge，标签为 version 与 git_commit）、`ep_selfcheck_pending_items`（gauge，标签为 process）、`ep_db_pool_connections`（gauge，标签为 pool）、`ep_db_statement_duration_seconds`（histogram，标签为 pool 与 statement_kind）、`ep_http_request_duration_seconds`（histogram，桶为 0.05、0.1、0.25、0.5、1、2、3、5、10、30，标签为 route、method、status_class、client）、`ep_quota_throttled_total`（counter，标签为 route，取模板路径）。六者均在 `crates/platform/obs/src/metrics/registry.rs` 中由本阶段一次性注册，其中 `ep_db_pool_connections` 与 `ep_db_statement_duration_seconds` 按 C-23 由本阶段注册、由阶段 2 填充，其余四个由本阶段注册并填充，`ep_http_request_duration_seconds` 在本阶段的 HTTP 中间件栈中填充，`ep_quota_throttled_total` 在第 7.4 节的并发闸门中填充。按 C-21，事务重试指标统一为 `ep_db_tx_retries_total`，注册与填充均归阶段 2，本阶段原拟的 `ep_db_retries_total` 登记撤销。`docs/metrics-catalog.md` 的指标名唯一性校验在本阶段的 `xtask` 中实现。六者均不违反标签基数纪律。影响范围是基线第 9.2 节的基线指标清单只增加 `ep_build_info` 与 `ep_selfcheck_pending_items` 两项，另四项已在该节清单内，重复登记即构建失败，其注册方与填充方在 `docs/metrics-catalog.md` 中登记。
 
 新增决定六，关联编号 `incident_no` 在没有共享序列的阶段以进程序号分段生成，格式与基线第 5.2 节示例一致。影响范围是基线第 5.2 节增加一条生成口径注记，并注明后续可替换为数据库序列而格式不变。
 
 新增决定七，构建目标固定 `x86_64-unknown-linux-musl` 静态链接，运行基础镜像为 scratch，时区数据经 chrono-tz 编译进二进制，出网 TLS 用 rustls 并以配置指定 CA 文件。影响范围是基线新增一节交付形态取值，并与规格第 13.2 章的 OCI 容器要求一致。
 
 新增决定八，CI 平台取内网自建 Forgejo 加 Woodpecker，全部门禁收敛到 `cargo xtask ci` 一个入口。影响范围是基线新增一条研发设施取值，且该取值不进入产品制品。
-新增决定九，`ep-foundation` 的职责扩展。按 A-01、A-02、A-03、A-07、A-08 与 A-20，本阶段在 ep-foundation 中新增 `port::tx`、`id::marker`、`principal`、`security::context`、`capability` 五个模块，并建 `port::search` 与 `port::doc` 两个空模块。理由是这五类东西被三个以上阶段的契约层同时引用，若不前移，跨模块方法签名无法在契约层表达，系统主体与能力域码会在各阶段各写一份。影响范围有四处：基线第 1.2 节 ep-foundation 一行的职责描述增加 Tx、UnitOfWork、SnapshotCtx、id::marker、capability、port::search、port::doc 七项；基线第 4 节公共列表 created_by 一行的语义列写入 `00000000-0000-7000-8000-000000000001` 字面量；基线第 10.3 节在事务写法示例之后追加一句，只读快照事务的唯一入口是 `snapshot_transact`，配合 `SET TRANSACTION SNAPSHOT` 使用；基线第 12 节增加一条纪律，各阶段在 `ep-contract-<module>` 中为每个用例声明能力域码与动作类别常量。
+新增决定九，`ep-foundation` 的职责扩展。按 A-01、A-02、A-03、A-07、A-08 与 A-20，本阶段在 ep-foundation 中新增 `port::tx`、`id::marker`、`principal`、`security::context`、`capability` 五个模块，并建 `port::search` 与 `port::doc` 两个空模块。理由是这五类东西被三个以上阶段的契约层同时引用，若不前移，跨模块方法签名无法在契约层表达，系统主体与能力域码会在各阶段各写一份。影响范围有四处：基线第 1.2 节 ep-foundation 一行的职责描述增加 Tx、UnitOfWork、SnapshotCtx、id::marker、capability、port::search、port::doc 七项；基线第 4 节公共列表 created_by 一行的语义列写入 `00000000-0000-7000-8000-000000000001` 字面量；基线第 10.3 节在事务写法示例之后追加一句，只读快照事务的唯一入口是 `snapshot_transact`，配合 `SET TRANSACTION SNAPSHOT` 使用；基线第 12 节增加一条纪律，各阶段按裁定 A-20 的两类落点声明能力域码与动作类别常量，即业务模块的路由落 `crates/contract/<module>/src/capability.rs`，`/api/v1/platform/` 下的平台路由落 A-20 逐阶段指名的 platform crate 的 `src/capability.rs` 并一律取 `CapabilityDomain::PlatformAdminLowcodeOps`，`ci-probe` 门控的探针路由与 `/internal/v1/` 端点不参与判定也不声明常量，`xtask configdoc` 只断言每个 `/api/v1/` 路由。
 
 新增决定十，启动自检项按注册名标识。按 C-25，自检项不再用序号称呼，注册表为 `SelfCheckRegistry`，注册项为 `SelfCheckItem { name, title, severity, run }`，name 为 kebab-case，基线十三项的名字见第 5.5 节，各阶段追加项按其阶段计划登记。理由是序号在多阶段追加时必然冲突，且已经出现同一序号在不同阶段指向不同项的情况。影响范围是基线第 7.3 节由编号列表改为命名列表。
 
 新增决定十一，单据类型码的全局唯一登记表。按 C-26，`docs/data-dictionary.md` 增加单据类型码一节，本阶段建立该节与 CI 校验 `xtask configdoc --check-doc-type-codes`，判据为该节与 `ep-platform-sequence` 的常量表逐项一致且无重复；各类型码由其单据所在阶段登记，任何阶段不得新增未在该节登记的码。影响范围是基线第 11.1 节增加档案编码格式与类型码登记表的指引。
 
+新增决定十二，`SecurityContext` 七个字段类型的形态。基线第 1.4 节的字段表只给出 `DeviceId`、`RoleCode`、`DutyClass`、`RecordShare`、`DataScopeTag`、`RequestId`、`TraceId` 七个类型名，其后的配套枚举一段只冻结了 `AccountKind`、`ClientKind`、`DepartmentScope` 三个枚举，七个类型的形态在规格、PRD、基线与裁定表中均无定义，而按 A-03 其交付方同为本阶段，不给形态则该结构体写不出可编译的定义。取值见第 5.1 节。理由与代价：`DutyClass` 的六个取值与阶段 4 的 `platform_authz.roles.duty_class` 列取值同源，互斥关系属该阶段的职责分离种子规则，不进枚举定义；`RecordShare` 只表达一条记录被显式共享给当前主体，不承载判定，`RecordScope` 与 `RecordPredicate` 留在 ep-platform-authz，否则判定语义前移进 foundation 会与基线第 1.3 节的分层冲突；`TraceId` 与 `RequestId` 的形态在基线中原本只有日志样例与请求头描述，本决定把它们写成唯一形态定义。影响范围有两处：基线第 1.4 节的配套枚举一段由三个枚举扩为三个枚举加上述七个字段类型与 `RecordShareGrant`；基线第 5.6 节的请求头一节写入 `X-Request-Id` 与 `X-Device-Id` 的形态，与本决定逐字一致。
+
 假设一，工具链版本。`rust-toolchain.toml` 的取值在本阶段首日由构建负责人按当日最新 stable 冻结并写入 ADR-0002，本计划以 1.86.0 表述仅为占位。冻结后不得单独升级，升级需另起变更并重跑可复现构建证据。这是假设而非既定事实，理由是版本号取决于冻结当日的上游发布状态。
 
-假设二，`max_slot_wal_keep_size` 取 20GB。规格只要求存在硬上限并在断链用例中实测，未给数值。该值在归档阶段按实测回填。
+假设二，本阶段允许 Pending 自检项存在且不阻止启动。规格第 7.3 节要求自检项失败即退出，但未规定尚未实现的项如何处置。本阶段以 `selfcheck.pending_as_failure` 表达，默认 false，并以一条 CI 断言保证 Pending 数量只减不增、在最后一个阶段归零。该假设一旦被认为不可接受，替代方案是让八个进程在阶段 1 就以 Degraded 启动，代价是降级状态在整个建设期一直为真，会淹没规格第 15.3 章的真实降级信号，因此不采用。
 
-假设三，本阶段允许 Pending 自检项存在且不阻止启动。规格第 7.3 节要求自检项失败即退出，但未规定尚未实现的项如何处置。本阶段以 `selfcheck.pending_as_failure` 表达，默认 false，并以一条 CI 断言保证 Pending 数量只减不增、在最后一个阶段归零。该假设一旦被认为不可接受，替代方案是让八个进程在阶段 1 就以 Degraded 启动，代价是降级状态在整个建设期一直为真，会淹没规格第 15.3 章的真实降级信号，因此不采用。
-
-被阻塞情况的说明：本阶段不被任何业务决策阻塞。U-A-06 的错误文案未决只影响文案措辞，占位文案已满足规格第 15.1 章四要素；U-A-01 的编号规则未决不影响本阶段，编号器属后续阶段；U-A-03 与 U-A-05 已由基线第 11.2 与 11.5 节给出技术侧取值，本阶段照用。切换代价均限于文案表与常量表的替换，不涉及数据库结构。
+被阻塞情况的说明：本阶段不被任何业务决策阻塞。U-A-06 的错误文案未决只影响文案措辞，占位文案已满足规格第 15.1 章四要素；U-A-01 的编号规则未决不影响本阶段，编号器属后续阶段；U-A-03 与 U-A-05 已由基线第 11.2 与 11.5 节给出技术侧取值，本阶段照用；U-B-07 的记录级权限授予方式未决，本阶段按显式共享一条记录冻结 `RecordShare` 的形态并以此为临时取值，改判为按责任人、按创建人或按流程当前处理人只增加阶段 4 `ScopeCompiler` 的谓词分支，不改本结构体，改判为共享可再转授则在 `RecordShareGrant` 上增加一个变体，属加变体不改字段，由未知取值反序列化失败兜住。上述各条的切换代价均限于文案表、常量表与枚举变体的替换，不涉及数据库结构。

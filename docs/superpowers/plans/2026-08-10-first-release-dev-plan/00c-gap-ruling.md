@@ -127,9 +127,11 @@ pub const SYSTEM_DEVICE_ID: &str = "SYSTEM";
 
 第 18 与第 19 两个字段是本裁定的追加项，理由是基线第 3.8 节要求连接取用时写入 `app.request_id` 与 `app.trace_id` 两条会话变量，取数只能来自安全上下文。
 
-提供方要做什么：阶段 1 在 ep-foundation 实现该结构体与三个枚举，写入阶段 1 计划第 5.1 节，替换现有的八字段简表。
+提供方要做什么：阶段 1 在 ep-foundation 实现该结构体、三个配套枚举与基线第 1.4 节冻结的七个字段类型即 `DeviceId`、`RoleCode`、`DutyClass`、`RecordShare` 与 `RecordShareGrant`、`DataScopeTag`、`RequestId`、`TraceId`，写入阶段 1 计划第 5.1 节，替换现有的八字段简表；阶段 1 计划第 514 行退出条件第 21 条的验收面由“19 个字段与三个配套枚举”改为“19 个字段、三个配套枚举与七个字段类型”。七个类型的名字、形态与取值域以基线第 1.4 节为唯一出处，本表不复述。
 
 每个使用方要改什么。阶段 4 计划第 4.1 节删去“由阶段 1 提供其骨架，本阶段补齐字段集合，见 needs”，改为“字段集合由阶段 1 按 A-03 冻结，本阶段只负责填充”。阶段 4 计划第 811 行的阻塞判定删除。阶段 5、6、11 凡引用 SecurityContext 字段的措辞一律按上表字段名书写。
+
+`RecordShare` 的形状受 PRD 附录乙 U-B-07 记录级权限授予方式影响，该项待决，本表不代拍，按显式共享一条记录冻结为临时取值，决策人为产品负责人，截止点按总览 R12 的 M7。切换代价：改判为按责任人、按创建人或按流程当前处理人的，只增加阶段 4 `ScopeCompiler` 的谓词分支，不改本结构体；改判为共享可再转授的，在 `RecordShareGrant` 上增加变体，属加变体不改字段，旧取值由 serde 未知取值反序列化失败兜住。
 
 顺序约束：无倒挂。属阶段 1 定稿前必须关闭的阻塞项。
 
@@ -754,7 +756,7 @@ pub trait SalesReturnCommandPort: Send + Sync {
 
 结论：两个枚举提前到 ep-foundation，由阶段 1 交付并回写基线第 12 节，各阶段按本条确切标识符一段给出的两类落点，在承载该路由处理器的 crate 的 `src/capability.rs` 中为每个用例声明两个常量。
 
-最终归属阶段：阶段 1 定义枚举，阶段 5 至 12 与 3b、4 各自声明常量，阶段 13 只做运行期判定。
+最终归属阶段：阶段 1 定义枚举并回写基线第 12 节，阶段 2、3b、4 与阶段 5 至 14 共十三个阶段各自在本条使用方清单为该阶段指名的落点声明常量，阶段 13 除按本条在 `crates/platform/meta/src/capability.rs` 与 `crates/platform/release/src/capability.rs` 声明自身两段路由的常量外，只做运行期判定，不重新定义能力域码。
 
 确切标识符。`crates/foundation/src/capability.rs`：
 
@@ -949,7 +951,7 @@ pub trait DegradationLedger: Send + Sync {
 
 结论：阶段 5 不依赖 platform_meta，改用阶段 2 的 `platform_core.sensitive_field_registry` 与阶段 4 的 `platform_authz.field_permissions` 两处承载。本条按权威顺序把规格的强制项与 PRD 的待决项分开裁定，权威链如下。规格第 7.8 章写明事务数据库使用信封加密、行内敏感字段按法人密钥域与密级使用字段级密钥属于强制项，并写明行内敏感字段由对象密级、字段密级或经产品负责人批准的敏感字段清单确定、至少覆盖身份与联系方式与账户与税号与支付认证令牌和法律或健康等高敏感属性。银行账号即该章明列的账户类属性，且本条已给该列赋 `security_level` 30，字段密级这一条判据本身即已成立，因此银行账号纳入行内敏感字段与对其做字段级加密两件事由规格直接强制，不是待决项，本条按规格取 `is_field_encrypted` 为真。PRD 附录乙 U-A-12 的原文只问三件事，即敏感字段清单是否包含开户银行与银行账号、这两列在列表与详情与导出三种场景的脱敏形态、导出是否触发重新认证，全文不出现加密二字；其中银行账号的纳入已被规格强制，剩余待决的只有开户银行是否同列、三场景脱敏形态、导出是否触发重新认证三问，决策人为安全负责人与产品负责人，本表不代拍，只给临时取值与切换代价。上一轮以 U-A-12 为由把银行账号退回明文，使规格第 7.8 章的强制项在首版落空，按权威顺序规格高于 PRD 也高于本表，该取值撤销；上一轮所称撤销的加密与否一项在 U-A-12 条文中并不存在，该撤销一并作废。任何阶段不得再据 U-A-12 把银行账号退回明文。
 
-最终归属阶段：登记表归阶段 2 与阶段 4，登记行归阶段 5。
+最终归属阶段：登记表归阶段 2 与阶段 4，登记行归各引入受保护列的模块阶段，首版共六行，即阶段 3b 一行、阶段 5 四行、阶段 10 一行。
 
 确切标识符。阶段 5 在 `db/migrations/mdm/` 追加一个 `V…__mdm_backfill_sensitive_field_registry.sql`，向 `platform_core.sensitive_field_registry` 插入四行，不是两行：该表的唯一约束 `ux_sensitive_field_registry_schema_table_column` 落在三列上，两张表乘两列必然是四行。银行字段不在 `mdm.customers` 与 `mdm.suppliers` 上，这两个表名作废，实际落点是 `mdm.customer_invoice_profiles` 与 `mdm.supplier_payment_profiles`。四行逐列取值固定如下，列集按 C-06 冻结的十一列，缺一写不出 INSERT。
 
@@ -961,6 +963,8 @@ pub trait DegradationLedger: Send + Sync {
 | mdm | supplier_payment_profiles | bank_account_no | ACCOUNT | 30 | true | EXACT | bank_account_no_bidx | KEEP_LAST_4 | TRIM_NFKC | `MIGRATION:<本迁移版本号>` |
 
 `column_name` 取逻辑列名，不带 `_enc` 后缀。`created_by` 取 `foundation::SYSTEM_PRINCIPAL_ID`。`bank_account_no` 两行的 `is_field_encrypted` 取 true，由规格第 7.8 章强制，不是临时取值；两张表的物理列相应为 `bank_account_no_enc bytea` 可空、`bank_account_no_key_ref text` 可空记录密钥标识与版本、`bank_account_no_tail text` 可空承载掩码保留的后四位、`bank_account_no_bidx bytea` 可空，一律不保留同名明文列 `bank_account_no`。`bank_name` 两行的 `is_field_encrypted` 取 false，物理列为 `bank_name text` 可空，这是 U-A-12 未决期间的临时取值。`db/checks/11` 按 `is_field_encrypted` 分支断言：取真的登记项断言物理表上存在 `<column_name>_enc` 列且类型为 `bytea` 且不存在同名明文列 `<column_name>`；取假的登记项只断言 `<schema_name>.<table_name>.<column_name>` 三元组在 `information_schema.columns` 中命中实际列，不施加 bytea 与 `_enc` 后缀断言。四行中除 `bank_account_no` 两行的存在由规格强制外，其余各行的存在本身与四行的 `security_level`、`mask_style` 均为 U-A-12 未决期间的临时取值，决策人为安全负责人与产品负责人；`category` 取 ACCOUNT、`normalization` 取 TRIM_NFKC、`release_ref` 取迁移版本号三列由本条固定，不属待决。盲索引按 B-04 建立，规格第 7.8 章禁止字段级密文直接用于唯一约束，盲索引是唯一的查重手段。
+
+阶段 3b 的一行与阶段 10 的一行按同一列集给全。阶段 3b 在 `db/migrations/platform_msg/` 追加一个 `V…__platform_msg_backfill_sensitive_field_registry.sql`，与第 33 号同目录并排在其后，向 `platform_core.sensitive_field_registry` 插入一行，十一列逐列取值为：`schema_name` 取 platform_msg，`table_name` 取 push_registrations，`column_name` 取 token 即逻辑列名不带 `_enc`，`category` 取 PAYMENT_TOKEN，`security_level` 取 30，`is_field_encrypted` 取 true，`blind_index` 取 EXACT，`blind_index_column` 取 token_bidx，`mask_style` 取 FULL，`normalization` 取 NONE，`release_ref` 取 `MIGRATION:<本迁移版本号>`；`created_by` 取 `foundation::SYSTEM_PRINCIPAL_ID`，`-- rollback:` 段按 `schema_name` 与 `table_name` 删该行。`mask_style` 不得取 KEEP_LAST_4，该表没有 `token_tail` 列；`normalization` 不得取 TRIM_NFKC，推送令牌是大小写敏感的不透明串，规范化会改写 `derive_blind_key` 的入参。该行的依据是规格第 7.8 章把支付认证令牌列入行内敏感字段的最低覆盖面，属规格强制，不是临时取值。首版字段级加密列因此共四处而不是三处：阶段 4 计划第 387 行的“三处的 bank_account_no”改为“`mdm.customer_invoice_profiles` 与 `mdm.supplier_payment_profiles` 与 `finance.cash_accounts` 三处的 `bank_account_no`，加 `platform_msg.push_registrations.token`，共四处，前三处 `mask_style` 取 KEEP_LAST_4 由阶段 5 与阶段 10 交付，后一处取 FULL 由阶段 3b 交付”，同句“全库只有这一处解密位点”收窄为“经字段投影返回给用户的解密只有这一处”，推送令牌的解密由 job-worker 在投递链路上直接取用，不经 `FieldProjector`，也不受字段权限判定。阶段 3 计划第 3.9 节增加一条退出条件，即该行存在且 `is_field_encrypted` 为真、`blind_index_column` 为 `token_bidx`、`mask_style` 为 FULL，`db/checks/11` 返回零行。阶段 2 计划第 135 与 823 两行的登记行名单改为“全库共六行，阶段 3b 一行、阶段 5 四行、阶段 10 一行”。
 
 U-A-12 三问的临时取值与切换代价如下，截止点按总览 R12 的 M3 之前关闭 U-A 组，不另设期限。第一问敏感字段清单是否包含开户银行与银行账号：银行账号由规格第 7.8 章强制纳入，不可撤销；开户银行的临时取值为纳入并登记两行，切换代价是删除或改写这两行，属数据行变更，不改代码也不改表。第二问列表与详情与导出三场景的脱敏形态：临时取值为 `bank_account_no` 两行的 `mask_style` 取 `KEEP_LAST_4` 且后四位取自 `bank_account_no_tail`、`bank_name` 两行取 `NONE`，三场景同形态，渲染一律经阶段 4 的 `FieldProjector`，切换代价是改这四行的 `mask_style`，不改代码。第三问导出是否触发重新认证：本表列不承载该判定，统一指向阶段 4 的重新认证判定函数，该函数对这四列判真，判据是列在清单内与密级 30 两条各自独立成立，切换代价限于该函数的判定入参配置，本条不在表列上再给第二套答案。若 U-A-12 决策为开户银行也做字段级加密，切换路径固定为一次变更内同时完成三件事，缺一 `db/checks/11` 必然判负：把 `bank_name` 两行的 `is_field_encrypted` 改为 true，把物理列改为 `bank_name_enc bytea` 并补 `bank_name_key_ref text`，删去同名明文列。阶段 4 的 `platform_authz.field_permissions` 由配置发布通道在阶段 5 之后写入对应的字段级授权行，阶段 5 交付时按默认拒绝处理。
 
@@ -1009,7 +1013,7 @@ U-A-12 三问的临时取值与切换代价如下，截止点按总览 R12 的 M
 
 阶段 7、8、9a、10 的十一行一律 `mode` 取 `APPEND_ONLY`、`mutable_columns` 取 `'{}'`，阶段 3b 的三行按上表逐表给定。死信的可变列必须取全五列，只取三列会让触发器拒绝写 `repaired_at` 与 `discard_reason`，修复完成与丢弃两条路径在上线后直接失败；`platform_audit.audit_segments` 有状态与锚定时间更新，登记为仅追加会拒绝锚定写入，不进本清单。原裁定给阶段 9a 列的 `ledger.general_vouchers` 全库没有同名对象，GV 是 `ledger.vouchers` 的单据类型码，该行删除；原裁定给阶段 10 列的 `finance.receivable_entries`、`finance.payable_entries`、`finance.advance_receipt_entries`、`finance.advance_payment_entries`、`finance.overbilling_entries` 五张是带核销金额与状态机的可更新台账，登记为仅追加会在上线后拒绝正常核销写入，五行一并删除。触发器按登记表挂接，`platform_core.attach_table_guards` 读登记表取可变列白名单，同一迁移内必须先插登记行再挂接触发器，顺序颠倒即取不到白名单；凡本条列出的表都必须有登记行，漏登记等于无强制。检查脚本名固定为 `db/checks/append_only_consistency.sql`，由 `xtask sqlcheck` 执行。
 
-回写：阶段 3b、7、8、9a、10 各追加一个 `V…__<schema>_backfill_append_only_registry.sql`，并在各自退出条件中增加一条。阶段 3b 的一个是阶段 3 计划第 3.3.1 节迁移清单在第 32 号之后追加的第 33 号 `V2026110209xx__platform_msg_backfill_append_only_registry.sql`，属 3b 段；该文件同时登记 platform_audit 与 platform_msg 两个 schema 的表，按通则第五条取两者中位次靠后的 `db/migrations/platform_msg/` 目录；文件内先按上表插入三行登记，再依次调用 `platform_core.attach_table_guards('platform_audit','audit_events')`、`('platform_msg','outbox_events')`、`('platform_msg','dead_letters')`，顺序不得颠倒，回退段为删除该三行并 drop 对应触发器。阶段 9a 的一个同时登记 ledger 与 platform_core 两个 schema 的表，按通则第五条放在两者中位次靠后的 `db/migrations/ledger/` 目录下。阶段 7 的一个占用第 24 号编号，见 A-21。阶段 2 计划第 358 行死信的可变列白名单由三列改为五列，第 135、372、823 三行的登记方名单由阶段 7、8、9a、10 改为阶段 3b、7、8、9a、10。阶段 3 计划第 1536 行第 7.2 章一行的强制手段改为“三张仅追加表按 `append_only_registry` 登记挂接 `assert_append_only` 与 `assert_immutable_columns` 触发器、不授予 DELETE、`ep-adapter-file` 的不可删除不可覆盖命名空间、CI 的 SQL 静态检查”，并在第 9 节退出条件增加一条，即该三行登记存在且 mode 与可变列白名单按上表取值、触发器已挂接、`xtask sqlcheck` 执行 `db/checks/append_only_consistency.sql` 返回零行。阶段 8 计划第 294 行删去“本阶段按裁定只登记四行”与提请复核一语，改为五行；阶段 9 计划第 103 行删去关于 `ledger.general_vouchers` 的解释并改为三行；阶段 10 计划第 607 与 1198 行的“逐表给出 `immutable_columns`”改为“两行的 `mode` 取 `APPEND_ONLY`、`mutable_columns` 取 `'{}'`”。
+回写：阶段 3b、7、8、9a、10 各追加一个 `V…__<schema>_backfill_append_only_registry.sql`，并在各自退出条件中增加一条。阶段 3b 的一个是阶段 3 计划第 3.3.1 节迁移清单在第 32 号之后追加的第 33 号 `V2026110209xx__platform_msg_backfill_append_only_registry.sql`，属 3b 段；该文件同时登记 platform_audit 与 platform_msg 两个 schema 的表，按通则第五条取两者中位次靠后的 `db/migrations/platform_msg/` 目录；文件内先按上表插入三行登记，再依次调用 `platform_core.attach_table_guards('platform_audit','audit_events')`、`('platform_msg','outbox_events')`、`('platform_msg','dead_letters')`，顺序不得颠倒，回退段为删除该三行并 drop 对应触发器。阶段 9a 的一个同时登记 ledger 与 platform_core 两个 schema 的表，按通则第五条放在两者中位次靠后的 `db/migrations/ledger/` 目录下；`platform_core.recon_runs` 的建表迁移位次早于 ledger，该表在本文件执行时已存在，挂接可行。阶段 7 的一个占用第 24 号编号，见 A-21。五个登记方的写法一律与阶段 3b 的第 33 号相同，没有例外：文件内先按上表插入本阶段的登记行，再对每张表各调用一次 `platform_core.attach_table_guards('<schema>','<table>')`，顺序不得颠倒；`-- rollback:` 段一律为删除本次登记的行并 drop 该批表上对应的触发器，只删登记行不 drop 触发器在回退方向上同样使 `db/checks/append_only_consistency.sql` 判负。逐阶段的调用清单固定为：阶段 7 一次，取 `('procure','goods_receipt_line_costings')`；阶段 8 五次，依次取 `('inventory','stock_movements')`、`('inventory','stock_qty_entries')`、`('inventory','stock_value_entries')`、`('inventory','variance_splits')`、`('inventory','stock_movement_serials')`；阶段 9a 三次，依次取 `('ledger','vouchers')`、`('ledger','voucher_lines')`、`('platform_core','recon_runs')`；阶段 10 两次，依次取 `('finance','unbilled_ar_entries')`、`('finance','cash_ledger_entries')`。各阶段的建表迁移一律不调用 `attach_table_guards`，仅追加表的触发器只在本条的 backfill 文件内挂接。阶段 2 计划第 358 行死信的可变列白名单由三列改为五列，第 135、372、823 三行的登记方名单由阶段 7、8、9a、10 改为阶段 3b、7、8、9a、10。阶段 3 计划第 1536 行第 7.2 章一行的强制手段改为“三张仅追加表按 `append_only_registry` 登记挂接 `assert_append_only` 与 `assert_immutable_columns` 触发器、不授予 DELETE、`ep-adapter-file` 的不可删除不可覆盖命名空间、CI 的 SQL 静态检查”，并在第 9 节退出条件增加一条，即该三行登记存在且 mode 与可变列白名单按上表取值、触发器已挂接、`xtask sqlcheck` 执行 `db/checks/append_only_consistency.sql` 返回零行。阶段 8 计划第 294 行删去“本阶段按裁定只登记四行”与提请复核一语，改为五行；阶段 9 计划第 103 行删去关于 `ledger.general_vouchers` 的解释并改为三行；阶段 10 计划第 607 与 1198 行的“逐表给出 `immutable_columns`”改为“两行的 `mode` 取 `APPEND_ONLY`、`mutable_columns` 取 `'{}'`”。
 
 ### B-03 platform_core.migration_windows 与 open-window 校验
 
@@ -1071,15 +1075,15 @@ U-A-12 三问的临时取值与切换代价如下，截止点按总览 R12 的 M
 
 回写：阶段 8 与阶段 7 各在退出条件中增加一条“已提供本模块的子账侧余额查询函数，函数名与返回类型按 B-08 固定”；阶段 10 计划第 1131 行的措辞改为“两个实现由阶段 10 包装阶段 7 与阶段 8 提供的查询函数”。
 
-### B-09 inventory.stock_value_adjusted.v1
+### B-09 inventory.stock_movement.value_adjusted.v1
 
-结论：保留该事件，消费者固定为阶段 11 的成本同步消费者。
+结论：保留该事件，按基线第 6.1 节的四段命名改名为 `inventory.stock_movement.value_adjusted.v1`，消费者固定为阶段 11 的成本同步消费者。
 
 最终归属阶段：事件归阶段 8，消费者归阶段 11。
 
 确切标识符：消费者名固定为 `costing.stock_value_adjust`，位于 `crates/application/costing/src/consumer/stock_value_adjust.rs`，在 job-worker 注册，幂等由 `platform_msg.inbox_consumptions(consumer, event_id)` 保证，副作用为向 `costing.cost_entries` 补记只影响金额账的调整对应的成本条目。
 
-回写：阶段 11 计划第 3 节新增该消费者并在退出条件中增加一条；阶段 8 计划第 6.4 节把该事件的消费者由“报表数据集”改写为 `costing.stock_value_adjust`。
+回写：原名 `inventory.stock_value_adjusted.v1` 只有三段，违反基线第 6.1 节“事件类型为四段”，基线高于本表，该名全库作废，任何阶段不得引用，也不得为此在 `docs/event-catalog.md` 中登记命名例外，处置逻辑与本表第 522 行对违规索引名的处置相同。aggregate 段取 `stock_movement`，与阶段 8 第 595 行已声明的 `aggregate_type` 即 `inventory.stock_movements` 同源；另一候选名 `inventory.stock_value.adjusted.v1` 会使 aggregate 段与 `aggregate_type` 不同源，予以排除。逐字替换的落点共六处：阶段 8 计划第 595 与 597 行，阶段 11 计划第 66、503、693、758 行。阶段 11 计划第 3 节新增该消费者并在退出条件中增加一条；阶段 8 计划第 6.4 节把该事件的消费者由“报表数据集”改写为 `costing.stock_value_adjust`。消费者名 `costing.stock_value_adjust` 与文件名 `stock_value_adjust.rs` 不是事件类型，不受四段规则约束，保持不动；阶段 8 计划第 29 行的“新增 2 条”与阶段 11 计划第 64 行的“新增 3 条”是条数，改名不改数。
 
 ### B-10 ep-contract-mdm::SupplierSelfServiceCommand
 
@@ -1345,13 +1349,13 @@ pub trait ReceivableExposureQuery: Send + Sync {
 
 ### C-22 复制交叉核对指标名
 
-结论：统一为 `ep_replication_crosscheck_age_seconds`，归阶段 14 注册，阶段 2 只填充。
+结论：统一为 `ep_replication_crosscheck_age_seconds`，注册与填充均归阶段 14。原裁定的注册归阶段 14、填充归阶段 2 把注册排在填充之后十二个阶段，在本计划的集中注册模型下阶段 2 取不到句柄；且交叉核对器的装配、结论表 `platform_ops.replication_crosscheck_runs`、无结论窗口与比对本体全部在阶段 14，阶段 2 没有 apps 装配点也产不出距上次核对结论的时长，该口径作废。
 
-最终归属阶段：注册归阶段 14，填充归阶段 2。
+最终归属阶段：注册与填充均归阶段 14。阶段 2 只交付 `ep-adapter-db-pg` 的复制交叉核对取数函数与只读分析池中划出的独占连接，不触及该指标。
 
 确切标识符：`ep_replication_crosscheck_age_seconds`，类型 gauge，标签 `channel`（取值 archive、backup）。阶段 2 的 `ep_db_replication_crosscheck_age_seconds` 作废。
 
-回写：阶段 2 计划把该指标标注为“由阶段 14 注册，本阶段只填充”，并改名；阶段 14 计划在指标清单中登记该指标。
+回写：阶段 2 计划第 7.2 节删去该指标一行，指标表由五行变四行，与该数字相关的 D-13、E-12、E-18 三处一并由五个改为四个，第 658 行改写为“按 C-22，复制交叉核对指标统一为 `ep_replication_crosscheck_age_seconds` 并由阶段 14 一次性注册与填充，本阶段曾用的 `ep_db_replication_crosscheck_age_seconds` 作废，本阶段只交付其取数函数与只读分析池的独占连接，不登记也不填充”，第 2 节 crate 表 ep-platform-obs 一行的职责相应收窄为第 7.2 节四个指标中归本阶段的两项的注册与填充以及归阶段 1 注册的两项的填充；阶段 14 计划在指标清单中一次性登记该指标的注册与填充，第 350 行的填充方由阶段 2 改为本阶段，退出条件 19 改为该指标已由本阶段注册并填充且该条目由本阶段首次写入 `docs/metrics-catalog.md`、阶段 2 不写；总览第 3.2 节阶段 2 行的反向依赖删去该指标的注册一项。同源重复的两个配置键二取一：删去阶段 2 的 `EP__DB__REPL_CHECK__INTERVAL_S`，周期与语句超时统一取阶段 14 的 `EP__OPS__CROSSCHECK_PERIOD_SECONDS` 与 `EP__OPS__CROSSCHECK_STATEMENT_TIMEOUT_MS`，阶段 2 只保留连接侧的 `EP__DB__POOL__RO_REPL_CHECK_RESERVED`，其假设五改写为周期取值与上限 300 秒的判定归阶段 14 的配置键、本阶段只保证独占连接与其 5 秒专用语句超时。
 
 ### C-23 数据库连接池指标
 
@@ -1442,6 +1446,8 @@ DC 为交付确认单（A-09），PINV 为进项发票（A-10）。CI 校验项�
 
 本节按文件归纳，每个文件列出需要改的缺口编号与落点小节。执行修改的 agent 只改本文件，不改其他文件。
 
+另有两条跨文件的机械改写不再逐文件重复列出。其一，基线第 10.3 节已把工作单元内的写入次序定死为审计末位，各阶段计划的用例表与事务次序段中凡把审计写在 Outbox、站内通知或任何其他数据库写入之前的，一律调整为审计末位，涉及 03、04、05、06、07、09、11 七份计划；阶段 3 计划第 1665 行的澄清一与该条一并标为已回写基线，第 1469 行的取号、写审计、写 Outbox、写站内通知改为取号、写 Outbox、写站内通知、写审计，阶段 9 计划第 593 行按 account_id 升序更新余额的防死锁论证保留不动。其二，凡引用事件 `inventory.stock_value_adjusted.v1` 的一律按 B-09 改为 `inventory.stock_movement.value_adjusted.v1`。
+
 ### 00-overview.md
 
 改动缺口：A-05、A-06、A-08、A-09、A-18、A-19、A-27、B-06，另加全表格式统一。
@@ -1524,7 +1530,7 @@ DC 为交付确认单（A-09），PINV 为进项发票（A-10）。CI 校验项�
 
 改动缺口：A-15、A-16、A-17、A-18、A-20、A-23、B-06、C-09、C-19、C-26。
 
-落点：第 2 节 crate 表（删去 EquipmentQuery，Customer360SectionProvider 由新增改为扩充）；第 3 节追加 project dataset view 一个迁移文件；第 4.7 节派生消费者名写死为 project.contract_derivation；第 4 节退货登记改用 SalesReturnCommandPort 与三个终态事件；第 9.3.6 节三个读取方改写；第 9 节退出条件（新增界面、数据集视图、能力域常量、ServiceReferenceCounter 四条）；第 11 节 R-01 与 R-02 的缓解措辞改写。
+落点：第 2 节 crate 表（删去 EquipmentQuery，Customer360SectionProvider 由新增改为扩充）；第 3 节追加 project dataset view 一个迁移文件；第 4.7 节派生消费者名写死为 project.contract_derivation；第 4 节退货登记改用 SalesReturnCommandPort 与三个终态事件；第 9.3.6 节三个读取方改写；第 9 节退出条件（新增界面、数据集视图、能力域常量、ServiceReferenceCounter 四条）；第 11 节 R-01 与 R-02 的缓解措辞改写；第 709 与 763 两行按阶段 9 计划第 728 行的唯一落点约定改写，指向阶段 9b 的 `testkit/scenarios/golden_loop_14_steps.rs`，本阶段只交付闭环第 12 步的用例片段与断言，整条链路的串接验收顺延到阶段 9b，第 1 节 D-10 交付物行的“闭环第 12 步的端到端用例”同步收窄为“闭环第 12 步的用例片段”。
 
 ### 13-clients-lowcode.md
 

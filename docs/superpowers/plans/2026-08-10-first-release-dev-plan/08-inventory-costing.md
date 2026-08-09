@@ -80,7 +80,7 @@ schema 固定为 `inventory`，属主角色 `ep_mod_inventory`，运行期读写
 | source_doc_no | text | 否 | ck 长度 1 至 64 |
 | source_module | text | 否 | ck 取值 `procure`、`sales`、`invoice`、`migration` |
 | line_count | int | 否 | ck 大于 0 且不超过配置上限，冗余用于查询与限额自检 |
-| reverses_id | uuid | 是 | 首版恒为 NULL，保留以满足基线第 4 节仅追加表的列约定 |
+| reverses_id | uuid | 是 | 首版恒为 NULL，按基线第 4 节仅追加表的列约定保留，库存流水的更正一律由来源业务事件登记反向事件承担，见第 6.5 节 |
 | created_at / created_by | | 否 | |
 
 `reason` 的八项取值：`PURCHASE_RECEIPT`、`PURCHASE_RECEIPT_OVERBILL_MATCHED`、`SALES_RETURN`、`DELIVERY_CONFIRMATION`、`PURCHASE_RETURN_INVOICED`、`PURCHASE_RETURN_UNINVOICED`、`PURCHASE_INVOICE_VARIANCE`、`MIGRATION_OPENING`。最后一项承载库存期初，按裁定 A-24 本阶段是库存期初导入的唯一落点，首版不设独立的数据迁移阶段；本阶段实现其入库路径但只允许在该法人尚无任何库存流水时执行，期初写入不生成凭证，其总账侧由阶段 9a 的期初余额批次承担。
@@ -129,7 +129,7 @@ schema 固定为 `inventory`，属主角色 `ep_mod_inventory`，运行期读写
 | warehouse_id | uuid | 否 | |
 | material_id | uuid | 否 | |
 | quantity | numeric(18,6) | 否 | 与同源数量流水同值，VALUE_ADJUST 时为 0 |
-| amount | numeric(18,2) | 否 | ck 不等于 0，入库为正、出库为负、调整可正可负 |
+| amount | numeric(18,2) | 否 | 入库为正、出库为负、调整可正可负；不设非零 CHECK，单价为零时取 0，理由见第 4.3 节边界条件 |
 | applied_unit_price | numeric(18,6) | 否 | 本次实际取价，VALUE_ADJUST 时为 0 |
 | pricing_branch | text | 否 | ck 取值见下文九项 |
 | value_balance_after | numeric(18,2) | 否 | |
@@ -274,7 +274,7 @@ create policy rls_<t>_le on inventory.<t>
 | 12 | V202610120911__inventory_backfill_append_only_registry.sql | 向 `platform_core.append_only_registry` 登记五张仅追加表 | 仅数据登记，可在线 |
 | 13 | V202610120912__inventory_create_dataset_views.sql | 建 `inventory.v_stock_value_entries` 并授予 `ep_analyst_ro` | 新增视图，可在线 |
 
-每个文件头部带 `-- rollback:` 段。第 2 至 10 号的回退语句为对应的 `drop table`，第 11 号为 `drop index concurrently`，第 12 号为对应的 `delete from platform_core.append_only_registry`，第 13 号为 `drop view`。第 1 号注明只能用升级前备份回退。迁移会话固定 `SET lock_timeout = '5s'` 与 `SET statement_timeout = '30min'`，不在迁移中调用应用代码，不在同一文件中既建表又回填数据。
+每个文件头部带 `-- rollback:` 段。第 2 至 10 号的回退语句为对应的 `drop table`，第 11 号为 `drop index concurrently`，第 12 号为删除本次登记的五行并 drop 该五张表上对应的 `assert_append_only` 触发器，第 13 号为 `drop view`。第 1 号注明只能用升级前备份回退。迁移会话固定 `SET lock_timeout = '5s'` 与 `SET statement_timeout = '30min'`，不在迁移中调用应用代码，不在同一文件中既建表又回填数据。
 
 #### 3.4 本阶段新增的命名决定
 
@@ -291,7 +291,7 @@ create policy rls_<t>_le on inventory.<t>
 
 一是受治理数据集视图（裁定 A-18）。视图名固定为 `inventory.v_stock_value_entries`，dataset code 固定为 `inventory_stock_value_entries`，grain 取 ENTRY，由第 13 号迁移建立。视图必须含 `legal_entity_id`、`security_level`、`data_scope_tags` 三列，同一迁移内执行 `GRANT SELECT ON inventory.v_stock_value_entries TO ep_analyst_ro`，不授予 `ep_app_rw` 之外的任何写权限。视图取数为 `inventory.stock_value_entries`，不做聚合、不跨 schema 连接，金额与单价列的字段级密级仍为 30，投影口径与第 5 节一致。列名与类型签名必须与阶段 11 的 `reporting.dataset_fields` 登记一致，由阶段 11 的启动自检项 `reporting-dataset-signature-matched` 校验，本阶段在退出条件中把该列签名同步给阶段 11。
 
-二是仅追加登记（裁定 B-02）。第 12 号迁移向 `platform_core.append_only_registry` 登记五行，`schema_name` 一律取 `inventory`，`table_name` 依次取 `stock_movements`、`stock_qty_entries`、`stock_value_entries`、`variance_splits`、`stock_movement_serials`，`mode` 一律取 `APPEND_ONLY`，`mutable_columns` 一律取 `'{}'`。登记列以阶段 2 实建的四列为准，本阶段不写入这四列之外的任何列。该迁移写入的对象属 platform_core，按裁定通则第五条放在 platform_core 与 inventory 两者中位次靠后的 `db/migrations/inventory/` 目录下，空库上按 order.toml 全量执行时其前置对象已建立。登记与触发器的一致性由 `db/checks/append_only_consistency.sql` 断言，`xtask sqlcheck` 执行。
+二是仅追加登记（裁定 B-02）。第 12 号迁移向 `platform_core.append_only_registry` 登记五行，`schema_name` 一律取 `inventory`，`table_name` 依次取 `stock_movements`、`stock_qty_entries`、`stock_value_entries`、`variance_splits`、`stock_movement_serials`，`mode` 一律取 `APPEND_ONLY`，`mutable_columns` 一律取 `'{}'`。登记列以阶段 2 实建的四列为准，本阶段不写入这四列之外的任何列。文件内先按上述五行插入登记，再依次调用 `platform_core.attach_table_guards('inventory','stock_movements')`、`('inventory','stock_qty_entries')`、`('inventory','stock_value_entries')`、`('inventory','variance_splits')`、`('inventory','stock_movement_serials')`，顺序不得颠倒，挂接函数读登记表取可变列白名单，先挂接后登记取不到 `mutable_columns`。第 2 至 10 号建表迁移一律不调用 `attach_table_guards`，五张仅追加表的触发器只在本文件内挂接。该迁移写入的对象属 platform_core，按裁定通则第五条放在 platform_core 与 inventory 两者中位次靠后的 `db/migrations/inventory/` 目录下，空库上按 order.toml 全量执行时其前置对象已建立。登记与触发器的一致性由 `db/checks/append_only_consistency.sql` 断言，`xtask sqlcheck` 执行。
 
 ### 4. 领域模型与关键算法
 
@@ -363,7 +363,7 @@ pub enum OutboundPricing {
 9. 写 movement、qty_entry、value_entry、serial 行，回填 `qty_balance_after`、`value_balance_after`、`moving_avg_unit_price_after`。
 10. 断言五组不变量，见第 4.8 节。
 
-边界条件：`quantity` 为零或负一律 `VALIDATION`；`unit_price` 为负时接受（供应商价格调整可能产生负单价的迁移场景），但 `amount` 为零时不写金额流水且记 WARN 日志，理由是 `amount <> 0` 的 CHECK 会拒绝零金额行；此时数量流水照写，金额账不变，这一情形只可能出现在单价为零的迁移期初，属合法输入。
+边界条件：`quantity` 为零或负一律 `VALIDATION`；`unit_price` 为负时接受（供应商价格调整可能产生负单价的迁移场景）；`unit_price` 为零时 `amount` 取 0，金额流水照写、金额账不变，不设跳过写入的分支，理由是第 4.8 节 I2 要求每条 `IN` 或 `OUT` 数量流水有且只有一条金额流水与之对应，跳过写入会使该断言在单价为零的迁移期初必然不成立。第 4.4 节移动加权平均单价为零时的出库同此处理。
 
 #### 4.4 算法二：出库过账
 
@@ -592,9 +592,9 @@ pub trait WarehouseDeactivationCheckPort: Send + Sync {
 
 #### 6.4 与 Outbox 的关系
 
-本阶段在同一事务内写入两类事件。`inventory.stock_movement.posted.v1` 与 `inventory.stock_value_adjusted.v1`，信封按基线第 6.1 节，`aggregate_type` 取 `inventory.stock_movements`，`posting_date` 取 `business_date`，`accounting_period_id` 取本次过账的期间，`security_level` 与 `data_scope_tags` 从 movement 行取，缺失即拒绝入队（规格第 7.9 章派生存储写入的必备标签）。
+本阶段在同一事务内写入两类事件。`inventory.stock_movement.posted.v1` 与 `inventory.stock_movement.value_adjusted.v1`，信封按基线第 6.1 节，`aggregate_type` 取 `inventory.stock_movements`，`posting_date` 取 `business_date`，`accounting_period_id` 取本次过账的期间，`security_level` 与 `data_scope_tags` 从 movement 行取，缺失即拒绝入队（规格第 7.9 章派生存储写入的必备标签）。两个事件名的 aggregate 段一律取 `aggregate_type` 表名的单数形式；裁定 B-09 与总览第 4.2 节沿用的 `inventory.stock_value_adjusted.v1` 只有三段，违反基线第 6.1 节的四段式，基线高于裁定表，该旧名作废，任何阶段不得再引用，也不得为此在 `xtask eventcatalog` 中开命名白名单例外。
 
-首版消费者两个，均不由本阶段交付。`inventory.stock_movement.posted.v1` 由阶段 7 的采购建议消费者消费（规格第 5.2 章采购与 SRM 条目的四个来源之一，PRD 第 5.6.5 节由库存侧提供判定输入）。`inventory.stock_value_adjusted.v1` 的消费者固定为 `costing.stock_value_adjust`，位于 `crates/application/costing/src/consumer/stock_value_adjust.rs`，由阶段 11 交付并在 job-worker 注册，副作用为向 `costing.cost_entries` 补记只影响金额账的调整对应的成本条目（裁定 B-09）。两者的消费幂等均由 `platform_msg.inbox_consumptions(consumer, event_id)` 保证。
+首版消费者两个，均不由本阶段交付。`inventory.stock_movement.posted.v1` 由阶段 7 的采购建议消费者消费（规格第 5.2 章采购与 SRM 条目的四个来源之一，PRD 第 5.6.5 节由库存侧提供判定输入）。`inventory.stock_movement.value_adjusted.v1` 的消费者固定为 `costing.stock_value_adjust`，位于 `crates/application/costing/src/consumer/stock_value_adjust.rs`，由阶段 11 交付并在 job-worker 注册，副作用为向 `costing.cost_entries` 补记只影响金额账的调整对应的成本条目（裁定 B-09）。两者的消费幂等均由 `platform_msg.inbox_consumptions(consumer, event_id)` 保证。
 
 本阶段的事件不承载分录、不承载凭证生成，因此事件投递失败进入死信不会破坏账务一致性，只会延迟采购建议与报表刷新。这一点是有意设计：把可以异步的东西异步化，把必须同事务的东西留在同事务。
 本阶段不向 `ledger.posting_trigger_event_types` 登记任何行（裁定 A-21），库存事件不独立产生凭证。凭证一律由产生该库存流水的来源业务事件在同一事务内经 `ep_contract_ledger::PostingPort::post` 生成，其存货腿金额来自本阶段过账端口的返回值。因此关账受理前提二的待过账积压统计不会把本阶段的两个事件计入。

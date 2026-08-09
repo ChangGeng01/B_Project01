@@ -347,9 +347,9 @@ ep_ops_ro 授予上述五个视图的 SELECT，不授予任何基表。ep_app_rw
 
 | 指标 | 类型 | 标签 | 注册方 | 填充方 |
 |---|---|---|---|---|
-| ep_replication_crosscheck_age_seconds | gauge | channel，取值 archive 与 backup | 本阶段 | 阶段 2 |
+| ep_replication_crosscheck_age_seconds | gauge | channel，取值 archive 与 backup | 本阶段 | 本阶段 |
 
-ep_degradation_windows_open 由阶段 2 注册并填充，本阶段只扩展其 kind 取值，不重复登记。ep_db_pool_connections 与 ep_db_statement_duration_seconds 由阶段 1 注册，本阶段不重复登记。docs/metrics-catalog.md 的唯一性校验由阶段 1 的 xtask 执行，本阶段的登记项须先过该校验。
+ep_replication_crosscheck_age_seconds 的注册与填充均归本阶段，阶段 2 只交付该核对的取数函数与只读分析池中划出的独占连接，不登记也不填充该指标。ep_degradation_windows_open 由阶段 2 注册并填充，本阶段只扩展其 kind 取值，不重复登记。ep_db_pool_connections 与 ep_db_statement_duration_seconds 由阶段 1 注册，本阶段不重复登记。docs/metrics-catalog.md 的唯一性校验由阶段 1 的 xtask 执行，本阶段的登记项须先过该校验。
 
 ---
 
@@ -462,7 +462,7 @@ PLATFORM.DEGRADATION_WINDOW.NOT_SUPPRESSIBLE、PLATFORM.DEGRADATION_WINDOW.ALREA
 | EP__KEY_RECOVERY__VERIFICATION_INTERVAL_DAYS | u32 | 183 | 热生效 | 每 6 个月核验 |
 | EP__KEY_RECOVERY__SHARD_PICKUP_SLA_HOURS | u32 | 无，必填 | 热生效 | 未填即不得宣称 4 小时 RTO |
 
-启动自检的本阶段落地。基线第 7.3 节的 offsite-sink-requirements 项即服务器之外落点的三项最低要求判定，由本阶段实现，细化为六个子判定，不新增自检项，自检项一律按注册名标识、不用序号：落点在线可写、平台可自动写入、写入失败可被平台检测；介质类型判定结论存在；部署级备份加密密钥可解引用；落点访问控制核对结论已写入部署记录；密钥恢复材料的分片取件时限已约定；规格第 7.7 章两个专用角色的三项遏制手段已落实。前三项任一不满足按降级状态启动并持续告警；第六项任一不落实按规格第 7.7 章不得启用该角色，两个写出进程不投入运行，开 WRITER_ROLE_CONTAINMENT_MISSING 窗口且该窗口不可关闭。--check 模式执行基线十三个命名自检项并输出结构化报告后退出，用于部署验收与升级前置校验。
+启动自检的本阶段落地。基线第 7.3 节的 offsite-sink-requirements 项即服务器之外落点的三项最低要求判定，由本阶段实现，细化为八个子判定，不新增自检项，自检项一律按注册名标识、不用序号：落点在线可写、平台可自动写入、写入失败可被平台检测；介质类型判定结论存在；部署级备份加密密钥可解引用；落点访问控制核对结论已写入部署记录；密钥恢复材料的分片取件时限已约定；规格第 7.7 章两个专用角色的三项遏制手段已落实。前三项任一不满足按降级状态启动并持续告警；第八项任一不落实按规格第 7.7 章不得启用该角色，两个写出进程不投入运行，开 WRITER_ROLE_CONTAINMENT_MISSING 窗口且该窗口不可关闭。--check 模式执行基线十三个命名自检项并输出结构化报告后退出，用于部署验收与升级前置校验。
 
 ---
 
@@ -579,9 +579,9 @@ ep-release-gate 逐项判定，判定结论进入发布证据包，任一为否�
 16. PRD 第 11.11 节八条诚实披露文本已进入交付说明与客户合同模板，并在产品界面可达处呈现；交付、认证与验收材料经文本检查未出现高可用、零停机、自动切换、受控读取、法人隔离、等效、已满足、优先级隔离、资源隔离、性能保证十项禁用措辞。
 17. OpsDisposalService 已实现阶段 3b 定义的 DisposalPort 并在 core-server 与 job-worker 两处 wiring 注入；AttachmentObjects、KeyDomain、BackupSets、ExtTables 四类处置范围各有一次完整执行记录，销毁证明对象与审计条目齐备，落点侧历史副本在同一次处置内一并覆盖；缺审批链、缺第二审批人或缺重新认证凭证时执行被拒并写审计。
 18. 电子签章的认证清单已补齐：crates/adapter/esign/tests/contract_sandbox.rs 对真实沙箱的一次通过记录已归档，或已提交规格附录 B 允许的等效验证证据。
-19. ep_replication_crosscheck_age_seconds 已由本阶段注册且在 docs/metrics-catalog.md 内唯一；本阶段未重复登记 ep_degradation_windows_open、ep_db_pool_connections 与 ep_db_statement_duration_seconds。
+19. ep_replication_crosscheck_age_seconds 已由本阶段注册并填充，其在 docs/metrics-catalog.md 内的条目由本阶段首次写入且唯一，阶段 2 不写该条目；本阶段未重复登记 ep_degradation_windows_open、ep_db_pool_connections 与 ep_db_statement_duration_seconds。
 20. platform_ops.degradation_windows 的 kind 取值已由阶段 2 的 2 个扩展至 18 个，两条 CHECK 与三个索引已追加，阶段 2 交付的 ux_degradation_windows_kind_scope_closed 与 ck_degradation_windows_open_order 未被改写。
-21. 本阶段全部路由的能力域码与动作类别常量已按 A-20 声明在 crates/platform/obs/src/capability.rs，能力域一律取 foundation::CapabilityDomain::PlatformAdminLowcodeOps，动作类别取 foundation::ActionClass，xtask configdoc 通过。
+21. 本阶段全部 /api/v1/ 路由的能力域码与动作类别常量已按 A-20 声明在 crates/platform/obs/src/capability.rs，能力域一律取 foundation::CapabilityDomain::PlatformAdminLowcodeOps，动作类别取 foundation::ActionClass，xtask configdoc 通过。
 
 ---
 

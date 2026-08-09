@@ -63,7 +63,7 @@
 11. 测试目标：tests/rls_matrix 的 costing 与 reporting 扩展、tests/analytics_isolation、tests/finance_metrics_consistency、四个 E2E 用例与六项常用报表性能用例。
 12. 文档：docs/data-dictionary 的 costing 与 reporting 两节、docs/error-codes.md 新增 36 条、docs/event-catalog.md 新增 3 条、docs/adr 中 D-11-01 至 D-11-05 五份决策记录。
 13. 四个报表类 ConfigItemApplier：ReportDefinitionApplier、MetricDefinitionApplier、DashboardDefinitionApplier、PrintTemplateApplier，位于 ep-app-reporting，实现阶段 3a 在 crates/platform/release/src/port/config_item.rs 交付的 ConfigItemApplier，注册进 ConfigItemApplierRegistry。
-14. costing.stock_value_adjust 消费者：消费阶段 8 发出的 inventory.stock_value_adjusted.v1，位于 crates/application/costing/src/consumer/stock_value_adjust.rs，在 job-worker 注册，向 costing.cost_entries 补记只影响金额账的调整对应的成本条目。
+14. costing.stock_value_adjust 消费者：消费阶段 8 发出的 inventory.stock_movement.value_adjusted.v1，位于 crates/application/costing/src/consumer/stock_value_adjust.rs，在 job-worker 注册，向 costing.cost_entries 补记只影响金额账的调整对应的成本条目。
 15. 本模块四端界面：costing 与 reporting 两个模块的桌面端与移动端界面，目录为 clients/desktop/src/modules/costing、clients/desktop/src/modules/reporting、clients/mobile/src/modules/costing、clients/mobile/src/modules/reporting。
 
 ### 2. crate 与进程归属
@@ -500,7 +500,7 @@ apply 的幂等：按 code 与 spec_hash 定位，已存在同 code 且 spec_has
 
 #### 4.9 库存金额调整事件的成本侧消费者
 
-消费者名 costing.stock_value_adjust，位于 crates/application/costing/src/consumer/stock_value_adjust.rs，在 apps/job-worker 注册，消费阶段 8 发出的 inventory.stock_value_adjusted.v1，幂等由 platform_msg.inbox_consumptions 的 consumer 与 event_id 保证。
+消费者名 costing.stock_value_adjust，位于 crates/application/costing/src/consumer/stock_value_adjust.rs，在 apps/job-worker 注册，消费阶段 8 发出的 inventory.stock_movement.value_adjusted.v1，幂等由 platform_msg.inbox_consumptions 的 consumer 与 event_id 保证。
 
 副作用为向 costing.cost_entries 补记只影响金额账的调整对应的成本条目：voucher_id、voucher_line_id、account_id 与来源单据引用取事件载荷，写入语句与第 4.2 节第 3 条同为 INSERT ... ON CONFLICT (legal_entity_id, voucher_line_id, source_document_line_id) DO NOTHING，因此该凭证行若已由第 4.2 节的同事务捕获路径写入，本消费者即为空操作。载荷缺少凭证引用时不补记并写死信，理由是 cost_entries 的 voucher_id 与 voucher_line_id 为非空列，静默丢弃会使第 6.6 节的勾稽项在无提示的情况下产生差额。
 
@@ -690,7 +690,7 @@ core-server 在一个事务内取号、插入 render_tasks 行（status 为 QUEU
 11. 敏感导出：无 X-Reauth-Token 拒绝、审批未通过返回审批中、审批通过后产物可取。
 12. 无数据与无权的区分：同一查询在无数据时返回 200 空结果，在无权时返回 403 或 404，两者提示文案与错误码不同。
 13. 四个 ConfigItemApplier：经阶段 3b 的发布通道对四类对象各执行一次 apply 与一次 rollback，断言 apply 幂等（同 spec_hash 重放不新增版本行）、rollback 只回退 publications 行而不删除版本行、applier 全程使用通道传入的事务句柄且不自行提交。
-14. costing.stock_value_adjust 消费者：同一 inventory.stock_value_adjusted.v1 重复投递 3 次只补记一条成本条目；该凭证行已由同事务捕获路径写入时补记为空操作；载荷缺少凭证引用时进入死信而不是静默丢弃。
+14. costing.stock_value_adjust 消费者：同一 inventory.stock_movement.value_adjusted.v1 重复投递 3 次只补记一条成本条目；该凭证行已由同事务捕获路径写入时补记为空操作；载荷缺少凭证引用时进入死信而不是静默丢弃。
 15. 账龄分档唯一出处迁移：在含 finance.aging_bucket_definitions 数据的库上执行两个迁移文件，断言两者在同一 reporting Runner 内按版本号顺序执行、分档逐档迁入 reporting 两表、finance 侧临时表已删除、finance 台账内账龄查询经 AgingBucketQuery::buckets 取到与预置表一致的分档。
 
 #### 8.4 越权与隔离测试
@@ -755,7 +755,7 @@ tests/analytics_isolation 新增测试目标，承担规格第 17.2 章派生存
 21. 本阶段全部路由的能力域码与动作类别常量已在 ep-contract-costing 与 ep-contract-reporting 的 src/capability.rs 声明，xtask configdoc 通过。
 22. 三个 ReconCheck 的 code、category 与 blocks_period_close 取值与第 6.6 节一致，run_batch 在阶段 9a 提供的快照上分批执行，未完成批次以 UNFINISHED 上报而不是静默截断。
 23. 账龄分档的唯一出处迁移完成：finance.aging_bucket_definitions 的数据已由 db/migrations/reporting/ 第 13 号迁移迁入 reporting.aging_bucket_profiles 与 reporting.aging_bucket_lines，该表已由同目录第 14 号迁移删除，finance 侧台账内账龄查询改经 AgingBucketQuery::buckets，两处分档逐档一致。
-24. costing.stock_value_adjust 消费者已在 job-worker 注册，重复投递同一 inventory.stock_value_adjusted.v1 只补记一条成本条目，幂等由 platform_msg.inbox_consumptions 保证，载荷缺凭证引用时进入死信。
+24. costing.stock_value_adjust 消费者已在 job-worker 注册，重复投递同一 inventory.stock_movement.value_adjusted.v1 只补记一条成本条目，幂等由 platform_msg.inbox_consumptions 保证，载荷缺凭证引用时进入死信。
 25. 13 个外部数据集的目录行已登记且列签名与来源视图一致，启动自检项 reporting-dataset-signature-matched 在 core-server 与 job-worker 上通过；project_projects 一行在阶段 12 交付前按已登记但未发布降级放行，该降级在阶段 12 结束后解除。
 
 ### 10. 与规格和 PRD 的对应
