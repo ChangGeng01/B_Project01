@@ -6,6 +6,7 @@
 - 复核记录：第一次书面复核报告见 docs/superpowers/reviews/2026-07-19-enterprise-private-operations-platform-spec-review.md，确认 58 项；v1.1 消化其中全部 HIGH 级问题，v1.2 消化全部 MEDIUM 级问题，v1.3 消化规格范围内的全部 LOW 级问题，另有两项 LOW 属对外产品介绍文档并已在该文档处理。第一次复核意见至此全部闭合。
 - 第二次书面复核报告见同目录下 2026-07-19-enterprise-private-operations-platform-spec-review-2.md，对 v1.3 确认 44 项（HIGH 5、MEDIUM 31、LOW 8，无 CRITICAL），结论为可有条件定稿；v1.4 消化其中全部 5 项 HIGH，v1.5 按定向收口记录处理其余项，收口记录见同目录下 2026-07-19-enterprise-private-operations-platform-spec-review-3.md。独立审计确认 v1.5 的 39 项中 36 项属实，M-06、M-30、L-04 未真正闭合且 v1.5 自身引入 6 类缺陷，均已在 v1.6 修订并复校通过。
 - 收窄后验证记录见同目录下 2026-08-04-v2-verification-record.md，记录五轮验证的全部发现与处置状态，含 95 条未处理 minor 的逐条登记。
+- 第二轮收窄后的六轮验证记录见同目录下 2026-08-09-single-server-verification-record.md，含逐轮数据、方法学结论与 21 条待处理事项。
 - 第 5.2 章财务规则已按 Rams 设计十戒重构为事件-分录表加七个规则块，分录、取价、价差拆分、匹配与核销规则集中定义于该处，其余位置一律指向不复述；本次为纯结构重构、零语义变更，改写与验证记录见同目录下 2026-08-04-ledger-event-journal-refactor.md。
 - 范围收窄：首版范围以客户提供的《管理软件基本需求》（收束版）为权威来源，判定口径见 docs/superpowers/reviews/2026-08-04-first-release-scope-decisions.md，逐条判定见同目录下 2026-08-04-first-release-scope-map.md。首版冻结目录见第 5.1 至 5.6 章，延期条目见第 5.7 章，延期项不删除、可在后续版本按登记恢复。第二轮收窄按客户确认的首版部署形态执行：生产形态为客户机房内的一台服务器，人机并发上限 20 人，判定口径见同目录下 2026-08-04-single-server-deployment-decisions.md。被该轮收窄的部署、可用性与容灾条目同样登记在第 5.7 章。
 - 产品范围：中国大陆、简体中文、人民币
