@@ -4,7 +4,7 @@
 
 本阶段交付全平台唯一的数据落点与隔离机制：一个 PostgreSQL 16 实例上的 24 个 schema、七个功能角色与二十四个属主角色、迁移框架、法人行级策略、密钥域与字段级信封加密、按用途分池的连接模型、时区与数值精度的两侧一致约定，以及可被机械判定的建表合规断言。本阶段另按 A-04 交付集团、组织、部门、岗位四类表与部门层级闭包表及其读取契约，按 A-26 交付 `platform_ops.degradation_windows` 最小台账与降级登记端口。本阶段不建任何业务模块的单据与档案表，不实现任何业务用例。
 
-三条边界先写死。一是本阶段拥有 `platform_core` 内的十二张表与 `platform_ops.degradation_windows` 一张表，以及 24 个 schema 的创建与授权；按 C-01，本阶段是 24 个 schema、七个功能角色与二十四个属主角色的唯一提供方，阶段 1 只交付目录约定与空壳，任何其他阶段不得再建 schema 或角色；业务 15 个 schema 在本阶段是空 schema，只有属主、授权与合规断言。二是本阶段拥有的是机制不是策略内容：行级策略模板由本阶段产出并强制，判据取值 `app.legal_entity_id` 由安全上下文写入，而 `SecurityContext` 的字段集合按 A-03 由阶段 1 冻结、其填充与用户授权法人集合的判定属阶段 4；审批、重新认证、职责分离同理，本阶段只提供失败即拒的端口位点。三是凡规格与 PRD 未定义而本阶段必须假设的，一律在第 12 节显式登记。
+三条边界先写死。一是本阶段拥有 `platform_core` 内的十三张表与 `platform_ops.degradation_windows` 一张表，以及 24 个 schema 的创建与授权；按 C-01，本阶段是 24 个 schema、七个功能角色与二十四个属主角色的唯一提供方，阶段 1 只交付目录约定与空壳，任何其他阶段不得再建 schema 或角色；业务 15 个 schema 在本阶段是空 schema，只有属主、授权与合规断言。二是本阶段拥有的是机制不是策略内容：行级策略模板由本阶段产出并强制，判据取值 `app.legal_entity_id` 由安全上下文写入，而 `SecurityContext` 的字段集合按 A-03 由阶段 1 冻结、其填充与用户授权法人集合的判定属阶段 4；审批、重新认证、职责分离同理，本阶段只提供失败即拒的端口位点。三是凡规格与 PRD 未定义而本阶段必须假设的，一律在第 12 节显式登记。
 
 前置：阶段 1 已冻结 `rust-toolchain.toml`、workspace 根 `Cargo.toml` 的 `[workspace.dependencies]`、CI 骨架与依赖方向自检脚本，并已交付 `ep-foundation` 的 `Id`、`Money`、`Quantity`、`UnitPrice`、`Rate`、`SecurityLevel`、`AppError`、`ErrorCode`、`Clock`、`IdGen`，以及按 A-01 冻结的 `port::tx` 三个 trait 与 `id::marker` 的 22 个标记类型、按 A-02 冻结的 `SYSTEM_PRINCIPAL_ID` 与 `SYSTEM_DEVICE_ID`、按 A-03 冻结的十九字段 `SecurityContext` 与其三个配套枚举、按 A-05 冻结的 `ModuleCode`、按 A-20 冻结的 `CapabilityDomain` 与 `ActionClass`。本阶段不重定义这些类型，只为其补 PostgreSQL 编解码。阶段 1 另已按裁定 F-01 建 `port::db` 空模块，本阶段在其中补齐 `IdempotencyStore` 与 `MigrationWindowGuard` 两个端口 trait 与公共能力基线的能力描述。
 
@@ -34,7 +34,7 @@
 | D-10 | `tests/rls_matrix` 的本阶段那一段 | 独立集成测试目标的增量 | 16 组法人越权用例、5 项复制角色用例、5 个系统上下文入口用例全绿；按 C-05 本阶段追加 `assert_replication_role_containment` 与 `assert_recon_context_borrow` 两个函数 |
 | D-11 | `scripts/verify-connection-budget.sh` | shell | 输出八进程连接枚举并与规格第 7.7 章逐项比对，不一致即非 0 退出 |
 | D-12 | `tools/ep-explain-check` | CLI | 对给定 SQL 采集 `EXPLAIN (ANALYZE, BUFFERS)` 并在出现 Seq Scan 时报错，供后续阶段提交附录 A.1 证据 |
-| D-13 | 文档增量 | Markdown | `docs/data-dictionary.md` 十三张表条目、`docs/error-codes.md` 20 个新错误码、`docs/event-catalog.md` 3 个事件、`docs/metrics-catalog.md` 四个指标条目、`docs/adr/` 五篇 ADR |
+| D-13 | 文档增量 | Markdown | `docs/data-dictionary.md` 十四张表条目、`docs/error-codes.md` 20 个新错误码、`docs/event-catalog.md` 3 个事件、`docs/metrics-catalog.md` 四个指标条目、`docs/adr/` 五篇 ADR |
 | D-14 | `ep-platform-tenancy` | 库 crate 加五个迁移 | 集团、组织、部门、岗位与部门层级闭包五张表建成；`LegalEntityDirectory` 与 `DepartmentClosureQuery` 两个 trait 及其 pg 实现编译通过并被集成测试覆盖 |
 | D-15 | `ep-platform-obs` 降级台账最小实现 | 库 crate 加一个迁移 | `platform_ops.degradation_windows` 建成并带两条约束；`DegradationLedger` 三个方法可用；`ep_degradation_windows_open` 指标已注册并填充 |
 
@@ -144,7 +144,7 @@
 
 #### 3.5 本阶段自有表逐表定义
 
-本阶段自有表十三张。表一至表十一与表十三都带基线第 4 节公共列，下表只列本表特有列与约束，公共列不重复；表十二 `platform_ops.degradation_windows` 的列定义按 A-26 以阶段 14 计划为准，本阶段只建表与两条约束。凡在迁移与系统上下文中写 `created_by` 与 `updated_by` 的路径，一律按 A-02 取 `ep_foundation::SYSTEM_PRINCIPAL_ID`，即 `00000000-0000-7000-8000-000000000001`，不得自选取值。
+本阶段自有表十四张。表一至表十一与表十三都带基线第 4 节公共列，下表只列本表特有列与约束，公共列不重复；表六附带的单例锁表 `platform_core.migration_window_lock` 只有 `id smallint` 一列，不带公共列也不带行版本，`db/checks` 第 01 项公共列齐备对该表豁免，豁免判据为它登记在 `unpoliced_table_registry` 且行数由 `check (id = 1)` 固定为一行；表十二 `platform_ops.degradation_windows` 的列定义按 A-26 以阶段 14 计划为准，本阶段只建表与两条约束。凡在迁移与系统上下文中写 `created_by` 与 `updated_by` 的路径，一律按 A-02 取 `ep_foundation::SYSTEM_PRINCIPAL_ID`，即 `00000000-0000-7000-8000-000000000001`，不得自选取值。
 
 表一 `platform_core.legal_entities`（法人注册表，不带 `legal_entity_id`，不建策略，按表十三登记）
 
@@ -793,7 +793,7 @@ E-08 覆盖率报告显示平台内核路径行覆盖不低于 85%，新增与�
 E-09 2 个法人各自 provision 成功，每个域下 4 个 purpose 各有一把 `ACTIVE` DEK；对其中一个域执行一次轮换与一次销毁前核验，核验报告三项齐备。
 E-10 `verify-connection-budget.sh` 输出与规格第 7.7 章的八进程枚举逐项一致，退出码 0。
 E-11 第 7.1 节所列五项数据基座启动自检在 `--check` 模式下按注册名返回通过，其中四项标 `Blocking`、`secrets-resolvable` 的密钥域一段标 `Degrading` 并在缺域时以登记降级窗口而非退出码 78 收场；基线十项中的其余五项不由本阶段实现，其中已由阶段 1 交付的 `config-parsed` 与 `clock-skew-within-limit` 返回通过，`audit-chain-verifiable`、`file-store-writable` 与 `offsite-sink-requirements` 三项在其承担阶段交付前返回 `NOT_APPLICABLE` 并在报告中标注承担阶段；这五项在 portal-gateway、plugin-host、archive-writer 与 backup-writer 四个进程上同样返回 `NOT_APPLICABLE`；报告中不出现任何序号称呼。
-E-12 `docs/data-dictionary.md` 含十三张表全部列条目与两处缩写标识符的全称，`docs/error-codes.md` 含本阶段新增的 20 个错误码且与 `ep-foundation::error::codes` 一致（CI 校验），`docs/event-catalog.md` 含 3 个事件，`docs/metrics-catalog.md` 含第 7.2 节四个指标条目，五篇 ADR 已提交。
+E-12 `docs/data-dictionary.md` 含十四张表全部列条目与两处缩写标识符的全称，`docs/error-codes.md` 含本阶段新增的 20 个错误码且与 `ep-foundation::error::codes` 一致（CI 校验），`docs/event-catalog.md` 含 3 个事件，`docs/metrics-catalog.md` 含第 7.2 节四个指标条目，五篇 ADR 已提交。
 E-13 第 12 节的偏离与新增决定已回写共享技术基线，评审记录存档。
 E-14 代码审查与安全审查由独立角色完成，严重与高危发现全部关闭，符合规格第 17.1 章不得由同一执行角色自行批准的要求。
 E-15 组织架构五张表建成并挂接策略与触发器，`LegalEntityDirectory` 与 `DepartmentClosureQuery` 两个 trait 已交付并可被阶段 3、阶段 4 与阶段 5 在 `apps/core-server/src/wiring/` 与 `apps/job-worker/src/wiring/` 两个目录中注入；IT-39 与 IT-40 通过。
