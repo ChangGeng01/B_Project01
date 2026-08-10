@@ -80,6 +80,7 @@ pub fn evaluate(ws: &Workspace) -> Report {
     let mut checked: Vec<&'static str> = deps::FORBIDDEN_RULES.to_vec();
     checked.extend([
         "platform-acyclic",
+        "platform-no-adapter",
         "crate-naming-consistent",
         "unwired-absent",
         "downcast-pgtx-confined",

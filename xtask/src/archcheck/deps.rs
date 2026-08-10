@@ -45,6 +45,7 @@ pub fn check(ws: &Workspace) -> Vec<Violation> {
         found.extend(rule_domain_contract_no_io(pkg));
         found.extend(rule_platform_no_domain_or_app(pkg));
         found.extend(rule_adapter_no_peer_adapter(pkg));
+        found.extend(rule_platform_no_adapter(pkg));
         found.extend(rule_foundation_no_business(pkg, &members));
     }
     found.extend(rule_platform_acyclic(ws));
@@ -171,7 +172,35 @@ fn rule_foundation_no_business(pkg: &Package, members: &[&str]) -> Vec<Violation
         .collect()
 }
 
+/// 允许项：ep-platform-* 只可依赖 ep-foundation 与其他 ep-platform-*。
+///
+/// 本规则不进 [`FORBIDDEN_RULES`]，禁止项仍是七条。它补的是允许项在 adapter
+/// 一侧从来没有承接方这个缺口：[`rule_platform_no_domain_or_app`] 只把 Domain 与
+/// Application 记为违规，Adapter 落进通配分支无检——实测给
+/// `crates/platform/release/Cargo.toml` 加一行 `ep-adapter-kms` 后十六条规则全绿。
+fn rule_platform_no_adapter(pkg: &Package) -> Vec<Violation> {
+    const RULE: &str = "platform-no-adapter";
+    if !matches!(pkg.layer, Layer::Platform(_)) {
+        return Vec::new();
+    }
+    pkg.deps
+        .iter()
+        .filter(|dep| matches!(Layer::of(dep, false), Layer::Adapter(_)))
+        .map(|dep| {
+            Violation::new(
+                RULE,
+                &pkg.name,
+                format!("依赖了适配层 {dep}；platform 只可依赖 ep-foundation 与其他 ep-platform-*，端口应下沉 ep_foundation::port::*"),
+            )
+        })
+        .collect()
+}
+
 /// 允许项：platform 内部不得成环。
+///
+/// 注意判定次序：包级环由 Cargo 先行拒绝（`cyclic package dependency`），
+/// `cargo metadata` 随之失败，本规则实际到不了。它守的是 Cargo 放行而层位不允许
+/// 的情形，并在 archcheck 的输出里为该允许项留一个具名落点。
 fn rule_platform_acyclic(ws: &Workspace) -> Vec<Violation> {
     const RULE: &str = "platform-acyclic";
     #[derive(Clone, Copy, PartialEq)]
@@ -293,6 +322,19 @@ mod negative_samples {
             vec![pkg("ep-foundation", &["ep-contract-sales"]), pkg("ep-contract-sales", &[])],
         ));
         assert!(!violated("foundation-no-business", vec![pkg("ep-foundation", &["uuid"])]));
+    }
+
+    /// 附加负样例：platform 依赖 adapter。
+    #[test]
+    fn negative_platform_no_adapter() {
+        assert!(violated(
+            "platform-no-adapter",
+            vec![pkg("ep-platform-release", &["ep-adapter-kms"])],
+        ));
+        assert!(!violated(
+            "platform-no-adapter",
+            vec![pkg("ep-platform-release", &["ep-foundation", "ep-platform-audit"])],
+        ));
     }
 
     /// 附加负样例：platform 内部成环。

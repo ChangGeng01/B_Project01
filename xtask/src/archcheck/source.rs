@@ -168,49 +168,101 @@ pub fn forbidden_std_io(ws: &Workspace, root: &Path) -> Vec<Violation> {
     found
 }
 
+/// 基线第 3 节登记的 24 个 schema。判定按登记名，不按前缀启发式。
+///
+/// 早先的实现只认 `platform_` 与 `biz_` 两个前缀，而 15 个业务 schema 全是裸名、
+/// `biz_` 前缀在全卷根本不存在——该判据在业务侧恒不命中，等于没有。
+pub const SCHEMAS: [&str; 24] = [
+    "platform_core", "platform_authz", "platform_meta", "platform_flow",
+    "platform_audit", "platform_msg", "platform_file", "platform_ops",
+    "mdm", "crm", "cpq", "clm", "sales", "procure", "inventory", "costing",
+    "project", "service", "finance", "ledger", "invoice", "portal", "reporting",
+    "ext",
+];
+
 /// 禁止项第七条：db-pg 中的仓储实现按 schema 分文件，一个仓储只访问自己模块的 schema。
+///
+/// 判据：文件内出现自身 schema 之外的非 `v_` 对象即违反。受治理视图（`v_` 前缀）
+/// 是跨模块取数的既定通道，不在禁止面内。
 pub fn one_schema_per_file(root: &Path) -> Vec<Violation> {
     const RULE: &str = "db-pg-one-schema-per-file";
+    let base = root.join("crates/adapter/db-pg/src");
     let mut found = Vec::new();
-    for file in rust_files(&root.join("crates/adapter/db-pg/src")) {
+    for file in rust_files(&base) {
         let Ok(text) = fs::read_to_string(&file) else { continue };
         let rel = file.strip_prefix(root).unwrap_or(&file).display().to_string();
-        let mut schemas: Vec<String> = Vec::new();
-        for (_, line) in code_lines(&text) {
-            for schema in schema_refs(line) {
-                if !schemas.contains(&schema) {
-                    schemas.push(schema);
+        let own = own_schema(&file, &base);
+        for (no, line) in code_lines(&text) {
+            for (schema, object) in schema_refs(line) {
+                if object.starts_with("v_") {
+                    continue;
+                }
+                match &own {
+                    Some(o) if *o == schema => {}
+                    Some(o) => found.push(violation(
+                        RULE,
+                        &rel,
+                        format!("第 {no} 行访问了他模块基表 {schema}.{object}；本文件的 schema 是 {o}"),
+                    )),
+                    None => found.push(violation(
+                        RULE,
+                        &rel,
+                        format!("第 {no} 行访问了 {schema}.{object}，但本文件不在任何 schema 目录下；仓储实现必须按 schema 分文件"),
+                    )),
                 }
             }
-        }
-        if schemas.len() > 1 {
-            schemas.sort();
-            found.push(violation(
-                RULE,
-                &rel,
-                format!("同一文件访问了多个 schema：{}", schemas.join("、")),
-            ));
         }
     }
     found
 }
 
-/// 从 SQL 字面量里抽 `<schema>.<table>` 的 schema 名。只认小写下划线形态。
-fn schema_refs(line: &str) -> Vec<String> {
+/// 自身 schema 取 `src/` 之下第一个与登记名相同的路径段，含 `<schema>.rs` 形态。
+fn own_schema(file: &Path, base: &Path) -> Option<String> {
+    let rel = file.strip_prefix(base).ok()?;
+    rel.components()
+        .filter_map(|c| c.as_os_str().to_str())
+        .map(|s| s.trim_end_matches(".rs"))
+        .find(|s| SCHEMAS.contains(s))
+        .map(str::to_string)
+}
+
+/// 从双引号字面量里抽 `<schema>.<object>`。只在字面量区间内取词，
+/// 避免把 Rust 的方法链（`self.pool.acquire()`）误判为 SQL 引用。
+fn schema_refs(line: &str) -> Vec<(String, String)> {
     let mut out = Vec::new();
-    for (idx, _) in line.match_indices('.') {
-        let head: String = line[..idx]
-            .chars()
-            .rev()
-            .take_while(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || *c == '_')
-            .collect::<Vec<_>>()
-            .into_iter()
-            .rev()
-            .collect();
-        let tail_ok = line[idx + 1..].starts_with(|c: char| c.is_ascii_lowercase());
-        if tail_ok && (head.starts_with("platform_") || head.starts_with("biz_")) {
-            out.push(head);
+    for lit in string_literals(line) {
+        for (idx, _) in lit.match_indices('.') {
+            let head: String = lit[..idx]
+                .chars()
+                .rev()
+                .take_while(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || *c == '_')
+                .collect::<Vec<_>>()
+                .into_iter()
+                .rev()
+                .collect();
+            if !SCHEMAS.contains(&head.as_str()) {
+                continue;
+            }
+            let tail: String = lit[idx + 1..]
+                .chars()
+                .take_while(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || *c == '_')
+                .collect();
+            if !tail.is_empty() {
+                out.push((head, tail));
+            }
         }
+    }
+    out
+}
+
+fn string_literals(line: &str) -> Vec<&str> {
+    let mut out = Vec::new();
+    let mut rest = line;
+    while let Some(a) = rest.find('"') {
+        let after = &rest[a + 1..];
+        let Some(b) = after.find('"') else { break };
+        out.push(&after[..b]);
+        rest = &after[b + 1..];
     }
     out
 }
@@ -231,11 +283,28 @@ mod negative_samples {
 
     #[test]
     fn negative_schema_refs() {
-        assert_eq!(schema_refs("\"select * from platform_authz.roles\""), vec!["platform_authz"]);
         assert_eq!(
-            schema_refs("\"join biz_sales.orders on platform_meta.x\""),
-            vec!["biz_sales", "platform_meta"]
+            schema_refs("\"select * from platform_authz.roles\""),
+            vec![("platform_authz".to_string(), "roles".to_string())]
         );
+        assert_eq!(
+            schema_refs("\"join sales.orders on inventory.stock_value_entries\"").len(),
+            2,
+            "业务 schema 是裸名，早先的前缀启发式在这里恒不命中"
+        );
+        // 方法链不在字面量内，不得误判。
         assert!(schema_refs("self.pool.acquire()").is_empty());
+        assert!(schema_refs("let x = foo.bar;").is_empty());
+    }
+
+    #[test]
+    fn negative_own_schema_and_views() {
+        let base = Path::new("/w/crates/adapter/db-pg/src");
+        assert_eq!(own_schema(Path::new("/w/crates/adapter/db-pg/src/costing/cogs.rs"), base).as_deref(), Some("costing"));
+        assert_eq!(own_schema(Path::new("/w/crates/adapter/db-pg/src/inventory.rs"), base).as_deref(), Some("inventory"));
+        assert_eq!(own_schema(Path::new("/w/crates/adapter/db-pg/src/tx.rs"), base), None);
+        // 受治理视图是跨模块取数的既定通道，不在禁止面内。
+        let hits = schema_refs("\"select * from inventory.v_stock_value_entries\"");
+        assert!(hits[0].1.starts_with("v_"));
     }
 }

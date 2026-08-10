@@ -46,11 +46,12 @@ pub fn check(root: &Path) -> Vec<Violation> {
         }
     }
 
-    // 两个端口模块必须存在，且阶段 1 内不得有任何条目。
+    // 四个端口空模块必须存在，且阶段 1 内不得有任何条目。
     for (rel, owner) in [
         ("port/search.rs", "阶段 3b"),
         ("port/doc.rs", "阶段 5"),
         ("port/db.rs", "阶段 2 与阶段 11"),
+        ("port/kms.rs", "阶段 2"),
     ] {
         let path = base.join(rel);
         match fs::read_to_string(&path) {
