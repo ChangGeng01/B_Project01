@@ -5,6 +5,7 @@
 //! 退出条件 26 的 `unwired-absent` 单列，不并入那七条。
 
 pub mod deps;
+pub mod frozen;
 pub mod source;
 
 use std::path::Path;
@@ -54,6 +55,7 @@ pub fn evaluate(ws: &Workspace) -> Report {
     violations.extend(source::downcast_confined(root));
     violations.extend(source::forbidden_std_io(ws, root));
     violations.extend(source::one_schema_per_file(root));
+    violations.extend(frozen::check(root));
 
     let mut undecidable = Vec::new();
     match source::foundation_necessity(ws, root) {
@@ -67,6 +69,7 @@ pub fn evaluate(ws: &Workspace) -> Report {
         "crate-naming-consistent",
         "unwired-absent",
         "downcast-pgtx-confined",
+        "foundation-frozen-items",
     ]);
     Report { violations, checked, undecidable }
 }

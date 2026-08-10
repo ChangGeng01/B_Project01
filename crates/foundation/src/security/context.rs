@@ -284,3 +284,82 @@ impl SecurityContext {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn device_id_accepts_the_system_constant() {
+        // 「必须能由 &'static str 无损构造」，SecurityContext::system 依赖这一点。
+        let d = DeviceId::new(crate::principal::SYSTEM_DEVICE_ID).expect("SYSTEM 必须合法");
+        assert_eq!(d.as_str(), "SYSTEM");
+    }
+
+    #[test]
+    fn device_id_rejects_out_of_range_and_bad_chars() {
+        assert!(DeviceId::new("").is_err(), "长度下限 1");
+        assert!(DeviceId::new(&"a".repeat(65)).is_err(), "长度上限 64");
+        assert!(DeviceId::new(&"a".repeat(64)).is_ok(), "上限本身合法");
+        assert!(DeviceId::new("has space").is_err());
+        assert!(DeviceId::new("有中文").is_err());
+        assert!(DeviceId::new("ok_-09").is_ok());
+    }
+
+    #[test]
+    fn role_code_is_upper_snake_only() {
+        assert!(RoleCode::new("FINANCE_CLERK").is_ok());
+        assert!(RoleCode::new("finance").is_err(), "取值为 [A-Z0-9_]");
+        assert!(RoleCode::new("A-B").is_err(), "连字符不在集合内");
+        assert!(RoleCode::new("").is_err());
+    }
+
+    #[test]
+    fn request_id_length_band() {
+        assert!(RequestId::new("0199aa11").is_ok(), "下限 8");
+        assert!(RequestId::new("0199aa1").is_err());
+        assert!(RequestId::new(&"a".repeat(65)).is_err());
+    }
+
+    #[test]
+    fn trace_id_is_32_lowercase_hex() {
+        assert!(TraceId::new(&"0".repeat(32)).is_ok());
+        assert!(TraceId::new(&"a".repeat(32)).is_ok());
+        assert!(TraceId::new(&"A".repeat(32)).is_err(), "须小写");
+        assert!(TraceId::new(&"g".repeat(32)).is_err(), "须十六进制");
+        assert!(TraceId::new(&"0".repeat(31)).is_err(), "定长 32");
+        assert!(TraceId::new(&"0".repeat(33)).is_err());
+    }
+
+    #[test]
+    fn data_scope_tag_shape() {
+        assert!(DataScopeTag::new("region:APAC").is_ok());
+        assert!(DataScopeTag::new("region_1:A-b_9").is_ok());
+        assert!(DataScopeTag::new("noseparator").is_err());
+        assert!(DataScopeTag::new("Region:APAC").is_err(), "kind 取 [a-z0-9_-]");
+        assert!(DataScopeTag::new("region:").is_err());
+        assert!(DataScopeTag::new(":APAC").is_err());
+        assert!(DataScopeTag::new(&format!("region:{}", "a".repeat(130))).is_err(), "总长上限 128");
+    }
+
+    #[test]
+    fn display_round_trips_for_tag() {
+        let t = DataScopeTag::new("region:APAC").expect("合法");
+        // Display 输出即公共列元素形态与事件信封元素形态，两处不得各自编解码。
+        assert_eq!(t.to_string(), "region:APAC");
+    }
+
+    #[test]
+    fn system_context_fills_frozen_constants() {
+        let ctx = SecurityContext::system(
+            Id::from_uuid(SYSTEM_PRINCIPAL_ID),
+            RequestId::new("0199aa11bb22cc33").expect("合法"),
+            TraceId::new(&"0".repeat(32)).expect("合法"),
+        );
+        assert_eq!(ctx.account_kind, AccountKind::System);
+        assert_eq!(ctx.user_id.as_uuid(), SYSTEM_PRINCIPAL_ID);
+        assert_eq!(ctx.device_id.as_str(), SYSTEM_DEVICE_ID);
+        assert_eq!(ctx.department_scope, DepartmentScope::All);
+        assert!(!ctx.is_breakglass);
+    }
+}
