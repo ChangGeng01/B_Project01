@@ -8,16 +8,28 @@
 
 本阶段不建设应收应付台账、发票台账、库存台账与成本归集，四者分别归阶段 10、阶段 10、阶段 8 与阶段 11。子账侧取数在关账勾稽中一律经 ep-contract-finance 的 ReconciliationItemQuery 按法人与会计期间取十项勾稽的子账侧合计，结构为 ReconciliationItemView，该 trait 由阶段 10 定义；SubledgerBalanceProvider 是阶段 10 内部组装该结果的手段，本阶段不直接调用。十项中的存货与已收货未收票两项，其子账侧实现体分别由阶段 8 的 InventorySubledgerBalanceQuery 与阶段 7 的 GrniSubledgerBalanceQuery 先行交付并由阶段 10 包装为 SubledgerBalanceProvider 的实现，其余八项取自阶段 10 自有表、不经该 trait。本阶段只提供总账侧余额。本阶段也不建交付确认单，该单据按 A-09 归阶段 6 的 sales schema，本阶段只提供其收入与成本腿所调用的过账端口。
 
-取值优先级按共享技术基线第 0 节：规格第 13.1、13.3、13.4、7.7 章最高，其次规格其余各章，其次 PRD，最后共享技术基线。本计划中标注为本阶段新增决定与偏离项的条目集中在第 9.12 节，评审时按该节逐条核对。
+取值优先级按共享技术基线第 0 节：规格第 13.1、13.3、13.4、7.7 章最高，其次规格其余各章，其次 PRD，最后共享技术基线。本计划中标注为本阶段新增决定与偏离项的条目集中在第 9.12 节，评审时按该节逐条核对。文中出现的按裁定 A-nn、B-nn、C-nn 一律只是决策出处标注，取值以本计划正文与共享技术基线为准，二者不一致时以正文为准，任何取值都不得以裁定表为唯一出处。
 #### 9.0.1 本阶段的两段拆分
 
 本阶段按总览第 3.3 节的拆环结论切成 9a 与 9b 两段，落在裁定通则第四条固定的顺序 1 → 2 → 3a → 4 → 3b → 5 → 9a → 8 → 6 → 7 → 10 → 11 → 9b → 13 → 14 上，9a 排在阶段 8 之前、9b 排在阶段 11 之后。本计划各节凡涉及分段处一律按下列分工判读。
 
-9a 段交付：ep-contract-ledger、ep-domain-ledger、ep-app-ledger 与 ep-platform-recon 四个 crate；ledger.accounts、ledger.accounting_periods、ledger.event_account_bindings、ledger.opening_balance_batches、ledger.opening_balance_batch_lines、ledger.vouchers、ledger.voucher_lines、ledger.account_period_balances、ledger.posting_trigger_event_types 九张表与 ledger.v_account_period_balances、ledger.v_pending_posting_backlog 两个视图；platform_core 下对账的三张表；AccountingPeriodResolver、PostingPort、TotalAccountBalanceProvider 与 PostingTriggerRegistry 四个对外契约；对账框架本体、分批执行器与每日对账调度；总账期初余额通道；受治理数据集视图与 platform_core.append_only_registry 的登记行；本模块四端界面中科目表、凭证与账表的部分。
+9a 段交付：ep-contract-ledger、ep-domain-ledger、ep-app-ledger 与 ep-platform-recon 四个 crate；ledger.accounts、ledger.accounting_periods、ledger.event_account_bindings、ledger.opening_balance_batches、ledger.opening_balance_batch_lines、ledger.vouchers、ledger.voucher_lines、ledger.account_period_balances、ledger.posting_trigger_event_types 九张表与 ledger.v_account_period_balances、ledger.v_pending_posting_backlog 两个视图；platform_core 下对账的三张表；AccountingPeriodResolver、PostingPort 与 TotalAccountBalanceProvider 三个对外契约；对账框架本体、分批执行器与每日对账调度；总账期初余额通道；受治理数据集视图与 platform_core.append_only_registry 的登记行；本模块四端界面中科目表、凭证与账表的部分。
 
 9b 段交付：ledger.close_serialization_slots、ledger.period_close_requests、ledger.year_end_closings 三张表；关账请求状态机、受理与在途写事务等待、快照建立、关账前强制校验的编排与四类校验项的注册；年度损益结转；期间关闭时的下一期间期初固化；黄金业务闭环十四步的整体端到端用例 testkit/scenarios/golden_loop_14_steps.rs；本模块四端界面中关账发起跟进与年结发起的部分。
 
 四类关账前强制校验项在 9b 段实现并向 ReconRegistry 注册，9a 段只交付对账框架本体与调度，不注册本模块的校验项。ReconCheck 的注册方按裁定 A-06 固定为阶段 7、8、9b、10、11 五个，校验项合计十六个，一律在 apps/job-worker/src/wiring.rs 经 ReconRegistry::register 注册，其中 9b 段的四个即本段自带的四类。
+
+#### 9.0.2 本阶段在 T0 贯通线上的最小切片
+
+T0 是插在阶段 4 结束之后、阶段 5 全量开工之前的一条贯通线，不新增任何范围，只从阶段 5、6、9a、10、11 各取最小切片，判据是一份合同从建单走到管理层看到一个数。本阶段在 T0 中只贡献两样东西：一个会计期间与一张凭证。
+
+本阶段贡献的切片逐项如下：ledger.accounts 与手工建立的少量科目；ledger.event_account_bindings 与该条路径用到的科目角色绑定；ledger.accounting_periods 与当前自然月的一个 OPEN 期间；AccountingPeriodResolver::resolve 的第一至第三步，顺延的第四第五步在 T0 上走不到；PostingPort::post 与 JOURNAL_MAP 中 SALES_INVOICE_ISSUED 与 RECEIPT_REGISTERED 两个来源类型的行；ledger.vouchers、ledger.voucher_lines 与 ledger.account_period_balances 三张表及其同事务写入；只读端点 GET /api/v1/ledger/account-balances，供阶段 11 那张收入报表取数。
+
+本阶段不进入 T0 的部分：期初余额批次、顺延入账、关账全链路、年度损益结转、对账框架、账表的其余端点、四端界面、性能度量，以及 9b 段全部内容。T0 只用 ep-datagen 最小样本，不要求 scale 数据集，不要求分支覆盖，只要求桌面端。
+
+迁移落法：T0 段执行 db/migrations/ledger/ 的第 1、2、3、6、7、8 号与第 13 号共七个文件，其余九个在 9a 全量段追加；全部文件的版本号按各自执行日期取，因此 T0 段的版本号早于 9a 全量段，全局版本序仍单调递增，不产生乱序到达。
+
+T0 通过之后，本阶段其余部分一律改为在这条已贯通的骨架上加厚，不再承担首次贯通的职责：9a 全量段加厚的是期初余额、顺延入账、期初固化、对账框架与账表；9b 段加厚的是关账与年结。第 9.9 节的退出条件不因 T0 增减，仍在 9a 与 9b 各自结束时判定；T0 自身的判据落在 T0 那条线上，本阶段不重复登记。
 
 
 ### 9.1 交付物清单
@@ -26,9 +38,9 @@
 
 一是四个新增 crate 并可编译通过：ep-contract-ledger、ep-domain-ledger、ep-app-ledger 与 ep-platform-recon，加上 ep-adapter-db-pg 中新增的 ledger 与 recon 两组仓储实现文件组。
 
-二是 db/migrations/ledger/ 下的 16 个迁移文件可在空库上离线执行完成，并可在 refinery 的 ledger.refinery_schema_history 上查得版本；执行后 ledger schema 存在 12 张表与 2 个视图，全部带法人列的表均已 ENABLE 与 FORCE 行级安全。另有 db/migrations/platform_core/ 下的 3 个迁移文件建立对账框架的三张表，按 A-06 同属本阶段 9a 段。
+二是 db/migrations/ledger/ 下的 16 个迁移文件可在空库上离线执行完成，并可在全局唯一的迁移历史表 platform_core.schema_history 上查得版本；执行后 ledger schema 存在 12 张表与 2 个视图，全部带法人列的表均已 ENABLE 与 FORCE 行级安全。另有 db/migrations/platform_core/ 下的 3 个迁移文件建立对账框架的三张表，按 A-06 同属本阶段 9a 段。
 
-三是记账引擎可用：任一业务模块的用例在其事务内经 ep-contract-ledger 的 PostingPort 提交一次过账输入，同事务内生成一张借贷平衡的总账凭证与其分录行、增量更新科目余额、写入审计事件、写入一条 ledger.voucher.posted.v1 的 Outbox 条目。首版十类事件的映射表以编译期常量表形式存在，可被单元测试与领域属性测试逐条遍历。
+三是记账引擎可用：任一业务模块的用例在其事务内经 ep-contract-ledger 的 PostingPort 提交一次过账输入，同事务内生成一张借贷平衡的总账凭证与其分录行、增量更新科目余额、写入审计事件、写入一条 ledger.voucher.posted.v1 的 Outbox 条目。映射表以编译期常量表形式存在，键为来源类型与计量项两项的一维查表，规格第 5.2 章的十类事件按分录集合展开为 17 个来源类型，可被单元测试与领域属性测试逐条遍历。
 
 四是会计期间可用：期间按自然月自动建立并置为打开，job-worker 上的定时任务提前建立下一期间；期间归属解析函数可用，含顺延入账与顺延目标不存在时的自动建立。
 
@@ -38,10 +50,10 @@
 
 七是账表查询可用：科目余额表、总账、明细账、试算平衡、会计恒等取数五个只读端点，可按会计期间字段与按原始业务日期两条路径检索，顺延入账的凭证在两条路径上均可查得。
 
-八是文档产物：docs/error-codes.md 新增 LEDGER 段共 36 个错误码；docs/event-catalog.md 新增 ledger 段共 8 个事件；docs/data-dictionary/ledger.md 新增 12 张表的数据字典，docs/data-dictionary/platform_core.md 增补对账三张表的数据字典；docs/adr/ 新增 3 篇本阶段决定的 ADR。
+八是文档产物：docs/error-codes.md 新增 LEDGER 段共 34 个错误码，比原定的 36 个少两个，一个是两类计量项错误码合并为 LEDGER.POSTING.MEASURE_INVALID，另一个是随过账事件登记表的运行期断言一并删除的 LEDGER.POSTING_TRIGGER_EVENT_TYPE.REGISTRY_MISMATCH；docs/event-catalog.md 新增 ledger 段共 8 个事件；docs/data-dictionary/ledger.md 新增 12 张表的数据字典，docs/data-dictionary/platform_core.md 增补对账三张表的数据字典；docs/adr/ 新增 3 篇本阶段决定的 ADR。
 
 九是测试产物：ep-domain-ledger 与 ep-app-ledger 的单元测试与领域属性测试、crates/application/ledger/tests 下的集成测试、tests/rls_matrix 中新增的 ledger 越权用例、apps/core-server/tests 下的关账与顺延入账端到端用例、9b 段的 testkit/scenarios/golden_loop_14_steps.rs，以及 A.1 度量清单中总账凭证过账与月度科目余额表两项的 EXPLAIN 证据文件。
-十是对账框架本体：ep-platform-recon crate、platform_core.recon_check_definitions 与 platform_core.recon_runs 与 platform_core.recon_discrepancies 三张表、ReconCheck 与 ReconRegistry 与 ReconExecutor 三个契约、job-worker 内的分批执行器与每日对账调度、签名语句集校验。按 A-06 该本体归本阶段 9a 段，注册方为阶段 7、8、9b、10、11 五个，各自在其上实现自己的 ReconCheck，不另起对账框架。
+十是对账框架本体：ep-platform-recon crate、platform_core.recon_check_definitions 与 platform_core.recon_runs 与 platform_core.recon_discrepancies 三张表、ReconCheck 与 ReconRegistry 与 ReconExecutor 三个契约、job-worker 内的分批执行器与每日对账调度、差异事项 subject_ref 的键集白名单校验。按 A-06 该本体归本阶段 9a 段，注册方为阶段 7、8、9b、10、11 五个，各自在其上实现自己的 ReconCheck，不另起对账框架。
 
 十一是本模块的四端界面：clients/desktop/src/modules/ledger/ 与 clients/mobile/src/modules/ledger/ 两个目录，按 A-23 由本阶段交付，阶段 13 只提供客户端壳、路由注册表与能力矩阵闸。
 
@@ -75,13 +87,13 @@ job-worker 承载：期间自动建立定时任务、ep-platform-recon 的分批
 
 本阶段不新增进程，不新增 schema，不新增模块码，不新增错误分类，不新增依赖方向。
 
-依赖方向自检：ep-domain-ledger 只依赖 ep-foundation 与 ep-contract-ledger；ep-app-ledger 依赖 ep-foundation、ep-platform-authz、ep-platform-audit、ep-platform-outbox、ep-platform-sequence、ep-platform-flow、ep-platform-recon、ep-platform-release、ep-platform-notify、ep-platform-obs、ep-domain-ledger、ep-contract-ledger 与 ep-contract-finance，其中 ep-contract-finance 一项只用于 9b 段消费 ReconciliationItemQuery，按基线第 1.3 节 ep-app-<模块> 可依赖任意模块的 ep-contract-* 成立；ep-app-ledger 不依赖任何其他模块的 ep-app-*，也不依赖其他模块的 ep-domain-*。ep-platform-recon 只依赖 ep-foundation、ep-platform-obs 与 ep-platform-tenancy，不依赖任何模块的 ep-contract-*、ep-domain-* 与 ep-app-*，各模块的 ReconCheck 实现落在其自身的 ep-app-* 中并在 wiring 注册，该方向由同一自检脚本断言。其他模块经 ep-contract-ledger 的 trait 反向调用本阶段，实现在 wiring 注入。阶段 11 按其第 2.2 节与第 4.2 节在本阶段的过账用例内追加成本与收入捕获的调用点，并为 ep-app-ledger 新增一条对 ep-contract-costing 的依赖；本阶段不预留空实现、不注入 Noop，届时 CI 的 cargo metadata 断言脚本中 ep-app-ledger 的期望依赖清单由阶段 11 同批更新。
+依赖方向自检：ep-domain-ledger 只依赖 ep-foundation 与 ep-contract-ledger；ep-app-ledger 依赖 ep-foundation、ep-platform-authz、ep-platform-audit、ep-platform-outbox、ep-platform-sequence、ep-platform-flow、ep-platform-recon、ep-platform-release、ep-platform-notify、ep-platform-obs、ep-domain-ledger、ep-contract-ledger 与 ep-contract-finance，其中 ep-contract-finance 一项只用于 9b 段消费 ReconciliationItemQuery，按基线第 1.3 节 ep-app-<模块> 可依赖任意模块的 ep-contract-* 成立；ep-app-ledger 不依赖任何其他模块的 ep-app-*，也不依赖其他模块的 ep-domain-*。ep-platform-recon 只依赖 ep-foundation、ep-platform-obs 与 ep-platform-tenancy，不依赖任何模块的 ep-contract-*、ep-domain-* 与 ep-app-*，各模块的 ReconCheck 实现落在其自身的 ep-app-* 中并在 wiring 注册，该方向由同一自检脚本断言。其他模块经 ep-contract-ledger 的 trait 反向调用本阶段，实现在 wiring 注入。阶段 11 按其第 2.2 节与第 4.2 节在本阶段的过账用例内追加成本与收入捕获的调用点，并为 ep-app-ledger 新增一条对 ep-contract-costing 的依赖；该调用点按同批交付处理，即它与阶段 11 的实现同批加入代码，在此之前根本不存在于代码中，本阶段没有任何未接线端口注入点，不注入任何空实现，届时 CI 的 cargo metadata 断言脚本中 ep-app-ledger 的期望依赖清单由阶段 11 同批更新。
 
 ### 9.3 数据库变更
 
-全部对象建在 ledger schema，属主为 ep_mod_ledger，运行期由 ep_app_rw 读写。迁移目录 db/migrations/ledger/，历史表 ledger.refinery_schema_history。db/migrations/order.toml 中 ledger 的位次按基线第 3.9 节已定的顺序，排在 finance 之后、crm 之前，本阶段不改动该顺序。
+全部对象建在 ledger schema，属主为 ep_mod_ledger，运行期由 ep_app_rw 读写。迁移目录 db/migrations/ledger/，迁移历史落在全局唯一的 platform_core.schema_history。执行顺序由单一全局 Runner 按文件名版本号排序决定，db/migrations/order.toml 与其中的目录位次一并删除，本阶段不声明任何目录之间的先后，跨目录的先后一律由版本号本身表达。
 
-下表的时间戳示例按 2026-11-03 取值，实际编号按执行日期取，本表只固定相对顺序与 slug。
+下表的时间戳示例只固定相对顺序与 slug。实际文件名一律取 V<YYYYMMDDHHMMSS> 十四位真实执行时间，全局版本号唯一且严格递增，由 xtask sqlcheck 断言；伪时间戳与十二位写法不得进入仓库。
 
 | 序 | 文件名 | 内容 |
 |---|---|---|
@@ -98,15 +110,15 @@ job-worker 承载：期间自动建立定时任务、ep-platform-recon 的分批
 | 11 | V202611030950__ledger_create_year_end_closings.sql | 建 ledger.year_end_closings |
 | 12 | V202611030955__ledger_create_posting_trigger_event_types.sql | 建 ledger.posting_trigger_event_types |
 | 13 | V202611031000__ledger_create_ledger_views.sql | 建 ledger.v_account_period_balances 与 ledger.v_pending_posting_backlog |
-| 14 | V202611031005__ledger_backfill_posting_trigger_event_types.sql | 按 A-21 一次写全 ledger.posting_trigger_event_types 的 13 行并直接填入 event_type 与 registered_by_module，清单见第 9.3.11 节；业务阶段不再追加任何回填迁移 |
+| 14 | V202611031005__ledger_backfill_posting_trigger_event_types.sql | 一次写全 ledger.posting_trigger_event_types 的 13 行，每行只填 event_type，清单见第 9.3.11 节；本文件由 xtask configdoc 从 docs/event-catalog.md 的 produces_voucher 列生成，CI 比对生成结果与仓库中的本文件是否逐字一致，不一致即构建失败；业务阶段不再追加任何回填迁移 |
 | 15 | V202611031010__ledger_create_dataset_views.sql | 按 A-18 重建 ledger.v_account_period_balances 使其输出 legal_entity_id、security_level、data_scope_tags 三列，并 GRANT SELECT ON ledger.v_account_period_balances TO ep_analyst_ro |
-| 16 | V202611031015__ledger_backfill_append_only_registry.sql | 按 B-02 向 platform_core.append_only_registry 登记 ledger.vouchers、ledger.voucher_lines 与 platform_core.recon_runs 三行，三行的 mode 一律取 APPEND_ONLY、mutable_columns 取空数组。文件内先插三行登记，再依次调用 platform_core.attach_table_guards('ledger','vouchers')、('ledger','voucher_lines')、('platform_core','recon_runs')，顺序不得颠倒，挂接函数读登记表取可变列白名单，先挂接后登记取不到 mutable_columns。第 1 至 13 号迁移一律不调用 attach_table_guards，这三张仅追加表的触发器只在本文件内挂接；platform_core.recon_runs 的建表迁移在 db/migrations/platform_core/ 目录且位次早于 ledger，本文件执行时该表已存在，跨目录挂接可行。本文件同时写入 ledger 与 platform_core 两个 schema 的登记对象，按裁定通则第五条放在两者中位次靠后的 db/migrations/ledger/ 目录下 |
+| 16 | V202611031015__ledger_backfill_append_only_registry.sql | 按 B-02 向 platform_core.append_only_registry 登记 ledger.vouchers、ledger.voucher_lines 与 platform_core.recon_runs 三行，三行的 mode 一律取 APPEND_ONLY、mutable_columns 取空数组。文件内先插三行登记，再依次调用 platform_core.attach_table_guards('ledger','vouchers')、('ledger','voucher_lines')、('platform_core','recon_runs')，顺序不得颠倒，挂接函数读登记表取可变列白名单，先挂接后登记取不到 mutable_columns。第 1 至 13 号迁移一律不调用 attach_table_guards，这三张仅追加表的触发器只在本文件内挂接；platform_core.recon_runs 的建表迁移在 db/migrations/platform_core/ 目录且版本号早于本文件，本文件执行时该表已存在，跨目录挂接可行。本文件同时写入 ledger 与 platform_core 两个 schema 的登记对象，其主要创建对象是 ledger 两张仅追加表的登记行与触发器，故放在 db/migrations/ledger/ 目录下，正确性由本文件版本号晚于其全部被引用对象保证，并由空库全量执行验证 |
 
-每个文件头部按基线第 3.9 节写 -- rollback: 段。建表类的回退语句为 drop table；第 13 号的回退为 drop view；第 14 号为按 ledger_event_kind 与 event_type 删除本次插入的 13 行；第 15 号为按第 13 号的定义重建视图并 REVOKE SELECT ON ledger.v_account_period_balances FROM ep_analyst_ro；第 16 号为按 schema_name 与 table_name 删除本次登记的三行，并 drop 该三张表上由本文件挂接的 assert_append_only 触发器。第 6、7 号文件另注明其中的 REVOKE 语句无法安全逆向，回退须用升级前备份。
+每个文件头部按基线第 3.9 节写 -- rollback: 段。建表类的回退语句为 drop table；第 13 号的回退为 drop view；第 14 号为按 event_type 删除本次插入的 13 行；第 15 号为按第 13 号的定义重建视图并 REVOKE SELECT ON ledger.v_account_period_balances FROM ep_analyst_ro；第 16 号为按 schema_name 与 table_name 删除本次登记的三行，并 drop 该三张表上由本文件挂接的 assert_append_only 触发器。第 6、7 号文件另注明其中的 REVOKE 语句无法安全逆向，回退须用升级前备份。
 
 上表第 9、10、11 号三个文件属 9b 段，其余十三个属 9a 段。两段之间隔着阶段 8 至 11，因此 9b 段三个文件的编号按其执行日期取，排在这些阶段的迁移之后，ledger 目录内的相对次序仍按上表。第 2 号表上的 closed_by_close_request_id 外键随第 10 号文件在 9b 段补建，该列在 9a 段保持可空且无外键。
 
-对账框架的三张表按 A-06 建在 platform_core schema，迁移文件放在 db/migrations/platform_core/，按该目录既有编号顺延，slug 依次为 platform_core_create_recon_check_definitions、platform_core_create_recon_runs、platform_core_create_recon_discrepancies，三者同属 9a 段。列按 A-06 的定义：recon_check_definitions 不带法人列，属全局配置字典类，不建行级策略；recon_runs 与 recon_discrepancies 带 legal_entity_id 并按基线第 3.8 节模板建策略；recon_runs 为仅追加表，recon_discrepancies 为可更新表并带 row_version；recon_discrepancies.recon_run_id 为同 schema 真实外键，两表的 accounting_period_id 为跨 schema 逻辑引用不建外键，理由是 platform_core 在 order.toml 中的位次早于 ledger。
+对账框架的三张表按 A-06 建在 platform_core schema，迁移文件放在 db/migrations/platform_core/，slug 依次为 platform_core_create_recon_check_definitions、platform_core_create_recon_runs、platform_core_create_recon_discrepancies，三者同属 9a 段。列按 A-06 的定义：recon_check_definitions 不带法人列，其准入判据是行集合与法人无关，行由制品决定并在本部署内对全部法人取值相同，隔离承接入口是对账执行器按法人逐轮遍历，该表按正向登记制登记到 platform_core.unpoliced_table_registry，不建行级策略，本计划不再使用全局配置字典这一类名；该表不含 statement_sha256 与 signed_statement_ref 两列，理由见第 9.4.7 节；recon_runs 与 recon_discrepancies 带 legal_entity_id 并按基线第 3.8 节模板建策略；recon_runs 为仅追加表，recon_discrepancies 为可更新表并带 row_version；recon_discrepancies.recon_run_id 为同 schema 真实外键，两表的 accounting_period_id 为跨 schema 逻辑引用不建外键，理由是基线第 3.3 节的模块规则本身禁止跨 schema 外键，与目录归属无关。
 
 本阶段的跨模块逻辑引用不建 CROSS_MODULE_LINK 校验项，依据为裁定 A-06 与总览 R14，这是首版的已知边界。ledger.vouchers 的 source_document_type 与 source_document_id 由过账入口在同一事务内与来源单据行一并写入，其存在性不依赖写入时查证；release_package_id 与 approval_ref 两类平台侧逻辑引用分别由配置发布入口与审批入口保证。9b 段自带并注册的四个校验项按第 9.4.7 节无一取 CROSS_MODULE_LINK。
 
@@ -184,7 +196,7 @@ RLS：按基线第 3.8 节模板生成 rls_accounts_le。以下各带法人列�
 | accounting_period_id | uuid | 否 | 无 | fk_vouchers_accounting_periods，凭证落入哪个会计期间的唯一依据 |
 | business_date | date | 否 | 无 | 原始业务日期，取该业务事件的记账日期 |
 | deferred_from_period_id | uuid | 是 | 无 | 非空即表示该凭证发生过顺延，fk_vouchers_accounting_periods_deferred |
-| source_kind | text | 否 | 无 | ck_vouchers_source_kind 取第 9.4.1 节固定的 11 个来源类型 |
+| source_kind | text | 否 | 无 | ck_vouchers_source_kind 取第 9.4.1 节固定的 17 个来源类型 |
 | source_sequence_no | smallint | 否 | 1 | ck_vouchers_source_sequence 约束取值为 1，或 source_kind = YEAR_END_PL_CLOSING |
 | source_document_type | text | 否 | 无 | 来源单据对象类型，跨模块逻辑引用 |
 | source_document_id | uuid | 否 | 无 | 来源单据标识，跨模块逻辑引用，不建外键 |
@@ -276,31 +288,30 @@ RLS：按基线第 3.8 节模板生成 rls_accounts_le。以下各带法人列�
 
 #### 9.3.11 ledger.posting_trigger_event_types
 
-归类为全局配置字典，按基线第 4 节的四类例外之一，不带 legal_entity_id，不建行级策略，不承载业务数据。
+本表不带 legal_entity_id。准入判据是其行集合与法人无关：它只登记本版本会产生凭证的事件类型名，取值由制品决定，在本部署内对全部法人相同。隔离承接入口是第 9.3.12 节的 ledger.v_pending_posting_backlog，该视图的取数一律受调用方的 app.legal_entity_id 约束。本表按正向登记制登记到 platform_core.unpoliced_table_registry，不建行级策略。
 
-列：id uuid 主键、ledger_event_kind text 非空 ck 取 11 个来源类型、event_type text 可空唯一（各业务模块在其阶段登记自己的事件类型名）、registered_by_module text 可空、created_at、created_by。
+列：id uuid 主键、event_type text 非空唯一、created_at、created_by。原有的 ledger_event_kind 与 registered_by_module 两列删除，理由是来源类型已由 JOURNAL_MAP 的键唯一确定，本表只需承载会产生凭证的事件类型集合，供第 9.3.12 节的视图连接。
 
-索引：pk_posting_trigger_event_types、ux_posting_trigger_event_types_event_type、ix_posting_trigger_event_types_ledger_event_kind。
-登记接口：ep-contract-ledger 暴露 PostingTriggerRegistry，方法为 assert_registered(snapshot: &dyn SnapshotCtx, event_type: &str, kind: VoucherSourceKind, module: ModuleCode) -> Result<(), AppError>，语义为只读断言：按 event_type 查种子行，缺行、ledger_event_kind 不符或 registered_by_module 不符一律返回 AppError，错误码取 LEDGER.POSTING_TRIGGER_EVENT_TYPE.REGISTRY_MISMATCH，分类 BUSINESS_CONFLICT、HTTP 409、不可重试。该方法不写任何行，只供各阶段在启动自检中与种子行比对，不供迁移调用；断言失败时进程以退出码 78 退出，不经 HTTP 返回。按 A-21，登记表、该接口与全部 13 行登记行一律归本阶段 9a 段，业务阶段不再追加任何回填迁移。
+索引：pk_posting_trigger_event_types、ux_posting_trigger_event_types_event_type。
+本表不设任何运行期断言接口。原 PostingTriggerRegistry::assert_registered 与错误码 LEDGER.POSTING_TRIGGER_EVENT_TYPE.REGISTRY_MISMATCH 一并删除，阶段 6、7、10 三处启动自检追加项与其退出码 78 路径随之取消。理由是种子行与编译期常量随同一制品发布，不存在分叉的可能，该断言只是给八个进程多加一条整机拒绝启动的路径，而这台服务器没有备节点。改由 CI 承担：xtask configdoc 从 docs/event-catalog.md 的 produces_voucher 列生成第 14 号迁移并与仓库中的文件逐字比对，不一致即构建失败。按 A-21，登记表与全部 13 行登记行归本阶段 9a 段，业务阶段不再追加任何回填迁移。
 
-唯一约束只落在 event_type 上，event_type 为空的行不参与唯一性判定，因此一个 ledger_event_kind 可对应多行。第 14 号种子迁移一次写全 13 行：第 9.4.1 节的 11 个 ledger_event_kind 各一行，INVOICE_REVERSED 与 REFUND_REGISTERED 各再加一行；其中 12 行按下表逐字填入 event_type 与 registered_by_module，YEAR_END_PL_CLOSING 一行的 event_type 保持为空。下表的阶段列表示该事件由哪个阶段产生，不表示由哪个阶段写登记行；各业务阶段一律不新增回填迁移，只在启动自检中经 PostingTriggerRegistry::assert_registered 与种子行比对，不一致即以退出码 78 启动失败。
+唯一约束落在 event_type 上，一行即一个会产生凭证的事件类型。第 14 号种子迁移一次写全 13 行，清单见下表。原先按 ledger_event_kind 各写一行、并为 YEAR_END_PL_CLOSING 保留一行空 event_type 的写法删除：年度损益结转由人在应用内发起，不经事件驱动，本表不登记它；阶段 8 的库存事件不产生凭证，本表也没有它的行。下表的阶段列表示该事件由哪个阶段产生，不表示由哪个阶段写登记行；各业务阶段一律不新增回填迁移，也不在启动时比对。
 
-| 阶段 | event_type | ledger_event_kind |
-|---|---|---|
-| 6 | sales.delivery.confirmed.v1 | DELIVERY_CONFIRMED |
-| 6 | sales.sales_return.registered.v1 | SALES_RETURN |
-| 7 | procure.goods_receipt.posted.v1 | PURCHASE_RECEIPT |
-| 7 | procure.purchase_return.posted.v1 | PURCHASE_RETURN |
-| 10 | invoice.sales_invoice.issued.v1 | SALES_INVOICE_ISSUED |
-| 10 | invoice.purchase_invoice.registered.v1 | PURCHASE_INVOICE |
-| 10 | invoice.sales_invoice.reversed.v1 | INVOICE_REVERSED |
-| 10 | invoice.purchase_invoice.reversed.v1 | INVOICE_REVERSED |
-| 10 | finance.receipt.registered.v1 | RECEIPT_REGISTERED |
-| 10 | finance.payment.registered.v1 | PAYMENT_REGISTERED |
-| 10 | finance.refund.registered.v1 | REFUND_REGISTERED |
-| 10 | finance.cash_document.reversed.v1 | REFUND_REGISTERED |
-| 9b | 无 event_type，YEAR_END_PL_CLOSING 行由第 14 号种子迁移保留 event_type 为空 | YEAR_END_PL_CLOSING |
-| 8 | 零行 | 不适用 |
+| 阶段 | event_type |
+|---|---|
+| 6 | sales.delivery.confirmed.v1 |
+| 6 | sales.sales_return.registered.v1 |
+| 7 | procure.goods_receipt.posted.v1 |
+| 7 | procure.purchase_return.posted.v1 |
+| 10 | invoice.sales_invoice.issued.v1 |
+| 10 | invoice.purchase_invoice.registered.v1 |
+| 10 | invoice.sales_invoice.reversed.v1 |
+| 10 | invoice.purchase_invoice.reversed.v1 |
+| 10 | finance.receipt.registered.v1 |
+| 10 | finance.payment.registered.v1 |
+| 10 | finance.refund.registered.v1 |
+| 10 | finance.cash_document.reversed.v1 |
+| 10 | finance.overbilling_entry.settled.v1 |
 
 
 #### 9.3.12 两个视图
@@ -313,11 +324,15 @@ ledger.v_pending_posting_backlog：按法人与会计期间输出待消费过账
 
 #### 9.4.1 凭证来源类型
 
-ep-domain-ledger 定义 VoucherSourceKind 枚举，11 个取值，前 10 个与规格第 5.2 章事件-分录表的十类事件一一对应，第 11 个是期末处理动作。
+ep-domain-ledger 定义 VoucherSourceKind 枚举，17 个取值。取值不按规格第 5.2 章事件-分录表的行数取，而按分录集合取，判据固定为一句：两种情形的科目角色集合不相交，或同一角色方向相反，才拆成两个取值；一种情形只是另一种少几条腿的，不拆，由计量项缺省承担。据此十类事件展开为 16 个业务来源类型，加上期末处理动作共 17 个。
 
-DELIVERY_CONFIRMED、SALES_INVOICE_ISSUED、RECEIPT_REGISTERED、PURCHASE_RECEIPT、PURCHASE_INVOICE、PAYMENT_REGISTERED、REFUND_REGISTERED、INVOICE_REVERSED、SALES_RETURN、PURCHASE_RETURN、YEAR_END_PL_CLOSING。
+DELIVERY_CONFIRMED、SALES_INVOICE_ISSUED、SALES_INVOICE_REVERSED、PURCHASE_INVOICE_REVERSED、RECEIPT_REGISTERED、PAYMENT_REGISTERED、CUSTOMER_REFUND、SUPPLIER_REFUND、PURCHASE_RECEIPT、PURCHASE_INVOICE_INVENTORY、PURCHASE_INVOICE_DIRECT_EXPENSE、SALES_RETURN、PURCHASE_RETURN_UNBILLED、PURCHASE_RETURN_BILLED_INVENTORY、PURCHASE_RETURN_BILLED_DIRECT_EXPENSE、OVERBILLING_WRITTEN_OFF、YEAR_END_PL_CLOSING。
 
-任何阶段不得新增取值。事件-分录表以外的凭证来源在首版不存在，手工凭证与更正凭证入口按 U-H-07 与 U-H-08 待决，本阶段不实现，见第 9.12 节的阻塞判定。
+与原 11 个取值的差别有四处，一律是拆分或补齐，不改任何借贷与取价。一是拆：原 INVOICE_REVERSED 拆为销项与进项两个，原 REFUND_REGISTERED 拆为客户退款与供应商返款两个，原 PURCHASE_INVOICE 拆为物料类与直接费用类两个，原 PURCHASE_RETURN 拆为发票未登记、发票已登记存货口径、发票已登记直接费用口径三个。二是不拆：DELIVERY_CONFIRMED、SALES_RETURN 与 PURCHASE_RECEIPT 各保持一个取值，直运与非直运、路径一的反向匹配腿与暂估腿一律由计量项缺省表达，依据是第 9.4.3 节第二步已定金额为零的计量项不生成分录行。三是补：新增 OVERBILLING_WRITTEN_OFF 承接超量开票的路径三，它此前在 11 个取值里无处安放却独立产凭证，补上它是修复既有缺口而不是扩容；超量开票的路径一与路径二不设取值，改为各自宿主来源类型下的计量项 overbilling_settlement_amount。四是减：资金单据冲正不设取值，按第 9.5.9 节的 post_reversal 处理。
+
+原写的任何阶段不得新增取值一句删除，替换为可执行约束：新增取值的提交必须同批包含 JOURNAL_MAP 的对应行、ck_vouchers_source_kind 的迁移，以及覆盖该取值全部计量项组合的借贷平衡属性测试，三者缺一 CI 失败。理由是取值落在 text 列的 CHECK 上，新增本就必须走迁移，迁移即天然的强制点；封条挡不住演进，只会让首版排除的调拨、盘点、领用与费用报销日后绕道手工凭证。手工凭证与更正凭证入口按 U-H-07 与 U-H-08 待决，本阶段仍不实现，见第 9.12 节的阻塞判定。
+
+拆分后每张来源单据必须恒定映射到唯一取值。采购退货的三个取值由采购发票是否已登记这一可变状态派生，重放时重算可能得到不同取值，从而绕过 ux_vouchers 的四列唯一键造成重复过账，因此采购退货单上须落一列 resolved_source_kind，首次过账时固化，重放读该列不重算，该列归阶段 7。这是拆分带来的唯一新增负担，必须一并落地。
 
 #### 9.4.2 科目角色
 
@@ -334,18 +349,18 @@ ACCOUNTS_RECEIVABLE_UNBILLED、ACCOUNTS_RECEIVABLE、ADVANCE_FROM_CUSTOMER、MAI
 ep-contract-ledger 定义 PostingInput：
 
 - source_kind: VoucherSourceKind
-- branch: PostingBranch，按事件-分录表的分支与附加规则列取值，取值集合为 NONE、DROP_SHIP、NON_DROP_SHIP、INVENTORY_TYPE、DIRECT_EXPENSE_TYPE、OUTPUT_DIRECTION、INPUT_DIRECTION、PURCHASE_INVOICE_REGISTERED、PURCHASE_INVOICE_NOT_REGISTERED、OVERBILLING_PATH_ONE、OVERBILLING_PATH_TWO、OVERBILLING_PATH_THREE
 - posting_date: NaiveDate
 - source_document: SourceDocumentRef，含 object_type、id、doc_no
 - source_event_id: Option<Id>
-- measures: Vec<(MeasureKey, Money)>，MeasureKey 为固定枚举，取值与事件-分录表各腿的金额语义一一对应，如 revenue_amount、unbilled_receivable_amount、cogs_amount、inventory_release_amount、output_tax_amount、input_tax_amount、accrual_reversal_amount、price_variance_in_stock_amount、price_variance_released_amount、settlement_amount、advance_amount、overbilling_amount、cash_amount 等；完整清单登记在 docs/data-dictionary/ledger.md，随本阶段冻结
-- reverses_voucher_id: Option<Id>
+- measures: Vec<(MeasureKey, Money)>，MeasureKey 为固定枚举，取值与事件-分录表各腿的金额语义一一对应，如 revenue_amount、unbilled_receivable_amount、cogs_amount、inventory_release_amount、output_tax_amount、input_tax_amount、accrual_reversal_amount、price_variance_in_stock_amount、price_variance_released_amount、settlement_amount、advance_amount、overbilling_amount、overbilling_settlement_amount、cash_amount 等；完整清单登记在 docs/data-dictionary/ledger.md，随本阶段冻结
 
-ep-domain-ledger 定义编译期常量映射表 rule::journal_map::JOURNAL_MAP，元素为四元组 (VoucherSourceKind, PostingBranch, MeasureKey, AccountRole, Direction)。表的内容一律按规格第 5.2 章事件-分录表填写，本计划不复述其借贷。
+原有的 branch 与 reverses_voucher_id 两个字段删除。branch 是第二根全局共用的轴，与来源类型相乘得到一百三十二格而其中合法的约十六格，哪些格合法这件事不进类型只进映射表的行，靠运行期校验兜底；来源类型按分录集合拆开之后它没有剩余职责。reverses_voucher_id 由第 9.5.9 节的 post_reversal 承担；销项与进项红字冲销各走自己的来源类型经映射生成，其追溯链落在单据侧，即红字发票指向原发票，凭证侧不再第二次表达，ledger.vouchers.reverses_id 与 ledger.voucher_lines.reverses_id 两列此后只由 post_reversal 写入。
+
+ep-domain-ledger 定义编译期常量映射表 rule::journal_map::JOURNAL_MAP，元素为四元组 (VoucherSourceKind, MeasureKey, AccountRole, Direction)，键为前两项、值为后两项，是一维查表。表的内容一律按规格第 5.2 章事件-分录表填写，本计划不复述其借贷。
 
 映射算法固定为四步。
 
-第一步，按 source_kind 与 branch 取出该分支下的全部四元组，若 measures 中出现该分支未登记的 MeasureKey，或该分支必填的 MeasureKey 缺失，返回 VALIDATION 与 LEDGER.POSTING.MEASURE_NOT_APPLICABLE 或 LEDGER.POSTING.MEASURE_MISSING。
+第一步，按 source_kind 取出该来源类型下的全部四元组，若 measures 中出现该来源类型未登记的 MeasureKey，或该来源类型必填的 MeasureKey 缺失，返回 VALIDATION 与 LEDGER.POSTING.MEASURE_INVALID。原 LEDGER.POSTING.MEASURE_NOT_APPLICABLE 与 LEDGER.POSTING.MEASURE_MISSING 两个错误码合并为该码，语义为该来源类型未登记此计量项或必填计量项缺失。
 
 第二步，符号归一。计量项金额允许为负，正值按表中方向入账，负值取绝对值按相反方向入账。该规则使 numeric(18,2) 的 amount 列恒为正、方向恒为二值，同时不改变任何净额。金额为零的计量项不生成分录行。
 
@@ -353,7 +368,7 @@ ep-domain-ledger 定义编译期常量映射表 rule::journal_map::JOURNAL_MAP�
 
 第四步，断言借方合计等于贷方合计，行数大于等于 2，不成立返回 BUSINESS_CONFLICT 与 LEDGER.VOUCHER.UNBALANCED。该断言与数据库上的 ck_vouchers_balanced 构成双重保证。
 
-前向说明：阶段 11 将在凭证行生成之后、同一 &mut dyn Tx 内追加成本与收入捕获的调用点，见阶段 11 计划第 4.2 节；本阶段不预留空实现，不注入 Noop，映射算法本身不变。
+前向说明：阶段 11 将在凭证行生成之后、同一 &mut dyn Tx 内追加成本与收入捕获的调用点，见阶段 11 计划第 4.2 节。该调用点按同批交付处理，与阶段 11 的实现同批加入代码，此前不存在于代码中；本阶段不预留任何未接线端口，不注入任何空实现，映射算法本身不变。
 
 边界条件：单张凭证行数上限由配置 ledger.posting.max_lines_per_voucher 约束，超出返回 BUSINESS_CONFLICT 与 LEDGER.VOUCHER.LINE_LIMIT_EXCEEDED；全部计量项金额为零时不生成凭证，PostingPort 返回 Skipped，调用方按无凭证处理，理由是零金额凭证既无账务意义又会污染试算平衡的凭证张数统计。
 
@@ -370,7 +385,7 @@ ep-domain-ledger 定义编译期常量映射表 rule::journal_map::JOURNAL_MAP�
 
 可入账期间是派生条件，不是第三种状态：status = OPEN 且不存在 accounting_period_id 指向它、status 属于 ACCEPTED 或 VALIDATING 的关账请求。
 
-期间归属解析算法 resolve_accounting_period(le, posting_date)，在业务事务内一次执行，输出 (accounting_period_id, deferred_from_period_id)。
+期间归属解析算法 resolve_accounting_period(le, posting_date)，在业务事务内执行，输出 ResolvedPeriod。该类型定义在 ep-contract-ledger，字段私有、无公开构造函数，只能由 resolve 返回，含 accounting_period_id、accounting_period_seq 与 deferred_from_period_id 三项；accounting_period_seq 由该期间的 fiscal_year 与 period_no 导出为该法人内的单调序号，不新增列。原先由各调用方自行计算并传入 accounting_period_seq 的做法取消，理由是十六项对账一律按 accounting_period_id 比金额，seq 写错时对账全绿，而收发存汇总与期末库存价值表按 seq 取数会静默错期，且其承载表是仅追加表不可更正。
 
 第一步，校验 posting_date 不晚于服务器自然日，取值为 (now() AT TIME ZONE 'Asia/Shanghai')::date，禁止使用 current_date。晚于则返回 VALIDATION 与 LEDGER.ACCOUNTING_PERIOD.POSTING_DATE_IN_FUTURE，定位到该字段。
 
@@ -384,9 +399,9 @@ ep-domain-ledger 定义编译期常量映射表 rule::journal_map::JOURNAL_MAP�
 
 不变量：因期间由早到晚顺序关账，且记账日期不得晚于登记时点自然日，顺延目标一律晚于 P0，顺延必然收敛，凭证不因期间归属被拒绝。该不变量作为领域属性测试的断言之一。
 
-顺延的连带范围由调用方承担：同一业务事件产生的库存数量账、库存金额账、应收应付台账、预收预付台账与资金流水台账条目，必须使用同一次 resolve 的返回值写入自身的 accounting_period_id。ep-contract-ledger 的 AccountingPeriodResolver trait 是这一连带的唯一入口，各子账模块不得自行判定期间。
+顺延的连带范围不再靠纪律保证。resolve 在同一 &mut dyn Tx 内记忆化，第二次调用返回同一个 ResolvedPeriod，一个事务里解析两次得到两个期间这条唯一会分叉的路径因此被消灭，原写的必须使用同一次 resolve 的返回值一句随之删除。ep-contract-ledger 的 AccountingPeriodResolver 仍是这一连带的唯一入口，各子账模块不得自行判定期间；跨模块边界按值传 ResolvedPeriod 的三项，由 xtask archcheck 断言 crates/application/ledger 与 ep-adapter-db-pg 的 ledger 仓储之外，任何模块的仓储写入 accounting_period_id 与 accounting_period_seq 的取值只能来自命令 DTO 的同名字段，不得来自 posting_date、Clock 或本地推导。子账条目的期间是否等于其来源凭证的期间，并入阶段 7、10、11 已有的 CROSS_MODULE_LINK 校验项，把判据由被引用行存在扩为存在且 accounting_period_id 相同，不新增第十七项校验项。
 
-顺延不改变任何取价与借贷，由第 9.4.3 节的映射算法保证：映射只读 measures 与 branch，不读期间。
+顺延不改变任何取价与借贷，由第 9.4.3 节的映射算法保证：映射只读 source_kind 与 measures，不读期间。
 
 #### 9.4.5 关账请求状态机
 
@@ -411,7 +426,7 @@ ep-domain-ledger 定义编译期常量映射表 rule::journal_map::JOURNAL_MAP�
 
 前提二：该法人该期间内，platform_msg.outbox_events 中 status 属于 PENDING 或 DISPATCHING、posting_date 落在该期间起止之间、且 event_type 命中 ledger.posting_trigger_event_types 的条目数为零，且 platform_msg.dead_letters 中 state 属于 OPEN 或 REPAIRING、同样命中该注册表的条数为零。posting_date 为空的平台事件一律不计入。该判定的可枚举依据为 ledger.v_pending_posting_backlog，两侧不为零时分别按 LEDGER.PERIOD_CLOSE_REQUEST.PENDING_POSTING_BACKLOG 与 LEDGER.PERIOD_CLOSE_REQUEST.UNREPAIRED_DEAD_LETTERS 载明。
 
-任一不成立时置 ACCEPTANCE_REFUSED，把未满足项与其当前取值写入 refusal_reasons，经 ep-platform-recon 与 ep-platform-obs 的端口生成关账受理被拒事项并记入运维中心，期间状态不变，其过账、查询与报表不受影响，发起次数不设上限。同一法人同一期间连续两次受理被拒时按规格第 15.3 章告警，并按 A-26 经 ep-platform-obs 的 DegradationLedger::open 登记暴露窗口，至该期间完成关账时经 DegradationLedger::close 关闭。本阶段只调用该台账，不自建第二套窗口表，DegradationKind 的取值由阶段 2 定义、阶段 14 扩展至十八类。
+任一不成立时置 ACCEPTANCE_REFUSED，把未满足项与其当前取值写入 refusal_reasons，经 ep-platform-recon 与 ep-platform-obs 的端口生成关账受理被拒事项并记入运维中心，期间状态不变，其过账、查询与报表不受影响，发起次数不设上限。同一法人同一期间连续两次受理被拒时按规格第 15.3 章告警，并按 A-26 经 ep-platform-obs 的 DegradationLedger::open 登记暴露窗口，至该期间完成关账时经 DegradationLedger::close 关闭。本阶段只调用该台账，不自建第二套窗口表；DegradationKind 的取值由阶段 2 定义并由后续阶段扩展，本阶段不复述其取值数。
 
 年度末次期间的损益归零不在受理前判定，由关账前强制校验在同一快照上判定。
 
@@ -431,7 +446,7 @@ ep-domain-ledger 定义编译期常量映射表 rule::journal_map::JOURNAL_MAP�
 
 #### 9.4.7 关账前强制校验的编排
 
-ep-platform-recon 的本体按 A-06 由本阶段 9a 段提供：crate、platform_core 下的三张表、ReconCheck 与 ReconRegistry 与 ReconExecutor 三个契约、BatchWindow 与 ReconRunOutcome、快照传递、单批时限、单查询内存与临时空间上限、差异事项与校验未完成事项的模型，以及 job-worker 内的每日对账调度，全部在本阶段落地。执行器按基线第 3.8 节逐法人遍历，法人清单取 ep-platform-tenancy 的 LegalEntityDirectory::list_active，每轮只在单一法人上设置 app.legal_entity_id，快照经 UnitOfWork::snapshot_transact 导出并以 SnapshotCtx 逐批传递。本阶段自带的四类校验项各实现一个 ReconCheck 并在 job-worker 的 wiring 中经 ReconRegistry::register 注册，实现与注册同属 9b 段。校验语句集属规格第 7.7 章内部对账系统安全上下文的签名语句集，语句文本随版本签名发布并登记到 platform_core.recon_check_definitions 的 statement_sha256 与 signed_statement_ref，不接受运行期拼接。blocks_period_close 返回真的校验项即 is_blocking_period_close 为真的登记项，构成关账前强制校验的范围。
+ep-platform-recon 的本体按 A-06 由本阶段 9a 段提供：crate、platform_core 下的三张表、ReconCheck 与 ReconRegistry 与 ReconExecutor 三个契约、BatchWindow 与 ReconRunOutcome、快照传递、单批时限、单查询内存与临时空间上限、差异事项与校验未完成事项的模型，以及 job-worker 内的每日对账调度，全部在本阶段落地。执行器按基线第 3.8 节逐法人遍历，法人清单取 ep-platform-tenancy 的 LegalEntityDirectory::list_active，每轮只在单一法人上设置 app.legal_entity_id，快照经 UnitOfWork::snapshot_transact 导出并以 SnapshotCtx 逐批传递。本阶段自带的四类校验项各实现一个 ReconCheck 并在 job-worker 的 wiring 中经 ReconRegistry::register 注册，实现与注册同属 9b 段。规格第 7.7 章所要的这条路径不构成越权通道，其保证改为静态封闭性，不再用签名语句集：ReconExecutor 只按 ReconRegistry 中已注册的 ReconCheck 实现分发，不接受任何语句文本入参，校验语句一律是各 ep-app-* crate 内的编译期常量，完整性由阶段 1 的制品签名链与客户侧验签承担，并由 archcheck 断言 ep-platform-recon 与各 ReconCheck 实现体内不出现字符串拼接 SQL 与动态语句执行入口。platform_core.recon_check_definitions 的 statement_sha256 与 signed_statement_ref 两列删除，每次运行改写制品版本号与制品签名摘要到 recon_runs 与审计事件，外部审计问某次关账跑的是哪一版校验由这两项唯一回答。唯一保留为硬约束的是输出边界：recon_discrepancies.subject_ref 的允许键固定为勾稽项标识、法人、会计期间、凭证号、仓库、物料、批次、科目、单据编号与账户内部标识十项，写入时校验，出现白名单以外的键直接拒绝并按规格第 15.3 章告警。blocks_period_close 返回真的校验项即 is_blocking_period_close 为真的登记项，构成关账前强制校验的范围。
 
 本阶段自带并注册的校验项四类。
 
@@ -508,7 +523,7 @@ ep-platform-recon 的本体按 A-06 由本阶段 9a 段提供：crate、platform
 |---|---|
 | GET /api/v1/ledger/event-account-bindings | 列出 17 个角色及其当前绑定，未绑定的角色以 account_id 为 null 呈现 |
 | PUT /api/v1/ledger/event-account-bindings/{account_role} | 绑定或改绑。请求体 account_id 与 row_version。权限 ledger.event_account_binding.manage |
-| POST /api/v1/ledger/event-account-bindings/actions/check-completeness | 返回未绑定角色清单与绑定到停用科目的角色清单，供建账验收与启动自检使用 |
+| POST /api/v1/ledger/event-account-bindings/actions/check-completeness | 返回未绑定角色清单与绑定到停用科目的角色清单，供建账验收与运维中心查看，不供任何启动自检使用 |
 
 变更经 ep-platform-release 的配置发布通道发布，按基线第 7.1 节运行期可变业务参数的口径。该通道按 A-27 由阶段 3a 交付端口、阶段 3b 交付最小发布通道，本阶段只作为使用方接入，不自建第二套发布路径。是否另设审批与重新认证按 U-H-06 待决，临时取值为需财务主管审批、不额外重新认证。变更对已生成凭证无影响，因凭证行固化 account_id。
 
@@ -572,19 +587,18 @@ ep-platform-recon 的本体按 A-06 由本阶段 9a 段提供：crate、platform
 
 #### 9.5.9 模块内契约
 
-ep-contract-ledger 暴露给其他模块的 trait 四个，不经 HTTP。
+ep-contract-ledger 暴露给其他模块的 trait 三个，不经 HTTP。
 
-AccountingPeriodResolver：resolve(tx, ctx, legal_entity_id, posting_date) 返回 (accounting_period_id, deferred_from_period_id)。子账写入方必须在同一事务内调用一次并复用其返回值。
+AccountingPeriodResolver：resolve(tx, ctx, legal_entity_id, posting_date) 返回 ResolvedPeriod，含 accounting_period_id、accounting_period_seq 与 deferred_from_period_id 三项。该方法在同一 &mut dyn Tx 内记忆化，同一事务内重复调用返回同一个值，子账写入方因此不必再靠纪律复用返回值。
 
-PostingPort：post(tx, ctx, PostingInput) 返回 PostingOutcome，取值为 Posted{voucher_id, doc_no, accounting_period_id, deferred_from_period_id}、IdempotentReplay{同上}、Skipped。同一 (legal_entity_id, source_kind, source_document_id, source_sequence_no) 重复提交返回 IdempotentReplay，不重复写余额、不重复写审计、不重复写 Outbox。
+PostingPort：post(tx, ctx, PostingInput) 返回 PostingOutcome，取值为 Posted{voucher_id, doc_no, accounting_period_id, deferred_from_period_id}、IdempotentReplay{同上}、Skipped。同一 (legal_entity_id, source_kind, source_document_id, source_sequence_no) 重复提交返回 IdempotentReplay，不重复写余额、不重复写审计、不重复写 Outbox。同一 trait 另有 post_reversal(tx, ctx, reverses_voucher_id, posting_date, source_document)，语义为按原凭证逐行取反生成红字凭证，不查 JOURNAL_MAP、不需要计量项、不需要来源类型入参，新凭证的 source_kind 沿用原凭证取值并写 reverses_id 与逐行的 reverses_id，幂等键与 post 相同。它承接的是分录恒等于原凭证取反的那一类事件，首版即资金单据冲正的到款、付款与退款三种来源。
 
 TotalAccountBalanceProvider：balance(snapshot_ctx, legal_entity_id, accounting_period_id, account_role) 返回 Money，供 ep-platform-recon 在关账勾稽中取总账侧余额。
-PostingTriggerRegistry：assert_registered(snapshot: &dyn SnapshotCtx, event_type: &str, kind: VoucherSourceKind, module: ModuleCode) -> Result<(), AppError> 为只读断言语义，按 event_type 查种子行，缺行或 ledger_event_kind 或 registered_by_module 不符即返回 AppError 并取错误码 LEDGER.POSTING_TRIGGER_EVENT_TYPE.REGISTRY_MISMATCH，该方法不写任何行，只供各业务阶段在启动自检中与种子行比对，不供迁移调用；13 行登记行由本阶段 9a 段的第 14 号种子迁移一次写全，清单见第 9.3.11 节。
 
-交付确认的调用形态按 A-09 固定：交付确认单归阶段 6 的 sales schema，其 confirm_delivery 用例在同一事务内按库存腿、过渡科目腿、凭证腿的次序调用三个端口，凭证腿即 PostingPort::post，PostingInput 的 source_kind 取 DELIVERY_CONFIRMED、branch 取 DROP_SHIP 或 NON_DROP_SHIP，measures 含 revenue_amount、unbilled_receivable_amount、cogs_amount、inventory_release_amount 四项；会计期间由 AccountingPeriodResolver::resolve 在该事务最前解析一次，库存腿与过渡科目腿复用其返回值。本阶段只提供这两个端口，不建交付确认单，不编排三腿次序。
+交付确认的调用形态按 A-09 固定：交付确认单归阶段 6 的 sales schema，其 confirm_delivery 用例在同一事务内按库存腿、过渡科目腿、凭证腿的次序调用三个端口，凭证腿即 PostingPort::post，PostingInput 的 source_kind 取 DELIVERY_CONFIRMED，measures 含 revenue_amount、unbilled_receivable_amount、cogs_amount、inventory_release_amount 四项，直运时后两项缺省因而不生成对应分录行，不再传任何分支参数；会计期间由 AccountingPeriodResolver::resolve 在该事务最前解析一次，库存腿与过渡科目腿复用同一个 ResolvedPeriod。本阶段只提供这两个端口，不建交付确认单，不编排三腿次序。
 
 
-四个 trait 的方法签名只使用 ep-foundation 与 ep-contract-ledger 自身的类型，不出现数据库行类型与 HTTP 类型。事务句柄为 ep_foundation::port::Tx，快照上下文为 ep_foundation::port::SnapshotCtx，跨模块方法一律以 &mut dyn Tx 接收事务句柄，按 A-01 由阶段 1 冻结，本阶段不另定义同名类型。
+三个 trait 的方法签名只使用 ep-foundation 与 ep-contract-ledger 自身的类型，不出现数据库行类型与 HTTP 类型，ResolvedPeriod 定义在 ep-contract-ledger 而不下沉到 ep-foundation。事务句柄为 ep_foundation::port::Tx，快照上下文为 ep_foundation::port::SnapshotCtx，跨模块方法一律以 &mut dyn Tx 接收事务句柄，按 A-01 由阶段 1 冻结，本阶段不另定义同名类型。
 
 ### 9.6 并发与事务边界
 
@@ -592,7 +606,7 @@ PostingTriggerRegistry：assert_registered(snapshot: &dyn SnapshotCtx, event_typ
 
 一个业务事件一个事务，凭证与业务状态、子账条目、审计事件、Outbox 条目在同一事务内写入。事务内禁止外部 HTTP 调用、文件正文读写、通知发送与长时计算。隔离级别 READ COMMITTED。事务预算按基线第 10.3 节：业务事务不超过 5 秒，读写池 statement_timeout 10 秒、lock_timeout 3 秒、idle_in_transaction_session_timeout 15 秒。
 
-事务内的固定次序：解析期间、映射分录、插入凭证、插入分录行、按 account_id 升序更新余额、写审计、写 Outbox。固定次序是防死锁的主要手段。
+事务内的固定次序：解析期间、映射分录、插入凭证、插入分录行、按 account_id 升序更新余额、写审计、写 Outbox。固定次序是防死锁的主要手段。次序末尾另加一条同事务断言：每条分录行的 accounting_period_id 与 business_date 等于所属凭证的对应值，不成立即回滚。这两列是冗余副本，保留它们是为了明细账与余额校验不回表，一行断言买到的保证与删列相同，且不动任何索引与查询。
 
 幂等：HTTP 层由 Idempotency-Key 与 platform_msg.idempotency_keys 承担，幂等键写入与业务写入同事务；过账层另由 ux_vouchers 的四列唯一键承担，唯一冲突转为 IdempotentReplay。两层幂等不互相替代：前者防同一请求重复提交，后者防同一业务事件经不同路径重复过账。
 
@@ -628,7 +642,7 @@ Tn+1 结论事务：slot 行 FOR UPDATE，写结论与 concluded_at，通过时�
 
 #### 9.6.4 RLS 与安全上下文
 
-全部读写经统一数据访问层，安全上下文在连接取用时写入 app.legal_entity_id 等四个会话变量，归还前逐项设回空串。关账校验按规格第 7.7 章的内部对账系统安全上下文执行，按法人逐轮遍历，每轮只写单一法人，不建立跨法人会话，不绕过行级策略；在当轮法人范围内不施加记录级、字段级与密级裁剪。本阶段的校验语句集输出列只含勾稽项标识、法人、会计期间、科目、凭证号与金额合计，不含任何行内敏感字段。
+全部读写经统一数据访问层，安全上下文在连接取用时写入 app.legal_entity_id 等四个会话变量，归还前逐项设回空串。关账校验按规格第 7.7 章的内部对账系统安全上下文执行，按法人逐轮遍历，每轮只写单一法人，不建立跨法人会话，不绕过行级策略。该上下文不调用字段投影器，理由是规格第 17.3 章的判据本身就是该法人的全量合计；这是一句事实描述而不是属性访问控制豁免，本阶段不在规格第 12.2 章的豁免清单上交叉登记。本阶段的校验语句输出列只含勾稽项标识、法人、会计期间、科目、凭证号与金额合计，不含任何行内敏感字段，该边界由第 9.4.7 节的 subject_ref 键集白名单在写入侧强制。
 
 ### 9.7 配置项
 
@@ -652,7 +666,7 @@ Tn+1 结论事务：slot 行 FOR UPDATE，写结论与 concluded_at，通过时�
 
 运行期可变的业务参数不进配置文件：事件科目对应关系、审批链、科目类别枚举一律存事务数据库并经配置发布通道发布。
 
-启动自检的新增项：按 C-25 自检项一律以注册名标识、不再用序号称呼，本阶段不新增命名项，只在基线第 7.3 节 current-period-open 项之下补充两条子判定，即每个法人存在当前自然月的打开会计期间，缺失时按规格第 5.2 章自动建立；以及每个法人的 17 个科目角色全部已绑定且绑定到启用科目，未满足时以降级状态启动、按规格第 15.3 章告警并经 ep-platform-obs 的 DegradationLedger::open 登记降级窗口，不阻止启动。后一条的处理方式按 U-H-05 临时取值，理由是阻止启动会使建账阶段无法逐步配置。
+启动自检：本阶段不新增任何启动自检项，也不在启动路径上判读任何业务数据行。基线第 7.3 节的 current-period-open 项整项删除，理由是它自述缺失时按规格第 5.2 章自动建立，那是一次写操作而不是闸门，且会让多个进程在自检阶段并发写 ledger 表。原拟挂在其下的两条子判定各自下沉。第一条即每个法人存在当前自然月的打开会计期间，下沉到过账路径，由第 9.4.4 节第五步的自动建立与 job-worker 的提前建立定时任务承担，两者都在业务事务内或后台任务内完成，缺失不再影响任何进程启动。第二条即每个法人的 17 个科目角色全部已绑定且绑定到启用科目，下沉到取用点，由第 9.4.3 节第三步的 ROLE_UNBOUND 与 ACCOUNT_INACTIVE 阻断该类事件提交，由第 9.5.3 节的 check-completeness 端点供建账验收与运维中心查看，未绑定按规格第 15.3 章告警并经 ep-platform-obs 的 DegradationLedger::open 登记降级窗口、绑定后关闭。经此，任何一条业务数据不符都不会放大成八个进程集体拒绝启动，而未绑定的后果仍然是显式的、可查询的、会告警的。
 
 ### 9.8 测试计划
 
@@ -660,7 +674,7 @@ Tn+1 结论事务：slot 行 FOR UPDATE，写结论与 concluded_at，通过时�
 
 #### 9.8.1 单元测试
 
-映射表：遍历 JOURNAL_MAP 的每一条四元组，断言其 source_kind 与 branch 组合在 VoucherSourceKind 与 PostingBranch 的合法笛卡尔子集内；断言每个 (source_kind, branch) 的必填 MeasureKey 集合与可选集合不相交；断言不存在同一 (source_kind, branch, MeasureKey) 的重复条目。
+映射表：遍历 JOURNAL_MAP 的每一条四元组，断言不存在同一 (source_kind, MeasureKey) 的重复条目；断言每个 source_kind 的必填 MeasureKey 集合与可选集合不相交。原先对 source_kind 与 branch 的组合是否落在合法笛卡尔子集内的断言随分支轴删除而取消。
 
 符号归一：正金额、负金额、零金额三个分支；负金额翻转方向后净额不变；零金额不生成行。
 
@@ -678,7 +692,7 @@ Tn+1 结论事务：slot 行 FOR UPDATE，写结论与 concluded_at，通过时�
 
 按基线第 8.1 节，本阶段承担五组不变量中的借贷平衡一组，另自设三组。工具为 proptest，最小用例数 1024。
 
-一是借贷平衡：对任意合法的 (source_kind, branch, measures) 组合，映射产出的凭证借方合计等于贷方合计。
+一是借贷平衡：对任意合法的 (source_kind, measures) 组合，映射产出的凭证借方合计等于贷方合计。新增 VoucherSourceKind 取值的提交必须同批扩展本组用例以覆盖该取值的全部计量项组合，缺失即 CI 失败。
 
 二是期间归属收敛：对任意 (期间集合状态, 合法 posting_date)，resolve 的返回期间一定处于 OPEN 且不存在已受理未结束的关账请求，且其 start_date 大于等于 posting_date 所属期间的 start_date。
 
@@ -727,7 +741,7 @@ Tn+1 结论事务：slot 行 FOR UPDATE，写结论与 concluded_at，通过时�
 
 四端 UI 按规格第 6.2 章财务过账与期末结账能力域取值，Windows 与 macOS 为完整，由 Playwright 驱动桌面 WebView 与 tauri-driver 驱动桌面壳执行科目表维护、凭证查询、账表查询、关账发起与跟进、年结发起五个场景；iOS 与 Android 为仅查看，由 XCUITest 与 Espresso 只执行凭证与账表的查看场景，写入操作按清单载明的替代路径验证转桌面端完成。本模块的四端界面按 A-23 由本阶段交付，阶段 13 只提供客户端壳、路由注册表与能力矩阵闸，不交付本模块业务界面。
 
-9b 段另交付黄金业务闭环十四步的整体端到端用例，落点唯一，为 testkit/scenarios/golden_loop_14_steps.rs，覆盖规格第 8 章第 1 至 14 步全程。其中第 6、7、9、10、11 步复用阶段 10 已交付的 testkit/scenarios/stage10_ar_ap_closed_loop.rs 的步骤函数，不重写；第 5、8、11 步的库存侧断言引用阶段 8 提供的 ep-testkit 库存断言函数；第 12 步引用阶段 12 的 E2E-01 片段；第 14 步的指标断言引用阶段 11 的取数接口。判据按规格第 8 章闭环验收三条：全程在应用内完成，无外部或线下补齐环节；覆盖规格第 17.2 章十五类必测分支含七种基础分支；收入成本利润三处一致且差额为零，时延按规格第 16 章判定。该用例同时承担 Windows 与 macOS 两端的桌面走查，装置复用本节已交付的 Playwright 与 tauri-driver，因此本项由服务端用例与桌面两端走查两部分构成。阶段 8、阶段 11 与阶段 12 计划中凡指向整条合同闭环用例的措辞一律指向本文件名，不另建第二条链路用例。
+9b 段另交付黄金业务闭环十四步的整体端到端用例，落点唯一，为 testkit/scenarios/golden_loop_14_steps.rs，覆盖规格第 8 章第 1 至 14 步全程。本用例的判据是全分支闭环而不是首次贯通：首次贯通已由阶段 4 之后的 T0 线完成，第 9.0.2 节的最小切片即本阶段在该线上的份额，本用例只负责把十五类必测分支与七种基础分支跑全。其中第 6、7、9、10、11 步复用阶段 10 已交付的 testkit/scenarios/stage10_ar_ap_closed_loop.rs 的步骤函数，不重写；第 5、8、11 步的库存侧断言引用阶段 8 提供的 ep-testkit 库存断言函数；第 12 步引用阶段 12 的 E2E-01 片段；第 14 步的指标断言引用阶段 11 的取数接口。判据按规格第 8 章闭环验收三条：全程在应用内完成，无外部或线下补齐环节；覆盖规格第 17.2 章十五类必测分支含七种基础分支；收入成本利润三处一致且差额为零，时延按规格第 16 章判定。该用例同时承担 Windows 与 macOS 两端的桌面走查，装置复用本节已交付的 Playwright 与 tauri-driver，因此本项由服务端用例与桌面两端走查两部分构成。阶段 8、阶段 11 与阶段 12 计划中凡指向整条合同闭环用例的措辞一律指向本文件名，不另建第二条链路用例。
 
 #### 9.8.5 性能相关项
 
@@ -759,7 +773,7 @@ E-4 tests/rls_matrix 中 ledger 的八类越权用例与五个入口借用用例
 
 E-5 以 ep_app_rw 对 ledger.vouchers 与 ledger.voucher_lines 的 UPDATE 与 DELETE 被数据库拒绝，用例留证。
 
-E-6 JOURNAL_MAP 覆盖规格第 5.2 章事件-分录表的十类事件与其全部分支，逐条与该表比对的核对清单由财务负责人或其代表签署，签署件归档到 docs/reviews/。
+E-6 JOURNAL_MAP 覆盖规格第 5.2 章事件-分录表十类事件的全部分录集合，逐条与该表比对的核对清单由财务负责人或其代表签署，签署件归档到 docs/reviews/。
 
 E-7 四组领域属性测试各不少于 1024 个用例通过。
 
@@ -767,7 +781,7 @@ E-8 十五组集成测试场景全部通过。
 
 E-9 关账受理与在途写事务交叠、顺延入账、年度末次期间损益归零、校验未完成四个用例通过，且四者的断言逐项对应规格第 10.2 章与第 17.2 章的原文判据。
 
-E-10 关账前强制校验的四类校验项各实现一个 ReconCheck 并经 ReconRegistry::register 注册成功，校验语句文本进入签名语句集并登记到 platform_core.recon_check_definitions，注入借贷差异与损益非零两类差异后差异事项生成且可追溯、本次关账被拦截、差异清零后重新发起正常受理并通过。
+E-10 关账前强制校验的四类校验项各实现一个 ReconCheck 并经 ReconRegistry::register 注册成功，注入借贷差异与损益非零两类差异后差异事项生成且可追溯、本次关账被拦截、差异清零后重新发起正常受理并通过。
 
 E-11 年度损益结转可执行、可重复执行，结转后该期间损益类科目余额为零，会计恒等在结转前后两种取数口径下均成立。
 
@@ -786,7 +800,7 @@ E-18 本模块在规格第 6.2 章能力矩阵中取值为完整或简化的能�
 
 E-19 本阶段全部路由的能力域码与动作类别常量已声明在 crates/contract/ledger/src/capability.rs，xtask configdoc 通过。
 
-E-20 ep-platform-recon 本体已交付并可被其他阶段使用：crate、platform_core 下三张表、ReconCheck 与 ReconRegistry 与 ReconExecutor 三个契约、job-worker 内的分批执行器与每日对账调度、签名语句集校验齐备；以内置校验项在两个法人上跑通一次每日对账，差异事项与校验未完成事项均落库且可追溯。
+E-20 ep-platform-recon 本体已交付并可被其他阶段使用：crate、platform_core 下三张表、ReconCheck 与 ReconRegistry 与 ReconExecutor 三个契约、job-worker 内的分批执行器与每日对账调度齐备；ReconCheck 注册表封闭、无运行期语句入口，archcheck 断言通过，差异事项 subject_ref 的键集白名单在写入侧生效；以内置校验项在两个法人上跑通一次每日对账，差异事项与校验未完成事项均落库且可追溯。
 
 E-21 platform_core.append_only_registry 中 ledger.vouchers、ledger.voucher_lines 与 platform_core.recon_runs 三行已登记，三行的 mode 均为 APPEND_ONLY、mutable_columns 均为空数组，与表上的仅追加约束一致，db/checks/append_only_consistency.sql 经 xtask sqlcheck 通过。
 
@@ -806,11 +820,11 @@ E-23 testkit/scenarios/golden_loop_14_steps.rs 在 ep-datagen 默认 scale 数�
 | 第 5.2 章 业务事件的记账日期 | 记账日期作为期间归属的唯一输入；不得晚于登记时点自然日；补记的记账日期随事件写入审计 |
 | 第 5.2 章 凭证的会计期间归属 | 期间只有打开与已关闭两种状态；可入账期间为派生条件；会计期间字段在凭证生成时一次确定；顺延入账；期间按自然月连续建立与顺延目标不存在时的自动建立 |
 | 第 5.2 章 凭证的两个日期与检索 | 会计期间字段与原始业务日期一并写入凭证并进入总账与明细账；两条检索路径；按原始业务日期检索时标注实际落入的会计期间；已关闭期间不再接受凭证写入；顺延不回迁 |
-| 第 5.2 章 顺延只改变期间归属 | 映射与取价与期间无关，由映射算法只读 measures 与 branch 保证 |
+| 第 5.2 章 顺延只改变期间归属 | 映射与取价与期间无关，由映射算法只读 source_kind 与 measures 保证 |
 | 第 5.2 章 子账与凭证共用同一期间归属 | AccountingPeriodResolver 作为连带顺延的唯一入口 |
 | 第 5.2 章 年度损益结转与顺延 | 结转凭证记账日期为末次期间期末日；只在该期间为可入账期间时执行；存在已受理未结束关账请求时不执行；每次结转对象为执行时点的损益余额 |
 | 第 7.2 章 | 财务模块是正式会计分录与科目余额的唯一权威写入者；已过账分录只追加不覆盖 |
-| 第 7.7 章 | 行级隔离以 app.legal_entity_id 为唯一判据；内部对账系统安全上下文的按法人逐轮遍历与签名语句集；不使用 SET ROLE；连接归还前清除上下文 |
+| 第 7.7 章 | 行级隔离以 app.legal_entity_id 为唯一判据；内部对账系统安全上下文的按法人逐轮遍历，其语句集封闭改由无运行期语句入口的静态断言承载，输出边界改由差异事项键集白名单承载；不使用 SET ROLE；连接归还前清除上下文 |
 | 第 10.2 章 | 关账受理的两项前提、受理被拒事项与处置路径、受理后的执行次序、四种结束方式、内部对账的执行口径、校验未完成一律按未通过处理、执行窗口与完成要求 |
 | 第 12.1 章 | 期末结账与财务过账两类高风险操作的重新认证 |
 | 第 12.2 章 | 默认拒绝、申请人不可自审、审批链不可越权跳过 |
@@ -863,7 +877,7 @@ E-23 testkit/scenarios/golden_loop_14_steps.rs 在 ep-datagen 默认 scale 数�
 
 #### 9.12.1 本阶段新增决定，阶段结束时回写共享技术基线
 
-一是金额计算与借贷映射的分层：金额归产生业务事件的模块，方向与科目角色归 ledger，接口为 PostingInput 的计量项。理由见第 9.4.3 节。
+一是金额计算与借贷映射的分层：金额归产生业务事件的模块，方向与科目角色归 ledger，接口为 PostingInput 的计量项。理由见第 9.4.3 节。同条另含映射键的形状：JOURNAL_MAP 由来源类型加分支加计量项的二维键改为来源类型加计量项的一维键，PostingBranch 枚举整体删除，来源类型按分录集合由 11 个拆为 17 个，资金单据冲正改由 PostingPort::post_reversal 按原凭证逐行取反生成而不进映射表，不得新增取值这条封条改为新增取值时映射行、CHECK 迁移与属性测试三者同批的 CI 约束。
 
 二是过账与业务事件同事务，不经 Outbox 异步生成凭证。理由是规格第 10.2 章要求等待受理时点的在途写事务结束后快照即覆盖该期间全部凭证，只有同事务写入才使该论证成立；PRD 第 7.6.6 节与第 7.8.2 节的提交即生成凭证同样指向该形态。
 
@@ -873,13 +887,13 @@ E-23 testkit/scenarios/golden_loop_14_steps.rs 在 ep-datagen 默认 scale 数�
 
 五是 ledger.vouchers 与 ledger.voucher_lines 上对 ep_app_rw 撤销 UPDATE 与 DELETE。
 
-六是 ledger.posting_trigger_event_types 作为全局配置字典，其 13 行登记行按 A-21 由本阶段 9a 段的种子迁移一次写全，业务模块只在启动自检中比对，不再回填。
+六是 ledger.posting_trigger_event_types 退化为会产生凭证的事件类型集合单列表，13 行由本阶段 9a 段的种子迁移一次写全，该迁移由 xtask configdoc 从 docs/event-catalog.md 生成并由 CI 逐字比对；PostingTriggerRegistry 与其运行期断言删除，业务模块既不回填也不在启动时比对。
 
 七是科目余额一致性自检作为关账前强制校验的第四类，是引入增量余额表所必须的自检。
 
 八是四个新增指标与 11 个新增配置键。
 
-九是启动自检 current-period-open 项之下的两条子判定。
+九是启动自检不增反减：本阶段不新增任何启动自检项，基线第 7.3 节的 current-period-open 项整项删除，两条原拟子判定分别下沉到过账路径与取用点，见第 9.7 节。
 
 十是 ep-platform-recon 框架本体归本阶段 9a 段，含 crate、platform_core 下三张表、三个契约、分批执行器与每日对账调度，按 A-06 其余阶段只在其上实现 ReconCheck，不另起第二套对账框架。
 
@@ -915,7 +929,7 @@ E-23 testkit/scenarios/golden_loop_14_steps.rs 在 ep-datagen 默认 scale 数�
 | U-H-02 科目编码规则 | 需要 | 不阻塞 | 一级 4 位数字、二级为一级加 3 位共 7 位、字符集只允许数字、长度上限 64、唯一性范围为法人 | 放宽字符集只改 CHECK，收紧则需回填 |
 | U-H-03 科目使用与维护约束 | 需要 | 不阻塞 | 一级科目在其下已有二级科目时不可直接记账；类别、借贷方向、上级在已产生凭证后不可改；停用前置校验为无启用下级且未被角色绑定；新建默认启用 | 放宽为可改需增加历史凭证归属的迁移路径，代价高 |
 | U-H-04 期初两条路径的分工 | 需要 | 不阻塞 | 手工录入只在该法人尚无任何凭证且无已确认迁移批次期初时可用，要求借贷平衡，需审批 | 改为可共存需增加两路径的冲突判定，代价中 |
-| U-H-05 科目角色清单与未绑定行为 | 需要 | 不阻塞 | 17 个角色随版本冻结；未绑定时阻断该类事件提交并在启动自检降级告警；绑定到停用科目阻断提交 | 改为仅告警放行会使凭证生成时失败进入死信，代价高，不建议 |
+| U-H-05 科目角色清单与未绑定行为 | 需要 | 不阻塞 | 17 个角色随版本冻结；未绑定时在取用点阻断该类事件提交，并经 DegradationLedger 登记降级窗口与告警，不做任何启动判定；绑定到停用科目阻断提交 | 改为仅告警放行会使凭证生成时失败进入死信，代价高，不建议 |
 | U-H-06 绑定变更的治理 | 需要 | 不阻塞 | 经配置发布通道发布，需财务主管审批，不额外重新认证；对已生成凭证无影响 | 增加重新认证只改用例前置校验，代价低 |
 | U-H-07 更正凭证入口 | 本阶段不实现 | 不阻塞本阶段，但使首版缺少过账更正路径 | 不提供入口 | 后续新增需在 VoucherSourceKind 上增一个来源类型并放开 source_sequence_no 的 CHECK，属破坏性变更，需升主版本 |
 | U-H-08 手工凭证入口 | 本阶段不实现 | 同上 | 不提供入口 | 同上 |
@@ -942,7 +956,7 @@ E-23 testkit/scenarios/golden_loop_14_steps.rs 在 ep-datagen 默认 scale 数�
 
 风险三：增量余额表与 voucher_lines 之间可能因缺陷产生漂移，且漂移在报表上表现为正常数值。控制手段是把科目余额一致性列为关账前强制校验的第四类，并在每日校验中同样执行。
 
-风险四：JOURNAL_MAP 的内容正确性无法由代码自证，只能由人对照规格第 5.2 章逐条核对。控制手段是 E-6 的签署核对清单，以及在测试中对每个 (source_kind, branch) 断言其涉及的科目角色集合与该表一致。
+风险四：JOURNAL_MAP 的内容正确性无法由代码自证，只能由人对照规格第 5.2 章逐条核对。控制手段是 E-6 的签署核对清单，以及在测试中对每个 source_kind 断言其涉及的科目角色集合与该表一致。一维键使这项核对的对象由一百三十二格降为十七行，人工核对的可行性随之提高。
 
 风险五：关账前强制校验的分批规模、单批时限与单查询资源上限在阶段 14 认证前只有临时取值，客户实际数据量超出基准时可能反复判定为校验未完成而使关账无法通过。控制手段是规格第 10.2 章已给出重取方法，本阶段在配置上把六项做成可热更，并在校验未完成事项中载明触发的具体上限值以便现场重取。
 
@@ -952,13 +966,13 @@ E-23 testkit/scenarios/golden_loop_14_steps.rs 在 ep-datagen 默认 scale 数�
 
 #### 9.13.2 为后续阶段预留的扩展点
 
-一是 VoucherSourceKind 与 source_sequence_no 的组合已为手工凭证与更正凭证留出位置，U-H-07 与 U-H-08 决策后新增来源类型即可，不需改表结构，但属破坏性枚举扩展需升主版本。
+一是 VoucherSourceKind 与 source_sequence_no 的组合已为手工凭证与更正凭证留出位置，U-H-07 与 U-H-08 决策后新增来源类型即可，不需改表结构；新增按第 9.4.1 节的同批约束执行，即映射行、CHECK 迁移与借贷平衡属性测试三者同批，不再以不得新增封住，也不因此单独升主版本。
 
 二是 TotalAccountBalanceProvider 是子账与总账勾稽的总账侧唯一入口，子账侧统一经阶段 10 定义的 ep-contract-finance 的 ReconciliationItemQuery 接入；inventory 与 procure 两个模块在阶段 8 与阶段 7 各提供本模块的余额查询函数并由阶段 10 包装为 SubledgerBalanceProvider 的实现，finance 与 invoice 两个模块的其余八项子账侧取自阶段 10 自有表、不经该 trait，两条路径都不需改动本阶段代码。
 
 三是 AccountRole 的 17 个取值中 DIRECT_EXPENSE_COST 预留了按费用类别细分的位置，U-H-05 决策后可扩展为角色加限定符的两段结构，event_account_bindings 的唯一键需相应扩展。
 
-四是 ledger.posting_trigger_event_types 的 13 行由本阶段的种子迁移一次写全，受理前提二的判据在本阶段即已生效；各业务模块只在启动自检中经 PostingTriggerRegistry::assert_registered 与种子行比对，不需改动本阶段代码。
+四是 ledger.posting_trigger_event_types 的 13 行由本阶段的种子迁移一次写全，受理前提二的判据在本阶段即已生效；该迁移由 xtask configdoc 从事件目录生成并由 CI 逐字比对，各业务模块既不追加回填迁移也不在启动时比对，不需改动本阶段代码。
 
 五是 account_period_balances 已预留 is_opening_fixed，若后续版本恢复受控反结账，只需把固化位回退并重算，不需改表结构。
 

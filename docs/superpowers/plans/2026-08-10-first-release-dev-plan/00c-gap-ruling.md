@@ -1,16 +1,70 @@
-## 裁定通则
+## 本文件的地位
 
-以下五条对全部 67 条裁定生效，各阶段不得再解释。
+本文件自本次修订起降级为登记表，不构成权威。全卷权威链固定为四层：规格、PRD、技术基线、各阶段计划。本表与这四层冲突时一律以这四层为准，任何文件不得以本表为唯一出处，各阶段计划不得以本表编号代替正文定义。各阶段计划中的按裁定 X-nn 一律只是决策出处标注，取值以该计划与基线正文为准。
 
-第一，权威顺序为规格、PRD、技术基线、阶段计划。总览第 4 节的归属建议属阶段计划层，与技术基线冲突时以基线为准。本裁定表对总览第 4 节的 A-09、A-05、A-06、A-08、A-19、A-27、B-06 七条作了与原建议不同的裁定，理由逐条写明，总览第 4 节须按本表原样改写。
+本表只承担三件事：登记 67 条缺口的最终归属、登记其确切标识符、登记作废名清单。各条目中只有结论、最终归属阶段、确切标识符三段属长期有效内容。各条目中的提供方要做什么、每个使用方要改什么、顺序约束三段，以及一切原方案作废、该措辞作废、其后编号顺延、总览第 N 节须改写一类句式，都是 2026-08-10 四次回写提交的施工期工单，回写已执行完毕，一律作废：不得引用、不得据以施工、不得据以判定评审阻塞，下一次修订本文件时逐条删除。文末的回写清单整节同此处理。
+
+本表中一切以 Noop 为前缀的类型名、一切先注入空实现后反向替换的措辞、一切验收顺延的措辞，按下列通则第三条一律作废。不得新增第二张裁定表，不得让计划正文以裁定表为唯一出处，此二者列入评审清单。
+
+## 五条通则
+
+以下五条对全部 67 条登记项生效，各阶段不得再解释。通则属技术基线层，本登记表不得凌驾其上。
+
+第一，权威顺序为规格、PRD、技术基线、阶段计划，本表在权威链之外。
 
 第二，模块归属的唯一判据是基线第 1.2 节的 15 个模块码覆盖范围与基线第 1.3 节最后一条“禁止跨模块直接读写业务表，一个仓储只访问自己模块的 schema”。表落在哪个 schema，该 schema 对应的模块所在阶段就是该表的所有者，不存在“甲阶段在乙模块的 schema 里建表”这一形态。
 
-第三，跨模块同步调用只有一种形态：调用方 ep-app-A 依赖被调方 ep-contract-B 的 trait，实现由被调方的 ep-app-B 提供，在 apps/core-server/src/wiring.rs 与 apps/job-worker/src/wiring.rs 注入。被调方阶段晚于调用方阶段时，调用方在 wiring 注入以 `Noop` 前缀命名的空实现并在该行加注释 `// TODO(stage-<n>): replace with real impl`，被调方阶段替换该行，调用方阶段的相应验收项顺延到被调方阶段。
+第三，跨模块同步调用的被调方必须与调用方同批交付。被调方阶段晚于调用方阶段的，调用方本轮不做该调用，承载该调用的用例整体推到被调方所在批次；不得先注入空实现再回头替换，不得把验收顺延到被调方阶段。apps/core-server/src/wiring/ 与 apps/job-worker/src/wiring/ 两个目录中不得出现任何以 Noop、Stub、Fake、Dummy 为前缀的实现类型，由 xtask archcheck 断言，出现即构建失败。唯一例外是规格把交付时点冻结在末期的三项平台能力，即 WasmComputePort、RuleEvaluator 与 DisposalPort：三者在其交付阶段之前不注入任何实现，改由 platform_ops.degradation_windows 承载，DegradationKind 增加 WASM_COMPUTE_NOT_DELIVERED、RULE_EVALUATOR_NOT_DELIVERED 与 DISPOSAL_NOT_DELIVERED 三个取值，能力缺位时开一个降级窗口，界面与健康端点显式呈现该能力未交付，指标 ep_degradation_windows_open 自动计数；三者在能力缺位时返回可重试错误或直接拒绝，不得静默按成功路径放行。
 
-第四，调整后的阶段顺序固定为：1 → 2 → 3a → 4 → 3b → 5 → 9a → 8 → 6 → 7 → 10 → 11 → 9b → 13 → 14，阶段 12 在阶段 10 之后与阶段 11 并行。本表全部顺序约束都以这条链为基准。
+第四，阶段顺序固定为：1 → 2 → 3a → 4 → T0 → 5 → 9a → 8 → 6 → 7 → 10 → 11 → 9b → 14，阶段 12 在阶段 10 之后与阶段 11 并行，阶段 13 在阶段 12 之后与阶段 9b 并行。T0 是插在阶段 4 与阶段 5 之间的最薄贯通线，不新增任何范围，只从阶段 5、6、9a、10、11 各取一个最小切片，其体量是这五个阶段各自最小子集的当量之和，定义见总览第 2 节总表 T0 行与第 5 节 MT0 行。本表全部顺序约束都以这条链为基准。
 
-第五，迁移文件的目录归属以 `db/migrations/order.toml` 的 schema 位次为准，不以写入方所属模块为准。只读写本目录对应 schema 的迁移放在该目录；需要读写另一个 schema 的对象时，一律放在两个 schema 中位次靠后的那个目录下，使其两侧的前置对象在执行时都已建立。空库上按 order.toml 全量执行成功是每个阶段退出条件的判据，任何跨 schema 的迁移在定目录之前必须先核对位次。本条不改变 order.toml 的二十四项顺序，该顺序在阶段 2 冻结后仍然不得调整。原裁定只核对了开发阶段序而未核对迁移执行序，A-21 与 C-08 两处因此倒挂，均按本条改正。
+第五，db/migrations/order.toml 撤销。迁移文件放在其主要创建对象所属 schema 的目录下，二十四个目录保留；执行顺序由单一全局 Runner 按文件版本号排序，历史表合并为 platform_core.schema_history 一张，命名 V<YYYYMMDDHHMMSS> 且版本号取真实时间、全局唯一、严格递增，由 xtask sqlcheck 断言，正确性由空库全量执行在 CI 中验证。其后编号顺延这一整类连锁改动取消。
+
+## 作废名清单
+
+本清单是本表唯一长期有效的差分产物，作用是防止旧名被捡回来。任何阶段不得使用左列名字。
+
+| 作废名 | 取代它的名字或去向 | 出处 |
+|---|---|---|
+| 全部以 Noop 为前缀的实现类型 | 撤销，跨模块调用同批交付或整只推迟；三项末期能力改由降级窗口承载 | 通则第三 |
+| db/migrations/order.toml 与二十四项位次序 | 撤销，单一全局 Runner 按版本号排序 | 通则第五 |
+| <schema>.refinery_schema_history 二十四张 | platform_core.schema_history 一张 | 通则第五 |
+| transact_repeatable_read | UnitOfWork::snapshot_transact | C-03 |
+| ep_db_retries_total、ep_tx_retry_total | ep_db_tx_retries_total | C-21 |
+| ep_db_replication_crosscheck_age_seconds、ep_replication_crosscheck_age_seconds | 两者一并撤销，交叉核对折叠进保留量周期采样器 | C-22 |
+| WRITER_ROLE_CONTAINMENT_MISSING | WRITER_NOT_IN_SERVICE，判据改为写出进程未运行或连续无上报 | A-26 |
+| REPLICATION_CROSSCHECK_NO_RESULT | 撤销 | C-22 |
+| ep_quota_throttled_total 与 platform_ops.quota_events | 撤销，按应用层限流与超时计入附录 A.2 错误率口径 | 基线第 2 节 |
+| cgroup-quota-matched、license-and-modules-consistent、current-period-open | 三个自检项撤销 | C-25 |
+| duty-class-exclusivity、forbidden-permission-items-absent、master-data-usage-probes-registered、client-capability-matrix-frozen | 四个自检项撤销，下沉为写入侧约束、模块启用前置校验或内置快照为准 | C-25 |
+| inventory.stock_value_adjusted.v1 | inventory.stock_movement.value_adjusted.v1 | B-09 |
+| finance::CreditExposureQuery、finance::CustomerCreditExposurePort | ep_contract_finance::ReceivableExposureQuery | C-14 |
+| PayableQueryPort、PayableStatementQueryPort | PayableLedgerQuery、SupplierStatementQuery | C-15 |
+| InvoiceStatusPort | SalesInvoiceQuery 与 InvoiceReversalStatusQuery | C-16 |
+| PurchaseRequisitionDerivationPort | PurchaseRequisitionIntakePort | C-17 |
+| StockInboundPort、StockOutboundPort、StockAvailabilityQueryPort | InventoryPostingPort 三方法与 AvailabilityQueryPort | C-18 |
+| ProjectTaskDerivationPort | ContractDerivationPlanQuery 加事件消费 | C-19 |
+| finance::ReceivablePlanPort | clm.contract_payment_schedules 与 ContractPaymentScheduleQuery | C-20 |
+| ep_contract_crm::CustomerPanelProvider 与 /overview | Customer360SectionProvider 与 /customer-360 | C-09 |
+| ep-contract-service::EquipmentQuery | 撤销，无替代 | B-06 |
+| PurchaseReceiptPostingPort、PurchaseReturnPostingPort | 撤销，取价一律归 inventory | C-13 |
+| procure.supplier_risk_records | mdm.supplier_risk_records | C-10 |
+| procure.goods_receipt_line_costings 的单价列 | InventoryPricingLookupPort::original_unit_price_by_source_line | C-12 |
+| finance.aging_bucket_definitions | reporting.aging_bucket_profiles 与 aging_bucket_lines | C-08 |
+| MdmTaxRateStub | 撤销，税率最小行与 TaxRateOptionQuery 由 T0 建立 | C-11 |
+| platform_authz.sensitive_field_registry | platform_core.sensitive_field_registry | C-06 |
+| sensitive_field_registry 的 approved_by 与 approved_at | release_ref | C-06 |
+| recon_check_definitions 的 statement_sha256 与 signed_statement_ref | 撤销，改记制品版本号与制品签名摘要 | A-06 |
+| ReconCategory 的 CROSS_MODULE_LINK 与 FIN_CROSS_MODULE_LINK | 撤销，跨 schema 单目标引用改建真实外键 | A-06 |
+| config_item_apply_logs | config_release_steps | A-27 |
+| 发布状态 PendingReview | 不存在，差异审查由 diff 端点承载 | A-27 |
+| ep_platform_release::MigrationWindowGuard | ep_adapter_db::port::MigrationWindowGuard | B-03 |
+| ledger.general_vouchers | 全库无同名对象，删除 | B-02 |
+| append_only_registry 的 immutable_columns | mutable_columns | B-02 |
+| inventory.stock_movements 作为 MaterialUsageProbe 取数 | inventory.stock_qty_entries | A-13 |
+| B001、B002、B003 三个引导文件名 | db/bootstrap 的五个文件名 | C-01 |
+| ep-migrate 的 migrate、verify、manifest 三个子命令 | apply、check、status --format=manifest | C-02 |
+| <USECASE_SCREAMING>_DOMAIN 与 <USECASE_SCREAMING>_ACTION 常量对 | 路由注册处的 (CapabilityDomain, ActionClass) 元组 | A-20 |
 
 ## A 类 有人需要但无人提供
 
@@ -225,7 +279,7 @@ pub trait ModuleLicenseQuery: Send + Sync {
 
 | 表 | 关键列 |
 |---|---|
-| platform_core.recon_check_definitions | check_code text 唯一、category text CHECK in SUBLEDGER_VS_LEDGER, CROSS_MODULE_LINK, INVARIANT、module_code text、statement_sha256 text、signed_statement_ref text、is_blocking_period_close bool、registered_by_module text |
+| platform_core.recon_check_definitions | check_code text 唯一、category text CHECK in SUBLEDGER_VS_LEDGER, INVARIANT、module_code text、is_blocking_period_close bool、registered_by_module text |
 | platform_core.recon_runs | legal_entity_id、run_kind text CHECK in DAILY, PERIOD_CLOSE, RECOVERY_ACCEPTANCE、accounting_period_id、snapshot_id text、status text CHECK in RUNNING, COMPLETED, UNFINISHED, FAILED、batch_total int、batch_done int、started_at、finished_at；仅追加表 |
 | platform_core.recon_discrepancies | legal_entity_id、recon_run_id、check_code、accounting_period_id、subject_ref jsonb、expected_amount numeric(18,2)、actual_amount numeric(18,2)、difference_amount numeric(18,2)、state text CHECK in OPEN, REPAIRING, REPAIRED, WAIVED、repaired_by、approval_ref；可更新表，带 row_version |
 
@@ -811,13 +865,13 @@ pub enum ActionClass { Read, Write, Submit, Approve, Export }
 
 提供方要做什么：阶段 9a 保留第 12 号建表迁移；第 14 号迁移 `V202611031005__ledger_backfill_posting_trigger_event_types.sql` 由“按十一类凭证来源各写一行且 event_type 留空”改为一次写全上表的 13 行并直接填入 `event_type` 与 `registered_by_module`，事件名逐字照抄上表，阶段 9a 不需要知道各业务模块的实现；该迁移的回退为按 `ledger_event_kind` 与 `event_type` 删除本次插入的 13 行。阶段 9a 另交付 `ep_contract_ledger::PostingTriggerRegistry::assert_registered(snapshot: &dyn SnapshotCtx, event_type: &str, kind: VoucherSourceKind, module: ModuleCode) -> Result<(), AppError>`，语义为只读断言：按 `event_type` 查种子行，缺行、`ledger_event_kind` 不符或 `registered_by_module` 不符一律返回 `AppError`，错误码取 `LEDGER.POSTING_TRIGGER_EVENT_TYPE.REGISTRY_MISMATCH`，分类 `BUSINESS_CONFLICT`、HTTP 409、不可重试，登记在阶段 9 计划的错误码表；该方法不写任何行，只供运行期启动自检比对，不供迁移调用，失败时进程以退出码 78 退出、不经 HTTP 返回。原写的幂等 upsert 语义与本条 13 行终态互斥，作废。写入阶段 9 计划第 9.3.11 节。
 
-每个使用方要改什么。阶段 6、7、10 一律不新增 `backfill_posting_trigger_event_types` 迁移。阶段 7 计划第 3.3 节的第 24 号 `V202611030924__procure_backfill_posting_trigger_event_types.sql` 撤销，该编号由 B-02 追加的 `V202611030924__procure_backfill_append_only_registry.sql` 占用，其后编号不变，阶段 7 的迁移文件总数仍为三十一即三十个建表文件加第 24 号登记回填文件，第 433 行与第 895 行与第 1005 行的三十一一律保持不变；第 1005 行的退出条件保留三十一的计数，删去“且 `ledger.posting_trigger_event_types` 的两行 event_type 已置回空”半句，回退断言改为 `platform_core.append_only_registry` 中无本阶段残留登记行。阶段 10 计划删去 invoice 目录第 16 号 `V202611030965__invoice_backfill_posting_trigger_event_types.sql` 与 finance 目录第 24 号 `V202611031115__finance_backfill_posting_trigger_event_types.sql`，两个目录其后编号顺延，第 609 与 611 两行的写入与回退措辞整段删除，第 917 行之后的对照表保留为与种子行比对的清单。阶段 6 不新增该类文件，只在事件一节写一句“本阶段两个事件的登记行由阶段 9a 的种子迁移写入，本阶段只做运行期比对”。三个阶段改为在启动自检中经 `PostingTriggerRegistry::assert_registered` 对本模块事件做只读断言比对，缺行或 `ledger_event_kind` 或 `registered_by_module` 不符即以退出码 78 启动失败，全部“幂等 upsert”措辞一律删除。阶段 8 在第 6.4 节明确写一句“本阶段不向 ledger.posting_trigger_event_types 登记任何行，库存事件不独立产生凭证”。
+每个使用方要改什么。阶段 6、7、10 一律不新增 `backfill_posting_trigger_event_types` 迁移。阶段 7 计划第 3.3 节的第 24 号 `V202611030924__procure_backfill_posting_trigger_event_types.sql` 撤销，该编号由 B-02 追加的 `V202611030924__procure_backfill_append_only_registry.sql` 占用，其后编号不变，阶段 7 的迁移文件总数仍为三十一即三十个建表文件加第 24 号登记回填文件，第 433 行与第 895 行与第 1005 行的三十一一律保持不变；第 1005 行的退出条件保留三十一的计数，删去“且 `ledger.posting_trigger_event_types` 的两行 event_type 已置回空”半句，回退断言改为 `platform_core.append_only_registry` 中无本阶段残留登记行。阶段 10 计划删去 invoice 目录第 16 号 `V202611030965__invoice_backfill_posting_trigger_event_types.sql` 与 finance 目录第 24 号 `V202611031115__finance_backfill_posting_trigger_event_types.sql`，两个目录其后文件的编号与版本号一律不变，第 609 与 611 两行的写入与回退措辞整段删除，第 917 行之后的对照表保留为与种子行比对的清单。阶段 6 不新增该类文件，只在事件一节写一句“本阶段两个事件的登记行由阶段 9a 的种子迁移写入，本阶段只做运行期比对”。三个阶段改为在启动自检中经 `PostingTriggerRegistry::assert_registered` 对本模块事件做只读断言比对，缺行或 `ledger_event_kind` 或 `registered_by_module` 不符即以退出码 78 启动失败，全部“幂等 upsert”措辞一律删除。阶段 8 在第 6.4 节明确写一句“本阶段不向 ledger.posting_trigger_event_types 登记任何行，库存事件不独立产生凭证”。
 
-顺序约束：登记行归阶段 9a 的 `db/migrations/ledger/` 种子迁移，按通则第五条不产生跨 schema 迁移，空库上按 order.toml 全量执行成立。原方案把三个回填迁移放在 procure、invoice、finance 三个目录，而这三个 schema 在 order.toml 中的位次都早于 ledger，空库上必然在 `ledger.posting_trigger_event_types` 建表之前执行并报 relation does not exist，整批迁移中断，该方案作废。
+顺序约束：登记行归阶段 9a 的 `db/migrations/ledger/` 种子迁移，按通则第五条不产生跨 schema 迁移，空库上按文件版本号全序执行成立。原方案把三个回填迁移放在 procure、invoice、finance 三个目录，而这三个回填文件的版本号都早于 `ledger.posting_trigger_event_types` 的建表迁移，空库上必然在该表建立之前执行并报 relation does not exist，整批迁移中断，该方案作废。
 
 ### A-22 处置流程对 DisposalPort 的实现
 
-结论：实现归阶段 14，与密钥销毁、备份保留期一并处理。
+结论：实现归阶段 14，与密钥销毁、备份保留期一并处理。阶段 3b 至阶段 14 之间不注入任何实现，物理删除请求在此期间直接拒绝并开 DISPOSAL_NOT_DELIVERED 降级窗口，不得静默按成功路径放行。
 
 最终归属阶段：阶段 14。
 
@@ -925,7 +979,7 @@ pub trait DegradationLedger: Send + Sync {
 }
 ```
 
-`DegradationKind` 由阶段 2 定义为空枚举加两个初始取值 `OFFSITE_SINK_NOT_CONFIGURED` 与 `WRITER_ROLE_CONTAINMENT_MISSING`，阶段 14 扩展到十八类。指标 `ep_degradation_windows_open` 由阶段 2 注册并填充。
+`DegradationKind` 由阶段 2 定义为空枚举加五个初始取值 `OFFSITE_SINK_NOT_CONFIGURED`、`WRITER_NOT_IN_SERVICE`、`WASM_COMPUTE_NOT_DELIVERED`、`RULE_EVALUATOR_NOT_DELIVERED`、`DISPOSAL_NOT_DELIVERED`，阶段 14 扩展到二十一类。`WRITER_ROLE_CONTAINMENT_MISSING` 作废，其触发条件由遏制手段配置缺失改为客观事实即任一写出进程未运行或连续 N 个周期无上报，并取消不可关闭属性，`ck_degradation_windows_not_suppressible` 只护住 `OFFSITE_SINK_NOT_CONFIGURED`。指标 `ep_degradation_windows_open` 由阶段 2 注册并填充。
 
 提供方要做什么：阶段 2 在第 3.4 节迁移表中把第 16 号 `platform_ops_create_schema` 之后追加一个 `V…__platform_ops_create_degradation_windows.sql`，在 ep-platform-obs 交付上述 trait 与 pg 实现。写入阶段 2 计划第 1 节交付物清单与第 3.5 节表定义。
 
@@ -1013,7 +1067,7 @@ U-A-12 三问的临时取值与切换代价如下，截止点按总览 R12 的 M
 
 阶段 7、8、9a、10 的十一行一律 `mode` 取 `APPEND_ONLY`、`mutable_columns` 取 `'{}'`，阶段 3b 的三行按上表逐表给定。死信的可变列必须取全五列，只取三列会让触发器拒绝写 `repaired_at` 与 `discard_reason`，修复完成与丢弃两条路径在上线后直接失败；`platform_audit.audit_segments` 有状态与锚定时间更新，登记为仅追加会拒绝锚定写入，不进本清单。原裁定给阶段 9a 列的 `ledger.general_vouchers` 全库没有同名对象，GV 是 `ledger.vouchers` 的单据类型码，该行删除；原裁定给阶段 10 列的 `finance.receivable_entries`、`finance.payable_entries`、`finance.advance_receipt_entries`、`finance.advance_payment_entries`、`finance.overbilling_entries` 五张是带核销金额与状态机的可更新台账，登记为仅追加会在上线后拒绝正常核销写入，五行一并删除。触发器按登记表挂接，`platform_core.attach_table_guards` 读登记表取可变列白名单，同一迁移内必须先插登记行再挂接触发器，顺序颠倒即取不到白名单；凡本条列出的表都必须有登记行，漏登记等于无强制。检查脚本名固定为 `db/checks/append_only_consistency.sql`，由 `xtask sqlcheck` 执行。
 
-回写：阶段 3b、7、8、9a、10 各追加一个 `V…__<schema>_backfill_append_only_registry.sql`，并在各自退出条件中增加一条。阶段 3b 的一个是阶段 3 计划第 3.3.1 节迁移清单在第 32 号之后追加的第 33 号 `V2026110209xx__platform_msg_backfill_append_only_registry.sql`，属 3b 段；该文件同时登记 platform_audit 与 platform_msg 两个 schema 的表，按通则第五条取两者中位次靠后的 `db/migrations/platform_msg/` 目录；文件内先按上表插入三行登记，再依次调用 `platform_core.attach_table_guards('platform_audit','audit_events')`、`('platform_msg','outbox_events')`、`('platform_msg','dead_letters')`，顺序不得颠倒，回退段为删除该三行并 drop 对应触发器。阶段 9a 的一个同时登记 ledger 与 platform_core 两个 schema 的表，按通则第五条放在两者中位次靠后的 `db/migrations/ledger/` 目录下；`platform_core.recon_runs` 的建表迁移位次早于 ledger，该表在本文件执行时已存在，挂接可行。阶段 7 的一个占用第 24 号编号，见 A-21。五个登记方的写法一律与阶段 3b 的第 33 号相同，没有例外：文件内先按上表插入本阶段的登记行，再对每张表各调用一次 `platform_core.attach_table_guards('<schema>','<table>')`，顺序不得颠倒；`-- rollback:` 段一律为删除本次登记的行并 drop 该批表上对应的触发器，只删登记行不 drop 触发器在回退方向上同样使 `db/checks/append_only_consistency.sql` 判负。逐阶段的调用清单固定为：阶段 7 一次，取 `('procure','goods_receipt_line_costings')`；阶段 8 五次，依次取 `('inventory','stock_movements')`、`('inventory','stock_qty_entries')`、`('inventory','stock_value_entries')`、`('inventory','variance_splits')`、`('inventory','stock_movement_serials')`；阶段 9a 三次，依次取 `('ledger','vouchers')`、`('ledger','voucher_lines')`、`('platform_core','recon_runs')`；阶段 10 两次，依次取 `('finance','unbilled_ar_entries')`、`('finance','cash_ledger_entries')`。各阶段的建表迁移一律不调用 `attach_table_guards`，仅追加表的触发器只在本条的 backfill 文件内挂接。阶段 2 计划第 358 行死信的可变列白名单由三列改为五列，第 135、372、823 三行的登记方名单由阶段 7、8、9a、10 改为阶段 3b、7、8、9a、10。阶段 3 计划第 1536 行第 7.2 章一行的强制手段改为“三张仅追加表按 `append_only_registry` 登记挂接 `assert_append_only` 与 `assert_immutable_columns` 触发器、不授予 DELETE、`ep-adapter-file` 的不可删除不可覆盖命名空间、CI 的 SQL 静态检查”，并在第 9 节退出条件增加一条，即该三行登记存在且 mode 与可变列白名单按上表取值、触发器已挂接、`xtask sqlcheck` 执行 `db/checks/append_only_consistency.sql` 返回零行。阶段 8 计划第 294 行删去“本阶段按裁定只登记四行”与提请复核一语，改为五行；阶段 9 计划第 103 行删去关于 `ledger.general_vouchers` 的解释并改为三行；阶段 10 计划第 607 与 1198 行的“逐表给出 `immutable_columns`”改为“两行的 `mode` 取 `APPEND_ONLY`、`mutable_columns` 取 `'{}'`”。
+回写：阶段 3b、7、8、9a、10 各追加一个 `V…__<schema>_backfill_append_only_registry.sql`，并在各自退出条件中增加一条。阶段 3b 的一个是阶段 3 计划第 3.3.1 节迁移清单在第 32 号之后追加的第 33 号 `V2026110209xx__platform_msg_backfill_append_only_registry.sql`，属 3b 段；该文件同时登记 platform_audit 与 platform_msg 两个 schema 的表，其主要创建对象是 platform_msg 两张仅追加表的登记行与触发器，按通则第五条取 `db/migrations/platform_msg/` 目录；文件内先按上表插入三行登记，再依次调用 `platform_core.attach_table_guards('platform_audit','audit_events')`、`('platform_msg','outbox_events')`、`('platform_msg','dead_letters')`，顺序不得颠倒，回退段为删除该三行并 drop 对应触发器。阶段 9a 的一个同时登记 ledger 与 platform_core 两个 schema 的表，其主要创建对象是 ledger 两张仅追加表的登记行与触发器，按通则第五条放在 `db/migrations/ledger/` 目录下；`platform_core.recon_runs` 的建表迁移版本号早于本文件，该表在本文件执行时已存在，挂接可行。阶段 7 的一个占用第 24 号编号，见 A-21。五个登记方的写法一律与阶段 3b 的第 33 号相同，没有例外：文件内先按上表插入本阶段的登记行，再对每张表各调用一次 `platform_core.attach_table_guards('<schema>','<table>')`，顺序不得颠倒；`-- rollback:` 段一律为删除本次登记的行并 drop 该批表上对应的触发器，只删登记行不 drop 触发器在回退方向上同样使 `db/checks/append_only_consistency.sql` 判负。逐阶段的调用清单固定为：阶段 7 一次，取 `('procure','goods_receipt_line_costings')`；阶段 8 五次，依次取 `('inventory','stock_movements')`、`('inventory','stock_qty_entries')`、`('inventory','stock_value_entries')`、`('inventory','variance_splits')`、`('inventory','stock_movement_serials')`；阶段 9a 三次，依次取 `('ledger','vouchers')`、`('ledger','voucher_lines')`、`('platform_core','recon_runs')`；阶段 10 两次，依次取 `('finance','unbilled_ar_entries')`、`('finance','cash_ledger_entries')`。各阶段的建表迁移一律不调用 `attach_table_guards`，仅追加表的触发器只在本条的 backfill 文件内挂接。阶段 2 计划第 358 行死信的可变列白名单由三列改为五列，第 135、372、823 三行的登记方名单由阶段 7、8、9a、10 改为阶段 3b、7、8、9a、10。阶段 3 计划第 1536 行第 7.2 章一行的强制手段改为“三张仅追加表按 `append_only_registry` 登记挂接 `assert_append_only` 与 `assert_immutable_columns` 触发器、不授予 DELETE、`ep-adapter-file` 的不可删除不可覆盖命名空间、CI 的 SQL 静态检查”，并在第 9 节退出条件增加一条，即该三行登记存在且 mode 与可变列白名单按上表取值、触发器已挂接、`xtask sqlcheck` 执行 `db/checks/append_only_consistency.sql` 返回零行。阶段 8 计划第 294 行删去“本阶段按裁定只登记四行”与提请复核一语，改为五行；阶段 9 计划第 103 行删去关于 `ledger.general_vouchers` 的解释并改为三行；阶段 10 计划第 607 与 1198 行的“逐表给出 `immutable_columns`”改为“两行的 `mode` 取 `APPEND_ONLY`、`mutable_columns` 取 `'{}'`”。
 
 ### B-03 platform_core.migration_windows 与 open-window 校验
 
@@ -1037,7 +1091,7 @@ U-A-12 三问的临时取值与切换代价如下，截止点按总览 R12 的 M
 
 ### B-05 WasmComputePort 与 RuleEvaluator 端口
 
-结论：阶段 13b 显式实现这两个端口，不另起接口。
+结论：阶段 13b 显式实现这两个端口，不另起接口。阶段 3b 至阶段 13b 之间两个端口都不注入任何实现，rule-evaluations 端点在阶段 13b 之前不注册，能力缺位时开 WASM_COMPUTE_NOT_DELIVERED 或 RULE_EVALUATOR_NOT_DELIVERED 降级窗口并返回可重试错误，不得静默返回成功。
 
 最终归属阶段：端口归阶段 3b，实现归阶段 13b。
 
@@ -1107,13 +1161,13 @@ U-A-12 三问的临时取值与切换代价如下，截止点按总览 R12 的 M
 
 ## C 类 同一事物被两个阶段都声称提供
 
-### C-01 二十四个 schema、七个功能角色、二十四个属主角色、引导脚本与 order.toml
+### C-01 二十四个 schema、七个功能角色、二十四个属主角色、引导脚本与迁移框架
 
 结论：全部归阶段 2，阶段 1 只保留目录约定与空壳。
 
 最终归属阶段：阶段 2。
 
-确切标识符：`db/bootstrap/00_database.sql`、`01_roles.sql`、`02_cluster_params.sql`、`03_role_defaults.sql`、`04_pg_hba.fragment` 五个文件名以阶段 2 的命名为准，阶段 1 的 `B001__cluster_roles.sql`、`B002__database.sql`、`B003__postgres_conf.sql` 三个文件名作废。`db/migrations/order.toml` 的二十四项顺序以阶段 2 第 3.3 节为准。阶段 1 只交付 `db/migrations/<schema>/` 二十四个空目录与一个只含注释与顺序数组骨架的 `order.toml`。
+确切标识符：`db/bootstrap/00_database.sql`、`01_roles.sql`、`02_cluster_params.sql`、`03_role_defaults.sql`、`04_pg_hba.fragment` 五个文件名以阶段 2 的命名为准，阶段 1 的 `B001__cluster_roles.sql`、`B002__database.sql`、`B003__postgres_conf.sql` 三个文件名作废。单一全局迁移 Runner 与其版本号断言以阶段 2 第 3.3 节为准。阶段 1 只交付 `db/migrations/<schema>/` 二十四个空目录，不交付任何顺序声明文件。
 
 阶段 1 计划第 4.1 节与第 4.2 节的三个迁移文件全部移交阶段 2，阶段 1 的自检项 `rls-enabled-and-forced` 与 `runtime-role-privileges-bounded` 保留但被测对象由阶段 2 建立，阶段 1 交付时以 `ci_probe` 探针表作为被测对象。
 
@@ -1185,7 +1239,7 @@ U-A-12 三问的临时取值与切换代价如下，截止点按总览 R12 的 M
 
 最终归属阶段：阶段 11。
 
-确切标识符：阶段 10 先建 `finance.aging_bucket_definitions` 作为临时表并在其计划中标注为临时；阶段 11 交付两个迁移文件，按通则第五条都放在 `db/migrations/reporting/`：第 13 号 `V202611031060__reporting_backfill_migrate_aging_buckets_from_finance.sql` 迁数据，第 14 号 `V202611031065__reporting_drop_finance_aging_bucket_definitions.sql` 删除 finance 侧临时表。两个文件同属一个 Runner，按版本号先迁后删自然成立。原方案把删表文件放在 `db/migrations/finance/`，而 finance 在 order.toml 中的位次早于 reporting，删表必然先于迁数据执行，且与 finance 目录既有的 `V202611031065` 撞号，该方案作废；阶段 11 为规避该顺序风险自加的标记行守卫一并删除，不再保留任何跨 Runner 的顺序断言。跨 schema 的 DROP 由 `ep_migrator` 执行，该角色已具备全部 `ep_mod_*` 成员资格。取用入口为 `ep_contract_reporting::AgingBucketQuery::buckets(tx, ctx, legal_entity_id, ledger_side) -> Result<Vec<AgingBucket>, AppError>`。
+确切标识符：阶段 10 先建 `finance.aging_bucket_definitions` 作为临时表并在其计划中标注为临时；阶段 11 交付两个迁移文件，都放在 `db/migrations/reporting/`：第 13 号 `V202611031060__reporting_backfill_migrate_aging_buckets_from_finance.sql` 迁数据，第 14 号 `V202611031065__reporting_drop_finance_aging_bucket_definitions.sql` 删除 finance 侧临时表。删表文件不新建任何对象，按通则第五条随其成对的迁数据文件归 reporting 目录，两个文件同属一个 Runner，按版本号先迁后删自然成立。原方案把删表文件放在 `db/migrations/finance/`，其版本号与 finance 目录既有的 `V202611031065` 撞号，而全局版本号必须唯一且严格递增，该方案作废；阶段 11 为规避该顺序风险自加的标记行守卫一并删除，不再保留任何跨 Runner 的顺序断言。跨 schema 的 DROP 由 `ep_migrator` 执行，该角色已具备全部 `ep_mod_*` 成员资格。取用入口为 `ep_contract_reporting::AgingBucketQuery::buckets(tx, ctx, legal_entity_id, ledger_side) -> Result<Vec<AgingBucket>, AppError>`。
 
 回写：阶段 10 计划第 3.2.1 节加一句“本表为临时表，阶段 11 交付后迁移并删除”；阶段 10 的账龄查询在阶段 11 到位后改经 `AgingBucketQuery`；阶段 11 计划第 3.3 节把两个迁移文件都列在 `db/migrations/reporting/` 目录下，删去 finance 目录一节与第 332 行的标记行守卫，第 694 行的第 15 条测试改为断言两个文件在同一 reporting Runner 内按版本号顺序执行且 finance 侧临时表已删除。
 
@@ -1383,7 +1437,7 @@ pub trait ReceivableExposureQuery: Send + Sync {
 
 最终归属阶段：阶段 1 定义注册表与十三个基线项名，各阶段追加自己的命名项。
 
-确切标识符：`SelfCheckRegistry` 位于 `crates/platform/runtime/src/selfcheck/registry.rs`，注册项为 `SelfCheckItem { name: &'static str, title: &'static str, severity: Severity, run: … }`，name 为 kebab-case。基线十三项的名字固定为：`config-parsed`、`database-reachable`、`migration-version-matched`、`rls-enabled-and-forced`、`runtime-role-privileges-bounded`、`secrets-resolvable`、`audit-chain-verifiable`、`file-store-writable`、`clock-skew-within-limit`、`cgroup-quota-matched`、`offsite-sink-requirements`、`license-and-modules-consistent`、`current-period-open`。
+确切标识符：`SelfCheckRegistry` 位于 `crates/platform/runtime/src/selfcheck/registry.rs`，注册项为 `SelfCheckItem { name: &'static str, title: &'static str, severity: Severity, run: … }`，name 为 kebab-case。自检项分 Blocking 与 Degrading 两级，判读运行期可变业务数据行的一律取 Degrading 且不得作为启动失败条件，全量清单与分级以基线第 7.3 节与总览第 4.3 节 C-25 行为唯一出处，下表各阶段追加项按该出处重写。基线十项的名字固定为 config-parsed、database-reachable、migration-version-matched、rls-enabled-and-forced、runtime-role-privileges-bounded、secrets-resolvable、file-store-writable、clock-skew-within-limit、audit-chain-verifiable、offsite-sink-requirements，其中前八项取 Blocking、后两项取 Degrading；原列的十三项中 cgroup-quota-matched 与 license-and-modules-consistent 与 current-period-open 三项撤销。原十三项清单如下，仅供追溯，不再有效：`config-parsed`、`database-reachable`、`migration-version-matched`、`rls-enabled-and-forced`、`runtime-role-privileges-bounded`、`secrets-resolvable`、`audit-chain-verifiable`、`file-store-writable`、`clock-skew-within-limit`、`cgroup-quota-matched`、`offsite-sink-requirements`、`license-and-modules-consistent`、`current-period-open`。
 
 各阶段追加项的名字固定如下，任何阶段不得再用序号称呼。
 
@@ -1442,9 +1496,9 @@ DC 为交付确认单（A-09），PINV 为进项发票（A-10）。CI 校验项�
 
 回写：阶段 4 计划第 523 行按上述句子改写；阶段 9 计划第 9.3.12 节与第 9.4 节受理前提二按上述句子改写；阶段 10 计划第 0.1 节按上述句子改写，并删去任何暗示存在异步过账路径的措辞。
 
-## 回写清单
+## 附录 施工期回写清单（整节作废）
 
-本节按文件归纳，每个文件列出需要改的缺口编号与落点小节。执行修改的 agent 只改本文件，不改其他文件。
+本节是 2026-08-10 四次回写提交的工单，回写已执行完毕，全节自本次修订起作废：不得引用、不得据以施工、不得据以判定评审阻塞，下一次修订本文件时整节删除。本节所列各文件的落点与本次架构审计的处置冲突时，一律以本次处置为准。
 
 另有两条跨文件的机械改写不再逐文件重复列出。其一，基线第 10.3 节已把工作单元内的写入次序定死为审计末位，各阶段计划的用例表与事务次序段中凡把审计写在 Outbox、站内通知或任何其他数据库写入之前的，一律调整为审计末位，涉及 03、04、05、06、07、09、11 七份计划；阶段 3 计划第 1665 行的澄清一与该条一并标为已回写基线，第 1469 行的取号、写审计、写 Outbox、写站内通知改为取号、写 Outbox、写站内通知、写审计，阶段 9 计划第 593 行按 account_id 升序更新余额的防死锁论证保留不动。其二，凡引用事件 `inventory.stock_value_adjusted.v1` 的一律按 B-09 改为 `inventory.stock_movement.value_adjusted.v1`。
 

@@ -1,20 +1,25 @@
 ## 阶段 3：平台内核
 
-本阶段建设十组平台能力：Outbox 与幂等、单据编号、审计事件哈希链分段签名、文件引用与本地文件存储、站内通知与移动推送出口、持久化工作流与死信、错误分类与重试、全文检索索引与查询、模块许可与生命周期、最小配置发布通道。前七组对应规格第 5.1 章“Outbox、幂等、编号、通知、文件引用”条目、“低代码表单、流程、规则、审批、定时器、补偿和 SLA”条目中的流程引擎运行时部分、“审计与变更留痕”条目，以及规格第 15.1 章与第 15.2 章的错误分类与可靠任务要求；后三组按归属裁定 A-05、A-07、A-19 与 A-27 前移到本阶段，理由是阶段 5 的启动自检要求模块许可先于其可用、本阶段自身的定时器扫描与 Outbox 投递要按模块开关过滤、阶段 4 的三个授权类内容项落地要求配置发布的内容项端口先于阶段 4 存在。本阶段不建设身份、授权、法人隔离、密钥、元数据与运维中心，这些由其他阶段提供，见文末依赖清单。
+本阶段建设十组平台能力：Outbox 与幂等、单据编号、审计事件哈希链分段签名、文件引用与本地文件存储、站内通知与移动推送出口、持久化工作流与死信、错误分类与重试、全文检索索引与查询、模块许可与生命周期、最小配置发布通道。前七组对应规格第 5.1 章“Outbox、幂等、编号、通知、文件引用”条目、“低代码表单、流程、规则、审批、定时器、补偿和 SLA”条目中的流程引擎运行时部分、“审计与变更留痕”条目，以及规格第 15.1 章与第 15.2 章的错误分类与可靠任务要求；后三组按归属裁定 A-05、A-07、A-19 与 A-27 前移到本阶段，理由是本阶段自身的定时器扫描与 Outbox 投递要按模块开关过滤、阶段 5 的模块启用动作要取 `ModuleLicenseQuery` 判定、阶段 4 的三个授权类内容项落地要求配置发布的内容项端口先于阶段 4 存在。本阶段不建设身份、授权、法人隔离、密钥、元数据与运维中心，这些由其他阶段提供，见文末依赖清单。
 
 本阶段按裁定通则第四条的顺序链拆为 3a 与 3b 两段，3a 排在阶段 4 之前，3b 排在阶段 4 之后。3a 段只含两项，且都不依赖身份、授权与法人隔离：`platform_msg.idempotency_keys` 表与其端口实现，配置发布的内容项落地端口与注册表。其余全部内容属 3b 段。全文按此标注，凡未标注 3a 的交付物、迁移与退出条件均属 3b 段。
 
 本阶段没有任何业务模块，因此全部验收都在合成聚合上完成，这一点与规格第 17.2 章流程引擎认证套件“使用合成聚合与合成不变量验证补偿结果，不提前引用尚未建设的财务或库存模块”的要求一致。
 
-### 3.0 本阶段的判定前提与三条贯穿设计
+### 3.0 本阶段的判定前提与四条贯穿设计
 
-在展开清单之前先固定三条贯穿本阶段全部组件的设计判定，后续各节直接引用，不再重复论证。
+在展开清单之前先固定四条贯穿本阶段全部组件的设计判定，后续各节直接引用，不再重复论证。
 
 判定一，行级安全使全部后台扫描必须按法人逐轮进行。共享技术基线第 3.8 节规定 `app.legal_entity_id` 是行级策略的唯一判据，不设 `BYPASSRLS` 角色，跨法人访问只能逐个法人设置会话变量后分别查询。本阶段的 Outbox 取件、定时器扫描、审计段锚定、通知投递、上传会话回收、死信统计六类后台扫描全部落在 job-worker 内，因此它们一律实现为“取法人清单，按法人轮转，每法人一次独立事务”。法人清单由阶段 2 的 ep-platform-tenancy 契约提供。首版法人数为 2，轮询间隔 200 毫秒按法人平摊后每法人 100 毫秒，仍在规格第 15.2 章的可靠任务要求之内。这一形态不是实现偏好，是行级安全的必然结果，任何“一次扫全库”的实现都会被行级策略静默过滤成空集，属实现缺陷。
 
 判定二，审计段行是本阶段唯一的全局串行化点，其持锁时长直接决定系统吞吐上限。规格第 12.5 章要求“段内链序由事务数据库的单调序列分配，该序列是唯一串行化点，核心不持有链状态”，同时要求每条事件在事务内写入前序哈希与本条哈希。前序哈希必须读取该段当前最后一条事件的哈希，而读取与写入之间若不串行化，两个并发事务会读到同一前序哈希并写出两条互不衔接的链条。因此审计追加必须在 `platform_audit.audit_segments` 的段行上取排他锁。该锁在事务提交时才释放，故审计写入必须是工作单元闭包内的最后一次数据库写入：审计写入之后不得再发起任何数据库写入，包括 Outbox 入队、按第 3.4.5 节在同一事务内写入的站内通知与 `notification_deliveries`、幂等键的 `finish` 回写与任何投影回填。此处取最后一次写入而不是靠后于 Outbox，否则同事务内的通知与回填仍可能排在审计之后，硬边界形同虚设。这一条要求把共享技术基线第 10.3 节示例中的写入顺序由“保存聚合、写审计、写 Outbox”调整为“保存聚合、写 Outbox、写审计”，具体修订文字见第 3.12.2 节澄清一。
 
 判定三，附件的元数据可用状态严格蕴含本机正文存在。共享技术基线第 10.3 节禁止在事务内做文件正文读写，规格第 7.5 章又禁止文件存储路径开放覆盖写与原地删除接口，两条合起来意味着“先落盘后写元数据”会在崩溃时留下无法清除的孤儿文件，“先写元数据后落盘”会产生元数据在而正文不在的窗口。本阶段采用三段式：先写版本行为 `PENDING` 并预分配存储路径，再落盘，再在第二个事务内置为 `AVAILABLE`。崩溃落在任一间隙都可由 job-worker 内的幂等收敛任务按“路径上文件是否存在”收敛，且 `AVAILABLE` 一经写入即蕴含正文已在本机落盘。该任务按裁定 A-06 不称为对账：它不产生对账差异事项，不实现 `ep_platform_recon::ReconCheck`，也不依赖阶段 9a 交付的 `ep-platform-recon` 框架。该性质是规格第 13.4 章附件恢复点水位口径成立的本机侧前提。
+判定四，本阶段按 T0 贯通线拆两批交付，只改工作次序，不改范围归属。整卷在阶段 4 结束后、阶段 5 全量开工之前插入一条不新增任何范围的最薄贯通线 T0，判据是一条合同从建单走到管理层看到一个数。本阶段排在 T0 之前，是 T0 的前置，向 T0 贡献六个最小切片：一次单据编号分配、一次审计事件追加与其段行链接、一次 Outbox 写入与一次消费、一条同事务写入的站内通知、一个单审批节点的流程定义及其实例与人工任务的完成、一次经最小配置发布通道把该流程定义发布到 `platform_flow.process_definitions`。除这六项外本阶段不向 T0 贡献任何东西，T0 不要求本阶段的附件、检索、推送、定时器、补偿、许可、死信与混沌各项，也不要求四端界面。
+
+据此把 3b 段拆为两批。3b-1 批是 T0 的前置闸门，含上述六个切片所依赖的全部实现，即 Outbox 与幂等、单据编号、审计哈希链与段行、站内通知的同事务写入、流程引擎的单节点审批路径（定义、实例、人工任务、完成、取消）、最小配置发布通道 Draft 到 Released 的一条直路与 `FlowDefinitionApplier`、错误分类到响应封套的映射，以及第 3.7 节四个自检项中的三个阻断级项。3b-2 批在 T0 已贯通的骨架上加厚，含附件上传流水线与本地文件存储、移动推送出口、定时器与 SLA、补偿与人工修复、流程定义版本迁移与模拟、死信与双人审批丢弃、全文检索、模块许可与生命周期、配置发布的回退路径与 `NotifyRuleApplier`、保留期清理、混沌与故障注入五类、基准数据集扩展与全部性能度量项。
+
+3b-2 批各项都不是 T0 与阶段 5 开工的前置，其相对次序由下游拉动点决定，逐项固定为：模块许可与生命周期在阶段 5 的模块启用动作落地之前就位；全文检索在阶段 5 判定附录 A.1 检索度量项之前就位；附件上传流水线在阶段 6 的合同附件与签章证据之前就位；移动推送出口、死信统计与保留期清理在阶段 11 之前就位；混沌与故障注入五类、基准数据集扩展与性能度量项在阶段 14 的认证清单之前就位。第 3.9 节的退出条件不因此拆分而放宽，两批合并判定，拆批只改次序不改判据；流程引擎认证套件五组仍在 3b-2 批内全量执行，M7 在整卷中的地位是全分支闭环而不是首次贯通。
 
 ---
 
@@ -31,7 +36,7 @@
 5. 文件引用与本地文件存储：附件对象与版本模型、分片上传与断点续传、类型识别与恶意内容检查、按法人密钥域与密级子域的信封加密落盘、只写入不覆盖不删除的存储适配、附件恢复点水位的只读输入视图。
 6. 站内通知：通知实体、模板、未读计数、标记已读、按法人与接收人的列表查询；站内通知在业务事务内同步写入，不依赖任何异步链路。
 7. 移动推送出口：推送设备登记、推送载荷组装与脱敏、经 integration-gateway 的出网投递、送达状态记录；推送不可用时只剩站内通知，业务提醒不中断。
-8. 持久化工作流引擎：流程定义版本、实例、步骤、人工任务、定时器、SLA、补偿、运行约束、版本迁移与模拟；补偿失败进入人工任务队列并告警。同时交付 `ep_platform_flow::port::RuleEvaluator` 与 `ep_platform_flow::port::WasmComputePort` 两个端口定义，其实现类型 `AstRuleEvaluator` 与 `PluginHostWasmCompute` 按裁定 B-05 由阶段 13b 交付，见第 3.4.8 节。
+8. 持久化工作流引擎：流程定义版本、实例、步骤、人工任务、定时器、SLA、补偿、运行约束、版本迁移与模拟；补偿失败进入人工任务队列并告警。本阶段的守卫条件最小求值器是首版唯一的表达式求值器，不再定义 `RuleEvaluator` 与 `WasmComputePort` 两个端口，也不再产生对应的空实现，见第 3.4.8 节。
 
 横切能力，四项。
 
@@ -51,9 +56,9 @@
 按归属裁定前移到本阶段的能力，四项。第 19 项属 3a 段，其余三项属 3b 段。
 
 18. 全文检索索引与查询（3b 段）：`ep-adapter-search` 实现 `ep_foundation::port::search::SearchIndexPort` 与 `SearchQueryPort`，索引按法人分区，物理路径 `/var/lib/ep/search/<legal_entity_id>/`。`SearchDocument`、`SearchQuery`、`SearchHit` 三个类型与两个 trait 由阶段 1 在 `crates/foundation/src/port/search.rs` 建空文件、本阶段补齐。写入一律经 job-worker 消费 Outbox 事件触发，不在业务事务内调用。本阶段不交付任何业务对象的检索文档投影函数，投影由各业务阶段按 `SearchDocument` 结构提供，见第 3.4.10 节。
-19. 配置发布的内容项落地端口（3a 段）：`crates/platform/release/src/port/config_item.rs`，内容为 `ConfigItemApplier` trait、`ItemKind` 枚举 15 项、`ConfigPackageItem` DTO 与 `ConfigItemApplierRegistry`，其中 `Tx` 取自 `ep_foundation::port::tx`。本项无表、无用例、不依赖身份与授权，因此排在阶段 4 之前，使阶段 4 的三个授权类 applier 不再倒挂，见第 3.4.12 节。
+19. 配置发布的内容项落地端口（3a 段）：`crates/platform/release/src/port/config_item.rs`，内容为 `ConfigItemApplier` trait、`ItemKind` 枚举 9 项、`ConfigPackageItem` DTO 与 `ConfigItemApplierRegistry`，其中 `Tx` 取自 `ep_foundation::port::tx`。本项无表、无用例、不依赖身份与授权，因此排在阶段 4 之前，使阶段 4 的三个授权类 applier 不再倒挂，见第 3.4.12 节。
 20. 最小配置发布通道（3b 段）：`platform_meta.config_packages`、`platform_meta.config_package_items`、`platform_meta.config_release_orders` 三张表，六态发布状态机，ECDSA P-256 签名与逐项 `item_hash` 校验，发布与回退用例，`ConfigItemApplierRegistry` 的运行期装配，以及 `FlowDefinitionApplier` 与 `NotifyRuleApplier` 两个 applier。本阶段不建 `config_release_steps` 与 `config_edit_locks`，十一态生命周期、自动测试编排与编辑锁由阶段 13b 扩展。
-21. 模块许可与生命周期（3b 段）：`platform_core.module_registrations`、`platform_core.license_grants`、`platform_core.feature_flags` 三张表与 `ep-platform-license` 的 `ModuleLicenseQuery`。定时器扫描与 Outbox 投递按 `ModuleLicenseQuery::module_state` 过滤，落实规格第 5.6 章模块停用后停止定时任务与对外事件。基线第 7.3 节的自检项 `license-and-modules-consistent` 由本阶段从 Pending 换成实现。模块停用再启用的端到端验收按裁定 A-05 顺延到阶段 13b。
+21. 模块许可与生命周期（3b-2 批）：`platform_core.module_registrations`、`platform_core.license_grants`、`platform_core.feature_flags` 三张表与 `ep-platform-license` 的 `ModuleLicenseQuery`。定时器扫描与 Outbox 投递按 `ModuleLicenseQuery::module_state` 过滤，落实规格第 5.6 章模块停用后停止定时任务与对外事件。许可到期与吊销的后果由 `LicenseStatus` 四态与规格第 3.4 章的受限运行承接，不进启动自检，基线第 7.3 节的 `license-and-modules-consistent` 整项删除，见第 3.4.11 节。模块停用再启用的端到端验收按裁定 A-05 顺延到阶段 13b。
 
 ---
 
@@ -97,7 +102,7 @@
 
 `ep-platform-audit`：`AuditRecorder` 端口、段模型与链追加算法、锚定任务、链验证器、证据文件的写入与读取端口。
 
-`ep-platform-file`：附件对象与版本聚合、上传会话状态机、扫描端口 `ContentInspector`、存储端口 `ObjectStore`、密钥引用组装。正文的字节读写全部经 `ep-adapter-file`。处置端口 `DisposalPort` 与其两个 DTO 按裁定 A-22 定义在 `crates/platform/file/src/port/disposal.rs`，本阶段只给 trait、DTO 与空实现，实现由阶段 14 交付，见第 3.4.7 节。
+`ep-platform-file`：附件对象与版本聚合、上传会话状态机、扫描端口 `ContentInspector`、存储端口 `ObjectStore`、密钥引用组装。正文的字节读写全部经 `ep-adapter-file`。处置端口 `DisposalPort` 与其两个 DTO 按裁定 A-22 定义在 `crates/platform/file/src/port/disposal.rs`，本阶段只给 trait 与 DTO，不给任何实现、不进两个 wiring，装配整条推迟到阶段 14 与实现同批落地，见第 3.4.7 节。
 
 `ep-platform-notify`：通知聚合、模板渲染、接收人解析端口、推送载荷组装与脱敏、送达状态。
 
@@ -133,7 +138,7 @@ archive-writer 与 backup-writer 在本阶段不改动，本阶段只为其提�
 
 ### 3.3 数据库变更
 
-全部迁移文件路径为 `db/migrations/<schema>/`，历史表为 `<schema>.refinery_schema_history`。执行顺序由 `db/migrations/order.toml` 的既有平台顺序决定：`platform_core`、`platform_authz`、`platform_meta`、`platform_flow`、`platform_audit`、`platform_msg`、`platform_file`、`platform_ops`。本阶段触及其中六个 schema，`platform_meta` 因裁定 A-27 的最小配置发布通道纳入。
+全部迁移文件路径为 `db/migrations/<schema>/`，迁移历史落在全局唯一的 `platform_core.schema_history`。执行顺序由单一全局 Runner 按文件版本号全序排定，不存在任何模块顺序声明文件，本阶段只需保证每个文件的版本号晚于其全部被引用对象。本阶段触及八个平台 schema 中的六个，`platform_meta` 因裁定 A-27 的最小配置发布通道纳入。
 
 每个迁移文件承载一张表的完整定义，含建表、CHECK 约束、索引与行级安全策略。理由是把行级安全拆到单独文件会产生一个策略尚未启用的中间态窗口，与基线第 3.8 节的默认拒绝口径冲突。基线第 3.9 节“一个文件只做一件事”按“一个对象的完整建立为一件事”解读，数据回填仍单独成文件。每个文件的头部注释含 `-- rollback:` 段。
 
@@ -178,7 +183,7 @@ archive-writer 与 backup-writer 在本阶段不改动，本阶段只为其提�
 | 33 | `V202611020970__platform_msg_backfill_append_only_registry.sql` | platform_msg | 3b |
 | 34 | `V202611020975__platform_msg_backfill_sensitive_field_registry.sql` | platform_msg | 3b |
 
-第 9 至 14 号在 `platform_flow` 内的顺序保证被引用方先建，第 6 至 8 号在 `platform_meta` 内同理保证 `config_packages` 早于 `config_package_items` 与 `config_release_orders`；跨 schema 不建外键，故 `platform_flow` 早于 `platform_audit` 与 `platform_msg` 不构成引用问题。第 31 与 32 两个视图文件跨 schema 取数，按裁定通则第五条放在所涉 schema 中位次靠后的那个目录：第 31 号建 `platform_file` 与 `platform_audit` 两个 schema 的视图，放在 `db/migrations/platform_file/`；第 32 号建 `platform_msg`、`platform_flow` 与 `platform_audit` 三个 schema 的视图，放在 `db/migrations/platform_msg/`。第 33 与 34 号是本阶段仅有的两个数据回填文件：第 33 号按裁定 B-02 向 `platform_core.append_only_registry` 登记三张仅追加表并挂接触发器，所涉 schema 为 `platform_core`、`platform_audit` 与 `platform_msg`；第 34 号按裁定 A-28 向 `platform_core.sensitive_field_registry` 登记 `platform_msg.push_registrations` 的 `token` 一行，所涉 schema 为 `platform_core` 与 `platform_msg`。两者按裁定通则第五条都取所涉 schema 中位次最靠后的 `platform_msg`，放在 `db/migrations/platform_msg/`；第 33 号的登记行取值与挂接次序见第 3.3.7 节，第 34 号的逐列取值见表 19 之后一段。第 1 号属 3a 段，号段排在阶段 4 的 `V202610…` 之前；第 2 至 34 号属 3b 段，号段排在其后；两个号段互不重叠，也不与阶段 2 已占用的 `V20260901…` 号段冲突。
+第 9 至 14 号在 `platform_flow` 内的顺序保证被引用方先建，第 6 至 8 号在 `platform_meta` 内同理保证 `config_packages` 早于 `config_package_items` 与 `config_release_orders`；跨 schema 不建外键，故 `platform_flow` 早于 `platform_audit` 与 `platform_msg` 不构成引用问题。第 31 与 32 两个视图文件跨 schema 取数，按裁定通则第五条放在其主要创建对象所属 schema 的目录：第 31 号的视图建在 `platform_file`，取数涉及 `platform_audit`，放在 `db/migrations/platform_file/`；第 32 号的视图建在 `platform_msg`，取数涉及 `platform_flow` 与 `platform_audit`，放在 `db/migrations/platform_msg/`。两者的版本号都晚于其取数所涉全部对象的建表迁移。第 33 与 34 号是本阶段仅有的两个数据回填文件：第 33 号按裁定 B-02 向 `platform_core.append_only_registry` 登记三张仅追加表并挂接触发器，所涉 schema 为 `platform_core`、`platform_audit` 与 `platform_msg`；第 34 号按裁定 A-28 向 `platform_core.sensitive_field_registry` 登记 `platform_msg.push_registrations` 的 `token` 一行，所涉 schema 为 `platform_core` 与 `platform_msg`。两者的主要创建对象都在 `platform_msg`，按裁定通则第五条放在 `db/migrations/platform_msg/`，版本号都晚于所涉 `platform_core` 与 `platform_audit` 对象的建表迁移；第 33 号的登记行取值与挂接次序见第 3.3.7 节，第 34 号的逐列取值见表 19 之后一段。第 1 号属 3a 段，号段排在阶段 4 的 `V202610…` 之前；第 2 至 34 号属 3b 段，号段排在其后；两个号段互不重叠，也不与阶段 2 已占用的 `V20260901…` 号段冲突。
 
 #### 3.3.2 公共列的适用口径
 
@@ -638,7 +643,7 @@ archive-writer 与 backup-writer 在本阶段不改动，本阶段只为其提�
 
 索引：`pk_attachment_objects`；`ix_attachment_objects_le_created`；`ix_attachment_objects_le_deleted_at_created`。
 
-本表是基线第 3.6 节允许带删除标记的两类对象之一。删除标记不影响历史引用与历史版本，物理删除只能由处置流程经专用路径与专用账号发起；本阶段只定义 `DisposalPort` 端口并在两个 wiring 注入 `NoopDisposalPort`，实现由阶段 14 的 `OpsDisposalService` 交付，见裁定 A-22 与第 3.4.7 节。
+本表是基线第 3.6 节允许带删除标记的两类对象之一。删除标记不影响历史引用与历史版本，物理删除只能由处置流程经专用路径与专用账号发起；本阶段只定义 `DisposalPort` 端口，不注入任何实现，装配与实现由阶段 14 的 `OpsDisposalService` 同批交付，见裁定 A-22 与第 3.4.7 节。
 
 **表 21 `platform_file.attachment_versions`**
 
@@ -774,7 +779,7 @@ archive-writer 与 backup-writer 在本阶段不改动，本阶段只为其提�
 
 **表 29 `platform_meta.config_package_items`**（3b 段，部署级）
 
-列与约束按阶段 13 计划第 3.2.11 节逐项照建。`item_kind` 的 CHECK 一次建齐 15 项，与 3a 段冻结的 `ItemKind` 枚举逐项一致，未在 `ConfigItemApplierRegistry` 注册实现的 `item_kind` 由运行期校验拒绝发布，不靠 CHECK 拦截。
+列与约束按阶段 13 计划第 3.2.11 节逐项照建，`item_kind` 的 CHECK 一次建齐第 3.4.12 节冻结的 9 项，与 3a 段冻结的 `ItemKind` 枚举逐项一致，未在 `ConfigItemApplierRegistry` 注册实现的 `item_kind` 由运行期校验拒绝发布，不靠 CHECK 拦截。
 
 **表 30 `platform_meta.config_release_orders`**（3b 段，部署级）
 
@@ -994,7 +999,7 @@ pub trait DisposalPort: Send + Sync {
 }
 ```
 
-本阶段只交付上述 trait 与两个 DTO，并在 `apps/core-server/src/wiring.rs` 与 `apps/job-worker/src/wiring.rs` 注入 `NoopDisposalPort`，该行标注 `// TODO(stage-14): replace with real impl`；实现类型为阶段 14 的 `OpsDisposalService`，位于 `crates/platform/obs/src/disposal.rs`，只由 ops 专用路径与专用账号触发。
+本阶段只交付上述 trait 与两个 DTO，`apps/core-server/src/wiring.rs` 与 `apps/job-worker/src/wiring.rs` 两处均不出现该端口的注入行。理由是本阶段到阶段 14 之间没有任何调用方，装配整条推迟到阶段 14，由 `OpsDisposalService`（位于 `crates/platform/obs/src/disposal.rs`，只由 ops 专用路径与专用账号触发）与注入行同批落地。原空实现连同 `// TODO(stage-14)` 注释一并删除，理由是一个返回成功的空壳会把一次未接线的物理删除记成一次已完成的处置，而处置回执是对外可出具的凭证。
 
 恶意内容检查：`ContentInspector` 端口，三个内置实现。`TYPE_SNIFF` 按魔数识别真实类型并与声明类型比对，不一致且不在允许的等价集合内即 REJECT。`STRUCTURE` 检查可执行文件头、OOXML 与 ODF 中的宏与外部引用、PDF 中的 JavaScript 与自动动作、归档炸弹（压缩比与展开深度上限）。`CLAMD` 是可选实现，经本机 Unix socket 调用 clamd，未配置时返回 SKIPPED。
 
@@ -1059,7 +1064,7 @@ SLA：以 `kind = 'SLA'` 的定时器表达，触发时不推进实例，只写 
 
 运行约束：`max_instance_duration_days`、`max_steps_per_instance`、`max_parallel_branches` 三项超限即置 `MANUAL_INTERVENTION` 并写 `LIMIT_EXCEEDED` 人工任务，对应规格第 9.1 章“单实例最长运行期、最大步骤数、最大并行分支和实例保留期由配置约束，超限进入人工处理”。
 
-守卫条件表达式：本阶段只交付最小求值器，支持字段引用（`vars.x`、`instance.state`）、比较（六种）、逻辑（与或非）、集合成员、空判定，以及一个不超过 12 个函数的白名单（长度、上取整、日期加减等）。表达式无副作用、无循环、求值步数上限 1000，超限返回 `VALIDATION`。该求值器只服务于流程守卫条件，不是 `RuleEvaluator` 的实现。完整的声明式规则引擎与受限 WASM 计算不在本阶段范围，本阶段只保证接口位点存在：`ep_platform_flow::port::RuleEvaluator` 与 `ep_platform_flow::port::WasmComputePort` 两个 trait 定义在 `ep-platform-flow`，按裁定 B-05，其实现类型分别为 `AstRuleEvaluator`（位于 `crates/platform/meta/src/rule/`，装配进 core-server）与 `PluginHostWasmCompute`（位于 `crates/adapter/wasm/`，装配进 plugin-host），两者均由阶段 13b 交付；本阶段在两个 wiring 注入 `NoopRuleEvaluator` 与 `NoopWasmComputePort`，该行标注 `// TODO(stage-13): replace with real impl`。端点 `POST /api/v1/platform/rule-evaluations/actions/evaluate` 属阶段 13b，本阶段不建第二条求值路径。
+守卫条件表达式：本阶段交付的最小求值器是首版唯一的表达式求值器，支持字段引用（`vars.x`、`instance.state`）、比较（六种）、逻辑（与或非）、集合成员、空判定，以及一个不超过 12 个函数的白名单（长度、上取整、日期加减等）。表达式无副作用、无循环、求值步数上限 1000，超限返回 `VALIDATION`。它同时服务于流程守卫条件与 PRD 第 10.4.6 节的自定义指标表达式，调用方直接依赖 `ep-platform-flow` 中的求值器类型，不经任何端口，全仓不存在第二条求值路径。`ep_platform_flow::port::RuleEvaluator` 与 `ep_platform_flow::port::WasmComputePort` 两个 trait 及其在两个 wiring 的空实现 `NoopRuleEvaluator` 与 `NoopWasmComputePort` 一并删除，裁定 B-05 的接入位点约定随之落空：`AstRuleEvaluator` 是第二条求值路径，其实现与唯一调用方同属阶段 13b，首版由本节的最小求值器一条路径承担；`PluginHostWasmCompute` 依赖的服务端签名 WASM 扩展形态首版没有任何真实消费者，整体登记入规格第 5.7 章延期目录并按规格第 2.2 章的做法由产品负责人批准，本阶段不预留接口位点、不预留 crate、不预留配置键。端点 `POST /api/v1/platform/rule-evaluations/actions/evaluate` 不再存在。
 
 #### 3.4.9 错误分类与重试
 
@@ -1145,13 +1150,13 @@ pub trait ModuleLicenseQuery: Send + Sync {
 
 过滤点两处，都在 job-worker：定时器扫描取件后按实例所属定义的模块段解析 `ModuleCode`，Outbox 投递取件后按 `event_type` 的模块段解析 `ModuleCode`；`module_state` 不为 `InstalledEnabled` 时跳过该条，条目保持 `PENDING` 且不累加 `attempts`，模块再启用后自动恢复投递。这落实规格第 5.6 章模块停用后停止定时任务与对外事件，且不把停用误判为投递失败。
 
-自检项 `license-and-modules-consistent` 由本阶段从 Pending 换成实现，判据三条：处于 `INSTALLED_ENABLED` 的模块码集合被至少一张未吊销且未过期的 `license_grants.module_codes` 覆盖；`feature_flags.requires_license` 为真的功能开关其 `module_code` 处于 `INSTALLED_ENABLED`；许可的 `named_user_limit` 不低于当前启用的命名用户数。任一不满足以退出码 78 退出。
+许可状态与模块开关不进启动自检。基线第 7.3 节的 `license-and-modules-consistent` 整项删除，阶段 1 注册的 Pending 项一并撤销，基线十三项收为十二项，见第 3.12.1 节偏离五。删除的依据是规格第 3.4 章：许可到期后依次进入临期告警、宽限期与受限运行，平台不因许可状态停机；用量超过许可上限时不阻断业务，只记录超用事件并在管理控制台显著提示；身份四项处置在任何许可状态下均保持可用。原三条判据的承接点逐条固定为：模块码被有效 `license_grants` 覆盖与 `feature_flags.requires_license` 两条由 `ModuleLicenseQuery::module_state` 与 `is_feature_enabled` 在每次取用时判定，不满足即按受限运行处置并写一条 `platform_ops.degradation_windows`；`named_user_limit` 由按日统计的超用事件、控制台显著提示与不可篡改审计承接，不阻断建用户，也不阻断业务。这台服务器没有备节点，把一条运行期可变的业务数据判定放在启动闸门上，等于用全企业停摆换一次配置提醒。
 
 模块停用再启用的端到端验收按裁定 A-05 顺延到阶段 13b，本阶段只做单元与集成层面的判定。
 
 #### 3.4.12 配置发布的内容项端口与最小发布通道
 
-3a 段只交付一个文件 `crates/platform/release/src/port/config_item.rs`，内容为下列 trait、`ItemKind` 枚举 15 项、`ConfigPackageItem` DTO 与 `ConfigItemApplierRegistry`。trait 方法签名与阶段 13 计划第 4.6 节逐字一致，其中 `Tx` 取自 `ep_foundation::port::tx`：
+3a 段只交付一个文件 `crates/platform/release/src/port/config_item.rs`，内容为下列 trait、`ItemKind` 枚举 9 项、`ConfigPackageItem` DTO 与 `ConfigItemApplierRegistry`。trait 方法签名与阶段 13 计划第 4.6 节逐字一致，其中 `Tx` 取自 `ep_foundation::port::tx`：
 
 ```rust
 pub trait ConfigItemApplier: Send + Sync {
@@ -1163,9 +1168,9 @@ pub trait ConfigItemApplier: Send + Sync {
 }
 ```
 
-`ItemKind` 的 15 项为 CUSTOM_OBJECT、CUSTOM_FIELD、CUSTOM_RELATION、CUSTOM_INDEX、CUSTOM_VIEW、UI_LAYOUT、FLOW_DEFINITION、AUTHZ_ROLE、AUTHZ_POLICY、AUTHZ_FIELD_GRANT、REPORT_DEFINITION、METRIC_DEFINITION、DASHBOARD_DEFINITION、PRINT_TEMPLATE、NOTIFY_RULE，与阶段 13 计划第 3.2.11 节逐项一致。`ConfigPackageItem` 的字段为 `id`、`security_level`、`config_package_id`、`item_kind`、`item_code`、`change_kind`、`applies_to_legal_entity_ids`、`before_spec`、`after_spec`、`item_hash`、`sort_no`。`ConfigItemApplierRegistry` 只提供按 `ItemKind` 注册与查找两个方法，装配在两个 wiring 中。3a 段无表、无用例、不依赖身份与授权，因此可排在阶段 4 之前，阶段 4 的 `AuthzRoleApplier`、`AuthzPolicyApplier`、`AuthzFieldGrantApplier` 由此不再倒挂。
+`ItemKind` 的 9 项为 FLOW_DEFINITION、NOTIFY_RULE、AUTHZ_ROLE、AUTHZ_POLICY、AUTHZ_FIELD_GRANT、REPORT_DEFINITION、METRIC_DEFINITION、DASHBOARD_DEFINITION、PRINT_TEMPLATE。原清单中的 CUSTOM_OBJECT、CUSTOM_FIELD、CUSTOM_RELATION、CUSTOM_INDEX、CUSTOM_VIEW 与 UI_LAYOUT 六项随自定义对象、自定义字段与在线 DDL 整体登记入规格第 5.7 章延期目录而不再登记，本阶段不为其预留枚举值；日后恢复时按 3b 段已有的放宽 `ck_config_package_items` 的方式追加，不改写任何既有行。`ConfigPackageItem` 的字段为 `id`、`security_level`、`config_package_id`、`item_kind`、`item_code`、`change_kind`、`applies_to_legal_entity_ids`、`before_spec`、`after_spec`、`item_hash`、`sort_no`。`ConfigItemApplierRegistry` 只提供按 `ItemKind` 注册与查找两个方法，装配在两个 wiring 中。3a 段无表、无用例、不依赖身份与授权，因此可排在阶段 4 之前，阶段 4 的 `AuthzRoleApplier`、`AuthzPolicyApplier`、`AuthzFieldGrantApplier` 由此不再倒挂。
 
-本阶段实现的 applier 共两个：`FlowDefinitionApplier`（位于 `ep-platform-flow`，落地到 `platform_flow.process_definitions`）与 `NotifyRuleApplier`（位于 `ep-platform-notify`，落地到 `platform_msg.notification_templates` 与提醒规则）。其余 13 个按裁定 A-19 分派到阶段 4、11 与 13b，本阶段不代做。查不到实现的 `item_kind` 整包拒绝发布，错误码 `PLATFORM.CONFIG_RELEASE_ORDER.APPLIER_NOT_REGISTERED`，分类 `BUSINESS_CONFLICT`，由本阶段登记。
+本阶段实现的 applier 共两个：`FlowDefinitionApplier`（位于 `ep-platform-flow`，落地到 `platform_flow.process_definitions`，属 3b-1 批，T0 的流程定义经它下发）与 `NotifyRuleApplier`（位于 `ep-platform-notify`，落地到 `platform_msg.notification_templates` 与提醒规则，属 3b-2 批）。其余 7 个按裁定 A-19 分派到阶段 4 与阶段 11，本阶段不代做；A-19 中六个自定义类归阶段 13b 的分派随该六项延期一并落空，applier 总数由十五个收为九个，A-19 所称的九个 applier 分派阶段 3b、4、11 一句不受影响。查不到实现的 `item_kind` 整包拒绝发布，错误码 `PLATFORM.CONFIG_RELEASE_ORDER.APPLIER_NOT_REGISTERED`，分类 `BUSINESS_CONFLICT`，由本阶段登记。
 
 3b 段的六态发布状态机按裁定 A-27 以 PRD 第 10.4.1 节的十一态为唯一出处，本阶段实现其中六态：Draft 到 PendingApproval（提交审批，守卫为内容项数在 1 至 2000 之间且每项 `item_hash` 与其 `after_spec` 的规范化 SHA-256 一致）、PendingApproval 到 Approved（审批通过，守卫为审批人不等于提交人）、PendingApproval 到 Rejected（审批驳回，记名并写审计）、Approved 到 Released（签名并执行发布单）、Released 到 RolledBack（回退发布单）。差异审查由 `GET /api/v1/platform/config-packages/{id}/diff` 端点承载，不单列为状态。非法迁移返回 `BUSINESS_CONFLICT` 与 `PLATFORM.CONFIG_PACKAGE.*` 的对应码，不静默忽略。其余五态 PendingAutotest、TestFailed、TestPassed、SignedPendingRelease、Superseded 由阶段 13b 补齐，扩展只放宽 `ck_config_packages_status`，不改写任何既有行。
 
@@ -1182,7 +1187,7 @@ pub trait ConfigItemApplier: Send + Sync {
 全部端点前缀 `/api/v1/platform`，门户侧为 `/api/v1/portal/...` 由 portal-gateway 转发。请求头集合、封套、分页、排序、过滤、幂等键、版本化一律按基线第 5 章，本节不重复，只给各端点的差异项。
 
 权限项名称形如 `platform.<resource>.<action>`，判定由阶段 4 的 ep-platform-authz 承担；本阶段负责在每个端点上声明所需权限项并注册到权限项目录。
-能力域码与动作类别按裁定 A-20 声明。本节每个用例在 `crates/platform/flow/src/capability.rs` 中声明一对常量 `<USECASE_SCREAMING>_DOMAIN` 与 `<USECASE_SCREAMING>_ACTION`，类型取阶段 1 在 `ep-foundation` 冻结的 `CapabilityDomain` 与 `ActionClass`，本阶段不重新定义这两个枚举，也不另设第三处落点。`/api/v1/platform/` 下的全部路由能力域取 `CapabilityDomain::PlatformAdminLowcodeOps`，第 3.5.2 节三个 `/api/v1/portal/` 端点的能力域取 `CapabilityDomain::PortalSupplierWeb`。动作类别的取值规则为：只读查询取 `Read`；`process-tasks/{id}/actions/complete`、`config-packages/{id}/actions/approve` 与 `config-packages/{id}/actions/reject` 三个审批结论端点取 `Approve`；`POST /api/v1/platform/push-registrations` 与 `POST /api/v1/platform/config-packages` 两个创建端点取 `Write`；其余 `actions/` 端点与分片 `PUT` 取 `Submit`；本阶段无导出路由，不出现 `Export`。第 3.4.6 节 integration-gateway 的 `POST /internal/v1/push/dispatch` 在 `/internal/v1/` 下且不对四端暴露，按基线第 12 节不参与判定，不声明常量。`xtask configdoc` 断言每个 `/api/v1/` 路由都能解析到一对常量，缺失即构建失败。
+能力域码与动作类别按裁定 A-20 声明。声明形态为在路由注册处一次性给出 `(CapabilityDomain, ActionClass)` 元组，与路由同行，不再为每个用例另写 `<USECASE_SCREAMING>_DOMAIN` 与 `<USECASE_SCREAMING>_ACTION` 两个常量，`crates/platform/flow/src/capability.rs` 只保留该元组的类型别名与路由到元组的对照表。类型取阶段 1 在 `ep-foundation` 冻结的 `CapabilityDomain` 与 `ActionClass`，本阶段不重新定义这两个枚举，也不另设第三处落点。`/api/v1/platform/` 下的全部路由能力域取 `CapabilityDomain::PlatformAdminLowcodeOps`，第 3.5.2 节三个 `/api/v1/portal/` 端点的能力域取 `CapabilityDomain::PortalSupplierWeb`。动作类别的取值规则为：只读查询取 `Read`；`process-tasks/{id}/actions/complete`、`config-packages/{id}/actions/approve` 与 `config-packages/{id}/actions/reject` 三个审批结论端点取 `Approve`；`POST /api/v1/platform/push-registrations` 与 `POST /api/v1/platform/config-packages` 两个创建端点取 `Write`；其余 `actions/` 端点与分片 `PUT` 取 `Submit`；本阶段无导出路由，不出现 `Export`。第 3.4.6 节 integration-gateway 的 `POST /internal/v1/push/dispatch` 在 `/internal/v1/` 下且不对四端暴露，按基线第 12 节不参与判定，不声明元组。`xtask configdoc` 断言每个 `/api/v1/` 路由都能解析到一个元组，缺失即构建失败。
 
 #### 3.5.1 通知
 
@@ -1415,7 +1420,7 @@ pub trait ConfigItemApplier: Send + Sync {
 
 运行期可变的业务参数不进配置文件，按基线第 7.1 节：提醒规则的触发对象、触发日期字段、提前量、重复策略与接收人解析方式，通知模板的标题与正文，流程定义，全部存事务数据库并经配置发布通道签名发布。发布通道按裁定 A-27 由本阶段 3b 段交付，见第 3.4.12 节；流程定义与提醒规则、通知模板的落地分别经 `FlowDefinitionApplier` 与 `NotifyRuleApplier`。
 
-启动自检增量：按裁定 C-25，自检项一律以注册名标识，不用序号，注册表为阶段 1 的 `SelfCheckRegistry`，报告按注册顺序输出且基线十三项在前。本阶段在基线第 7.3 节的十三个命名项之外追加四项，登记为本阶段新增决定：`audit-evidence-store-writable`，审计证据存储目录可写且不具备覆盖与删除权限，剩余空间不低于阈值；`audit-signing-key-usable`，签名私钥可解引用且可完成一次自签自验；`attachment-store-ready`，附件存储根目录、staging 目录与检索索引根目录存在、权限位正确、剩余空间不低于 `FREE_SPACE_MIN_BYTES`；`event-catalog-consistent`，事件目录中登记的事件类型与代码中注册的处理器无缺漏无多余。四项任一失败以退出码 78 退出，`--check` 模式一并执行这四项。另外，基线十三项中的 `license-and-modules-consistent` 由阶段 1 注册为 Pending，本阶段 3b 段换成实现，判据见第 3.4.11 节。
+启动自检增量：按裁定 C-25，自检项一律以注册名标识，不用序号，注册表为阶段 1 的 `SelfCheckRegistry`，报告按注册顺序输出且基线项在前。自检项分阻断与降级两级，`severity` 取值域固定为 `Blocking` 与 `Degrading`，登记为本阶段新增决定第九项的一部分；阻断级失败以退出码 78 退出，降级级失败不阻止启动，改为登记一条 `platform_ops.degradation_windows` 并经阶段 2 的 `DegradationLedger` 出降级信号与告警。`--check` 模式对两级一律严格，任一项 FAILED 或 DEGRADED 均非零退出，闸门落在部署与升级前置，不落在进程启动。本阶段在基线第 7.3 节的命名项之外追加四项：`audit-evidence-store-writable`，审计证据存储目录可写且不具备覆盖与删除权限，剩余空间不低于阈值，阻断级；`audit-signing-key-usable`，签名私钥可解引用且可完成一次自签自验，阻断级；`attachment-store-ready`，附件存储根目录、staging 目录与检索索引根目录存在、权限位正确、剩余空间不低于 `FREE_SPACE_MIN_BYTES`，阻断级；`event-catalog-consistent`，事件目录中登记的事件类型与代码中注册的处理器无缺漏无多余，降级级，检出不一致时停止派发未登记的事件类型并持续告警，其余投递照常。前三项判读的是目录、权限位、剩余空间与密钥，不判读任何业务数据行，故留在阻断级；三项属 3b-1 批。基线项 `license-and-modules-consistent` 由本阶段整项删除而不是换成实现，见第 3.4.11 节与第 3.12.1 节偏离五。第 3.11.1 节风险九的保留期大小关系是两个配置键的比较，折叠进 `config-parsed` 的配置校验，不另设自检项。
 
 ---
 
@@ -1461,7 +1466,7 @@ Outbox 可靠投递，对应规格第 7.3 章必含项：至少一次投递、�
 
 契约测试：流程实例状态的 `same_transaction` 与 `outbox_eventual` 两条路径，各自验证业务状态、审计与 Outbox 仍在同一事务内提交。
 
-许可与配置发布（3b 段）：模块由 `INSTALLED_ENABLED` 置 `INSTALLED_DISABLED` 后其定时器不再触发、其事件不再投递且条目保持 `PENDING` 不累加 `attempts`，再启用后自动恢复；许可过期与吊销各触发一次 `license-and-modules-consistent` 自检失败；配置包六态的全部合法与非法迁移；签名被篡改与任一项 `item_hash` 不符时整包拒绝；未在 `ConfigItemApplierRegistry` 注册的 `item_kind` 整包拒绝；发布后回退按 `sort_no` 逆序以 `before_spec` 恢复，`FlowDefinitionApplier` 与 `NotifyRuleApplier` 各跑一次发布与一次回退。
+许可与配置发布：模块由 `INSTALLED_ENABLED` 置 `INSTALLED_DISABLED` 后其定时器不再触发、其事件不再投递且条目保持 `PENDING` 不累加 `attempts`，再启用后自动恢复；许可过期与吊销各触发一次 `LicenseStatus` 由 `Valid` 迁到 `Expired` 与 `Revoked`，两种情形下进程照常启动、查询与报表与备份照常可用、业务写入按规格第 3.4 章的受限运行处置，且各写出一条降级窗口；配置包六态的全部合法与非法迁移；签名被篡改与任一项 `item_hash` 不符时整包拒绝；未在 `ConfigItemApplierRegistry` 注册的 `item_kind` 整包拒绝；发布后回退按 `sort_no` 逆序以 `before_spec` 恢复，`FlowDefinitionApplier` 与 `NotifyRuleApplier` 各跑一次发布与一次回退。
 
 全文检索（3b 段）：索引写入只在 job-worker 的消费者中发生，core-server 的用例路径上不出现 `SearchIndexPort` 调用且由 `xtask archcheck` 判负；同一文档重复投递只产生一份索引条目；删除事件后查询不再命中；两个法人的索引分区互不可见；查询按 `SecurityContext.clearance_level` 过滤后仍对命中结果做数据库侧可见性复核。
 
@@ -1510,12 +1515,12 @@ E2E-6 配置发布最小通道（3b 段）：创建含一个 `FLOW_DEFINITION` �
 
 ### 3.9 退出条件
 
-下列 31 项全部达成才算本阶段完成，每项都可由 CI 产物或测试报告客观判定。第 29 项是 3a 段的独立闸门，必须在阶段 4 开工前达成；其余各项在 3b 段结束时判定。
+下列 32 项全部达成才算本阶段完成，每项都可由 CI 产物或测试报告客观判定。第 29 项是 3a 段的独立闸门，必须在阶段 4 开工前达成；第 32 项是 3b-1 批的独立闸门，必须在 T0 开跑前达成；其余各项在 3b 段结束时判定。
 
-1. 34 个迁移文件在空库上按 `order.toml` 顺序执行成功，每个文件的 `-- rollback:` 段可执行或已注明只能用备份回退；3a 段的第 1 号与 3b 段的第 2 至 34 号在含阶段 4 迁移的合并环境上按版本号单调应用成功。
+1. 34 个迁移文件在空库上按文件版本号全序执行成功，每个文件的 `-- rollback:` 段可执行或已注明只能用备份回退；3a 段的第 1 号与 3b 段的第 2 至 34 号在含阶段 4 迁移的合并环境上按版本号单调应用成功。
 2. 30 张新表中，24 张带 `legal_entity_id` 的表全部 `ENABLE` 且 `FORCE` 行级安全，策略按统一模板生成，`tests/rls_matrix` 的本阶段部分八类全通过；六张部署级表按裁定 A-05 与 A-27 不带 `legal_entity_id`、不建策略，且已断言其可见性不随 `app.legal_entity_id` 变化。
 3. 运行期账号 `ep_app_rw` 在本阶段表上无 DDL、无策略管理权限，`--check` 的 `rls-enabled-and-forced` 与 `runtime-role-privileges-bounded` 两项通过。
-4. `--check` 的十七个命名项（基线第 7.3 节十三项加本阶段四项 `audit-evidence-store-writable`、`audit-signing-key-usable`、`attachment-store-ready`、`event-catalog-consistent`）在部署环境上全部通过并输出结构化报告，其中基线项 `license-and-modules-consistent` 已由本阶段 3b 段从 Pending 换成实现。
+4. `--check` 的十六个命名项（基线第 7.3 节删去 `license-and-modules-consistent` 后的十二项，加本阶段四项 `audit-evidence-store-writable`、`audit-signing-key-usable`、`attachment-store-ready`、`event-catalog-consistent`）在部署环境上全部通过并输出结构化报告，报告逐项给出 `Blocking` 或 `Degrading` 级别；`--check` 对 FAILED 与 DEGRADED 一律非零退出，`event-catalog-consistent` 在注入不一致时不阻止进程启动而是写出一条降级窗口。
 5. Outbox 可靠投递三组测试全通过，含至少一次投递、重复投递去重、崩溃恢复不丢不重。
 6. 幂等键三态判定的九种组合全通过，重复请求回带 `Idempotent-Replay: true`。
 7. 编号并发取号 10 万次无重号、无空号，位数扩展临界通过。
@@ -1533,16 +1538,17 @@ E2E-6 配置发布最小通道（3b 段）：创建含一个 `FLOW_DEFINITION` �
 19. 六条关键语句的 `EXPLAIN` 证据不含顺序扫描。
 20. 覆盖率：本阶段代码行覆盖率不低于 85%，新增与修改代码不低于 80%，工作区整体不低于 80%。
 21. `docs/error-codes.md` 的 `PLATFORM` 段、`docs/event-catalog.md` 的 `platform` 段、`ep-foundation::error::codes` 常量表、指标注册表四处由 CI 校验一致，无重复码、无未登记项。
-22. 本阶段的四项偏离与十二项新增决定已回写共享技术基线，并经平台架构负责人签字。
+22. 本阶段的五项偏离与十二项新增决定已回写共享技术基线，并经平台架构负责人签字。
 23. 模块许可：三张许可表建立，`ModuleLicenseQuery` 可用，模块置 `INSTALLED_DISABLED` 后其定时器停止触发、其事件停止投递且条目不累加 `attempts`，再启用后自动恢复；停用再启用的端到端验收按裁定 A-05 顺延到阶段 13b，本阶段以集成测试判定。
 24. 最小配置发布通道：三张配置表建立，六态状态机的全部合法与非法迁移有测试，ECDSA P-256 签名与逐项 `item_hash` 重算校验通过，`FlowDefinitionApplier` 与 `NotifyRuleApplier` 两个 applier 已实现并在两个 wiring 注册，未注册 `ItemKind` 的内容项整包拒绝发布。
 25. 全文检索：`SearchIndexPort` 与 `SearchQueryPort` 在 `ep-adapter-search` 上实现，索引按法人分区落在 `/var/lib/ep/search/<legal_entity_id>/`，`xtask archcheck` 断言业务事务路径上不出现索引写调用，两个法人的分区互不可见。
-26. 本阶段全部 `/api/v1/` 路由，即 `/api/v1/platform/` 各段与第 3.5.2 节三个 `/api/v1/portal/` 端点，其能力域码与动作类别常量已按裁定 A-20 与第 3.5 节的取值规则声明在 `crates/platform/flow/src/capability.rs`，取值取自 `ep_foundation::CapabilityDomain` 与 `ep_foundation::ActionClass`；`POST /internal/v1/push/dispatch` 按基线第 12 节不参与判定、不声明常量，`xtask configdoc` 通过。
-27. `DisposalPort` 的 trait 与两个 DTO 已定义在 `crates/platform/file/src/port/disposal.rs`，两个 wiring 已注入 `NoopDisposalPort` 并标注 `// TODO(stage-14): replace with real impl`，实现由阶段 14 的 `OpsDisposalService` 交付。
+26. 本阶段全部 `/api/v1/` 路由，即 `/api/v1/platform/` 各段与第 3.5.2 节三个 `/api/v1/portal/` 端点，其能力域码与动作类别已按裁定 A-20 与第 3.5 节的取值规则以 `(CapabilityDomain, ActionClass)` 元组形态声明在路由注册处，取值取自 `ep_foundation::CapabilityDomain` 与 `ep_foundation::ActionClass`，`crates/platform/flow/src/capability.rs` 中不存在按用例命名的成对常量；`POST /internal/v1/push/dispatch` 按基线第 12 节不参与判定、不声明元组，`xtask configdoc` 通过。
+27. `DisposalPort` 的 trait 与两个 DTO 已定义在 `crates/platform/file/src/port/disposal.rs`，两个 wiring 中不存在该端口的任何注入行，装配与 `OpsDisposalService` 实现由阶段 14 同批交付；`xtask archcheck` 断言本阶段两个 wiring 的注入行不出现 `Noop`、`Stub`、`Fake`、`Dummy`、`Unimplemented` 五个前缀中的任何一个，违反即构建失败。
 28. 附件的幂等收敛任务在四个崩溃点上收敛，且不产生任何对账差异事项、不实现 `ReconCheck`、不依赖 `ep-platform-recon`。
 29. 3a 段闸门：`platform_msg.idempotency_keys` 与 `IdempotencyStore` 实现、`crates/platform/release/src/port/config_item.rs` 端口与注册表两项已完成并通过各自单元测试，且该段不引入对 `ep-platform-identity` 与 `ep-platform-authz` 的任何依赖，`cargo metadata` 自检通过。
 30. 按裁定 B-02，`platform_core.append_only_registry` 中存在 `platform_audit.audit_events`、`platform_msg.outbox_events` 与 `platform_msg.dead_letters` 三行登记，`mode` 与 `mutable_columns` 按第 3.3.7 节的取值表逐项一致，三张表上的 `assert_append_only` 与 `assert_immutable_columns` 触发器已按登记挂接，`xtask sqlcheck` 执行 `db/checks/append_only_consistency.sql` 返回零行。
 31. 按裁定 A-28，第 34 号迁移执行后 `platform_core.sensitive_field_registry` 中存在 `platform_msg.push_registrations` 的 `token` 一行，`is_field_encrypted` 为真、`blind_index` 为 `EXACT`、`blind_index_column` 为 `token_bidx`、`mask_style` 为 `FULL`、`normalization` 为 `NONE`，物理表上存在 `token_enc bytea` 且不存在同名明文列 `token`，阶段 2 的 `db/checks/11` 返回零行。
+32. 3b-1 批闸门：判定四列出的六个 T0 切片在一次连贯执行中成立，即一次取号、一次审计追加与段行链接、一次 Outbox 写入与消费、一条同事务写入的站内通知、一个单审批节点流程实例从创建经人工任务完成到结束、一次经最小发布通道把该流程定义发布到 `platform_flow.process_definitions`，六项在同一测试进程内按上述次序跑通并留下可按实例查询的完整审计轨迹；该闸门不判定附件、检索、推送、定时器、补偿、许可、死信、混沌与任何性能度量项，也不要求 `ep-datagen` 的基准数据集。
 
 ---
 
@@ -1553,7 +1559,7 @@ E2E-6 配置发布最小通道（3b 段）：创建含一个 `FLOW_DEFINITION` �
 | 规格条目 | 本阶段实现内容 |
 |---|---|
 | 第 5.1 章 Outbox、幂等、编号、通知、文件引用 | 全部四项能力；通知只交付站内通知与移动推送两条渠道，其余九条渠道不实现 |
-| 第 5.1 章 低代码流程、审批、定时器、补偿和 SLA | 持久化流程引擎运行时；表单、规则表达式完整能力与 WASM 计算不在本阶段 |
+| 第 5.1 章 低代码流程、审批、定时器、补偿和 SLA | 持久化流程引擎运行时与首版唯一的表达式求值器；表单、自定义对象与服务端 WASM 计算不在首版，整体登记规格第 5.7 章延期目录 |
 | 第 5.1 章 审计与变更留痕 | 审计事件模型、哈希链、分段签名、链验证工具、审计查询端点 |
 | 第 6.5 章 大文件 | 单文件上限 5 GB、分片上传、断点续传、带宽限制、法人密钥域与密级子域加密、不做去重、发布前类型识别与恶意内容检查 |
 | 第 7.2 章 已过账分录、库存流水、审批证据与审计证据不可覆盖 | 三张仅追加表按 `append_only_registry` 登记挂接 `assert_append_only` 与 `assert_immutable_columns` 触发器、不授予 DELETE、`ep-adapter-file` 的不可删除不可覆盖命名空间、CI 的 SQL 静态检查 |
@@ -1616,9 +1622,9 @@ E2E-6 配置发布最小通道（3b 段）：创建含一个 `FLOW_DEFINITION` �
 
 风险八，Outbox 表在基准数据集下达到 200 万行，取件语句的索引选择性依赖 `status` 的分布。若 `DONE` 条目清理不及时，`status = 'PENDING'` 的扫描可能退化。控制手段是保留期清理作为必跑的后台任务并进入连续两个执行窗口未完成即告警的口径，以及 `EXPLAIN` 证据作为退出条件。
 
-风险九，保留期清理需要在 `platform_msg` 与 `platform_flow` 上执行 `DELETE`，与基线第 3.6 节的禁止清单冲突。见第 3.12 节偏离项四。清理顺序必须保证 `inbox_consumptions` 的保留期严格长于 `outbox_events` 的 `DONE` 保留期，否则先清消费记录再重放已清 Outbox 条目会重复产生副作用；本阶段取 60 天与 30 天，差值 30 天，并在清理任务中加断言：若 `INBOX_RETENTION_DAYS` 不大于 `DONE_RETENTION_DAYS`，启动自检失败。
+风险九，保留期清理需要在 `platform_msg` 与 `platform_flow` 上执行 `DELETE`，与基线第 3.6 节的禁止清单冲突。见第 3.12 节偏离项四。清理顺序必须保证 `inbox_consumptions` 的保留期严格长于 `outbox_events` 的 `DONE` 保留期，否则先清消费记录再重放已清 Outbox 条目会重复产生副作用；本阶段取 60 天与 30 天，差值 30 天，该大小关系是两个配置键的比较，作为 `config-parsed` 的一条配置校验实现，不另设自检项、不另占一个注册名。
 
-风险十，3b 段的范围因裁定 A-05、A-07、A-19 与 A-27 扩大到许可、检索与配置发布三项，工期与评审面随之扩大。控制手段是三项一律按最小集交付：许可只交付表、状态机与 `ModuleLicenseQuery`，不交付运行期操作端点；检索只交付端口、适配与消费者，不交付任何业务对象的投影函数；配置发布只交付六态与两个 applier，不交付自动测试、编辑锁与在线 DDL。残余风险是阶段 13b 扩展时要在已发布的三张配置表上做列扩展与 CHECK 扩展，该扩展按基线第 3.9 节的在线 DDL 约束执行，并须持有阶段 2 提供的迁移窗口。
+风险十，3b 段的范围因裁定 A-05、A-07、A-19 与 A-27 扩大到许可、检索与配置发布三项，工期与评审面随之扩大。控制手段有二。其一，三项一律按最小集交付：许可只交付表、状态机与 `ModuleLicenseQuery`，不交付运行期操作端点；检索只交付端口、适配与消费者，不交付任何业务对象的投影函数；配置发布只交付六态与两个 applier，不交付自动测试编排、编辑锁与在线 DDL。其二，按判定四把许可与检索放进 3b-2 批，两者都不是 T0 与阶段 5 开工的前置，关键路径上只留 3b-1 批，3b 段承载许可与检索因而不再延长关键路径。残余风险是阶段 13b 扩展时要在已发布的三张配置表上做列扩展与 CHECK 扩展，该扩展按基线第 3.9 节的迁移约束执行，并须持有阶段 2 提供的迁移窗口。
 
 风险十一，3a 与 3b 拆段后迁移号段跨越阶段 4。若排期变动使 3b 早于阶段 4 落地，第 2 至 34 号的时间戳必须一并前移，否则会出现已应用版本号大于待应用版本号的乱序。控制手段是把号段与阶段顺序的对应关系写入第 3.3.1 节，并在 CI 中断言本阶段 3b 号段严格大于阶段 4 的最大版本号。
 
@@ -1630,7 +1636,7 @@ E2E-6 配置发布最小通道（3b 段）：创建含一个 `FLOW_DEFINITION` �
 
 `OutboxWriter` 与消费者注册表：新模块只需登记事件类型与处理器，不改调度代码。
 
-`ObjectStore` 的三个命名空间与 `DisposalPort`：阶段 14 只需以 `OpsDisposalService` 实现 `DisposalPort`，不改存储适配。
+`ObjectStore` 的三个命名空间与 `DisposalPort`：阶段 14 以 `OpsDisposalService` 实现 `DisposalPort` 并同批写入两个 wiring 的注入行，不改存储适配；本阶段不预置任何注入，扩展点是一个 trait 而不是一个已接线的空壳。
 
 `ConfigItemApplier` 与 `ConfigItemApplierRegistry`：阶段 4、11 与 13b 只需实现自己的 applier 并在两个 wiring 注册，发布链路、差异审查、签名、审批与回退全部复用，不改本阶段任何表。
 
@@ -1640,7 +1646,7 @@ E2E-6 配置发布最小通道（3b 段）：创建含一个 `FLOW_DEFINITION` �
 
 `ContentInspector`：接入病毒引擎只需新增一个实现并在配置中启用。
 
-`RuleEvaluator` 与 `WasmComputePort`：阶段 13b 的接入位点已存在，实现类型分别为 `AstRuleEvaluator` 与 `PluginHostWasmCompute`；本阶段只提供流程守卫条件的最小求值器与两个空实现，不占用这两个端口。
+表达式求值器：本阶段的最小求值器是首版唯一的一条求值路径，同时服务流程守卫条件与自定义指标表达式，调用方直接依赖该类型；`RuleEvaluator` 与 `WasmComputePort` 两个端口不存在，阶段 13b 没有接入位点，也不需要第二条求值路径。
 
 `ChannelDispatcher`：通知渠道的抽象接口已按两条渠道实现，后续版本恢复统一消息中心时新增渠道不改通知写入侧。
 
@@ -1654,7 +1660,7 @@ E2E-6 配置发布最小通道（3b 段）：创建含一个 `FLOW_DEFINITION` �
 
 ### 3.12 对共享技术基线的偏离项与本阶段新增决定
 
-#### 3.12.1 偏离项，共四项，需同步修订基线
+#### 3.12.1 偏离项，共五项，需同步修订基线
 
 偏离一，移动推送出口的进程归属。基线第 2 节把 integration-gateway 定为“首版唯一的对外出网进程，只承载电子签章一类出口”，同时把“站内通知与推送投递”列为 job-worker 职责。规格第 5.1 章明确移动推送“依赖客户环境到外部推送服务的出网通道”，因此推送必然需要出网，而 job-worker 不应成为第二个出网进程。本阶段的处理是：推送的编排与载荷组装留在 job-worker，出网动作交由 integration-gateway 执行。影响范围为 integration-gateway 新增一个内部端点与一个出口适配器，其 cgroup、系统账户、数据库池上限均不变。提议基线第 2 节的 integration-gateway 职责描述修订为“承载电子签章与移动推送两类出口”，并同时明确：规格第 15.1 章的 `EXTERNAL_SYSTEM` 错误分类首版仍仅指电子签章，推送失败不进入该分类、不进入错误率口径，因为推送不是任何提醒的保证渠道。
 
@@ -1663,6 +1669,7 @@ E2E-6 配置发布最小通道（3b 段）：创建含一个 `FLOW_DEFINITION` �
 偏离三，分片上传的幂等键落库豁免。基线第 5.4 节要求全部写请求的幂等键写入 `platform_msg.idempotency_keys`。分片 PUT 单次上传可产生 640 次写请求，为每次写一行幂等键在 7 天保留期内产生无谓膨胀，且分片具备 `(session_id, part_no, part_hash)` 这一自然幂等键。提议基线第 5.4 节增列：以自然幂等键判等的端点可豁免落库，豁免端点必须在基线中逐条登记，当前只有分片 PUT 一条。
 
 偏离四，保留期清理的 `DELETE` 范围。基线第 3.6 节只允许在 `platform_msg` 的过期幂等键与 `platform_ops` 的过期指标快照上执行按期清理。本阶段需要清理 `outbox_events` 的 `DONE` 条目、`inbox_consumptions`、超过保留期的已读 `notifications` 与其 `notification_deliveries`、超过保留期的已结束 `process_instances` 及其 `process_steps` 与 `process_timers`、终态 `upload_sessions` 与 `upload_parts`。提议基线第 3.6 节把允许清理的清单扩展为上述七类，并同时明确永不清理的清单：`audit_events`、`audit_segments`、`audit_anchors`、`dead_letters`、`attachment_objects`、`attachment_versions`、`scan_results`、`process_compensations`。清理任务必须保证 `inbox_consumptions` 保留期严格长于 `outbox_events` 的 `DONE` 保留期，该断言进启动自检。
+偏离五，删除基线第 7.3 节的自检项 `license-and-modules-consistent`，并为自检项引入两级取值域。该项的三条判据判读的是 `module_registrations`、`license_grants`、`feature_flags` 三张表的行与当前启用命名用户数，属运行期可变的业务数据；而规格第 3.4 章明写许可到期后进入宽限期与受限运行、平台不因许可状态停机、用量超过上限时不阻断业务、身份四项处置在任何许可状态下均可用。两者直接冲突：这台服务器没有备节点，该项失败即全部进程拒绝启动，规格设计的受限运行态与四项身份处置全部不可达，而此时唯一可行的恢复动作恰是手工改库。提议基线第 7.3 节把该项整项删去，十三项收为十二项，三条判据按第 3.4.11 节改由 `ModuleLicenseQuery` 的运行期判定、受限运行与超用事件承接。同时提议基线第 7.3 节为 `SelfCheckItem.severity` 定义取值域 `Blocking` 与 `Degrading`：判读配置、目录、权限位、密钥与数据库可达性的项取 `Blocking`；判读登记一致性且有明确运行期后果的项取 `Degrading`，失败时写 `platform_ops.degradation_windows` 并告警而不阻止启动；`--check` 对两级一律非零退出，把闸门放在部署与升级前置而不是进程启动。
 
 #### 3.12.2 澄清项，共三项，属基线内部张力，本阶段按下列口径执行
 
@@ -1697,7 +1704,7 @@ U-A-01 与 U-A-02 已由共享技术基线第 11.1 节取值，本阶段直接�
 
 本节是 needs 数组的正文说明，逐项写明依赖内容、被阻塞的范围与临时替代方案。
 
-依赖一，工程基线（阶段 1）：Cargo workspace 骨架、`rust-toolchain.toml`；`ep-foundation` 的 `Id`、`Money`、`Clock`、`IdGen`、`Rng`、`SecurityLevel`、`AppError`、`ErrorCode`、`DomainEvent` 信封，按裁定 A-03 冻结的 19 字段 `SecurityContext` 与两个构造函数，按裁定 A-01 冻结的 `port::tx` 三件套 `Tx`、`SnapshotCtx`、`UnitOfWork`（两个方法 `transact` 与 `snapshot_transact`）与 `id::marker` 的 22 个标记类型，按裁定 A-02 冻结的 `SYSTEM_PRINCIPAL_ID` 与 `SYSTEM_DEVICE_ID`，按裁定 A-05 冻结的 `ModuleCode`，按裁定 A-20 冻结的 `CapabilityDomain` 与 `ActionClass`，以及 `port::search` 的空模块文件；按裁定 C-24 由阶段 1 登记的七个平台错误码；按裁定 C-07 的 `IdempotencyKeyHeaderGuard`；按裁定 C-05 的 `tests/rls_matrix` CI 目标与八个断言函数；按裁定 C-23 注册的两个数据库连接池指标；`ep-adapter-db` 的连接池与 `ep-adapter-db-pg` 的会话变量注入与归还清除钩子，refinery Runner 与 `db/migrations/order.toml` 的骨架，CI 的依赖方向自检与 SQL 静态检查，`ep-testkit` 与 `ep-datagen` 骨架。缺失则本阶段无法开工，无临时替代。
+依赖一，工程基线（阶段 1）：Cargo workspace 骨架、`rust-toolchain.toml`；`ep-foundation` 的 `Id`、`Money`、`Clock`、`IdGen`、`Rng`、`SecurityLevel`、`AppError`、`ErrorCode`、`DomainEvent` 信封，按裁定 A-03 冻结的 19 字段 `SecurityContext` 与两个构造函数，按裁定 A-01 冻结的 `port::tx` 三件套 `Tx`、`SnapshotCtx`、`UnitOfWork`（两个方法 `transact` 与 `snapshot_transact`）与 `id::marker` 的 22 个标记类型，按裁定 A-02 冻结的 `SYSTEM_PRINCIPAL_ID` 与 `SYSTEM_DEVICE_ID`，按裁定 A-05 冻结的 `ModuleCode`，按裁定 A-20 冻结的 `CapabilityDomain` 与 `ActionClass`，以及 `port::search` 的空模块文件；按裁定 C-24 由阶段 1 登记的七个平台错误码；按裁定 C-07 的 `IdempotencyKeyHeaderGuard`；按裁定 C-05 的 `tests/rls_matrix` CI 目标与八个断言函数；按裁定 C-23 注册的两个数据库连接池指标；`ep-adapter-db` 的连接池与 `ep-adapter-db-pg` 的会话变量注入与归还清除钩子，单一全局 refinery Runner 的骨架与 `db/migrations/` 下二十四个空目录，CI 的依赖方向自检与 SQL 静态检查，`ep-testkit` 与 `ep-datagen` 骨架。缺失则本阶段无法开工，无临时替代。
 
 依赖二，密钥与密码（阶段 2）：`ep-adapter-kms` 的信封加密（AES-256-GCM 数据密钥的派生与解封）与签名验签（ECDSA P-256），每法人数据加密密钥域与密级子域的建立，以及按裁定 B-04 由阶段 2 提供的盲索引派生函数 `derive_blind_key` 与 `BlindIndex`，本阶段的 `push_registrations.token_bidx` 取其派生值，不自建第二套哈希。缺失时以内存桩实现开发，但第 3.9 节退出条件的第 9、10、13 项必须在真实实现上判定。
 
@@ -1707,7 +1714,7 @@ U-A-01 与 U-A-02 已由共享技术基线第 11.1 节取值，本阶段直接�
 
 依赖五，授权（阶段 4）：`ep-platform-authz` 的权限项注册与判定入口、职责分离判定（申请人不可自审）、字段级与密级过滤。缺失则全部端点的权限声明只能登记不能生效，第 3.9 节退出条件第 2 项的“报表投影”与“错误信息泄漏”两类无法判定。
 
-依赖六，元数据（阶段 13b）：`ep-platform-meta` 的自定义对象注册与六个 `CUSTOM_` 前缀的 applier，用于让附件、流程、审计、检索对自定义对象自动生效，规格第 7.4 章要求“自定义对象自动获得权限、流程、审计、搜索、API 和报表能力”。缺失不阻塞本阶段核心能力，但该自动生效的验收推迟到阶段 13b。
+依赖六，元数据（阶段 13b）：无。自定义对象与自定义字段随在线 DDL 与六个 `CUSTOM_` 前缀内容项整体登记入规格第 5.7 章延期目录，本阶段不再依赖 `ep-platform-meta` 的任何产出，也不再为其保留待接线的注册位点。规格第 7.4 章“自定义对象自动获得权限、流程、审计、搜索、API 和报表能力”一条随该延期一并登记：首版没有自定义对象，该条没有适用对象，本阶段的附件、流程、审计与检索只对内置对象生效。
 
 依赖七，配置发布与模块许可：两项均按裁定 A-05、A-19 与 A-27 前移到本阶段，不再构成对其他阶段的依赖。3a 段交付 `ConfigItemApplier` 端口与注册表，3b 段交付最小发布通道与模块许可本体，见第 3.4.11 节与第 3.4.12 节。本阶段只向后依赖两项扩展：PRD 第 10.4.1 节的十一态发布生命周期、自动测试编排与编辑锁由阶段 13b 扩展；模块停用再启用的端到端验收顺延到阶段 13b。
 

@@ -3,6 +3,7 @@
 本阶段实现 PRD 第 9 节的全部五类对象（设备档案与保修、客户投诉记录、售后工单、退换修登记、项目与项目任务），并实现规格第 8 章第 12 步要求的客户 360 聚合读取入口。本阶段的硬边界是不生成任何总账凭证、不写库存数量账与库存金额账、不产生成本归集，全部账务与库存后果由本阶段关联的销售退货单在其所属模块承接。
 
 本计划严格照做共享技术基线。基线已给出取值的一律引用不重取；基线未覆盖而本阶段必须取值的，集中登记在第 13 节；规格与 PRD 未定义而必须假设的，集中登记在第 14 节；PRD 附录乙已登记的未决事项，集中登记在第 12 节并给出临时取值与切换代价。
+本阶段与 T0 贯通线的关系。T0 是在阶段 4 结束后、阶段 5 全量开工之前插入的一条最薄贯通线，切片取自阶段 5、6、9a、10、11，判据是一条合同从建单走到管理层看到一个数。本阶段不向 T0 贡献任何切片，理由是设备、投诉、工单、退换修与项目五类对象都不在那条最薄闭环上，规格第 8 章第 12 步本身也排在第 11 步之后。本阶段整体在 T0 已贯通的骨架上加厚：开工时客户档案、产品、合同、销售订单、交付确认单、销售退货命令端口、销项发票与采购需求入口都已真实存在并被真实调用过，因此本阶段不为任何跨模块调用注入替身，不设任何顺延验收项，也不承担任何首次贯通判据。闭环第 12 步只交付用例片段，其串接由阶段 9b 在全分支闭环时执行。
 
 ### 0. 范围与不做的事
 
@@ -31,11 +32,11 @@
 | D-04 | service schema 的 13 张表与 project schema 的 5 张表 | db/migrations/service/ 与 db/migrations/project/ 下的迁移可离线执行并可回退 | refinery 迁移在空库上执行成功，且 --check 模式下启动自检项 rls-enabled-and-forced 通过 |
 | D-05 | 售后侧 36 个 HTTP 端点、项目侧 16 个 HTTP 端点、客户 360 的 1 个端点 | core-server 暴露于 /api/v1/service、/api/v1/project、/api/v1/crm | 端点级集成测试全绿 |
 | D-06 | 25 个领域事件的发布与 3 个消费者 | Outbox 写入与 job-worker 消费 | 重复投递不少于 3 次的幂等测试通过 |
-| D-07 | 三张受控取值字典的出厂数据与配置发布通道接入 | 迁移回填 + 配置发布包 | 字典改动经签名发布后生效，且不触发 DDL |
+| D-07 | 三张受控取值字典的出厂数据与配置发布通道接入 | 迁移回填 + 配置发布包 | 字典改动经配置发布通道发布后生效，且不触发 DDL |
 | D-08 | 工单时限提醒的定时器登记与站内通知送达 | 经 ep-platform-flow 定时器与 ep-platform-notify | 两类提醒的端到端测试通过 |
 | D-09 | tests/rls_matrix 中本阶段 18 张带法人表的越权矩阵用例 | 独立测试目标 | 八类越权面全部返回 404 或 403，无内容回显 |
 | D-10 | 闭环第 12 步的用例片段与三条追溯链路双向可达用例 | 前者为 testkit/scenarios/stage12_service_step12.rs 中的步骤函数与断言，供阶段 9b 的 testkit/scenarios/golden_loop_14_steps.rs 在第 12 步引用；后者为 apps/core-server/tests/ 下的 E2E | 两者在本阶段各自跑通全绿，整条链路的串接通过由阶段 9b 的该用例判定 |
-| D-11 | 边界不变量用例 | 执行本阶段全部用例前后规格第 17.3 章三项取值不变 | 由 ep-platform-recon 语句集比对，差额为零 |
+| D-11 | 边界不变量用例 | 执行本阶段全部用例前后凭证与库存流水四张表的行数与校验和不变 | 用例前后各取一次数直接比对，不调用 ep-platform-recon |
 | D-12 | docs/event-catalog.md、docs/error-codes.md、docs/data-dictionary.md 三处登记，其中数据字典含本阶段五个单据类型码 EQ、CPL、WO、PRJ、PT | 文档 | CI 一致性校验通过，且 xtask configdoc --check-doc-type-codes 通过 |
 | D-13 | project.v_projects_dataset 受治理数据集视图，dataset code 为 project_projects，grain 为 DOCUMENT | db/migrations/project/ 下的视图迁移 | 视图已发布并授予 ep_analyst_ro，列签名与 reporting.dataset_fields 的登记一致 |
 | D-14 | service 与 project 两个模块的四端界面 | clients/desktop/src/modules/service/、clients/desktop/src/modules/project/ 与 clients/mobile/src/modules/ 下的同名目录 | 四端 UI 用例全绿 |
@@ -76,7 +77,7 @@ ep-contract-service 对外只暴露 ReturnRepairTraceQuery 一个 trait。按裁
 
 - core-server：全部交互式命令与查询、客户 360 聚合、退换修登记行提交时对 ep-contract-sales 已交付数量查询的同步调用；销售退货单的创建命令不在 core-server 发起，见 4.6。
 - job-worker：三个 Outbox 消费者，即合同生效派生项目任务的 project.contract_derivation、项目任务提交采购需求的 project.requisition_intake、退换修登记行挂接与回写的 service.return_repair_writeback；工单时限提醒定时器的回调执行；检索索引传播事件的发布方。
-- 本阶段不新增进程，不使用 integration-gateway、plugin-host、portal-gateway。本阶段对象不进入供应商门户的受控能力 API。
+- 本阶段不新增进程，不使用 integration-gateway 与 portal-gateway。本阶段对象不进入供应商门户的受控能力 API。
 
 #### 2.4 依赖方向自检
 
@@ -88,7 +89,7 @@ ep-contract-service 对外只暴露 ReturnRepairTraceQuery 一个 trait。按裁
 
 #### 3.1 迁移文件与执行顺序
 
-order.toml 中业务 schema 顺序已固定为 mdm、cpq、clm、sales、procure、inventory、costing、project、service、invoice、finance、ledger、crm、portal、reporting，因此 project 先于 service 执行。本阶段不新增 schema，不改动 order.toml。本阶段不建任何跨 schema 外键，跨模块引用只留逻辑引用列，其存在性由 application 层在写入时经对方模块契约校验；按裁定 A-06 本阶段不实现也不注册任何 ReconCheck，跨模块逻辑引用不建周期性对账校验项，属首版已知边界，第 8.5 节的不变量核对只运行其他阶段已注册的校验项。
+迁移执行顺序由单一全局 Runner 按文件版本号全序排定，本阶段 project 目录建表文件的版本号早于 service 目录中引用它们的文件。本阶段不新增 schema，也不存在任何顺序声明文件。按改写后的基线第 3.3 节，跨 schema 引用凡目标单一的一律建真实外键，形式为复合外键 (legal_entity_id, <ref>_id) 指向被引用表的 (legal_entity_id, id) 唯一键，并 ON DELETE RESTRICT。本阶段引用的 mdm、clm、sales、procure 四个 schema 中被引用对象的建表迁移版本号均早于本阶段的建表文件，因此全部外键在本阶段的建表语句中直接声明，不需要任何 ALTER TABLE 补建。第 3.3 与 3.4 节逐表定义中标注为逻辑引用的单目标列一律按本条建外键，表内不再逐列复述；本阶段保留逻辑引用列的只有 service.work_order_lines 的 outbound_document_id 与 outbound_document_line_id 两列，理由是发货侧单据本身首版不定义，目标表不存在。复合外键同时使跨法人引用在数据库层面不可能，第 4.5 节第 1 条的法人一致校验只保留给出可读错误码这一项职责。外键是被引用表上的声明式约束，模块代码看不见它，与规格第 5.6 章禁止跨模块直接读写业务表不冲突，模块隔离仍由仓储按 schema 分文件与依赖方向断言承担；跨模块契约调用全部保留，但职责收窄为业务状态、启用状态与法人一致性的判定并给出可读错误码，引用存在性改由数据库强制，SQLSTATE 23503 按基线统一映射为应用缺陷处理。按裁定 A-06 本阶段不实现也不注册任何 ReconCheck；跨模块引用完整性由外键在写入瞬间强制，不再作为首版已知边界登记，第 8.5 节的核对只运行其他阶段已注册的校验项。
 
 | 顺序 | 文件 | 内容 |
 |---|---|---|
@@ -192,7 +193,7 @@ service.equipment_statuses、service.work_order_types、service.complaint_channe
 | deactivated_at | timestamptz | 是 | 无 | — |
 | is_terminal | boolean | 否 | false | 只在 equipment_statuses 上存在，true 表示终止状态 |
 
-索引：pk；ux_<table>_legal_entity_id_code；ix_<table>_legal_entity_id_created_at。这三张表是运行期可变的枚举字典，按基线第 7.1 节存事务数据库并经配置发布通道签名发布，改动取值不触发 DDL。
+索引：pk；ux_<table>_legal_entity_id_code 建于 (legal_entity_id, code)；ix_<table>_legal_entity_id_created_at。业务表上的取值列按 3.1 的口径建复合外键指向该唯一键。这三张表是运行期可变的枚举字典，按基线第 7.1 节存事务数据库并经配置发布通道发布，改动取值不触发 DDL。
 
 service.equipment_records（档案类）
 
@@ -222,7 +223,7 @@ service.equipment_records（档案类）
 | migration_batch_no | text | 是 | 无 | ≤ 64，规格第 7.10 章迁移批次标识 |
 
 约束：ck_equipment_records_source；ck_equipment_records_install_after_delivery 为 `installed_on is null or delivered_on is null or installed_on >= delivered_on`；ck_equipment_records_warranty_range 为 `warranty_end_on is null or warranty_start_on is null or warranty_end_on >= warranty_start_on`；ck_equipment_records_batch_no_len 为 `char_length(batch_no) between 1 and 64`；ck_equipment_records_migration_source 为 `source <> 'MIGRATION' or migration_batch_no is not null`。交付日期不得晚于登记时点自然日不落在 CHECK 上，理由是该判据依赖当前时间，不是不可变表达式，改由应用层按 Clock 端口判定。
-current_status_code 不建外键，理由是字典行由配置发布通道写入并可停用，外键会把配置停用与业务表更新绑死；取值合法性由应用层在写入前对字典做存在性与启用状态校验，字典行只允许停用不允许删除，孤儿取值因此无从产生，本阶段不设周期性孤儿取值核对。
+current_status_code 建复合外键 fk_equipment_records_equipment_statuses，指向 service.equipment_statuses 的 (legal_entity_id, code) 唯一键并 ON DELETE RESTRICT。原先不建外键的理由是配置停用会与业务表更新绑死，该理由不成立：规格第 5.6 章的停用只停界面入口、写入接口、定时任务与对外事件，字典行只允许停用不允许删除，全程无 DDL 也无 delete，外键不参与其中任何一步且永不触发。应用层只保留启用状态判定与可读错误码，不再承担存在性校验；孤儿取值由外键在写入瞬间挡住，周期性孤儿取值核对整条不设。work_orders 的 work_order_type_code、customer_complaints 的 channel_code 与 work_order_reminder_policies 的 work_order_type_code 三处同 schema 字典引用同此处理。
 索引：pk_equipment_records；ux_equipment_records_legal_entity_id_code；ix_equipment_records_legal_entity_id_created_at；ix_equipment_records_legal_entity_id_customer_id；ix_equipment_records_legal_entity_id_serial_no；ix_equipment_records_le_delivery_conf_line 建于 (legal_entity_id, delivery_confirmation_line_id)，用于路径一建档的重复判定；ix_equipment_records_legal_entity_id_current_status_code。基线三条之外的四条索引理由是设备列表、按客户聚合的客户 360 区块、按交付确认行去重与工单创建时的设备检索四类查询进入附录 A.1 的度量范围，需给出 EXPLAIN 无顺序扫描的证据。
 序列号唯一性：本阶段不建唯一索引，见第 12 节 U-J-03。
 
@@ -355,7 +356,7 @@ PRD 9.3.4 要求状态变更记录变更前后取值、操作者、时间与原�
 
 #### 3.7 受治理数据集视图
 
-按裁定 A-18，本阶段发布一个受治理数据集视图 project.v_projects_dataset，dataset code 为 project_projects，grain 为 DOCUMENT，由 db/migrations/project/V202611020920__project_create_dataset_views.sql 建立。视图取数为 project.projects，必须包含 legal_entity_id、security_level、data_scope_tags 三列，另含 id、doc_no、status、name、customer_id、source_contract_id、project_group_contract_id、owner_user_id、planned_start_on、planned_finish_on、completed_at、closed_at、created_at。同一迁移内执行 GRANT SELECT ON project.v_projects_dataset TO ep_analyst_ro，不授予 ep_app_rw 之外的任何写权限。视图的列名与类型签名必须与 reporting.dataset_fields 的登记一致，由阶段 11 的启动自检项 reporting-dataset-signature-matched 校验；该目录行由阶段 11 先播种，在本视图发布之前该自检项按已登记但未发布降级放行，本阶段结束后转为强制。本阶段不为 service schema 发布任何数据集视图，售后侧对外取数仍走 5.1 至 5.3 的端点与全文检索文档。
+按裁定 A-18，本阶段发布一个受治理数据集视图 project.v_projects_dataset，dataset code 为 project_projects，grain 为 DOCUMENT，由 db/migrations/project/V202611020920__project_create_dataset_views.sql 建立。视图取数为 project.projects，必须包含 legal_entity_id、security_level、data_scope_tags 三列，另含 id、doc_no、status、name、customer_id、source_contract_id、project_group_contract_id、owner_user_id、planned_start_on、planned_finish_on、completed_at、closed_at、created_at。同一迁移内执行 GRANT SELECT ON project.v_projects_dataset TO ep_analyst_ro，不授予 ep_app_rw 之外的任何写权限。视图的列名与类型签名必须与 reporting.dataset_fields 的登记一致，由阶段 11 的启动自检项 reporting-dataset-signature-matched 判定。该自检项为降级级，任何取值下都不阻断任何进程启动：本视图尚未发布或签名不符时，关闭以 project_projects 为来源的报表入口，经阶段 2 已交付的 DegradationLedger 开一个降级窗口并持续告警，视图发布且签名一致后关窗。本阶段不设由降级放行转为强制的时点。本阶段不为 service schema 发布任何数据集视图，售后侧对外取数仍走 5.1 至 5.3 的端点与全文检索文档。
 
 ---
 
@@ -451,7 +452,7 @@ WorkOrder 聚合边界包含其登记行与处理记录，理由是工单完成�
 
 #### 4.9 由项目任务提交采购需求
 
-在一个事务内加载任务 FOR UPDATE，校验任务状态属于 {NOT_STARTED, IN_PROGRESS} 且其项目状态不为 CLOSED，跨模块入口只有 `ep_contract_procure::PurchaseRequisitionIntakePort::intake(tx, ctx, cmd)` 一个，按裁定 C-17 该端口由阶段 7 提供，本阶段不直接写对方表，也不使用 PurchaseRequisitionDerivationPort 一类的旧名。由于该调用是跨模块同步命令且需要建立双向引用，本阶段采用两段式：本事务内只发布 project.project_task.requisition_requested.v1，由 job-worker 的 project.requisition_intake 消费者消费后调用该端口创建采购需求，回写 purchase_requisition_id 与 doc_no。入参 PurchaseRequisitionIntake 按裁定 C-17 填写：source_module 取 ModuleCode::Project，source_doc_id 取 project_id，source_doc_line_id 取 project_task_id，material_id、quantity、required_on 取任务上的申请取值，unique_key 取 `project.project_tasks:<project_task_id>:<本次提交的 Idempotency-Key>`，由 procure 侧据此保证不重复建单。理由是基线第 10.3 节禁止在事务内做跨模块的写编排，且一个用例一个事务。占位行的 purchase_requisition_id 在回写前不可为空这一约束因此改为：占位阶段不写 link 行，改在回写阶段一次性写入，link 表的 purchase_requisition_id 保持非空。任务侧在回写前展示为提交中，取值来源为该任务上未完成的 requisition_requested 事件，由 Outbox 状态查询给出。阶段 7 交付前，本阶段在两个 wiring.rs 注入 NoopPurchaseRequisitionIntakePort 并加注释 `// TODO(stage-7): replace with real impl`。
+在一个事务内加载任务 FOR UPDATE，校验任务状态属于 {NOT_STARTED, IN_PROGRESS} 且其项目状态不为 CLOSED，跨模块入口只有 `ep_contract_procure::PurchaseRequisitionIntakePort::intake(tx, ctx, cmd)` 一个，按裁定 C-17 该端口由阶段 7 提供，本阶段不直接写对方表，也不使用 PurchaseRequisitionDerivationPort 一类的旧名。由于该调用是跨模块同步命令且需要建立双向引用，本阶段采用两段式：本事务内只发布 project.project_task.requisition_requested.v1，由 job-worker 的 project.requisition_intake 消费者消费后调用该端口创建采购需求，回写 purchase_requisition_id 与 doc_no。入参 PurchaseRequisitionIntake 按裁定 C-17 填写：source_module 取 ModuleCode::Project，source_doc_id 取 project_id，source_doc_line_id 取 project_task_id，material_id、quantity、required_on 取任务上的申请取值，unique_key 取 `project.project_tasks:<project_task_id>:<本次提交的 Idempotency-Key>`，由 procure 侧据此保证不重复建单。理由是基线第 10.3 节禁止在事务内做跨模块的写编排，且一个用例一个事务。占位行的 purchase_requisition_id 在回写前不可为空这一约束因此改为：占位阶段不写 link 行，改在回写阶段一次性写入，link 表的 purchase_requisition_id 保持非空。任务侧在回写前展示为提交中，取值来源为该任务上未完成的 requisition_requested 事件，由 Outbox 状态查询给出。阶段 7 排在本阶段之前，本阶段开工时 `PurchaseRequisitionIntakePort` 的真实实现已装配，两个 wiring.rs 中不出现任何替身。按取消 Noop 通则后的硬规则，跨模块同步调用的被调方必须与调用方同批到位，否则调用方本轮整条不做该调用，不存在先注入空实现再回头替换这一形态；本阶段既无该情形，也不为任何端口注入空实现。
 
 #### 4.10 客户 360 聚合
 
@@ -474,7 +475,7 @@ pub struct Customer360Item {
 
 聚合算法（ep-app-crm::usecase::query_customer_360）：
 1. 校验客户在当前安全上下文下可见，不可见返回 404 与 PLATFORM.AUTHZ.NOT_FOUND_OR_DENIED。
-2. 对已注册的提供者并发扇出，并发上限取配置，每个区块各自使用只读分析池的一个连接，语句超时按只读池取值，另在应用侧对每个区块施加 section_timeout_ms 的超时。
+2. 按注册顺序逐个调用提供者，全部区块共用本次请求的一个只读分析池连接，不做并发扇出，语句超时按只读池取值，另在应用侧对每个区块施加 section_timeout_ms 的超时。理由是每个区块各命中一条索引、单次取数在毫秒级，20 人并发下并发扇出换不到时延收益，却会让一个请求同时占住只读分析池上限 10 的一半。
 3. 未注册提供者的区块返回 section_status 为 NOT_AVAILABLE；超时或失败的区块返回 DEGRADED 并计一次 ep_crm_customer360_section_degraded_total，不使整个请求失败，理由是客户 360 是查询类视图，单一区块不可用不应阻断其余区块。
 4. 每区块内按 occurred_on 降序、object_id 降序截断到 size 条，size 默认 20、上限 50。
 5. 全部区块的字段级裁剪与密级过滤由 ep-platform-authz 在提供者内部完成，聚合层不做二次裁剪，也不做跨区块排序，避免通过排序位次间接暴露无权数据，取值按规格第 7.9 章。
@@ -646,15 +647,13 @@ section_status 取值为 OK、DEGRADED、NOT_AVAILABLE 三种。权限为 crm.cu
 | EP__SERVICE__WORK_ORDER__MAX_LINES_PER_ORDER | u16 | 200 | 启动时读取，改动需重启 core-server | 与基线批量上限 200 对齐 |
 | EP__SERVICE__WORK_ORDER__REMINDER_TIMER_ENABLED | bool | true | 启动时读取 | 关闭后不登记时限定时器，用于迁移窗口 |
 | EP__SERVICE__EQUIPMENT__CREATE_FROM_DELIVERY_MAX_ROWS | u16 | 200 | 启动时读取 | 单次从交付确认单建档的上限 |
-| EP__SERVICE__EQUIPMENT__SERIAL_NO_DUPLICATE_CHECK | bool | true | 启动时读取 | 关闭后不做重复提示，仅用于历史导入窗口 |
 | EP__PROJECT__DERIVATION__MAX_TASKS_PER_CONTRACT | u16 | 500 | 启动时读取，core-server 与 job-worker 取同值 | 单次派生的任务条数上限 |
 | EP__PROJECT__DERIVATION__PLAN_QUERY_TIMEOUT_MS | u32 | 3000 | 启动时读取 | 读取合同派生项的超时 |
 | EP__CRM__CUSTOMER_360__DEFAULT_SECTION_SIZE | u16 | 20 | 启动时读取 | 未传 section_size 时的默认值，取值来源见第 12 节 U-J-15 |
 | EP__CRM__CUSTOMER_360__MAX_SECTION_SIZE | u16 | 50 | 启动时读取 | 请求超过即 VALIDATION |
 | EP__CRM__CUSTOMER_360__SECTION_TIMEOUT_MS | u32 | 1500 | 启动时读取 | 单区块超时，超时即 DEGRADED |
-| EP__CRM__CUSTOMER_360__PROVIDER_CONCURRENCY | u8 | 5 | 启动时读取 | 区块扇出并发上限，不超过只读分析池上限 10 的一半 |
 
-本阶段不引入新的机密引用，不改动机密库结构。本阶段在启动自检中不新增检查项；按裁定 C-25 自检项一律按注册名标识，基线项 rls-enabled-and-forced 自然覆盖本阶段新增的 18 张表。
+本阶段不引入新的机密引用，不改动机密库结构。本阶段在启动自检中不新增检查项；按裁定 C-25 自检项一律按注册名标识，基线项 rls-enabled-and-forced 只读系统目录，自然覆盖本阶段新增的 18 张表。与本阶段有关的唯一自检项 reporting-dataset-signature-matched 归阶段 11，按 3.7 的口径为降级级，其判读结果只决定报表入口的开闭，不决定任何进程能否启动。
 
 ---
 
@@ -688,19 +687,19 @@ section_status 取值为 OK、DEGRADED、NOT_AVAILABLE 三种。权限为 crm.cu
 6. 投诉升级：成功一次；同一投诉第二次升级返回 409 并回带既有工单编号。
 7. 工单三个创建入口产生的对象与状态机一致（同一断言集跑三遍）。
 8. 关联一致性七条校验逐条命中：法人不一致、对象不可见、客户不一致、设备带出、订单行带出、终止状态、允许为空。
-9. 登记行三类处理方式：退货经 SalesReturnCommandPort::create_sales_return 生成销售退货单（端口用 ep-testkit 的 SalesReturnPortFake 与 wiremock 双实现各跑一遍，两者均按裁定 A-17 的签名实现）、换货挂两张单据、维修直接完成。
+9. 登记行三类处理方式：退货经 SalesReturnCommandPort::create_sales_return 生成销售退货单（该端口是同进程内的 trait 调用，集成测试一律接阶段 6 已交付的真实实现，不用 wiremock，也不再跑第二遍替身；ep-testkit 的 SalesReturnPortFake 只保留给 ep-domain-service 与 ep-app-service 的单元测试）、换货挂两张单据、维修直接完成。
 10. 回写：sales.sales_return.closed.v1 驱动登记行到 COMPLETED；sales.sales_return.cancelled.v1 与 sales.sales_return.rejected.v1 驱动退回 PENDING 并发通知；三个事件的乱序与迟到各一条状态收敛用例。
 11. 工单完成守卫：存在 PENDING 行时被拒并回带清单；全部行终态后通过。工单取消守卫同理。
 12. 派生：一次合同生效派生出 N 条任务与 1 个项目；同一事件重复投递 5 次仅一套任务、一套事件、一套审计记录；同一合同版本内重复派生时终态任务被跳过、非终态任务被更新；合同变更产生新版本时按新的 unique_key 建新任务而旧版本的非终态任务保持原状并标注为来源已变更；派生计划中 item_kind 非 ProjectTask 的项被整项忽略；续签合同复用同一项目。
 13. 派生失败：派生项查询持续失败，八次退避后进死信，死信按法人可枚举，重投成功后任务正确。
-14. 项目任务提交采购需求：经 PurchaseRequisitionIntakePort::intake 回写建立双向引用；同一 unique_key 重复提交在 procure 侧不重复建单；同一采购需求重复回写被唯一约束拦截；阶段 7 交付前该用例跑 NoopPurchaseRequisitionIntakePort 分支并断言任务停留在提交中。
+14. 项目任务提交采购需求：经 PurchaseRequisitionIntakePort::intake 回写建立双向引用；同一 unique_key 重复提交在 procure 侧不重复建单；同一采购需求重复回写被唯一约束拦截；回写事件进入死信时任务停留在提交中并由死信状态解释，该分支用死信夹具驱动，不使用任何替身实现。
 15. 客户 360：三个自实现区块返回正确数据；未注册的合同与回款区块返回 NOT_AVAILABLE；人为注入超时的区块返回 DEGRADED 且其余区块正常。
 16. 处理记录只追加：追加成功、UPDATE 与 DELETE 语句在 CI 静态检查中被拦截、更正说明经 reverses_id 关联。
 17. 附件关联：四张附件表的挂接与解除挂接、附件正文不落业务表列。
 18. 字段级加密：联系方式写入为密文、按该字段过滤与排序的请求返回 VALIDATION、日志与错误响应中不出现明文。
 19. 受治理数据集视图：project.v_projects_dataset 存在且含 legal_entity_id、security_level、data_scope_tags 三列；ep_analyst_ro 可 SELECT 而任何写语句被拒；视图列名与类型签名与 reporting.dataset_fields 的登记逐列一致。
 
-RLS 与越权：本阶段 18 张表全部纳入 tests/rls_matrix，覆盖读取、写入、更新、删除、聚合、排序、报表投影与错误信息泄漏八类；另覆盖两个复制角色与内部对账系统安全上下文的入口借用测试。该测试目标属发布门禁项。
+RLS 与越权：本阶段 18 张表全部纳入 tests/rls_matrix，覆盖读取、写入、更新、删除、聚合、排序、报表投影与错误信息泄漏八类。该测试目标属发布门禁项。两个复制角色与对账上下文的入口借用测试与本阶段的表无关，由阶段 2 一次性覆盖，本阶段不重复承担。
 
 并发：命中基线第 8.4 节六组必测场景中的第一组（同一单据的乐观锁冲突）与第六组（Outbox 同一事件重复投递不少于 3 次），并追加本阶段特有的三组：两个用户并发升级同一投诉（恰好一个成功）；一个用户完成工单同时另一个用户新增登记行（按锁序串行化，后者要么被守卫拒绝要么在完成前入库并使完成被拒，不出现完成后仍有 PENDING 行）；两个用户对同一订单行并发登记退货（本模块前置校验可能同时通过，sales 侧权威校验拒绝其一，被拒的登记行退回 PENDING 且不产生第二张退货单）。
 
@@ -725,8 +724,7 @@ RLS 与越权：本阶段 18 张表全部纳入 tests/rls_matrix，覆盖读取�
 
 #### 8.5 不变量与边界测试
 
-- 执行本阶段全部集成与 E2E 用例前后，用 ep-platform-recon 的语句集在同一 REPEATABLE READ 快照上核对规格第 17.3 章的库存数量守恒、存货金额账与数量账一致、子账与总账勾稽三项，差额为零且取值不变。
-- 直接断言本阶段用例前后 ledger.vouchers、ledger.voucher_lines、inventory 的数量流水与金额流水四张表的行数与校验和不变，即本阶段确未生成任何总账凭证与库存流水。这是 PRD 9.11 第四条验收要点的可执行形式。
+- 直接断言本阶段全部集成与 E2E 用例前后，ledger.vouchers、ledger.voucher_lines 与 inventory 的数量流水、金额流水四张表的行数与校验和不变，即本阶段确未生成任何总账凭证与库存流水。四张表逐表不变已经蕴含规格第 17.3 章三项不变量取值不变，本阶段因此不再另跑一遍 ep-platform-recon 的语句集，该三项由实际写这四张表的阶段 8、9b、10、11 承担。这是 PRD 9.11 第四条验收要点的可执行形式。
 - 审计断言：PRD 9.10 列出的八类必须留痕动作各产生且仅产生一条审计事件，事件与业务变更同事务，哈希链在该日期段上验证通过。
 
 #### 8.6 覆盖率门槛
@@ -761,14 +759,14 @@ RLS 与越权：本阶段 18 张表全部纳入 tests/rls_matrix，覆盖读取�
 12. 派生失败进入死信并可记名重投，死信按法人可枚举。
 13. 三条追溯链路双向可达的 E2E 用例全绿。
 14. 闭环第 12 步的用例片段已交付为 testkit/scenarios/stage12_service_step12.rs 中的步骤函数与断言，其自身在本阶段单独跑通，并可被阶段 9b 的 testkit/scenarios/golden_loop_14_steps.rs 引用；整条链路的串接通过由阶段 9b 的该用例承担，不在本阶段判定。
-15. 执行本阶段全部用例前后，规格第 17.3 章三项不变量取值不变，且凭证与库存流水四张表的行数与校验和不变。
+15. 执行本阶段全部用例前后，ledger.vouchers、ledger.voucher_lines 与 inventory 的数量流水、金额流水四张表的行数与校验和不变。
 16. 四端 E2E 按规格第 6.2 章矩阵取值通过：售后工单与设备台账四端完整，项目任务与交付节点桌面完整、移动简化，移动端扫码可用。
 17. 覆盖率达到 8.6 节的五档门槛。
 18. 本阶段新增决定（第 13 节）已回写共享技术基线，未决事项（第 12 节）的临时取值已在代码中集中于一处常量或一张字典表，切换代价可核对。
 19. 本模块在规格第 6.2 章能力矩阵中取值为完整或简化的能力域，其四端界面已实现并通过 Playwright 与 tauri-driver 的桌面用例、XCUITest 与 Espresso 的移动用例；取值为 VIEW_ONLY 的能力域只实现只读视图；取值为 NOT_APPLICABLE 的不实现入口。
-20. project.v_projects_dataset 已发布并授予 ep_analyst_ro，dataset code 为 project_projects，列签名已同步给阶段 11，阶段 11 的启动自检项 reporting-dataset-signature-matched 对该视图由已登记但未发布的降级放行转为强制。
+20. project.v_projects_dataset 已发布并授予 ep_analyst_ro，dataset code 为 project_projects，列签名已同步给阶段 11，且阶段 11 的启动自检项 reporting-dataset-signature-matched 对该视图不再开降级窗口；该自检项在任何取值下都不阻断启动。
 21. 本阶段全部 /api/v1/ 路由的能力域码与动作类别常量已在 crates/contract/service/src/capability.rs 与 crates/contract/project/src/capability.rs 中声明，xtask configdoc 通过。
-22. 本模块的 MasterReferenceCounter 实现 ServiceReferenceCounter 已实现并注册进阶段 5 提供的 MasterReferenceCounterRegistry；按裁定 A-15 的实现清单，本阶段不承担任何 TradeHistoryProvider。
+22. 本模块的 MasterReferenceCounter 实现 ServiceReferenceCounter 已实现并注册进阶段 5 提供的 MasterReferenceCounterRegistry；按裁定 A-15 的实现清单，本阶段不承担任何 TradeHistoryProvider。档案停用引用计数按注册表实时枚举判定，本阶段注册后即时生效，不设顺延登记项，阶段 5 的相应验收不再顺延到本阶段结束。
 
 ---
 
@@ -799,7 +797,7 @@ RLS 与越权：本阶段 18 张表全部纳入 tests/rls_matrix，覆盖读取�
 | 第 15.2 章 | 可靠任务、幂等、死信与人工修复 | 6.3 与 6.5 |
 | 第 16 章、附录 A.1 | 售后工单创建的普通交易提交度量项 | 8.4 |
 | 第 17.2 章 | 单元、领域属性、集成与契约、四端 E2E、身份与访问控制测试 | 第 8 节 |
-| 第 17.3 章 | 三项强制不变量在本阶段操作前后不变 | 8.5 |
+| 第 17.3 章 | 三项强制不变量在本阶段操作前后不变 | 8.5 的四张表行数与校验和不变，该断言蕴含三项不变量不变 |
 | 第 19 章 阶段 3 | 项目任务与交付节点、售后工单与设备台账两个建设条目 | 本阶段全部交付物 |
 
 本阶段不承担的规格条目：交付节点的定义与确认动作在 CLM，交付指标口径在报表与经营看板，销售退货单与换货的发货侧在销售与 OMS，采购需求本身在采购与 SRM，成本归集在财务。
@@ -842,12 +840,12 @@ RLS 与越权：本阶段 18 张表全部纳入 tests/rls_matrix，覆盖读取�
 
 | 编号 | 风险 | 影响 | 缓解 |
 |---|---|---|---|
-| R-01 | sales 的销售退货单命令端口与终态事件交付晚于本阶段的联调窗口 | E2E-02 与退出条件第 13 项延后 | 接口按裁定 A-17 已冻结，testkit 的 SalesReturnPortFake 按该签名实现，三个终态事件用事件夹具先行验证本侧全部分支；契约就绪后只替换装配，不改用例；调整后的顺序中阶段 6 排在阶段 12 之前，不再存在接口形状未定的风险 |
+| R-01 | sales 的销售退货单命令端口与终态事件在联调时行为与冻结签名不符 | E2E-02 与退出条件第 13 项延后 | 阶段 6 排在本阶段之前，其销售侧骨架已在 T0 穿线中被真实调用打通，本阶段开工即接真实实现，不设替身也不设顺延；接口按裁定 A-17 已冻结，三个终态事件用事件夹具驱动本侧全部分支 |
 | R-02 | 派生计划的 unique_key 含 contract_version_no，合同变更后同一模板项得到新键 | 跨版本重新派生退化为新建任务，PRD 9.7.6 的更新语义只在同版本内成立 | 接口形状按裁定 A-16 已冻结，本阶段照此实现并把跨版本处置对齐 U-J-13：旧版本非终态任务保留并标注来源已变更；该退化已在 4.7 重复投递判定一段写明，留待人工复核键格式 |
 | R-03 | 客户 360 的区块注册顺序依赖阶段 5 已建立的契约与端点 | 区块缺位时用户看到 NOT_AVAILABLE | 归属按裁定 C-09 已定死：唯一端点与唯一契约由阶段 5 建立，本阶段只追加三个区块实现，不新增路径；未注册区块显式返回 NOT_AVAILABLE 而非报错 |
 | R-04 | 设备序列号唯一性未定（U-J-03），存量数据可能出现重复 | 决策落地后需去重再加唯一索引 | 现在即记录重复提示与被提示的设备对，落在审计中，决策后可据此批量核对 |
 | R-05 | 三张字典的取值集合未定（U-A-07、U-J-01、U-J-05），出厂取值可能与客户口径不符 | 统计与下钻维度不稳定 | 字典化而非 CHECK 枚举，改取值不触发 DDL；已引用的取值只允许停用不允许删除 |
-| R-06 | 客户 360 在 20 并发下扇出五个区块，可能击穿常规交互 2 秒通过线 | 附录 A 判定不过 | 区块并发上限与单区块超时可配；三个自实现区块各命中一条索引；必要时把 section_size 默认下调到 10，代价是一次配置变更 |
+| R-06 | 客户 360 顺序取五个区块，可能击穿常规交互 2 秒通过线 | 附录 A 判定不过 | 单区块超时可配；三个自实现区块各命中一条索引，单次取数在毫秒级；必要时把 section_size 默认下调到 10，代价是一次配置变更 |
 | R-07 | 工单完成守卫的锁序若被后续用例破坏会产生死锁 | 偶发 40P01 | 锁序写入 ep-app-service::tx 的注释与一条集成测试（并发完成与并发新增登记行）固化 |
 | R-08 | 联系方式字段级加密的实现约定可能与平台安全阶段的约定冲突 | 列名与密钥引用格式返工 | 加密与解密封装在 ep-app-service 的一个模块内，列名与格式集中定义；已作为新增决定登记待回写基线 |
 | R-09 | 附件上限未定（U-A-15），大量附件可能拖慢工单详情 | 详情时延 | 详情端点只返回附件元数据分页，不返回正文；正文经平台附件通道单独取用 |
@@ -905,7 +903,7 @@ RLS 与越权：本阶段 18 张表全部纳入 tests/rls_matrix，覆盖读取�
 1. 仅追加表清单扩充（回写基线第 4 节）：新增 service.work_order_logs 为仅追加表，不带 row_version、updated_at、updated_by，带 reverses_id，业务 schema 上禁止对其执行 UPDATE 与 DELETE，由 CI 的 SQL 静态检查断言。理由是 PRD 9.5.5 要求处理记录只追加不覆盖不删除。
 2. 敏感明文列的命名与类型（回写基线第 4 节）：需要字段级信封加密的列一律命名为 `<语义>_enc`，类型 bytea，另配 `<语义>_key_ref text` 记录密钥标识与版本；该类列不得进入索引、唯一约束、过滤、排序、聚合与全文检索。若平台安全阶段另定同类约定，以其为准并整体替换。
 3. 索引名的 63 字节收缩规则（回写基线第 3.10 节）：索引名超过 PostgreSQL 的 63 字节标识符上限时，按 `ux_<table>_<缩写列名序列>` 收缩，缩写规则为 legal_entity_id 缩为 le、其余列去掉 _id 后缀，收缩后的全名与原列清单在数据字典中登记。
-4. 模块局部受控取值字典（回写基线第 3.2 节与第 7.1 节）：取值集合未决且需支持管理员维护的枚举，一律建模块局部字典表（档案类，带 code、name、sort_no、is_active），存事务数据库并经配置发布通道签名发布，不使用 CHECK 枚举，也不引用不存在的全局字典能力。引用列不建外键，取值合法性由应用层在写入前校验，字典行只允许停用不允许删除，不设周期性孤儿取值核对。
+4. 模块局部受控取值字典（回写基线第 3.2 节与第 7.1 节）：取值集合未决且需支持管理员维护的枚举，一律建模块局部字典表（档案类，带 code、name、sort_no、is_active），存事务数据库并经配置发布通道发布，不使用 CHECK 枚举，也不引用不存在的全局字典能力。字典表在 (legal_entity_id, code) 上建唯一键，引用列建复合外键指向该唯一键并 ON DELETE RESTRICT；字典行只允许停用不允许删除，停用不执行任何 DDL 与 delete，外键因此永不触发。应用层只判定启用状态并给出可读错误码，不再承担存在性校验，也不设周期性孤儿取值核对。
 5. 非过账事件的标注（回写基线第 6.1 节）：不承载会计语义的领域事件在事件目录中标注为非过账事件，其信封的 posting_date 与 accounting_period_id 置空，且不计入规格第 10.2 章关账受理前提中的待消费过账条目数。本阶段 25 个事件全部属于该类。
 6. 新增五个指标（回写基线第 9.2 节）：ep_service_work_orders_open（gauge，标签 legal_entity_id、status）、ep_service_work_order_open_lines（gauge，标签 legal_entity_id）、ep_crm_customer360_section_duration_seconds（histogram，标签 section）、ep_crm_customer360_section_degraded_total（counter，标签 section）、ep_project_contract_derivation_tasks_total（counter，标签 outcome 取 inserted、updated、skipped_terminal）。标签基数纪律照旧，不使用 user_id、doc_no、trace_id 作标签。
 

@@ -57,7 +57,7 @@ crate 命名前缀统一为 `ep-`，crate 目录名不带前缀，`Cargo.toml` �
 | ep-platform-obs | 日志字段约定、指标注册表、追踪上下文、运维中心台账模型。 |
 | ep-platform-runtime | 进程生命周期状态机、分层配置加载、第 7.3 节的 `SelfCheckRegistry`、健康与就绪端点，以及以 trait 表达的服务器骨架。具体 HTTP 与 IPC 传输实现分别留在对应的 ep-adapter-*，由 apps 在 wiring.rs 注入，本 crate 不依赖任何 ep-adapter-*。 |
 
-本表为平台底座 crate 的完整清单，共 16 个，新增一行必须先改本节。阶段 1 退出条件第 2 条中 archcheck 对 crate 清单逐项一致的断言以本表为唯一判据。
+本表是平台底座 crate 的现状记录，不是冻结清单。archcheck 不再对 crate 清单逐项比对，阶段 1 退出条件第 2 条中的该项断言撤销；crate 的增删走普通提交，只受第 1.3 节依赖方向七条禁止项约束，该七条仍由 archcheck 逐条断言并配负样例。
 
 契约、领域、应用三层按业务模块各一个 crate，模块码固定为下表 15 个，任何阶段不得新增模块码。
 
@@ -115,7 +115,7 @@ crate 命名前缀统一为 `ep-`，crate 目录名不带前缀，`Cargo.toml` �
 - 禁止 ep-domain-* 与 ep-contract-* 依赖任何 adapter、sqlx、reqwest、tokio 的 IO 模块、std 的文件与网络 API。
 - 禁止 ep-platform-* 依赖任何 domain 或 application。
 - 禁止 adapter 之间互相依赖，共用逻辑下沉到 ep-foundation。
-- 禁止 ep-foundation 承载任何业务概念，凡是只被一个模块使用的类型不得进入 foundation。唯一的受限例外是 `crates/foundation/src/id/marker.rs` 中的 22 个零大小标记类型，它们无字段、无方法、无 trait 实现，只承载类型身份，供 `Id<T>` 在契约层表达跨模块引用，清单见第 1.4 节，任何阶段不得增删。
+- 禁止 ep-foundation 承载业务概念。准入判据只有两条且都可机检：必要性，被两个及以上 `ep-contract-*` 引用，或被 `ep-platform-*` 引用；稳定性，不得承载任何会随业务政策变化的取值集合或规则方法，只允许类型身份与量纲原语。`crates/foundation/src/id/marker.rs` 中的零大小标记类型按该判据准入，无字段、无方法、无 trait 实现，只承载类型身份，供 `Id<T>` 在契约层表达跨模块引用；增删走普通提交，由 `xtask archcheck` 断言上述两条判据，不设固定清单。跨模块共享的业务形状不进 foundation，定义在拥有它的模块的 `ep-contract-*` 里作为 DTO，由可依赖任意模块契约的 `ep-app-*` 消费。
 - 禁止跨模块直接读写业务表，adapter-db-pg 中的仓储实现按 schema 分文件，一个仓储只访问自己模块的 schema。
 
 依赖方向由 CI 强制：`cargo deny` 检查许可与重复依赖，另在 CI 中运行一段基于 `cargo metadata` 的自检脚本，把上述禁止项表达为断言，违反即构建失败。
@@ -165,7 +165,7 @@ pub trait UnitOfWork: Send + Sync + 'static {
 
 配套纪律四条。跨 crate 取具体句柄的唯一写法是 `tx.as_any_mut().downcast_mut::<PgTx>()`，该 downcast 只允许出现在 `crates/adapter/db-pg/` 内，由 `xtask archcheck` 断言其他目录不出现 `downcast_mut::<PgTx>`。UnitOfWork 不带池参数，一个实例在装配时绑定一个池，与第 10.3 节示例的两参数形态一致。application crate 对 UnitOfWork 取泛型参数 `U: UnitOfWork` 而不是 trait 对象，理由是该 trait 含泛型方法不满足对象安全。实现类型 `PgUnitOfWork` 与 `PgTx` 的声明位在 ep-adapter-db，实现落在 ep-adapter-db-pg。
 
-跨模块引用的标记类型位于 `crates/foundation/src/id/marker.rs`，清单固定为 22 项，任何阶段不得增删：LegalEntity、UserAccount、Session、Department、Position、Project、Customer、Supplier、Material、Product、Warehouse、Contract、ContractLine、SalesOrder、SalesOrderLine、DeliveryConfirmation、DeliveryConfirmationLine、PurchaseOrder、GoodsReceiptLine、PurchaseInvoice、PurchaseInvoiceLine、AccountingPeriod。
+跨模块引用的标记类型位于 `crates/foundation/src/id/marker.rs`，现有 22 项，增删按第 1.3 节的两条准入判据由 `xtask archcheck` 断言，不设冻结清单：LegalEntity、UserAccount、Session、Department、Position、Project、Customer、Supplier、Material、Product、Warehouse、Contract、ContractLine、SalesOrder、SalesOrderLine、DeliveryConfirmation、DeliveryConfirmationLine、PurchaseOrder、GoodsReceiptLine、PurchaseInvoice、PurchaseInvoiceLine、AccountingPeriod。
 
 系统主体常量位于 `crates/foundation/src/principal.rs`。
 
@@ -227,11 +227,11 @@ pub enum ActionClass { Read, Write, Submit, Approve, Export }
 
 ## 2. 进程清单
 
-八个进程，与规格第 4.3 章的 apps 清单一一对应，任何阶段不得新增进程，也不得合并。
+八个进程，与规格第 4.3 章的 apps 清单一一对应。新增或合并进程须先修订本节并写明其信任边界或资源理由，不设不得新增也不得合并的封条。
 
 | 进程 | 职责 | 监听 | 数据库连接 | 系统账户 | cgroup slice |
 |---|---|---|---|---|---|
-| core-server | 全部领域命令与查询、事务、规则与工作流协调、四端 API、供应商门户的受控能力 API、交易路径上的附件正文读写、对写出进程上报内容的审计落库与交叉核对。 | 127.0.0.1:8080 HTTP，`/run/ep/ipc/core.sock` | 运行期读写池上限 20，只读分析池上限 10，合计不超过 30 | ep-core | app-core.slice |
+| core-server | 全部领域命令与查询、事务、规则与工作流协调、四端 API、供应商门户的受控能力 API、交易路径上的附件正文读写、对写出进程上报内容的审计落库。 | 127.0.0.1:8080 HTTP，`/run/ep/ipc/core.sock` | 运行期读写池上限 20，只读分析池上限 10，合计不超过 30 | ep-core | app-core.slice |
 | job-worker | Outbox 消费、站内通知与推送投递、报表与文档渲染、批处理、归档与派生存储传播、内部对账与不变量校验、死信重投。 | 127.0.0.1:8081 仅健康与指标 | 独立池上限 5，使用同一运行期读写账号 | ep-worker | app-worker.slice |
 | portal-gateway | 承载公网供应商门户站点，做会话、限流、脱敏投影的呈现层，所有取数一律经 core-server 的受控能力 API。 | 127.0.0.1:8090 HTTP | 0，不建立事务数据库连接 | ep-portal | app-portal.slice |
 | integration-gateway | 首版唯一的对外出网进程，只承载电子签章一类出口，含超时、退避、熔断与证据固化。 | 127.0.0.1:8082 仅本机 | 独立池上限 5，同一运行期读写账号 | ep-integ | app-core.slice |
@@ -245,7 +245,7 @@ pub enum ActionClass { Read, Write, Submit, Approve, Export }
 - 常驻常规连接合计不超过 42，迁移与应急临时连接另计不超过 10，并发连接峰值不超过 52，`max_wal_senders` 不低于 4，`max_replication_slots` 不低于 3。
 - core-server 与 integration-gateway 是两个进程，但同处 app-core.slice，slice 内不再细分配额。
 - archive-writer 与 backup-writer 各自独立进程与独立 cgroup，不共享 CPU、内存与磁盘 IO 预算，不持有运行期应用账号，不读业务表。
-- 各进程以标准 OCI 容器交付，由 Docker Compose 或 Podman 加 systemd 编排，cgroup 取值按规格第 13.1 章配额表，客户不得在部署时单方调高。
+- 各进程以标准 OCI 容器交付，由 Docker Compose 或 Podman 加 systemd 编排。cgroup 只取三类值，不做九行三列的配额表冻结，也不进认证冻结范围：每个 unit 一个 `memory.max` 防 OOM；backup-writer 一个 `io.max` 硬上限；archive-writer 与 PostgreSQL 的 `io.weight` 高于 backup-writer，以保 RPO 15 分钟与规格第 16 章的时延线。CPU 一列整列删除，20 人一台机器上 CPU 不是稀缺资源，磁盘 IO 才是。取值写进部署骨架，由 `/scripts/` 下的部署校验脚本断言一次，不做每进程启动自检，硬件升级只改这三个数字、不重跑配额认证。八级让路次序不构成运行期保证，不再形式化为配额表、生成算法与自检项，规格第 7.5 章那句诚实披露保留，即单机同机部署下备份与报表在极端情况下仍可能影响交易时延、无隔离保证。
 - 八个系统账户互不复用，同属组 `ep`，落点写出凭据只由 archive-writer 与 backup-writer 的系统账户持有。`tools/ep-migrate` 另有独立系统账户 `ep-migrate`，与上述八个不复用，同属组 `ep`，只在迁移窗口内使用。
 
 进程间接口，本基线取值。承载方式为 Unix domain socket，帧格式为 4 字节大端长度前缀加 JSON 体，路径 `/run/ep/ipc/<name>.sock`，权限 0660，属主为对应系统账户，组为 `ep`。不使用本机 TCP，理由是避免任何一个接口意外可从网络到达。archive-writer 与 backup-writer 经该接口向 core-server 上报的内容固定为四类：写出结果、校验结论、失败事件、连接与复制槽与基础备份的起止；core-server 不可用期间在写出进程本地 `/var/lib/ep/<proc>/spool/` 暂存并在恢复后补写，暂存不阻塞写出。
@@ -289,7 +289,7 @@ pub enum ActionClass { Read, Write, Submit, Approve, Export }
 - 主键列名一律 `id`，类型 `uuid`，取值为应用侧生成的 UUIDv7。理由是时间有序使 B-tree 插入局部性好，且可在事务开始前生成以构造聚合内引用，避免往返取号。数据库侧不设默认值，缺失即为应用缺陷。
 - 外键列名为被引用表单数加 `_id`，如 `customer_id`、`sales_order_line_id`。
 - 同一 schema 内的引用建真实外键约束，`ON DELETE RESTRICT`，不使用级联删除。
-- 跨 schema 即跨模块的引用不建数据库外键，只留逻辑引用列，理由是模块隔离要求禁止跨模块直接读写业务表，外键会把两个模块的迁移与停用绑死，与规格第 5.6 章模块生命周期冲突。跨模块引用的存在性由 application 层在写入前经对方模块契约校验；是否另设周期性核对不按模块普遍要求，只有在 `platform_core.recon_check_definitions` 中登记了 `category` 为 `CROSS_MODULE_LINK` 的校验项的那些引用才由内部对账组件按周期核对，登记方与校验项以裁定 A-06 为唯一出处，本节不复述也不给计数；未登记的跨模块逻辑引用在首版只做写入时存在性校验，属首版的已知边界，未覆盖面在总览 R14 一处登记。
+- 跨 schema 即跨模块的引用凡目标单一的，一律建真实外键并 `ON DELETE RESTRICT`；外键做成复合形式 `(legal_entity_id, <ref>_id)` 指向被引用表的 `(legal_entity_id, id)` 唯一键，跨法人引用因此由数据库强制，不再只靠写入前校验。被引用对象的建表迁移版本号更晚而无法在建表语句中直接声明的少数引用，由一条版本号晚于两侧建表迁移的 `ALTER TABLE ADD CONSTRAINT` 补建，该迁移放在引用方所属 schema 的目录下。保留逻辑引用列的只有三类，逐类登记，此外一律外键：多态来源单据引用，即 `ledger.vouchers` 与 `costing.cost_entries` 的 `source_document_type` 加 `source_document_id`、`inventory` 九张表的 `source_doc_id` 加 `source_doc_line_id`；平台侧跨越型引用，即 `approval_ref` 与 `release_package_id`；阶段 13 扩展对象与自定义字段指向业务表的引用。模块隔离由本文件第 1.3 节末条的一个仓储只访问自己模块的 schema 保证，与外键无关；模块停用是应用层状态，不删数据，不与 `ON DELETE RESTRICT` 冲突。application 层的跨模块契约调用保留，定位由跨模块引用完整性的唯一保证降级为给出可读错误码与业务状态判定的前置校验，引用存在性由外键兜底；SQLSTATE 23503 在 ep-adapter-db-pg 一处统一映射为一个错误码并记录约束名，按应用缺陷处理并告警，不作为用户可恢复错误。
 - 任何跨法人的引用一律禁止，写入前校验两侧 `legal_entity_id` 相等。
 - 业务编号列：单据类为 `doc_no text`，档案类为 `code text`，唯一约束一律带法人，即 `(legal_entity_id, doc_no)`。
 
@@ -355,17 +355,18 @@ create policy rls_<table>_le on <schema>.<table>
 
 不设任何 `BYPASSRLS` 角色。跨法人查询按授权法人集合逐个法人设置变量后分别查询再在应用侧合并，不使用绕过策略，也不使用 `OR` 展开法人列表。内部对账系统安全上下文按法人逐轮遍历，同样只写单一法人，照抄规格。
 
-不带 `legal_entity_id` 的表只有四类：全局配置字典、模块与许可注册、迁移历史、以及 `platform_ops` 的机器级指标。这四类不建策略，且不得承载任何业务数据。
+凡带 `legal_entity_id` 的表一律按上述模板建策略。不带该列的表必须同时满足并逐表登记两件事：其一准入判据，该表的行集合与法人无关，即行要么在本部署内对全部法人取值相同，要么是隔离机制自身或部署自身的元数据；其二隔离承接点，写明该表的法人可见性落在哪个应用层入口以及该入口的判据来源。登记落在 `platform_core.unpoliced_table_registry`，由阶段 2 建，与 `sensitive_field_registry` 同构，列含 schema、table、准入判据取值、隔离承接入口、rls_matrix 用例标识。`db/checks/` 的编号断言由十二项扩为十三项，第十三项断言 `pg_class` 中所有未启用行级安全的本项目表与该登记表逐行一致，多一张少一张即返回非零行，由 `ep-migrate check` 执行，未登记的表建不出来。不带 `legal_entity_id` 的表只有四类这一封闭枚举撤销，其中全局配置字典这个无定义的无限容量兜底类名一并撤销；迁移历史由迁移工具自建，不在本项目建表范围内。发布门禁项 RG-RLS-MATRIX-GREEN 的判据由 32 组矩阵全部通过改为登记表行数与 rls_matrix 中承接入口用例数相等且全绿，阶段 4 交付的 matrix_32.rs 保留为其中一段。
 
 ### 3.9 迁移工具与迁移命名
 
-迁移工具固定为 refinery 0.8 系列，理由是它支持按模块建立独立 Runner、支持自定义 schema 与历史表名，与规格“每个模块独立迁移目录、独立数据库角色”的要求直接对应，而 sqlx 的内置 migrate 只有单一全局历史表。
+迁移工具固定为 refinery 0.8 系列，理由是它支持自定义 schema 与历史表名、支持非事务迁移路径，与规格“每个模块独立迁移目录、独立数据库角色”的要求不冲突。全库只有一个 Runner 与一张历史表 `platform_core.schema_history`，不再按模块建立独立 Runner，`ep-migrate status` 由输出 24 张历史表版本改为输出单一版本。`ep-migrate` 中显式固定 refinery 的 `abort_divergent` 与 `abort_missing` 取值，开发库允许乱序到达，发布制品禁止。
 
-- 迁移文件路径 `db/migrations/<schema>/`，历史表 `<schema>.refinery_schema_history`。
-- 文件命名 `V<YYYYMMDDHHMM>__<schema>_<slug>.sql`，slug 为小写 snake_case 动词短语，如 `V202609031530__sales_add_order_line_delivery_batch.sql`。
+- 迁移文件路径 `db/migrations/<schema>/`，24 个目录保留，历史表只有 `platform_core.schema_history` 一张。
+- 文件命名 `V<YYYYMMDDHHMMSS>__<schema>_<slug>.sql`，版本号必须是真实时间且全局唯一、严格递增，由 `xtask sqlcheck` 断言；slug 为小写 snake_case 动词短语，如 `V20260903153000__sales_add_order_line_delivery_batch.sql`。伪时间戳当序号用不能提供插入免疫，既有的重复版本号与非法分位一律按本条重取。
+- 每个迁移文件头固定 `SET ROLE ep_mod_<schema>;`，使第 3.1 节的属主与默认权限在实际执行者为 `ep_migrator` 时仍然成立；第 3.1 节不使用 `SET ROLE` 做隔离一句只约束运行期连接，不约束迁移窗口。
 - 一个文件只做一件事，不得在同一文件里既建表又回填数据。数据回填单独成文件，命名 slug 以 `backfill_` 开头。
 - 迁移一律可离线执行，禁止在迁移中调用应用代码。
-- 执行顺序由 `db/migrations/order.toml` 显式声明模块顺序，平台 schema 在前，业务 schema 按 mdm、cpq、clm、sales、procure、inventory、costing、project、service、invoice、finance、ledger、crm、portal、reporting 的顺序，理由是让被引用方先于引用方建立。
+- 执行顺序由单一全局 Runner 按文件版本号排序，`db/migrations/order.toml` 撤销。跨 schema 的迁移放在其主要创建对象所属的 schema 目录下，正确性由版本号必须晚于其全部被引用对象保证，并由空库全量执行在 CI 中验证；其后编号顺延这一整类连锁改动随之取消。
 - 每个迁移必须成对提供回退说明，写在文件头注释的 `-- rollback:` 段中；无法安全逆向的迁移必须注明只能用升级前备份或影子表回退，与规格第 18 章一致。
 - 在线变更边界照抄规格第 7.4 章：新增表、新增可空列、新增索引、放宽长度可在线执行，索引一律 `CREATE INDEX CONCURRENTLY`；改列类型、收紧非空、重建主键进停机窗口。单次在线变更锁持有上限 5 秒，迁移执行上限 30 分钟，迁移会话固定 `SET lock_timeout = '5s'` 与 `SET statement_timeout = '30min'`。
 
@@ -569,9 +570,9 @@ create policy rls_<table>_le on <schema>.<table>
 
 ### 7.3 启动自检
 
-进程启动时按序执行下列自检，任一项失败即以退出码 78 退出并把失败项写入 stderr 与 `platform_ops` 台账（数据库不可用时只写 stderr）。
+进程启动时按序执行下列自检。每项带 severity，取值域只有 Blocking 与 Degrading 两个。Blocking 项失败即以退出码 78 退出，并把失败项写入 stderr 与 `platform_ops` 台账（数据库不可用时只写 stderr）；Degrading 项失败不阻止启动，改为经 `ep-platform-obs` 的 `DegradationLedger` 开一个降级窗口、按规格第 15.3 章持续告警、并在健康端点显式呈现该项未通过，每个 Degrading 项必须在下方各自写明运行期后果。判读运行期可变业务数据行的自检项一律取 Degrading，不得作为启动失败条件，理由是这台服务器没有备节点，用一次数据不一致换八个进程全部拒绝启动，是把可修复的账务偏差升级为整机停机。取 Blocking 的只有判读配置、二进制、迁移版本、密钥与目录一类装配正确性的项。`--check` 模式不适用本条降级，Blocking 与 Degrading 任一不通过均以非零码退出；部署与升级的闸门落在 `--check`，不落在进程启动。
 
-自检项按注册名标识，不用序号称呼。注册表为 `SelfCheckRegistry`，位于 `crates/platform/runtime/src/selfcheck/registry.rs`，注册项为 `SelfCheckItem { name, title, severity, run }`，name 为 kebab-case，由阶段 1 交付。下列十三项是全部进程共有的基线项，注册顺序即执行顺序，报告按注册顺序输出，基线十三项在前。
+自检项按注册名标识，不用序号称呼。注册表为 `SelfCheckRegistry`，位于 `crates/platform/runtime/src/selfcheck/registry.rs`，注册项为 `SelfCheckItem { name, title, severity, run }`，name 为 kebab-case，由阶段 1 交付。下列十项是基线项，注册顺序即执行顺序，报告按注册顺序输出，基线十项在前。不持有常规数据库连接的进程对全部 SQL 类自检项一律标 NotApplicable，不判成败，archive-writer、backup-writer、portal-gateway 与 plugin-host 属此类；全部进程共有这一说法撤销。
 
 - `config-parsed`：配置解析成功且无未知键。
 - `database-reachable`：事务数据库可达，服务端版本为 PostgreSQL 16.x，`timezone` 为 UTC，`max_connections` 不低于第 2 节的峰值 52，`max_wal_senders` 不低于 4，`max_replication_slots` 不低于 3。
@@ -579,15 +580,12 @@ create policy rls_<table>_le on <schema>.<table>
 - `rls-enabled-and-forced`：全部带法人列的表均已 `ENABLE` 且 `FORCE` 行级安全，且运行期账号不具备 `BYPASSRLS` 与 `SUPERUSER`。
 - `runtime-role-privileges-bounded`：运行期账号不具备 DDL、角色管理与策略管理权限。
 - `secrets-resolvable`：机密全部可解引用，KMS 或 HSM 可用，每个法人的数据加密密钥域存在。
-- `audit-chain-verifiable`：审计链最近一段可读，最近一次段根签名可验证，最近锚定时间在约定间隔内。
+- `audit-chain-verifiable`（Degrading）：审计链最近一段可读，最近一次段根签名可验证，最近锚定时间在约定间隔内。不通过时登记暴露窗口并持续告警后继续启动，理由是拒绝启动不能修复断链，而修复的唯一手段恰是人工介入。
 - `file-store-writable`：文件存储路径可写、不具备覆盖与原地删除权限、剩余空间不低于阈值。
 - `clock-skew-within-limit`：系统时钟与授时源偏差小于 1 秒。
-- `cgroup-quota-matched`：本进程所在 cgroup 的 CPU、内存与 IO 取值与规格第 13.1 章配额表一致。
-- `offsite-sink-requirements`：服务器之外落点的三项最低要求判定。不满足时不阻止启动，但以降级状态启动，并按规格第 15.3 章持续告警、记录暴露窗口、按依据枚举展示该部署当前的 RPO，暴露窗口经 `ep-platform-obs` 的 `DegradationLedger` 登记。
-- `license-and-modules-consistent`：许可证有效且模块开关与已安装模块一致，判定取自 `ep-platform-license` 的 `ModuleLicenseQuery`。
-- `current-period-open`：每个法人存在当前自然月的打开会计期间，缺失时按规格第 5.2 章自动建立。
+- `offsite-sink-requirements`（Degrading）：服务器之外落点的三项最低要求判定。不满足时不阻止启动，但以降级状态启动，并按规格第 15.3 章持续告警、记录暴露窗口、按依据枚举展示该部署当前的 RPO，暴露窗口经 `ep-platform-obs` 的 `DegradationLedger` 登记。
 
-各阶段追加的自检项同样为 kebab-case 注册名，注册顺序排在基线十三项之后，追加项名在各阶段计划中登记。任何阶段不得再以序号称呼自检项。
+各阶段追加的自检项同样为 kebab-case 注册名，注册顺序排在基线十项之后，追加项名与其 severity 在各阶段计划中登记，全量清单以总览第 4.3 节 C-25 行为唯一出处。任何阶段不得新增取 Blocking 且判读业务数据行的自检项；凡能表达为写入侧约束的，一律下沉到写入路径，不在每次启动复判。任何阶段不得再以序号称呼自检项。
 
 `--check` 模式只执行已注册的全部自检项并按注册顺序输出结构化报告后退出，不监听任何端口，用于部署验收与升级前置校验。报告按注册名索引，不按序号索引。
 
@@ -603,7 +601,7 @@ create policy rls_<table>_le on <schema>.<table>
 
 - 强制不变量相关代码与平台内核代码行覆盖率不低于 85%，其余代码不低于 70%，新增与修改代码不低于 80%，照抄规格第 17.2 章。
 - 工作区整体行覆盖率不低于 80%，是本基线在规格之上追加的下限，理由是规格的分档在极端配比下可能整体低于 80%。
-- 工具为 cargo-llvm-cov，CI 上以 `--fail-under-lines` 强制。分档阈值由 `codecov.toml` 中的路径规则表达，路径规则与第 1.2 节的 crate 清单一一对应。
+- 工具为 cargo-llvm-cov，CI 上以 `--fail-under-lines` 强制。分档阈值由 `codecov.toml` 中的路径规则表达，规则按目录前缀给出，即 `crates/foundation/**`、`crates/platform/**`、`crates/contract/**`、`crates/application/**`、`crates/adapter/**` 五条，不与 crate 清单逐项对应，新增 crate 自动落入所属分档。
 - 不允许长期跳过或屏蔽用例，`#[ignore]` 必须带 issue 编号注释且存活不超过一个阶段。
 
 ### 8.3 测试数据构造
@@ -634,7 +632,7 @@ create policy rls_<table>_le on <schema>.<table>
 ### 9.2 指标
 
 - 由 ops-agent 在 127.0.0.1:9101 暴露 Prometheus 文本格式，仅内网可达，可对接客户已有的 Prometheus 与 Grafana。
-- 命名 `ep_<subsystem>_<metric>_<unit>`。固定的基线指标：`ep_http_request_duration_seconds`（直方图，桶为 0.05、0.1、0.25、0.5、1、2、3、5、10、30，标签 route、method、status_class、client）、`ep_db_pool_connections`（gauge，标签 pool 取 rw、ro、worker、integ、ops）、`ep_db_statement_duration_seconds`（直方图，标签 pool 与 statement_kind）、`ep_db_tx_retries_total`（counter，标签 pool 取 rw、ro、worker、integ、ops，标签 sqlstate 取 40001、40P01）、`ep_outbox_pending_events`、`ep_outbox_dispatch_attempts_total`、`ep_dead_letters_open`、`ep_archive_write_lag_seconds`、`ep_attachment_write_lag_seconds`、`ep_replication_crosscheck_age_seconds`（gauge，标签 channel 取 archive、backup）、`ep_audit_anchor_age_seconds`、`ep_backup_last_success_timestamp_seconds`、`ep_recon_run_duration_seconds`、`ep_recon_unfinished_total`、`ep_period_close_rejected_total`、`ep_quota_throttled_total`、`ep_degradation_windows_open`、`ep_build_info`（gauge，标签 version 与 git_commit）、`ep_selfcheck_pending_items`（gauge，标签 process）。指标名全量登记在 `docs/metrics-catalog.md`，唯一性由 CI 校验，同一指标只能由一个阶段注册，重复登记即构建失败。
+- 命名 `ep_<subsystem>_<metric>_<unit>`。固定的基线指标：`ep_http_request_duration_seconds`（直方图，桶为 0.05、0.1、0.25、0.5、1、2、3、5、10、30，标签 route、method、status_class、client）、`ep_db_pool_connections`（gauge，标签 pool 取 rw、ro、worker、integ、ops）、`ep_db_statement_duration_seconds`（直方图，标签 pool 与 statement_kind）、`ep_db_tx_retries_total`（counter，标签 pool 取 rw、ro、worker、integ、ops，标签 sqlstate 取 40001、40P01）、`ep_outbox_pending_events`、`ep_outbox_dispatch_attempts_total`、`ep_dead_letters_open`、`ep_archive_write_lag_seconds`、`ep_attachment_write_lag_seconds`、`ep_audit_anchor_age_seconds`、`ep_backup_last_success_timestamp_seconds`、`ep_recon_run_duration_seconds`、`ep_recon_unfinished_total`、`ep_period_close_rejected_total`、`ep_degradation_windows_open`、`ep_build_info`（gauge，标签 version 与 git_commit）、`ep_selfcheck_pending_items`（gauge，标签 process）。指标名全量登记在 `docs/metrics-catalog.md`，唯一性由 CI 校验，同一指标只能由一个阶段注册，重复登记即构建失败。
 - 标签基数纪律：禁止把 `user_id`、`doc_no`、`trace_id` 作为标签；`legal_entity_id` 允许，因为首版只有 2 个法人；`route` 用模板路径而非实例路径。
 - 规格第 15.3 章要求的降级与暴露窗口台账既进数据库表 `platform_ops.degradation_windows`，也各出一个 gauge，两处不得只有其一。
 
@@ -717,7 +715,7 @@ let result = uow.transact(ctx, |tx| async move {
 - 一切 IO 表达为 domain/port 中的 trait，实现在 adapter。trait 方法只用 domain 类型与 foundation 类型，不得出现数据库行类型与 HTTP 类型。
 - application 负责四件事且只负责这四件事：授权判定的调用、事务边界、领域调用的编排、审计与 Outbox 的写入。业务规则不得写在 application，查询组装不得写在 domain。
 - adapter 负责映射与协议，不得包含业务分支。凡是 adapter 里出现 `if` 判断业务状态，即为分层错误。
-- 装配只在 `apps/*/src/wiring.rs` 中发生，构造具体实现并注入 trait 对象。除该文件外，任何地方不得 `use ep_adapter_db_pg::...`。
+- 装配只在 `apps/<proc>/src/wiring/` 目录下发生，按模块一个文件，构造具体实现并注入 trait 对象。该目录之外任何地方不得 `use ep_adapter_db_pg::...`，该目录之内不得出现业务分支。`xtask archcheck` 另断言该目录下不出现任何以 Noop、Stub、Fake、Dummy 为前缀的实现类型，出现即构建失败。
 
 ## 11. 本基线一并定死的若干全局取值
 
@@ -755,7 +753,7 @@ let result = uow.transact(ctx, |tx| async move {
 ## 12. 各阶段必须遵守的落地纪律
 
 - 新增一张表、一个接口、一个事件、一个错误码、一个指标之前，先在本基线对应章节登记，再实现。阶段计划中出现未登记的以上五类，评审时按不通过处理。
-- 各阶段为本阶段每个用例声明一对常量 `<USECASE_SCREAMING>_DOMAIN` 与 `<USECASE_SCREAMING>_ACTION`，取值分别为第 1.4 节 `CapabilityDomain` 与 `ActionClass` 的成员，例如 `CONFIRM_DELIVERY_DOMAIN: CapabilityDomain = CapabilityDomain::SalesOrderFulfillment` 与 `CONFIRM_DELIVERY_ACTION: ActionClass = ActionClass::Submit`；常量声明在承载该路由处理器的 crate 的 `src/capability.rs` 中，落点只有两类，不设第三类：业务模块的路由落 `crates/contract/<module>/src/capability.rs`，`/api/v1/platform/` 下的平台路由落裁定 A-20 为该阶段指名的 platform crate 的 `src/capability.rs` 并一律取 `CapabilityDomain::PlatformAdminLowcodeOps`。`ci-probe` feature 门控的探针路由与 `/internal/v1/` 下不对四端暴露的内部端点不参与判定，不声明常量。`xtask configdoc` 断言每个 `/api/v1/` 路由都能解析到一对常量，缺失即构建失败。任何阶段不得在阶段内重新定义能力域码，客户端能力矩阵的运行期判定只读这两个枚举。
+- 各阶段在本阶段的路由注册处一次性给出 `(CapabilityDomain, ActionClass)` 元组，取值分别为第 1.4 节两个枚举的成员，例如交付确认路由注册为 `(CapabilityDomain::SalesOrderFulfillment, ActionClass::Submit)`。不再按用例声明 `<USECASE_SCREAMING>_DOMAIN` 与 `<USECASE_SCREAMING>_ACTION` 一对常量，也不再按阶段分散到十三个 crate 的 `src/capability.rs`；`/api/v1/platform/` 下的平台路由一律取 `CapabilityDomain::PlatformAdminLowcodeOps`。`ci-probe` feature 门控的探针路由与 `/internal/v1/` 下不对四端暴露的内部端点不参与判定。`xtask configdoc` 断言每个 `/api/v1/` 路由都能解析到一个元组，缺失即构建失败。任何阶段不得在阶段内重新定义能力域码，客户端能力矩阵的运行期判定只读这两个枚举。
 - 任何阶段不得新增进程、不得新增 schema、不得新增模块码、不得新增错误分类、不得新增依赖方向。
 - 任何阶段不得引入第二套命名风格、第二套封套、第二套分页参数、第二套幂等机制。
 - 凡阶段计划需要偏离本基线，必须在计划中单列一节写明偏离项、理由与影响范围，并同步提出本基线的修订，不得只在实现里偏离。

@@ -4,9 +4,11 @@
 
 ### 1. 本阶段的范围边界
 
-在范围内的：Cargo workspace 与全部 crate 骨架、八个进程的空壳二进制、进程运行时装配、配置模型与启动自检框架、统一封套与错误映射、集群引导脚本的目录与执行顺序约定、迁移目录骨架与 order.toml 骨架、迁移静态检查、`tools/ep-migrate` CLI 骨架与退出码约定、ep-foundation 的跨阶段冻结类型与常量、连接池与会话变量注入清除、测试分层与覆盖率门禁、结构门禁与依赖方向门禁、容器与单机编排骨架、cgroup 配额生成与核对、供应链门禁与可复现构建、制品与版本号、本地开发环境。
+在范围内的：Cargo workspace 与全部 crate 骨架、八个进程的空壳二进制、进程运行时装配、配置模型与启动自检框架、统一封套与错误映射、集群引导脚本的目录与执行顺序约定、迁移目录骨架、迁移静态检查、`tools/ep-migrate` CLI 骨架与退出码约定、ep-foundation 的跨阶段冻结类型与常量、连接池与会话变量注入清除、测试分层与覆盖率门禁、结构门禁与依赖方向门禁、容器与单机编排骨架、cgroup 资源限额取值与一次性部署校验、供应链门禁与可复现构建、制品与版本号、本地开发环境。
 
-明确不在范围内的：集群引导五个脚本的内容、24 个 schema 与七个功能角色与 24 个属主角色、逐 schema 的默认权限、`order.toml` 的顺序取值、`ep-migrate` 五个子命令的实现，这五项按 C-01 与 C-02 归阶段 2；另有 Tauri 四端真机 PoC 与任何客户端代码，RLS 业务表，身份认证与授权判定，Outbox 消费与审计链，KMS 与信封加密，附件正文读写，电子签章对接，任何模块的领域模型。规格第 19 章的阶段 1 含四端 PoC 与安全密码抽象，本 14 阶段划分把它们分别归入客户端阶段与安全阶段，本阶段只交付它们的挂载点，不交付实现。
+明确不在范围内的：集群引导五个脚本的内容、24 个 schema 与七个功能角色与 24 个属主角色、逐 schema 的默认权限、单一全局迁移 Runner 与其版本号断言、`ep-migrate` 五个子命令的实现，这五项按 C-01 与 C-02 归阶段 2；另有 Tauri 四端真机 PoC 与任何客户端代码，RLS 业务表，身份认证与授权判定，Outbox 消费与审计链，KMS 与信封加密，附件正文读写，电子签章对接，任何模块的领域模型。规格第 19 章的阶段 1 含四端 PoC 与安全密码抽象，本 14 阶段划分把它们分别归入客户端阶段与安全阶段，本阶段只交付它们的挂载点，不交付实现。
+本阶段与 T0 贯通线的关系。T0 是在阶段 4 结束后、阶段 5 全量开工之前执行的一条最薄贯通线，判据是一条合同从建单走到管理层看到一个数，其业务切片取自阶段 5、6、9a、10、11。本阶段不贡献任何业务切片，只交付 T0 赖以判定的三样手段：`xtask e2e --profile=t0` 这一条独立的端到端目标、`ep-datagen` 的 `t0-min` 最小样本档、以及 `deploy/` 下一条命令起全栈的单机编排。T0 只要求桌面端可达，不要求 scale 数据集，不要求分支覆盖，不要求四端。本阶段其余交付物不因 T0 增删一项，阶段 5 至 11 一律改为在 T0 贯通后的骨架上加厚，M7 保留为全分支闭环而不再是首次贯通。
+
 
 ### 2. 交付物清单
 
@@ -19,10 +21,10 @@
 | D-03 | `tools/ep-migrate` CLI 骨架与退出码约定，五个子命令为 apply、status、check、gen-rls、open-window，子命令实现由阶段 2 交付 | 五个子命令的参数解析可运行，退出码 0 成功、2 参数错误、3 迁移窗口未打开、4 校验和不符、5 版本不一致、78 环境自检失败各有一个用例 |
 | D-04 | 集群引导脚本的目录约定与执行顺序约定，文件名为 `db/bootstrap/00_database.sql`、`01_roles.sql`、`02_cluster_params.sql`、`03_role_defaults.sql`、`04_pg_hba.fragment`，脚本内容由阶段 2 交付 | 目录与文件名约定被 `xtask sqlcheck` 断言，自检项 rls-enabled-and-forced 与 runtime-role-privileges-bounded 的代码路径以测试库探针表为被测对象通过 |
 | D-05 | 单机编排骨架，`deploy/` 下的 Podman Quadlet 与 Docker Compose 两套等价文件，含八个 slice 与配额 | 一条命令起全栈，`systemctl status` 全部 active |
-| D-06 | cgroup 配额生成器与配额清单文件 | 生成结果与规格第 13.1 章配额表逐行一致，自检项 cgroup-quota-matched 通过 |
+| D-06 | `deploy/` 下八个 slice 的静态资源限额 drop-in 文件与一次性部署校验脚本 `scripts/verify-resource-limits.sh` | drop-in 取值与规格第 13.1 章配额表逐行一致，脚本在部署与升级时各执行一次并返回 0，任何进程的启动自检中不出现资源限额项 |
 | D-07 | 一条绿色 CI 流水线，共 11 个阶段，全部门禁可离线执行 | 全量运行不超过 60 分钟，返回 0 |
 | D-08 | 结构门禁工具 `xtask`，含 archcheck、sqlcheck、codecheck、errorcodes、eventcatalog、configdoc、coverage、sbom、sign、reproduce、e2e 十一个子命令 | 每条规则有一个故意违反的负样例，负样例必须失败 |
-| D-09 | `ep-testkit` 测试夹具库与 `ep-datagen` 数据集生成器骨架 | 同一 seed 两次生成结果字节一致 |
+| D-09 | `ep-testkit` 测试夹具库、`ep-datagen` 数据集生成器骨架与其 `t0-min` 最小样本档、`xtask e2e --profile=t0` 目标 | 同一 seed 两次生成结果字节一致；`t0-min` 生成一个法人一个客户一个产品的最小样本；`--profile=t0` 作为独立目标可执行，本阶段用例集为空并返回 0 |
 | D-10 | 覆盖率门禁，按路径分档强制 | 低于门槛即失败，有负样例证明 |
 | D-11 | 制品与升级包，含八个进程镜像、迁移镜像、SBOM、签名、校验清单、回退说明 | 客户侧 `verify-release.sh` 在无网络环境下验签通过 |
 | D-12 | 可复现构建证据 | 两次独立构建的二进制 SHA-256 与镜像 digest 全部相同 |
@@ -57,11 +59,11 @@
 
 | 进程 | 本阶段实现的内容 | 本阶段不实现的内容 |
 |---|---|---|
-| core-server | 8080 HTTP 服务器与五个系统端点、`/run/ep/ipc/core.sock` IPC 服务端、rw 与 ro 两个池、并发闸门、同步等待上限、七项自检、优雅停机 | 任何业务路由、鉴权判定、幂等存储 |
+| core-server | 8080 HTTP 服务器与五个系统端点、`/run/ep/ipc/core.sock` IPC 服务端、rw 与 ro 两个池、并发闸门、同步等待上限、六项自检、优雅停机 | 任何业务路由、鉴权判定、幂等存储 |
 | job-worker | 8081 健康与指标、任务调度器骨架与零个已注册任务、worker 池、200 毫秒到 2 秒的退避轮询空转 | Outbox 消费、通知投递、对账 |
 | portal-gateway | 8090 HTTP、不建数据库连接、经回环调用 core-server 健康端点的上游探测、新建 trace 与 X-Correlation-Id | 门户业务页面、会话、脱敏投影 |
 | integration-gateway | 8082 健康与指标、出网客户端骨架含超时退避熔断、出网白名单校验、独立池 5 | 电子签章协议、证据固化 |
-| plugin-host | `/run/ep/ipc/plugin.sock` IPC 服务端、零数据库连接 | WASM 宿主，wasmtime 依赖登记但 feature 默认关闭 |
+| plugin-host | `/run/ep/ipc/plugin.sock` IPC 服务端、零数据库连接 | WASM 宿主；`wasmtime` 与 `wasmtime-wasi` 两个依赖本阶段一律不登记，也不留默认关闭的 feature 与编译缓存目录约定，由阶段 13b 在交付宿主时一次引入 |
 | ops-agent | 9101 Prometheus 文本、9102 健康聚合、ep_ops_ro 池 2、按回环抓取其余七个进程的指标端点 | 运维台账读取、降级窗口 |
 | archive-writer | 无监听、spool 目录、IPC 客户端、15 分钟周期心跳占位、core-server 不可用时落 spool 并在恢复后补写 | 事务日志归档、附件写出、审计证据写出 |
 | backup-writer | 无监听、spool 目录、IPC 客户端、每日周期心跳占位 | 全量备份、校验、存量搬运 |
@@ -70,7 +72,7 @@
 
 ### 4. 数据库变更
 
-本阶段不新建任何业务表，也不交付集群引导脚本的内容与 24 个 schema。按 C-01 与 C-02，集群引导的五个文件、24 个 schema 与角色、逐 schema 的默认权限、`db/migrations/order.toml` 的顺序数组取值以及 `ep-migrate` 五个子命令的实现全部归阶段 2，阶段 2 是这些东西的唯一提供方。本阶段自己的数据库相关交付只有三类：迁移目录与顺序声明的骨架、迁移历史表的参数固定与白名单、一张仅存在于测试库中的探针表，探针表不进生产迁移目录。
+本阶段不新建任何业务表，也不交付集群引导脚本的内容与 24 个 schema。按 C-01 与 C-02，集群引导的五个文件、24 个 schema 与角色、逐 schema 的默认权限、单一全局迁移 Runner 与其版本号断言以及 `ep-migrate` 五个子命令的实现全部归阶段 2，阶段 2 是这些东西的唯一提供方。本阶段自己的数据库相关交付只有三类：迁移目录骨架、迁移历史表的参数固定与白名单、一张仅存在于测试库中的探针表，探针表不进生产迁移目录。
 
 #### 4.1 集群引导与 schema 权限，本阶段只交付约定，内容归阶段 2
 
@@ -78,17 +80,17 @@
 
 本阶段在这一块只交付三件事。一是上述五个文件名与其执行顺序的约定，写入 `db/bootstrap/README.md` 并由 `xtask sqlcheck` 断言目录中不出现约定之外的文件名。二是 `xtask sqlcheck` 规则 SQL-020，即引导文件中不得出现任何口令字面量，口令由安装器从机密库读取后经 `ALTER ROLE ... PASSWORD` 单独注入，该规则本阶段实现并配负样例，被检对象由阶段 2 写入。三是本阶段拟定的 collation 取值、public schema 处置与实例参数取值，作为第 13 节的新增决定二与新增决定三继续有效，由阶段 2 在其脚本中落地。原属本阶段的运行期账号不授予 DELETE 一条，按 C-01 一并移交阶段 2，见第 13 节新增决定四。
 
-#### 4.2 迁移目录骨架与顺序声明骨架
+#### 4.2 迁移目录骨架
 
 按 C-01，本阶段不交付任何迁移文件。原拟的三个迁移文件连同其内容一并移交阶段 2，其中运行期账号在 22 个 schema 上不授予 DELETE 一条见第 13 节新增决定四。
 
-本阶段交付两件东西。一是 `db/migrations/` 下 24 个空目录，目录名与基线第 1.2 节的 schema 名一一对应。二是一个只含注释与顺序数组骨架的 `db/migrations/order.toml`，顺序数组的 24 项取值由阶段 2 计划第 3.3 节定稿，本阶段不写入任何顺序取值。
+本阶段只交付一件东西：`db/migrations/` 下 24 个空目录，目录名与基线第 1.2 节的 schema 名一一对应。目录只表达归属不表达先后，迁移执行顺序由阶段 2 交付的单一全局 Runner 按文件版本号全序排定，本阶段不交付任何顺序声明文件。
 
-迁移文件必须以 `-- rollback:` 段开头这一纪律由 `xtask sqlcheck` 在本阶段实现并配负样例，被检对象自阶段 2 起产生。迁移历史表的存在性保证由 `ep-migrate apply` 承担，实现归阶段 2，本阶段只在 CLI 骨架中固定其 schema 与表名参数，使自检项 migration-version-matched 的比对在零迁移的 schema 上同样成立。
+迁移文件必须以 `-- rollback:` 段开头这一纪律由 `xtask sqlcheck` 在本阶段实现并配负样例，被检对象自阶段 2 起产生。迁移历史表的存在性保证由 `ep-migrate apply` 承担，实现归阶段 2，本阶段只在 CLI 骨架中固定其 schema 与表名参数，使自检项 migration-version-matched 的比对在空库上同样成立。
 
 #### 4.3 迁移历史表
 
-表名 `<schema>.refinery_schema_history`，共 24 张，由 refinery 0.8 在阶段 2 首次执行 `ep-migrate apply` 时创建，结构如下，任何阶段不改其结构。本阶段只做两件事：在 `ep-migrate` CLI 骨架中固定其 schema 与表名参数，以及把该表列入 `xtask sqlcheck` 的白名单。
+表名 `platform_core.schema_history`，全库只有一张，由 refinery 0.8 在阶段 2 首次执行 `ep-migrate apply` 时创建，结构如下，任何阶段不改其结构。本阶段只做两件事：在 `ep-migrate` CLI 骨架中固定其 schema 与表名参数，以及把该表列入 `xtask sqlcheck` 的白名单。
 
 | 列 | 类型 | 约束 |
 |---|---|---|
@@ -182,9 +184,9 @@ create policy rls_probe_records_le on ci_probe.probe_records
 | Init | Start | Configuring | 无 |
 | Configuring | ConfigLoaded | SelfChecking | 配置解析成功且无未知键 |
 | Configuring | ConfigInvalid | Failed | 以退出码 78 退出 |
-| SelfChecking | AllPassed | Ready | 全部已注册自检项通过，且待注册项数量小于等于当前阶段允许上限 |
-| SelfChecking | PassedWithDegradation | Degraded | 仅自检项 offsite-sink-requirements 未满足 |
-| SelfChecking | AnyFailed | Failed | 任一其他项失败，以退出码 78 退出 |
+| SelfChecking | AllPassed | Ready | 全部已注册的 Blocking 项通过，且无 Degrading 项未通过 |
+| SelfChecking | PassedWithDegradation | Degraded | 全部 Blocking 项通过，且至少一个 Degrading 项未通过 |
+| SelfChecking | AnyFailed | Failed | 任一 Blocking 项失败，以退出码 78 退出 |
 | Ready | DegradationDetected | Degraded | 运行期检出降级条件 |
 | Degraded | DegradationCleared | Ready | 条件消除 |
 | Ready 或 Degraded | Sigterm | Draining | 停止接收新请求 |
@@ -195,11 +197,11 @@ create policy rls_probe_records_le on ci_probe.probe_records
 
 #### 5.5 启动自检算法
 
-自检项以注册表实现，注册表为 `SelfCheckRegistry`，位于 `crates/platform/runtime/src/selfcheck/registry.rs`，每项是一个 `SelfCheckItem { name, title, severity, run }`，name 为 kebab-case。按 C-25，自检项一律按注册名标识，本计划与后续阶段都不再用序号称呼，基线第 7.3 节的十三项编号列表同步改为命名列表。十三个基线项的名字依次为 `config-parsed`、`database-reachable`、`migration-version-matched`、`rls-enabled-and-forced`、`runtime-role-privileges-bounded`、`secrets-resolvable`、`audit-chain-verifiable`、`file-store-writable`、`clock-skew-within-limit`、`cgroup-quota-matched`、`offsite-sink-requirements`、`license-and-modules-consistent`、`current-period-open`。报告按注册顺序输出，基线十三项在前，各阶段追加的命名项在后。本阶段实现其中七项，其余六项以 Pending 登记。
+自检项以注册表实现，注册表为 `SelfCheckRegistry`，位于 `crates/platform/runtime/src/selfcheck/registry.rs`，每项是一个 `SelfCheckItem { name, title, severity, run }`，name 为 kebab-case，severity 的取值域由本阶段定死为 Blocking 与 Degrading 两值，不设第三值。Blocking 项只判读二进制、环境、目录与数据库元数据，失败即以退出码 78 拒绝启动；Degrading 项失败不阻止启动，进程进入 Degraded 并由承接阶段登记降级窗口。任何阶段不得注册判读业务数据行的 Blocking 项，业务数据的一致性由规格第 10.2 章的对账组件与降级窗口承接，不由启动闸门承接。按 C-25，自检项一律按注册名标识，本计划与后续阶段都不再用序号称呼，基线第 7.3 节的十三项编号列表同步改为十项命名列表，见第 13 节新增决定十三。十个基线项中 `config-parsed`、`database-reachable`、`migration-version-matched`、`rls-enabled-and-forced`、`runtime-role-privileges-bounded`、`secrets-resolvable`、`file-store-writable`、`clock-skew-within-limit` 八项为 Blocking，`audit-chain-verifiable` 与 `offsite-sink-requirements` 两项为 Degrading。报告按注册顺序输出，基线十项在前，各阶段追加的命名项在后。本阶段实现其中六项，另三项以 Pending 登记，`offsite-sink-requirements` 本阶段不登记。
 
 `config-parsed`，配置解析成功且无未知键，由 serde 的 deny_unknown_fields 与分层加载器返回。
 
-`database-reachable`，数据库可达且服务端版本为 16.x，`timezone` 为 UTC，`max_connections` 不低于 52，`max_wal_senders` 不低于 4，`max_replication_slots` 不低于 3；不建库连接的三个进程跳过本项并在报告中标注 NotApplicable。
+`database-reachable`，数据库可达且服务端版本为 16.x，`timezone` 为 UTC，`max_connections` 不低于 52，`max_wal_senders` 不低于 4，`max_replication_slots` 不低于 3；不建库连接的四个进程 portal-gateway、plugin-host、archive-writer、backup-writer 对全部需要 SQL 会话的自检项一律跳过并标注 NotApplicable，不止本项，其中两个写出进程按规格第 7.7 章只持 REPLICATION 属性，任何 SQL 类自检项对它们都不成立，基线第 7.3 节所称十三项为全部进程共有一句同步作废。
 
 `migration-version-matched`，迁移清单一致。算法：对全部 24 张历史表读出 (schema, version, name, checksum) 四元组，按 schema 升序再按 version 升序排序，逐条以 `\u{1F}` 分隔拼接后取 SHA-256，与编译期常量 `EP_MIGRATION_MANIFEST_SHA256` 比对，不一致即失败。该常量由 build.rs 在构建时对 `db/migrations/` 下全部文件做同样归一化（统一 LF、去行尾空白）后计算。任何进程都不执行迁移。本阶段 `db/migrations/` 下只有 24 个空目录，清单为空集，判定平凡通过，阶段 2 写入迁移文件后该项开始有实质内容。
 
@@ -209,15 +211,13 @@ create policy rls_probe_records_le on ci_probe.probe_records
 
 `clock-skew-within-limit`，时钟偏差小于 1 秒。算法：调用 `adjtimex` 读取 `/proc` 暴露的时间同步状态，若 STA_UNSYNC 置位或 maxerror 超过配置阈值即失败。容器内需挂载 `/proc`，编排文件已保证。
 
-`cgroup-quota-matched`，cgroup 取值与配额清单一致。算法：读取本进程 cgroup v2 目录下的 cpu.weight、cpu.max、memory.low、memory.max、io.weight、io.max，与只读挂载的 `/etc/ep/quotas.generated.toml` 中本进程所属行比对，任一项不等即失败。PostgreSQL 与核心两行不设 cpu.max 与 io.max，比对时要求这两个文件的值为 max。
+三个 Pending 项的接管方固定如下。`secrets-resolvable`、`audit-chain-verifiable`、`file-store-writable` 由阶段 3b 实现，其中 `audit-chain-verifiable` 按 Degrading 登记。Pending 是如实上报的一种结论，不是空实现，本阶段不为任何未实现的自检项写返回成功的桩。`offsite-sink-requirements` 本阶段既不登记也不留 TODO 注释：按 A-26 该项未满足时要登记降级窗口，而 `DegradationLedger` 归阶段 2、落点判定归阶段 14，两者都不在本阶段，因此该项整条推迟，由阶段 14 在交付落点判定的同一批里连同 `DegradationLedger::open` 的调用一次登记为 Degrading 项。`license-and-modules-consistent` 与 `current-period-open` 两项整项删除，理由与承接方见第 13 节新增决定十三。
 
-六个 Pending 项的接管方固定如下。`secrets-resolvable`、`audit-chain-verifiable`、`file-store-writable` 由阶段 3b 实现。`offsite-sink-requirements` 的判定由阶段 14 补齐；按 A-26，该项未满足时应登记降级窗口，但 `DegradationLedger` 由阶段 2 交付，因此本阶段只写 stderr 并在代码中留注释 `// TODO(stage-2): write degradation ledger`，阶段 2 补上对 `DegradationLedger::open` 的调用。`license-and-modules-consistent` 按 A-05 由阶段 3b 的 ep-platform-license 实现并替换本阶段的 Pending 登记。`current-period-open` 由阶段 9a 实现。
+`--check` 模式按顺序执行全部注册项与 Pending 项，输出一份 JSON 报告到 stdout 后退出，不监听端口。报告结构为 `{ process, version, items: [{ name, title, outcome: PASSED|FAILED|DEGRADED|PENDING|NOT_APPLICABLE, detail }], overall }`。`--check` 的判定严于运行期：任一 FAILED 或 DEGRADED 均为非零退出，Pending 不计入成败。降级的闸门就落在这里与升级前置脚本上，不落在进程启动上。
 
-`--check` 模式按顺序执行全部注册项与 Pending 项，输出一份 JSON 报告到 stdout 后退出，不监听端口。报告结构为 `{ process, version, items: [{ name, title, outcome: PASSED|FAILED|DEGRADED|PENDING|NOT_APPLICABLE, detail }], overall }`。任一 FAILED 即退出码 78。
+#### 5.6 资源限额取值与一次性部署校验
 
-#### 5.6 cgroup 配额生成算法
-
-输入是认证服务器的总 CPU 核数 C、总内存字节 M、总磁盘 IO 带宽 B。步骤：先扣除操作系统预留，可分配量为 (C×0.98, M×0.95, B×0.90)。对规格第 13.1 章配额表的九行逐行计算，其中 Rust 核心与集成网关一行对应 app-core.slice，反向代理与运维代理一行对应 app-edge.slice，Worker 对应 app-worker.slice，插件运行时对应 app-plugin.slice，公网门户对应 app-portal.slice，两个写出组件分别对应 app-archive.slice 与 app-backup.slice，PostgreSQL 与内置搜索索引各占一个 slice。cpu.weight 取该行份额百分数乘以 100，取整后不小于 1；memory.low 与 memory.max 同值，取可分配内存乘份额并向下取整到 MiB；io.weight 同 cpu.weight 的算法。突发上限：PostgreSQL 与核心两行不设 cpu.max 与 io.max；其余各行取 min(份额×3, 40%) 乘可分配量。边界条件：九行内存之和必须小于等于可分配内存，否则生成器报错退出；九行份额之和必须等于 100，否则报错；突发上限之和允许超过 100。输出为 systemd slice 的 drop-in 文件与 `quotas.generated.toml` 两份，后者供自检项 cgroup-quota-matched 比对。
+本阶段不做配额生成器，也不产出 `quotas.generated.toml`。规格第 13.1 章的九行配额表以静态 drop-in 文件承载，放在 `deploy/` 下随八个 slice 一并交付，取值只有三类。第一类，每个 slice 一个 `MemoryMax`，按附录 D.2 的 BC-1 基线组合算定后写死，换机型只改这一列。第二类，backup-writer 一个 `IOMax` 硬上限，一个 MB/s 数字，压住每晚那个窗口。第三类，archive-writer 与 PostgreSQL 两个 slice 的 `IOWeight` 高于 backup-writer，保住 RPO 与第 16 章的时延线。`CPUWeight` 直接取规格第 13.1 章该行的份额百分数乘以 100，是相对份额，与机器规格无关，不参与任何计算。删除的是三样东西：按可分配量折算的生成算法、`min(份额×3, 40%)` 的突发上限算法、以及每个进程每次启动都比对一次的自检项。核对改由 `scripts/verify-resource-limits.sh` 在部署与升级时各执行一次，读 cgroup v2 目录下的实际取值与 drop-in 逐行比对，不一致即退出非零。理由是这台机器只服务 20 人，磁盘 IO 是唯一真正稀缺的资源，把 CPU 与内存的份额仲裁做成每进程的启动闸门，解决的是不存在的争用，换来的却是一处配置漂移导致八进程集体拒绝启动。
 
 #### 5.7 可复现构建算法
 
@@ -264,7 +264,7 @@ echo 端点存在的唯一理由是让封套、错误映射、并发闸门、同
 
 `message` 与 `advice` 在本阶段全部为占位简体中文文案，文案定稿依赖 U-A-06 决策，占位文案已满足规格第 15.1 章的四要素要求，不阻塞本阶段。CI 断言这十三条文案中不出现堆栈、SQL、主机名、进程名、表名与密钥字样。按 C-24，`PLATFORM.IDEMPOTENCY.KEY_REQUIRED`、`PLATFORM.CAPACITY.CONCURRENCY_LIMIT`、`PLATFORM.IDEMPOTENCY.PAYLOAD_MISMATCH`、`PLATFORM.CONCURRENCY.STALE_VERSION`、`PLATFORM.AUTHZ.NOT_FOUND_OR_DENIED`、`PLATFORM.AUTHZ.OBJECT_FORBIDDEN`、`PLATFORM.DB.MIGRATION_WINDOW_CLOSED` 七条一律由本阶段登记在 `crates/foundation/src/error/codes.rs` 与 `docs/error-codes.md` 的 PLATFORM 段，阶段 3a 与阶段 4 不得重复登记；其中后五条在本阶段只登记不返回。`PLATFORM.ROUTE.NOT_FOUND` 只用于路由不存在，记录级的存在性不泄漏一律用 `PLATFORM.AUTHZ.NOT_FOUND_OR_DENIED`，两者不得互换。
 
-请求头校验在本阶段的口径：`X-Legal-Entity-Id`、`X-Device-Id`、`X-Client`、`Authorization` 四个头只校验存在性与格式（UUID 格式、枚举取值、Bearer 前缀与 43 位 base64url），不做任何真实校验，校验点以 trait `AuthnPort` 与 `LegalEntityScopePort` 的空实现占位，由身份阶段替换。这一点在 `docs/config-reference.md` 中明写为阶段 1 临时状态，防止误认为已具备鉴权。系统端点豁免这四个头，豁免清单在代码中是一张固定表，新增豁免路径需改这张表并触发 CODEOWNERS 中的安全审查。
+请求头校验在本阶段的口径：`X-Legal-Entity-Id`、`X-Device-Id`、`X-Client`、`Authorization` 四个头只校验存在性与格式（UUID 格式、枚举取值、Bearer 前缀与 43 位 base64url），不做任何真实校验，本阶段不定义 `AuthnPort` 与 `LegalEntityScopePort` 两个 trait，也不注入任何空实现：本阶段没有一条业务路由，头校验是一段无端口的纯格式校验，真实校验与其端口由阶段 4 在交付第一条判定时同批引入。这一点在 `docs/config-reference.md` 中明写为阶段 1 临时状态，防止误认为已具备鉴权。系统端点豁免这四个头，豁免清单在代码中是一张固定表，新增豁免路径需改这张表并触发 CODEOWNERS 中的安全审查。
 
 #### 6.2 其余七个进程
 
@@ -287,7 +287,7 @@ echo 端点存在的唯一理由是让封套、错误映射、并发闸门、同
 { "v": 1, "kind": "response", "id": "<同上>", "ok": false, "error": { "code": "...", "category": "...", "message": "..." } }
 ```
 
-本阶段只实现 `system.ping` 与 `system.version` 两个方法。基线第 2 节规定的四类上报（写出结果、校验结论、失败事件、连接与复制槽与基础备份起止）在方法命名空间中预留为 `archive.report.*`，本阶段不实现，只在协议文档中占位并由 CI 断言未实现方法返回统一的未知方法错误而不是 panic。
+本阶段只实现 `system.ping` 与 `system.version` 两个方法。基线第 2 节规定的四类上报由阶段 14 在交付写出本体时连同其方法名一次定义，本阶段不预留方法名，也不在协议文档中占位。CI 只断言任何未实现的方法一律返回统一的未知方法错误而不是 panic，这条断言与方法名无关，不因后续新增方法而改动。
 
 spool 行为：写出进程在 core-server 不可用时把待上报帧按一帧一行追加到 `/var/lib/ep/<proc>/spool/pending.jsonl`，恢复连接后按顺序补写并在成功后截断；spool 目录容量超过配置上限时丢弃最旧记录并记 ERROR，绝不阻塞写出。本阶段以心跳帧验证该路径。
 
@@ -297,7 +297,7 @@ spool 行为：写出进程在 core-server 不可用时把待上报帧按一帧�
 
 #### 7.1 工作单元
 
-`ep-foundation` 定义 `UnitOfWork`，两个方法为 `transact` 与 `snapshot_transact`，`ep-adapter-db` 提供实现骨架，`ep-adapter-db-pg` 提供实现。按 A-01，事务句柄为 `ep_foundation::port::Tx`，快照上下文为 `ep_foundation::port::SnapshotCtx`，契约层的跨模块方法签名一律写 `&mut dyn Tx`，原先的 `TxHandle` 与 `transact_repeatable_read` 两个名字作废。本阶段的实现要点：`transact` 的隔离级别固定 READ COMMITTED；`snapshot_transact` 是只读快照事务的唯一入口，配合 `SET TRANSACTION SNAPSHOT` 使用，供后续的对账与关账前校验取用，两者是仅有的两个入口；`UnitOfWork` 不带池参数，一个实例在装配时绑定一个池；闭包返回后统一提交，返回 Err 统一回滚；闭包内不允许发起外部调用，由 `xtask archcheck` 对 `ep-app-*` 的符号禁令强制；跨 crate 取具体句柄只允许 `tx.as_any_mut().downcast_mut::<PgTx>()` 一种写法，且只允许出现在 `crates/adapter/db-pg/` 内。审计与 Outbox 的写入位以 `AuditSink` 与 `OutboxSink` 两个 trait 的空实现占位，保证后续阶段接入时事务边界不需要改动。
+`ep-foundation` 定义 `UnitOfWork`，两个方法为 `transact` 与 `snapshot_transact`，`ep-adapter-db` 提供实现骨架，`ep-adapter-db-pg` 提供实现。按 A-01，事务句柄为 `ep_foundation::port::Tx`，快照上下文为 `ep_foundation::port::SnapshotCtx`，契约层的跨模块方法签名一律写 `&mut dyn Tx`，原先的 `TxHandle` 与 `transact_repeatable_read` 两个名字作废。本阶段的实现要点：`transact` 的隔离级别固定 READ COMMITTED；`snapshot_transact` 是只读快照事务的唯一入口，配合 `SET TRANSACTION SNAPSHOT` 使用，供后续的对账与关账前校验取用，两者是仅有的两个入口；`UnitOfWork` 不带池参数，一个实例在装配时绑定一个池；闭包返回后统一提交，返回 Err 统一回滚；闭包内不允许发起外部调用，由 `xtask archcheck` 对 `ep-app-*` 的符号禁令强制；跨 crate 取具体句柄只允许 `tx.as_any_mut().downcast_mut::<PgTx>()` 一种写法，且只允许出现在 `crates/adapter/db-pg/` 内。本阶段不定义 `AuditSink` 与 `OutboxSink` 两个 trait，也不在事务闭包内留空实现写入位。`UnitOfWork::transact` 的闭包签名已按 A-01 冻结，阶段 3a 交付审计与 Outbox 本体时在闭包内直接调用即可，事务边界本就不需要改动，不必先摆一个返回成功的桩。
 
 #### 7.2 连接池
 
@@ -334,7 +334,7 @@ spool 行为：写出进程在 core-server 不可用时把待上报帧按一帧�
 
 #### 7.7 与 Outbox 的关系
 
-本阶段不写任何 Outbox 条目，也不消费。job-worker 的调度器已按至少一次投递与幂等消费的形态分层：`JobRegistry` 注册的每个任务声明 `consumer_name`，执行前后各有一个可注入的去重钩子。这样 Outbox 阶段接入时不需要改动调度器结构。
+本阶段不写任何 Outbox 条目，也不消费，也不为消费预留任何钩子。`JobRegistry` 在本阶段只有注册与调度两件事，已注册任务为零个；至少一次投递与幂等消费的形态由阶段 3a 在交付 Outbox 消费时连同 `consumer_name` 与去重一次给出。理由是本阶段没有任何消费者，未被使用的钩子无从验证，只有维护成本没有判据。
 
 ### 8. 配置项
 
@@ -372,8 +372,6 @@ spool 行为：写出进程在 core-server 不可用时把待上报帧按一帧�
 | secrets.dir | path | /var/lib/ep/secrets | 取用 |
 | secrets.provider | enum file、kms | file | 启动 |
 | selfcheck.clock_skew_max_ms | u32 | 1000 | 启动 |
-| selfcheck.quota_manifest_path | path | /etc/ep/quotas.generated.toml | 启动 |
-| selfcheck.pending_as_failure | bool | false | 启动 |
 | runtime.worker_threads | u16 | 0，表示按 cgroup CPU 配额推导 | 启动 |
 | runtime.blocking_threads | u16 | 32 | 启动 |
 | egress.allowlist | string 数组 | 空 | SIGHUP |
@@ -401,9 +399,7 @@ UUIDv7：同毫秒内序列递增、序列溢出自旋、时钟回拨不倒退�
 
 配置：分层覆盖顺序（内置默认、主配置、片段目录字典序、环境变量、命令行）逐层验证；未知键拒绝；类型错误的错误消息含键路径；EP__DB__POOL__RW_MAX 形式的双下划线映射。
 
-自检：七项各自的通过与失败分支，失败时退出码 78；Pending 项在 pending_as_failure 为真与假两种取值下的不同结论。
-
-配额生成：份额之和不等于 100 报错、内存超可分配报错、weight 取整下界、突发上限封顶到 40%、两个不设上限的行输出 max。
+自检：六项各自的通过与失败分支，Blocking 项失败时退出码 78；Degrading 项未通过时状态机进入 Degraded 而不退出，且 `--check` 退出码非零；Pending 项在报告中如实标注且不计入 overall 的成败。
 
 覆盖率合并算法：三档判定各自的通过与不通过、增量行集合为空时的处理。
 
@@ -454,10 +450,10 @@ E2E 在单机编排上跑，覆盖规格第 17.2 章中本阶段可达的部分�
 | 编号 | 场景 | 判定 |
 |---|---|---|
 | E2E-01 | 一条命令起全栈 | PostgreSQL 加八个进程加一次性迁移容器全部达到 active，九个健康端点全绿 |
-| E2E-02 | 全部进程 `--check` | 九份报告 overall 为 PASSED 或 DEGRADED，退出码 0 |
+| E2E-02 | 全部进程 `--check` | 九份报告 overall 均为 PASSED 且退出码 0；构造任一 Degrading 项未通过时 overall 为 DEGRADED 且退出码非零 |
 | E2E-03 | 迁移清单不一致时启动 | 自检项 migration-version-matched 失败，进程以 78 退出，systemd 不重启 |
 | E2E-04 | 配置未知键 | 以 78 退出，stderr 含键路径 |
-| E2E-05 | cgroup 配额核对 | 八个 slice 的实际 cgroup 取值与配额清单逐行一致 |
+| E2E-05 | 资源限额取值 | 八个 slice 的实际 cgroup 取值与 `deploy/` 下 drop-in 文件逐行一致，`scripts/verify-resource-limits.sh` 返回 0，篡改一行后返回非零 |
 | E2E-06 | 进程崩溃重启 | kill -9 core-server 后 systemd 重启并在 30 秒内重新就绪，其余进程不受影响 |
 | E2E-07 | 优雅停机与整栈停止 | 全部退出码 0，无残留 socket 与 pid |
 | E2E-08 | 系统端点不外泄 | 经反向代理访问 `/api/v1/system/` 与 `/portal/v1/system/` 返回 404 或 403 |
@@ -486,18 +482,18 @@ E2E 在单机编排上跑，覆盖规格第 17.2 章中本阶段可达的部分�
 
 本阶段能对应到的判据有四类，其余判据在本阶段只交付判定框架不交付判定内容，此点在退出条件中显式承认。
 
-一是单元测试与领域属性测试的覆盖率通过标准，本阶段以分档门禁完整实现并生效。二是法人行级隔离与越权测试集。按 C-05，`tests/rls_matrix` 分三段，三个阶段不得重复实现同名函数。本阶段交付该 CI 目标与八类断言的骨架并在探针表上实测，函数名固定为 `assert_read`、`assert_write`、`assert_update`、`assert_delete`、`assert_aggregate`、`assert_sort`、`assert_report_projection`、`assert_error_leak`，位于 `testkit/src/rls_matrix.rs`，业务表进入后按同一套断言扩展。阶段 2 追加 `assert_replication_role_containment` 与 `assert_recon_context_borrow` 两个函数，即两个复制角色与内部对账系统安全上下文的入口借用，本阶段不为它们建目标文件与失败占位。阶段 4 追加 `matrix_32.rs` 的 32 组完整矩阵与发布门禁项 `RG-RLS-MATRIX-GREEN`。三是数据库适配认证套件中的迁移与锁两项的执行框架，本阶段固定迁移会话的 `lock_timeout = '5s'` 与 `statement_timeout = '30min'`，并提供在线变更耗时的实测夹具。四是混沌与故障注入六类中的进程崩溃后重启恢复一类，本阶段以 E2E-06 覆盖其可达部分，即重启后进程恢复与请求按第 15.1 章明确失败，未完成任务恢复与已确认事务零丢失属后续阶段。第 17.3 章的九项强制不变量在本阶段没有被测对象，一项都不声称通过。
+一是单元测试与领域属性测试的覆盖率通过标准，本阶段以分档门禁完整实现并生效。二是法人行级隔离与越权测试集。按 C-05，`tests/rls_matrix` 分三段，三个阶段不得重复实现同名函数。本阶段交付该 CI 目标与八类断言的骨架并在探针表上实测，函数名固定为 `assert_read`、`assert_write`、`assert_update`、`assert_delete`、`assert_aggregate`、`assert_sort`、`assert_report_projection`、`assert_error_leak`，位于 `testkit/src/rls_matrix.rs`，业务表进入后按同一套断言扩展。阶段 2 只追加 `assert_recon_context_borrow` 一个函数，即内部对账系统安全上下文的入口借用，本阶段不为它建目标文件与失败占位。两个复制角色的入口借用断言不再设立：规格第 7.7 章自认三项遏制手段都不阻止持有本机操作系统权限者切换到写出进程账户并从本机建立流复制连接这条路径，为一条自认挡不住的通道再建一组测试与核对机制只扩大维护面，该边界的承载改为规格第 21.21 章的披露。阶段 4 追加 `matrix_32.rs` 的 32 组完整矩阵与发布门禁项 `RG-RLS-MATRIX-GREEN`。三是数据库适配认证套件中的迁移与锁两项的执行框架，本阶段固定迁移会话的 `lock_timeout = '5s'` 与 `statement_timeout = '30min'`，并提供在线变更耗时的实测夹具。四是混沌与故障注入六类中的进程崩溃后重启恢复一类，本阶段以 E2E-06 覆盖其可达部分，即重启后进程恢复与请求按第 15.1 章明确失败，未完成任务恢复与已确认事务零丢失属后续阶段。第 17.3 章的九项强制不变量在本阶段没有被测对象，一项都不声称通过。
 
 ### 10. 退出条件
 
 下列每条都能由一条命令或一份自动产出的报告客观判定，全部达成才算本阶段完成。
 
 1. `cargo build --workspace --locked --offline --release` 成功，零 warning，`-D warnings` 生效。
-2. crate 清单与基线第 1.2 节按退出条件 20 完成回写后的内容逐项一致，其中 `ep-platform-runtime` 一行由本阶段按偏离一回写基线第 1.2 节平台底座表后进入比对面，命名前缀、目录名与 `Cargo.toml` 中的 name 三处一致，由 archcheck 断言。
+2. 每个 crate 的命名前缀、目录名与 `Cargo.toml` 中的 name 三处一致，由 archcheck 断言。不再断言 crate 清单与基线第 1.2 节逐项一致：逐项一致这条判据把 crate 边界变成必须走基线修订才能移动的冻结物，而真正要守的依赖方向由退出条件 3 的七条禁止项守住；基线第 1.2 与 1.3 节的两张表相应降为现状记录，增删 crate 走普通评审。`codecov.toml` 的分档路径规则按目录前缀表达，不与 crate 清单逐项对应，新增 crate 不会静默逃出覆盖率分档。
 3. 依赖方向的七条禁止项各有一个负样例，负样例构建必须失败；正样例全部通过。
 4. 八个二进制启动、就绪、优雅停机、崩溃重启四条路径在 E2E 中全绿。
-5. `ep-migrate` 的五个子命令 apply、status、check、gen-rls、open-window 参数解析齐备，六个退出码各有一个用例；迁移清单哈希在探针目录上比对通过且篡改后失败；`db/migrations/` 下 24 个空目录与只含注释与顺序数组骨架的 `order.toml` 存在。空库上 24 个 schema 与 24 张历史表的存在性判定归阶段 2。
-6. 七项已实现自检各自的通过与失败分支均有集成测试，自检项一律以注册名标识；六项 Pending 项 `secrets-resolvable`、`audit-chain-verifiable`、`file-store-writable`、`offsite-sink-requirements`、`license-and-modules-consistent`、`current-period-open` 在报告中如实标注，且有一条 CI 断言保证未注册项数量只减不增。
+5. `ep-migrate` 的五个子命令 apply、status、check、gen-rls、open-window 参数解析齐备，六个退出码各有一个用例；迁移清单哈希在探针目录上比对通过且篡改后失败；`db/migrations/` 下 24 个空目录存在，且目录中不含任何顺序声明文件。空库上 24 个 schema 与 `platform_core.schema_history` 一张历史表的存在性判定归阶段 2。
+6. 六项已实现自检各自的通过与失败分支均有集成测试，自检项一律以注册名标识且各自带 Blocking 或 Degrading 一个档位；三项 Pending 项 `secrets-resolvable`、`audit-chain-verifiable`、`file-store-writable` 在报告中如实标注，且有一条 CI 断言保证未注册项数量只减不增。
 7. 十三条错误码在 `docs/error-codes.md` 与代码常量表中一致，重复码或缺失码即构建失败，其中 C-24 列明的七条由本阶段独家登记。
 8. 第 13 节新增决定五登记的六个指标名在指标端点上可见，其中 `ep_db_pool_connections` 与 `ep_db_statement_duration_seconds` 按 C-23 本阶段只注册不填充，判据为指标名存在而非有非零样本，标签基数纪律断言通过。
 9. 全部配置键在 `docs/config-reference.md` 中有条目，代码与文档逐键一致。
@@ -507,7 +503,7 @@ E2E 在单机编排上跑，覆盖规格第 17.2 章中本阶段可达的部分�
 13. 两次独立构建产出完全相同的二进制哈希与镜像 digest。
 14. SBOM 生成成功，`cargo deny` 与依赖漏洞扫描零严重与高危，许可证清单通过；`xtask sbom` 另含一个断言 SBOM 中不出现 `ep-bench` 与 `ep-release-gate` 两个包名的负样例，与阶段 14 的发布门禁项 `RG-TOOLS-EXCLUDED` 同名同判据。
 15. 升级包结构完整，客户侧验签脚本在断网机器上通过，篡改后失败。
-16. cgroup 配额生成结果与规格第 13.1 章配额表逐行一致，八个 slice 的实际取值与清单一致。
+16. `deploy/` 下八个 slice 的静态资源限额 drop-in 取值与规格第 13.1 章配额表逐行一致，`scripts/verify-resource-limits.sh` 在部署后执行一次返回 0，篡改一行后返回非零，且任何进程的启动自检中不出现资源限额相关项。
 17. 阶段 1 性能回归基线五项全部有实测记录并达标。
 18. 六份文档骨架存在，ADR 至少含工具链冻结、collation 选型、musl 静态链接、CI 平台选型、新增 crate 五篇。
 19. 源码仓库、制品与离线依赖仓库的加密备份脚本可执行，且完成一次恢复验证并留下记录。
@@ -516,6 +512,7 @@ E2E 在单机编排上跑，覆盖规格第 17.2 章中本阶段可达的部分�
 22. `testkit/src/rls_matrix.rs` 的八个断言函数存在，函数名与 C-05 逐字一致，且在探针表上全绿；本阶段不实现阶段 2 与阶段 4 的追加函数。
 23. `docs/data-dictionary.md` 的单据类型码一节存在，`xtask configdoc --check-doc-type-codes` 通过，判据为该节与 `ep-platform-sequence` 的常量表逐项一致且无重复。
 24. `docs/metrics-catalog.md` 的指标名唯一性校验在 `xtask` 中实现并通过，`ep_build_info`、`ep_selfcheck_pending_items`、`ep_db_pool_connections`、`ep_db_statement_duration_seconds`、`ep_http_request_duration_seconds`、`ep_quota_throttled_total` 六个指标已注册，`ep_db_retries_total` 与 `ep_tx_retry_total` 两个名字不出现在任何登记文件与代码中。
+25. T0 贯通线的判定手段就位：`xtask e2e --profile=t0` 作为独立目标可执行并返回 0，`ep-datagen` 的 `t0-min` 样本档在同一 seed 下两次生成字节一致，`deploy/` 一条命令起全栈。本阶段不提供 T0 的任何业务切片，也不为 T0 声称任何业务判据。
 
 ### 11. 与规格和 PRD 的对应
 
@@ -523,12 +520,12 @@ E2E 在单机编排上跑，覆盖规格第 17.2 章中本阶段可达的部分�
 |---|---|---|
 | 第 4.1 章 | 模块化单体的代码隔离边界，以依赖方向门禁落实 | archcheck 报告与负样例 |
 | 第 4.3 章 | workspace 七层边界与八个 apps 进程一一对应 | crate 清单断言、E2E-01 |
-| 第 7.1 章 | 单实例单库的目录约定、迁移目录骨架与顺序声明骨架；24 个 schema 与模块级属主角色的实际创建归阶段 2 | 迁移目录骨架、order.toml 骨架、IT-01 |
+| 第 7.1 章 | 单实例单库的目录约定与迁移目录骨架；24 个 schema 与模块级属主角色的实际创建归阶段 2 | 迁移目录骨架、IT-01 |
 | 第 7.3 章 | 认证套件中的迁移与锁两项的执行框架，PostgreSQL 16 版本门禁 | IT-18、迁移会话超时设置 |
 | 第 7.4 章 | 在线变更边界的会话参数与耗时实测夹具 | 迁移工具参数与夹具用例 |
 | 第 7.7 章 | 会话变量唯一判据、无 BYPASSRLS、连接归还清除；用途分账号与两个复制角色的建立归阶段 2 | IT-04 至 IT-09，角色与权限证据见阶段 2 |
 | 第 12.3 章 | 密码算法选型的落地约束，即 TLS 1.3、SHA-256、ECDSA 三项在制品签名与哈希链参数上的取值 | 签名脚本与 ADR |
-| 第 13.1 章 | 九行配额表落为八个 cgroup slice 与配额清单，让路机制一的执行面 | D-06、E2E-05 |
+| 第 13.1 章 | 九行配额表落为八个 cgroup slice 的静态资源限额 drop-in，取值三类，由部署脚本一次核对 | D-06、E2E-05 |
 | 第 13.2 章 | 单机容器编排、标准 OCI 容器、只依赖开放接口 | D-05、镜像清单 |
 | 第 15.1 章 | 五类错误分类、四要素、存在性不泄漏、面向使用者文案 | 错误码表、IT-19 至 IT-21 |
 | 第 16 章 | 20 并发上限的承载方式与连接池分池上限 | 第 7.2、7.4 节，IT-17、IT-22 |
@@ -574,13 +571,13 @@ R-09，CI 平台选型属本阶段新增决定，若客户或团队后续改用�
 
 #### 12.2 为后续阶段预留的扩展点
 
-自检注册表预留 `secrets-resolvable`、`audit-chain-verifiable`、`file-store-writable`、`offsite-sink-requirements`、`license-and-modules-consistent`、`current-period-open` 六项的注册位，注册函数签名已冻结，各阶段追加项一律以注册名登记，不用序号。事务闭包内预留 `AuditSink` 与 `OutboxSink` 两个写入位，接入时不改事务边界。job-worker 的 `JobRegistry` 预留 consumer 去重钩子，Outbox 接入不改调度结构。HTTP 中间件栈预留 `AuthnPort`、`AuthzPort` 与 `IdempotencyStore` 三个注入点，前两个由身份阶段替换空实现；按 C-07，`IdempotencyStore` 的端口定义归阶段 2、存储与重放实现归阶段 3a。IPC 方法命名空间预留 `archive.report.*` 四类上报。`db/migrations/` 下 24 个目录已列齐，`order.toml` 的顺序数组由阶段 2 定稿，定稿后业务阶段只加文件不改顺序声明。错误码表、事件目录、指标目录、数据字典的单据类型码一节四份登记内容已建立并被 CI 校验，后续阶段先登记后实现的纪律有强制点。`ep-adapter-db` 与 `ep-adapter-db-pg` 的分层已就位，多库延期不影响抽象层的稳定性。feature `ci-probe` 提供一个不进发布的探针通道，后续阶段可复用于横切链路验证。
+自检注册表预留 `secrets-resolvable`、`audit-chain-verifiable`、`file-store-writable` 三项的注册位，注册函数签名与 severity 取值域已冻结，各阶段追加项一律以注册名加一个档位登记，不用序号。本阶段不预留任何返回成功的空实现：跨阶段端口按同批交付、整条推迟、改用降级窗口三者择一处置，本阶段一律取整条推迟，因此 `AuthnPort`、`AuthzPort`、`AuditSink`、`OutboxSink` 与 Outbox 消费的去重钩子在本阶段都不存在，由阶段 4 与阶段 3a 在交付判定与本体的同一批里引入。HTTP 中间件栈只留 `IdempotencyStore` 一个注入点，按 C-07 其端口定义归阶段 2、存储与重放实现归阶段 3a，本阶段的 `IdempotencyKeyHeaderGuard` 只校验请求头，不需要任何桩。`db/migrations/` 下 24 个目录已列齐，迁移执行顺序由阶段 2 交付的单一全局 Runner 按文件版本号全序排定，业务阶段只按版本号加文件，不存在任何顺序声明文件要改。错误码表、事件目录、指标目录、数据字典的单据类型码一节四份登记内容已建立并被 CI 校验，后续阶段先登记后实现的纪律有强制点。`ep-adapter-db` 与 `ep-adapter-db-pg` 的分层已就位，多库延期不影响抽象层的稳定性。feature `ci-probe` 提供一个不进发布的探针通道，后续阶段可复用于横切链路验证。
 
 ### 13. 偏离基线与本阶段新增决定
 
 按基线第 0 节与第 12 节的要求，本节单列全部偏离项与新增决定，每项给出理由与影响范围，并同步提出基线修订。本阶段不接受只在实现里偏离。
 
-偏离一，新增 crate `ep-platform-runtime`。基线第 1.2 节的平台底座清单没有承载进程运行时装配的 crate，而基线第 7.3 节已把 `SelfCheckRegistry` 的落点写死在 `crates/platform/runtime/src/selfcheck/registry.rs`，两处自相矛盾。若不新增，配置加载、自检注册表、信号处理、生命周期状态机、健康与就绪端点这一整套代码要在八个二进制里各写一份，与文件规模纪律和单一事实源冲突。该 crate 只承载进程生命周期状态机、分层配置加载、`SelfCheckRegistry`、健康与就绪端点、HTTP 服务器与中间件栈骨架，以及以 trait 表达的 IPC 服务端接口；IPC 的具体传输实现仍留在 `ep-adapter-ipc`，由 apps 在 `wiring.rs` 注入，因此本 crate 只依赖 foundation 与其他 platform，apps 依赖它，不改变任何既有依赖方向。影响范围有两处：基线第 1.2 节的平台底座表增加 `ep-platform-runtime` 一行，职责列取上句；该表末补一句本表为平台底座 crate 的完整清单，新增一行必须先改本节，使退出条件 2 的逐项一致有可判定的比对面。
+偏离一，新增 crate `ep-platform-runtime`。基线第 1.2 节的平台底座清单没有承载进程运行时装配的 crate，而基线第 7.3 节已把 `SelfCheckRegistry` 的落点写死在 `crates/platform/runtime/src/selfcheck/registry.rs`，两处自相矛盾。若不新增，配置加载、自检注册表、信号处理、生命周期状态机、健康与就绪端点这一整套代码要在八个二进制里各写一份，与文件规模纪律和单一事实源冲突。该 crate 只承载进程生命周期状态机、分层配置加载、`SelfCheckRegistry`、健康与就绪端点、HTTP 服务器与中间件栈骨架，以及以 trait 表达的 IPC 服务端接口；IPC 的具体传输实现仍留在 `ep-adapter-ipc`，由 apps 在 `wiring.rs` 注入，因此本 crate 只依赖 foundation 与其他 platform，apps 依赖它，不改变任何既有依赖方向。影响范围只有一处：基线第 1.2 节的平台底座表增加 `ep-platform-runtime` 一行，职责列取上句。该表不补冻结措辞，也不再作为 archcheck 的比对面，理由见第 10 节退出条件 2。
 偏离二，`ep-foundation` 承载 22 个实体标记类型。按 A-01，`crates/foundation/src/id/marker.rs` 集中声明跨模块被引用实体的零大小标记类型，清单固定 22 项。这是对基线第 1.3 节禁止 foundation 承载业务概念一条的一处受限例外，标记类型无字段、无方法、无 trait 实现，只承载类型身份，供 `Id<T>` 在契约层表达跨模块引用。不采用该例外的代价是每个 ep-contract crate 各自声明一份标记类型，同一实体在不同 crate 中的 `Id<T>` 互不相容，跨模块方法签名无法表达。影响范围是基线第 1.3 节增加一条受限例外，并注明清单为 22 项、任何阶段不得增删。
 
 新增决定一，新增两个非交付或运维用途的 workspace 成员：`xtask` 是纯开发期工具，不进任何制品；`tools/ep-migrate` 是一次性运维工具，随制品交付，以 systemd 的 oneshot 单元在升级窗口内执行。二者都不是常驻进程，不监听端口，不属于八进程清单，不改变基线第 2 节。运行 `ep-migrate` 的操作系统账户为 `ep-migrate`，与八个进程账户互不复用，同属组 ep。影响范围有两处：基线第 1.1 节的目录布局改为两段，第一段是 workspace 成员路径，在既有八条之外增加 `/xtask/` 与 `/tools/<name>/`，第二段是非 workspace 成员的仓库目录，列 `/db/bootstrap/`、`/db/checks/`、`/deploy/`、`/scripts/`、`/clients/desktop/`、`/clients/mobile/` 六条，并在节末写明本两段即全部顶层目录，新增顶层目录必须先改本节；基线第 2 节的账户说明增加一条，`ep-migrate` 账户与八个进程账户互不复用且同属组 ep。
@@ -600,14 +597,17 @@ R-09，CI 平台选型属本阶段新增决定，若客户或团队后续改用�
 新增决定八，CI 平台取内网自建 Forgejo 加 Woodpecker，全部门禁收敛到 `cargo xtask ci` 一个入口。影响范围是基线新增一条研发设施取值，且该取值不进入产品制品。
 新增决定九，`ep-foundation` 的职责扩展。按 A-01、A-02、A-03、A-07、A-08 与 A-20，本阶段在 ep-foundation 中新增 `port::tx`、`id::marker`、`principal`、`security::context`、`capability` 五个模块，并建 `port::search` 与 `port::doc` 两个空模块。理由是这五类东西被三个以上阶段的契约层同时引用，若不前移，跨模块方法签名无法在契约层表达，系统主体与能力域码会在各阶段各写一份。影响范围有四处：基线第 1.2 节 ep-foundation 一行的职责描述增加 Tx、UnitOfWork、SnapshotCtx、id::marker、capability、port::search、port::doc 七项；基线第 4 节公共列表 created_by 一行的语义列写入 `00000000-0000-7000-8000-000000000001` 字面量；基线第 10.3 节在事务写法示例之后追加一句，只读快照事务的唯一入口是 `snapshot_transact`，配合 `SET TRANSACTION SNAPSHOT` 使用；基线第 12 节增加一条纪律，各阶段按裁定 A-20 的两类落点声明能力域码与动作类别常量，即业务模块的路由落 `crates/contract/<module>/src/capability.rs`，`/api/v1/platform/` 下的平台路由落 A-20 逐阶段指名的 platform crate 的 `src/capability.rs` 并一律取 `CapabilityDomain::PlatformAdminLowcodeOps`，`ci-probe` 门控的探针路由与 `/internal/v1/` 端点不参与判定也不声明常量，`xtask configdoc` 只断言每个 `/api/v1/` 路由。
 
-新增决定十，启动自检项按注册名标识。按 C-25，自检项不再用序号称呼，注册表为 `SelfCheckRegistry`，注册项为 `SelfCheckItem { name, title, severity, run }`，name 为 kebab-case，基线十三项的名字见第 5.5 节，各阶段追加项按其阶段计划登记。理由是序号在多阶段追加时必然冲突，且已经出现同一序号在不同阶段指向不同项的情况。影响范围是基线第 7.3 节由编号列表改为命名列表。
+新增决定十，启动自检项按注册名标识。按 C-25，自检项不再用序号称呼，注册表为 `SelfCheckRegistry`，注册项为 `SelfCheckItem { name, title, severity, run }`，name 为 kebab-case，基线十项的名字与档位见第 5.5 节，各阶段追加项按其阶段计划登记。理由是序号在多阶段追加时必然冲突，且已经出现同一序号在不同阶段指向不同项的情况。影响范围是基线第 7.3 节由编号列表改为命名列表。
 
 新增决定十一，单据类型码的全局唯一登记表。按 C-26，`docs/data-dictionary.md` 增加单据类型码一节，本阶段建立该节与 CI 校验 `xtask configdoc --check-doc-type-codes`，判据为该节与 `ep-platform-sequence` 的常量表逐项一致且无重复；各类型码由其单据所在阶段登记，任何阶段不得新增未在该节登记的码。影响范围是基线第 11.1 节增加档案编码格式与类型码登记表的指引。
 
 新增决定十二，`SecurityContext` 七个字段类型的形态。基线第 1.4 节的字段表只给出 `DeviceId`、`RoleCode`、`DutyClass`、`RecordShare`、`DataScopeTag`、`RequestId`、`TraceId` 七个类型名，其后的配套枚举一段只冻结了 `AccountKind`、`ClientKind`、`DepartmentScope` 三个枚举，七个类型的形态在规格、PRD、基线与裁定表中均无定义，而按 A-03 其交付方同为本阶段，不给形态则该结构体写不出可编译的定义。取值见第 5.1 节。理由与代价：`DutyClass` 的六个取值与阶段 4 的 `platform_authz.roles.duty_class` 列取值同源，互斥关系属该阶段的职责分离种子规则，不进枚举定义；`RecordShare` 只表达一条记录被显式共享给当前主体，不承载判定，`RecordScope` 与 `RecordPredicate` 留在 ep-platform-authz，否则判定语义前移进 foundation 会与基线第 1.3 节的分层冲突；`TraceId` 与 `RequestId` 的形态在基线中原本只有日志样例与请求头描述，本决定把它们写成唯一形态定义。影响范围有两处：基线第 1.4 节的配套枚举一段由三个枚举扩为三个枚举加上述七个字段类型与 `RecordShareGrant`；基线第 5.6 节的请求头一节写入 `X-Request-Id` 与 `X-Device-Id` 的形态，与本决定逐字一致。
+新增决定十三，启动自检分两档并删除三项。`SelfCheckItem` 的 severity 取值域定死为 Blocking 与 Degrading 两值，第 5.4 节状态机的守卫由点名 `offsite-sink-requirements` 改为按档位判定，并写死一条禁令：任何阶段不得注册判读业务数据行的 Blocking 项。基线第 7.3 节的十三项删去三项，余十项。删 `license-and-modules-consistent`，理由是规格第 3.4 章明写平台不因许可状态停机、用量超上限不阻断业务、身份四项处置在任何许可状态下均可用，而以退出码 78 拒绝启动使规格设计的受限运行态整个不可达，承接方是规格第 3.4 章已有的四态机与阶段 3b 的 `ModuleLicenseQuery`；裁定 A-05 中阶段 1 登记 Pending 一句随之作废，按权威顺序规格高于裁定表。删 `current-period-open`，理由是该项缺失时按规格第 5.2 章自动建立期间，那是一次写操作而不是闸门，八个进程还会在自检阶段并发写 ledger 表，承接方下沉到阶段 9a 的过账路径。删 `cgroup-quota-matched`，理由与承接方见新增决定十四。`audit-chain-verifiable` 与 `offsite-sink-requirements` 两项定为 Degrading，理由是拒绝启动既修不好断链也补不上落点，而修复的唯一手段恰恰是人工介入，拒绝启动只会让这台没有备节点的服务器在最需要人操作的时候整体停摆。配置键 `selfcheck.pending_as_failure` 一并删除，Pending 一律不阻止启动，见假设二。影响范围是基线第 7.3 节由十三项编号列表改为十项命名列表并各带一个档位，且删去其中十三项为全部进程共有一句，改为不建库连接的四个进程对 SQL 类自检项一律标注 NotApplicable。
+
+新增决定十四，删除 cgroup 配额生成器与配额清单，资源限额改为静态 drop-in 加一次性部署校验。取值三类见第 5.6 节，规格第 13.1 章的九行配额表仍逐行承载，只是承载物由生成结果换成随部署骨架交付的静态文件，核对由每进程每次启动一次换成部署与升级各一次，判定方为 `scripts/verify-resource-limits.sh`。理由是这台机器只有一台、并发上限 20，CPU 与内存不是稀缺资源，按可分配量折算与突发上限封顶两段算法解决的是不存在的争用，代价却是一个配置键、一份生成文件、一个自检项与一条八进程集体拒绝启动的路径；磁盘 IO 这一处真实稀缺由 backup-writer 的 `IOMax` 与两个 slice 的 `IOWeight` 次序表达。影响范围有两处：基线第 13 节的资源限额取值改为引用 `deploy/` 下的 drop-in 文件；配置键 `selfcheck.quota_manifest_path` 从配置参考中删除。
 
 假设一，工具链版本。`rust-toolchain.toml` 的取值在本阶段首日由构建负责人按当日最新 stable 冻结并写入 ADR-0002，本计划以 1.86.0 表述仅为占位。冻结后不得单独升级，升级需另起变更并重跑可复现构建证据。这是假设而非既定事实，理由是版本号取决于冻结当日的上游发布状态。
 
-假设二，本阶段允许 Pending 自检项存在且不阻止启动。规格第 7.3 节要求自检项失败即退出，但未规定尚未实现的项如何处置。本阶段以 `selfcheck.pending_as_failure` 表达，默认 false，并以一条 CI 断言保证 Pending 数量只减不增、在最后一个阶段归零。该假设一旦被认为不可接受，替代方案是让八个进程在阶段 1 就以 Degraded 启动，代价是降级状态在整个建设期一直为真，会淹没规格第 15.3 章的真实降级信号，因此不采用。
+假设二，本阶段允许 Pending 自检项存在且不阻止启动。规格第 7.3 节要求自检项失败即退出，但未规定尚未实现的项如何处置。本阶段把它定死为固定行为而不是开关：Pending 在报告中如实标注，不计入 overall 的成败，也不阻止启动，`selfcheck.pending_as_failure` 这个配置键随之删除，理由是把它置真会让阶段 1 至 13 的任何一个进程都起不来，它没有真实的取用者。一条 CI 断言保证 Pending 数量只减不增、在最后一个阶段归零。该假设一旦被认为不可接受，替代方案是让八个进程在阶段 1 就以 Degraded 启动，代价是降级状态在整个建设期一直为真，会淹没规格第 15.3 章的真实降级信号，因此不采用。
 
 被阻塞情况的说明：本阶段不被任何业务决策阻塞。U-A-06 的错误文案未决只影响文案措辞，占位文案已满足规格第 15.1 章四要素；U-A-01 的编号规则未决不影响本阶段，编号器属后续阶段；U-A-03 与 U-A-05 已由基线第 11.2 与 11.5 节给出技术侧取值，本阶段照用；U-B-07 的记录级权限授予方式未决，本阶段按显式共享一条记录冻结 `RecordShare` 的形态并以此为临时取值，改判为按责任人、按创建人或按流程当前处理人只增加阶段 4 `ScopeCompiler` 的谓词分支，不改本结构体，改判为共享可再转授则在 `RecordShareGrant` 上增加一个变体，属加变体不改字段，由未知取值反序列化失败兜住。上述各条的切换代价均限于文案表、常量表与枚举变体的替换，不涉及数据库结构。
