@@ -3,7 +3,7 @@
 本阶段的范围是采购需求、采购订货与分批订货、供应商采购扩展档案、供应商门户、收货登记与入库单、采购退货、付款申请与审批。本阶段不实现采购发票登记、进项红字冲销、应付台账、付款登记与供应商返款，这五项属财务与发票阶段，本阶段只按契约衔接；进项发票台账的两张表 `invoice.purchase_invoices` 与 `invoice.purchase_invoice_lines` 由阶段 10 在 invoice schema 建立，本阶段不建表也不写台账。本阶段不实现库存数量账与金额账的写入算法，也不实现事件到分录的映射；本阶段不自行取价，取价一律归库存模块，总账只做分录映射与借贷平衡，本阶段按规格第 5.2 章财务规则条目与 PRD 第 5 节的分工调用其契约。本阶段不发布任何受治理数据集视图，采购发票数据集由阶段 10 在 invoice schema 发布。
 
 本计划遵守共享技术基线。凡基线已给出取值的一律直接引用，不重新决定。本阶段新增的决定与假设集中在第 11.2 小节，并在正文各处以「本阶段新增决定」或「假设」标注。
-本阶段在贯通线 T0 之后开工。T0 是阶段 4 结束后、阶段 5 全量开工之前插入的一条不新增范围的最薄贯通线，切片取自阶段 5、6、9a、10、11 五个阶段，判据是一条合同从建单走到管理层看到一个数。采购不在 T0 的切片清单内，本阶段不向 T0 贡献任何切片，也不因 T0 提前交付任何采购能力。本阶段的全部工作是在 T0 已经贯通的骨架上加厚：会计期间解析、凭证生成、销项发票与到款登记在 T0 上已经跑通，本阶段沿这条骨架追加采购订货、收货、采购退货与付款申请四段，另加门户这一条外部入口。骨架上已经成立的判据不在本阶段重新论证，本阶段只对新增的分支给判据。M7 相应改为全分支闭环而不是闭环的首次贯通，本阶段的验收措辞一律不写首次跑通。
+本阶段在贯通线 T0 之后开工。T0 是阶段 3b-1 结束后、阶段 5 全量开工之前插入的一条不新增范围的最薄贯通线，其前置为阶段 1、2、3a、4 与 3b-1，固定链为 1 → 2 → 3a → 4 → 3b-1 → T0 → 5 → 9a → 8 → 6 → 7 → 10 → 11 → 9b → 14 共十五个环节，本阶段是其中第十一环，切片取自阶段 5、6、9a、10、11 五个阶段，判据是一条合同从建单走到管理层看到一个数。采购不在 T0 的切片清单内，本阶段不向 T0 贡献任何切片，也不因 T0 提前交付任何采购能力。本阶段的全部工作是在 T0 已经贯通的骨架上加厚：会计期间解析、凭证生成、销项发票与到款登记在 T0 上已经跑通，本阶段沿这条骨架追加采购订货、收货、采购退货与付款申请四段，另加门户这一条外部入口。骨架上已经成立的判据不在本阶段重新论证，本阶段只对新增的分支给判据。M7 相应改为全分支闭环而不是闭环的首次贯通，本阶段的验收措辞一律不写首次跑通。
 
 ---
 
@@ -13,7 +13,7 @@
 
 1. core-server 进程内新增两组 HTTP 路由并可用：内部采购路由 `/api/v1/procure/*`，门户受控能力路由 `/api/v1/portal/*`。两组路由共用 core-server 的安全上下文、行级隔离、幂等、审计与 Outbox 机制，不新增第二套。
 2. portal-gateway 进程可对外承载供应商门户站点，路由前缀 `/portal/v1`，实现门户会话、限流、水印与呈现层裁剪，全部取数与写入经 core-server 的受控能力 API，本进程不建立任何事务数据库连接。
-3. job-worker 进程内新增四类消费者：合同生效派生采购需求的 Outbox 消费者、采购退货生成供应商质量记录的消费者、采购与门户单据的检索索引消费者（产出 `foundation::port::search::SearchDocument` 并经 `SearchIndexPort` 写入）、采购与门户单据的站内通知投递消费者。本阶段不新增定时任务，也不建门户投影刷新消费者：门户返回的裁剪投影按第 4.7 小节在 `ep-app-portal` 的每次请求内组装，本阶段不建任何物化投影，没有可刷新的对象；库存不足来源的扫描定时任务整条删除，理由见第 4.6 小节与第 11.2 小节假设 A10。
+3. job-worker 进程内新增四类消费者与一个定时任务：合同生效派生采购需求的 Outbox 消费者、采购退货生成供应商质量记录的消费者、采购与门户单据的检索索引与门户投影刷新消费者（产出 `foundation::port::search::SearchDocument` 并经 `SearchIndexPort` 写入）、采购与门户单据的站内通知投递消费者，以及库存不足触发采购需求的扫描定时任务（默认关闭，理由见第 11.2 小节）。
 4. `procure` 与 `portal` 两个 schema 的全部表、约束、索引与行级安全策略，经 refinery 迁移可离线执行并可按迁移文件头的回退说明回退。
 5. 六个新增 crate：`ep-contract-procure`、`ep-domain-procure`、`ep-app-procure`、`ep-contract-portal`、`ep-domain-portal`、`ep-app-portal`。
 6. `ep-testkit` 中新增的采购与门户构造器，以及两个记录型桩（`RecordingStockPostingPort` 记录 `ep_contract_inventory::InventoryPostingPort` 的调用，`RecordingLedgerPostingPort` 记录 `ep_contract_ledger::PostingPort` 的调用），用于契约测试的入参断言与故障注入。库存与总账的真实实现分别在阶段 8 与阶段 9a 已合入，两个记录型桩只出现在测试装配，发布装配一律注入真实实现。发票与财务两个模块的四个端口在本阶段之后交付，本阶段一律不注入替身，四个调用点在本阶段的代码中不存在：`ReceiptInvoiceMatchQueryPort` 与 `PurchaseCreditNotePort` 所支撑的采购退货发票已登记分支按第 4.4 小节整条推迟到阶段 10；`PayableLedgerQuery` 所支撑的付款申请 `INVOICE_PAYMENT` 分支按第 4.5 小节整条推迟到阶段 10；`SupplierStatementQuery` 所支撑的三个门户对账端点按第 5.7 小节随该端口在阶段 10 同批交付。两个 wiring.rs 中不出现任何以 `Noop` 前缀命名的注入行。
@@ -32,7 +32,7 @@
 |---|---|---|---|
 | ep-contract-procure | crates/contract/procure | 采购模块对外公开的命令、查询、事件类型与 DTO；供其他模块调用的 trait，含 `PaymentRequestWritebackPort`、`PurchaseOrderInvoicingPort`、`GoodsReceiptQueryPort`、`PurchaseRequisitionIntakePort`、`PurchaseReturnLinkPort`；`src/capability.rs` 中为每个用例声明 `<USECASE_SCREAMING>_DOMAIN` 与 `<USECASE_SCREAMING>_ACTION` 一对常量 | 仅 ep-foundation |
 | ep-domain-procure | crates/domain/procure | 采购需求、采购订单、收货单、采购退货单、付款申请、供应商准入与质量记录六类聚合；数量守恒、可退数量、累计下达数量、占用金额四组不变量；业务端口 trait | ep-foundation、ep-contract-procure |
-| ep-app-procure | crates/application/procure | 采购各用例、事务边界、授权调用、审计与 Outbox 写入、与库存与总账两个模块契约的编排；六个 `ReconCheck` 实现（R-PROC-01 至 R-PROC-05 与 R-PORT-01）；`GrniSubledgerBalanceQuery` 子账侧余额查询函数 | ep-foundation、ep-platform-*、ep-domain-procure、ep-contract-* |
+| ep-app-procure | crates/application/procure | 采购各用例、事务边界、授权调用、审计与 Outbox 写入、与库存与总账两个模块契约的编排；`src/probe/` 下的 `ProcureReferenceCounter` 与 `ProcureTradeHistoryProvider`；六个 `ReconCheck` 实现（R-PROC-01 至 R-PROC-05 与 R-PORT-01）；`GrniSubledgerBalanceQuery` 子账侧余额查询函数 | ep-foundation、ep-platform-*、ep-domain-procure、ep-contract-* |
 | ep-contract-portal | crates/contract/portal | 门户受控能力的命令、查询与 DTO；门户投影的字段白名单类型；`PortalCapability` 枚举；`src/capability.rs` 中为每个门户用例声明 `<USECASE_SCREAMING>_DOMAIN` 与 `<USECASE_SCREAMING>_ACTION` 一对常量 | 仅 ep-foundation |
 | ep-domain-portal | crates/domain/portal | 门户账号绑定、送货通知、发票上传记录三类聚合；能力白名单与供应商数据范围两组不变量 | ep-foundation、ep-contract-portal |
 | ep-app-portal | crates/application/portal | 门户五项能力的受控用例、投影组装与脱敏裁剪、门户操作审计写入 | ep-foundation、ep-platform-*、ep-domain-portal、ep-contract-* |
@@ -46,7 +46,7 @@
 | ep-adapter-db-pg | 新增 `src/repo/procure/` 与 `src/repo/portal/` 两个目录，按表分文件，每个仓储只访问自己模块的 schema |
 | ep-testkit | 新增 `SupplierFixture`、`PurchaseOrderBuilder`、`GoodsReceiptBuilder`、`PurchaseReturnBuilder`、`PaymentRequestBuilder`、`PortalUserFixture`、`DeliveryNoticeBuilder`；新增库存与总账两个契约的记录型桩 |
 | ep-datagen | 新增 `--module procure` 分支 |
-| apps/core-server | 路由注册、权限对象类型注册；wiring 注入，其中发票与财务两个模块的端口一律不注入任何替身且其调用点在本阶段的代码中不存在，`PurchaseReturnLinkPort` 由本阶段首次接线，本模块不向任何跨模块只读注册表注册 |
+| apps/core-server | 路由注册、权限对象类型注册；wiring 注入，其中发票与财务两个模块的端口一律不注入任何替身且其调用点在本阶段的代码中不存在，`PurchaseReturnLinkPort` 由本阶段首次接线，以及本模块按裁定 A-15 向 `MasterReferenceCounterRegistry` 与 `TradeHistoryProviderRegistry` 的注册 |
 | apps/portal-gateway | 站点、会话、限流、水印、五项能力的呈现层与转发 |
 | apps/job-worker | 四个消费者与一个定时任务的注册；本阶段六个 `ReconCheck`（R-PROC-01 至 R-PROC-05 与 R-PORT-01）向 `ReconRegistry` 的注册 |
 | ep-platform-obs | 注册本阶段新增的三个指标 |
@@ -57,7 +57,7 @@
 |---|---|
 | 采购全部用例、门户受控能力 API、收货与退货的同事务过账编排 | core-server |
 | 门户站点、门户会话、门户限流、门户水印与呈现层 | portal-gateway |
-| 合同派生需求的 Outbox 消费、质量记录生成、检索索引刷新、站内通知投递 | job-worker |
+| 合同派生需求的 Outbox 消费、质量记录生成、门户投影与检索索引刷新、站内通知投递、库存不足扫描定时任务 | job-worker |
 | 本阶段新增指标的暴露 | ops-agent |
 
 本阶段不新增进程，不改动进程的监听地址、数据库连接池上限、系统账户与 cgroup slice。
@@ -185,7 +185,7 @@
 | expense_item_code | text | 是 | |
 | quantity | numeric(18,6) | 否 | CHECK 大于零 |
 | unit_price_untaxed | numeric(18,6) | 否 | CHECK 大于等于零 |
-| tax_rate | numeric(9,6) | 否 | 取值来自税率字典，唯一出处按裁定 C-11 为阶段 10 的 `invoice.tax_rate_options`，阶段 10 之前的默认值由阶段 5 的字典桩 `MdmTaxRateStub` 提供，本阶段不自建税率字典 |
+| tax_rate | numeric(9,6) | 否 | 取值来自税率字典，唯一出处按裁定 C-11 与总览第 1.5 节第五条为 `invoice.tax_rate_options`，唯一取用入口为 `ep_contract_invoice::TaxRateOptionQuery` 的 `default_rate` 与 `list`，该表的建表与种子两条迁移及该查询由阶段 10 在 T0 期间交付，属阶段 10 的 T0 切片第五项；本阶段取默认税率一律经 ep-contract-invoice，不经 ep-contract-mdm，不自建税率字典，也不存在任何税率桩 |
 | agreed_delivery_date | date | 否 | CHECK 不早于订单日期，由应用层校验并在写入时冗余 `order_date` 以支撑表级 CHECK |
 | order_date | date | 否 | 冗余自订单头，仅为表级 CHECK 与索引服务 |
 | warehouse_id | uuid | 是 | 物料类必填，逻辑引用 |
@@ -589,13 +589,13 @@ rule/field_whitelist.rs         五项能力各自的返回字段白名单
 | 合同派生 | 合同生效派生事件的 Outbox 消费者调用 `PurchaseRequisitionIntakePort::intake` | `CONTRACT:{contract_id}:{contract_line_id}:{contract_version}` |
 | 销售订单 | 采购员在应用内经 `actions/raise-from-sales-order-line` 发起 | `SALES_ORDER:{sales_order_line_id}` |
 | 项目任务 | 项目模块经同一 `PurchaseRequisitionIntakePort::intake` 调用 | `PROJECT_TASK:{project_task_id}` |
-| 库存不足 | 阈值字段落地后由库存侧经同一端口发起，本阶段不建扫描任务 | `STOCK_SHORTAGE:{warehouse_id}:{material_id}:{scan_date}` |
+| 库存不足 | job-worker 定时任务扫描后调用同一端口 | `STOCK_SHORTAGE:{warehouse_id}:{material_id}:{scan_date}` |
 
 端口签名固定为 `PurchaseRequisitionIntakePort::intake(tx, ctx, cmd: PurchaseRequisitionIntake)`，`PurchaseRequisitionIntake` 含 `source_module: ModuleCode`、`source_doc_id`、`source_doc_line_id`、`material_id`、`quantity`、`required_on`、`unique_key` 七项，`unique_key` 即上表的幂等键构成，落到 `procure.purchase_requisitions.source_idempotency_key` 列。阶段 12 的 `project.project_task.requisition_requested.v1` 下游同样经该端口，不另起第二个入口。
 
 四类来源共用同一个用例与同一张唯一约束 `ux_purchase_requisitions_legal_entity_id_source_idempotency_key`，重复触发按幂等键返回已有需求，不产生第二条。合同派生失败按规格第 15.2 章进入死信与人工修复并写入审计，修复后重投由同一唯一约束保证不产生重复需求。
 
-库存不足来源在本阶段没有任何触发方：补货阈值字段尚未落地，本阶段不建扫描定时任务，也不建阈值查询端口的消费点，只保留该来源的枚举值与幂等键构成，使阈值落地后由库存侧经同一端口发起而不需要改采购侧的用例、表与迁移。
+库存不足来源的扫描在补货阈值未配置的物料上不生成需求，也不产生告警，实现方式为扫描语句直接跳过阈值为空的组合。
 
 #### 4.7 门户投影与字段白名单
 
@@ -751,13 +751,13 @@ portal-gateway 在每个请求上做四件事：会话校验（结果按第 7 �
 | 用例 | 事务内包含 | 事务外经 Outbox |
 |---|---|---|
 | 采购需求生成 | 需求单写入、幂等键唯一约束、审计、Outbox 条目 | 站内通知、检索索引 |
-| 采购订单提交 | 订单头与行与批次行写入、需求累计下达数量回写、流程实例启动、审计、Outbox | 站内通知、检索索引 |
-| 收货过账 | 采购单据写入、会计期间解析、库存数量账与金额账写入与取价、入账分配写入、总账凭证生成、订单行与批次行与送货通知回写、审计、Outbox | 站内通知、检索索引 |
-| 采购退货过账 | 退货单写入、库存两账写入与取价、总账凭证生成、收货行与订单行回写、审计、Outbox | 供应商质量记录生成、站内通知 |
+| 采购订单提交 | 订单头与行与批次行写入、需求累计下达数量回写、流程实例启动、审计、Outbox | 站内通知、门户待确认投影刷新、检索索引 |
+| 收货过账 | 采购单据写入、会计期间解析、库存数量账与金额账写入与取价、入账分配写入、总账凭证生成、订单行与批次行与送货通知回写、审计、Outbox | 站内通知、门户投影刷新、检索索引 |
+| 采购退货过账 | 退货单写入、库存两账写入与取价、总账凭证生成、收货行与订单行回写、审计、Outbox | 供应商质量记录生成、站内通知、门户投影刷新 |
 | 付款申请提交 | 申请头与行写入、流程实例启动、审计、Outbox | 站内通知 |
-| 门户订单确认与改期 | 订单状态与交期更新、审计、Outbox | 站内通知给采购主管 |
-| 门户送货通知提交 | 通知头与行写入、审计、Outbox | 站内通知给仓管员 |
-| 门户发票上传 | 上传记录写入、附件元数据关联、审计、Outbox | 站内通知给财务 |
+| 门户订单确认与改期 | 订单状态与交期更新、审计、Outbox | 站内通知给采购主管、门户投影刷新 |
+| 门户送货通知提交 | 通知头与行写入、审计、Outbox | 站内通知给仓管员、待收货列表投影刷新 |
+| 门户发票上传 | 上传记录写入、附件元数据关联、审计、Outbox | 站内通知给财务、待登记队列投影刷新 |
 | 门户档案变更提交 | 经 `SupplierSelfServiceCommand::submit_profile_change` 在同一事务内创建变更申请、审计、Outbox | 站内通知给采购负责人 |
 
 每个用例一个事务，一个 HTTP 请求内不开启第二个写事务。事务内禁止外部 HTTP 调用、文件正文读写、通知发送与长时计算。附件正文的上传经 `platform_file` 的上传流水线在业务事务之外完成，业务事务只写附件关联表中的元数据引用。
@@ -786,7 +786,7 @@ portal-gateway 在每个请求上做四件事：会话校验（结果按第 7 �
 
 写请求的 `Idempotency-Key` 与业务写入同事务，存储在 `platform_msg.idempotency_keys`，保留 7 天。本阶段的全部领域事件与业务状态、审计事件写入同一事务，事务提交前不发起任何外部调用。消费端幂等由 `platform_msg.inbox_consumptions` 的唯一约束保证，消费副作用与该行插入同事务。
 
-本阶段的 Outbox 事件信封一律携带 `posting_date` 与 `accounting_period_id` 两个字段：收货过账与采购退货过账事件取其单据上的实际取值，其余事件取空值。`procure.goods_receipt.posted.v1` 与 `procure.purchase_return.posted.v1` 两个事件在 `ledger.posting_trigger_event_types` 中的登记行按裁定 A-21 由阶段 9a 的种子迁移一次写入，本阶段不新增回填迁移。该登记行的比对经 `ep_contract_ledger::PostingTriggerRegistry::assert_registered` 做只读断言，该断言不进启动自检：一处挂在 CI 与 `--check` 上作为静态判据，另一处挂在关账受理的前置校验上，缺行或 `ledger_event_kind` 或 `registered_by_module` 与种子行不符时否决这一次关账并返回 `LEDGER.POSTING_TRIGGER_EVENT_TYPE.REGISTRY_MISMATCH`，不再以退出码 78 阻断进程启动。失败面因此从八个进程收敛到一次关账操作。两个事件在 PENDING 或 DISPATCHING 状态下进入关账受理前提二的统计，`posting_date` 为空的其余事件不计入该统计。
+本阶段的 Outbox 事件信封一律携带 `posting_date` 与 `accounting_period_id` 两个字段：收货过账与采购退货过账事件取其单据上的实际取值，其余事件取空值。`procure.goods_receipt.posted.v1` 与 `procure.purchase_return.posted.v1` 两个事件在 `ledger.posting_trigger_event_types` 中的登记行按裁定 A-21 由阶段 9a 的种子迁移一次写入，本阶段不新增回填迁移。该登记行按裁定 A-21 与总览第 1.5 节第三条每行只填 `event_type`，原有的 `ledger_event_kind` 与 `registered_by_module` 两列已删除，本阶段不得再引用；`ep_contract_ledger::PostingTriggerRegistry::assert_registered` 与错误码 `LEDGER.POSTING_TRIGGER_EVENT_TYPE.REGISTRY_MISMATCH` 整项撤销，本阶段不做启动自检、不做 `--check` 静态断言，也不向阶段 9b 的关账受理追加任何前置校验，关账受理前提仍为两条。登记表一致性的承接方只有两条：`xtask configdoc` 从 `docs/event-catalog.md` 生成阶段 9a 的第 14 号种子迁移并在 CI 中逐字比对，以及阶段 3b 的 `event-catalog-consistent` 自检项，该项取 Degrading 且不通过时停止派发未登记事件类型。本模块的 14 个事件与 `docs/event-catalog.md` 逐字比对通过即为达标。两个事件在 PENDING 或 DISPATCHING 状态下进入关账受理前提二的统计，`posting_date` 为空的其余事件不计入该统计。
 
 #### 6.6 失败重试与补偿
 
@@ -795,7 +795,7 @@ portal-gateway 在每个请求上做四件事：会话校验（结果按第 7 �
 | 总账或库存契约在同一事务内返回错误 | 整个事务回滚，接口返回明确失败与 `incident_no`，不产生死信，不产生部分写入 |
 | 合同派生采购需求的 Outbox 消费失败 | 按基线第 6.2 节的 8 次退避重投，全部失败置为 `DEAD` 并写入死信；死信按 `legal_entity_id` 与 `posting_date` 可枚举 |
 | 供应商质量记录生成失败 | 同上，重投；该失败不影响退货本身的账务效果 |
-| 检索索引刷新失败 | 同上，重投；超过规格第 7.9 章的 15 分钟传播窗口按该章告警并转人工 |
+| 门户投影与检索索引刷新失败 | 同上，重投；超过规格第 7.9 章的 15 分钟传播窗口按该章告警并转人工 |
 | 站内通知投递失败 | 同上，重投；不改变任何业务状态 |
 | 事后对账检出采购侧与库存或财务侧不一致 | 由 `ep-platform-recon` 的执行器按本阶段实现的 `ReconCheck` 生成对账差异事项，按规格第 15.2 章进入死信与人工修复，并按规格第 10.2 章拦截关账 |
 
@@ -830,9 +830,12 @@ portal-gateway 在每个请求上做四件事：会话校验（结果按第 7 �
 | EP__PORTAL__CORE_API__BASE_URL | String | http://127.0.0.1:8080 | portal-gateway | 重启生效 |
 | EP__PORTAL__CORE_API__TIMEOUT_MS | u32 | 8000 | portal-gateway | 重启生效 |
 | EP__PORTAL__UPLOAD__MAX_ATTACHMENT_BYTES | u64 | 52428800 | portal-gateway 与 core-server | 重启生效 |
+| EP__PORTAL__SELF_REGISTRATION__ENABLED | bool | false | portal-gateway 与 core-server | 重启生效 |
 | EP__PORTAL__WATERMARK__ENABLED | bool | true | portal-gateway | 重启生效 |
 | EP__PROCURE__RECEIPT__MAX_LINES | u16 | 200 | core-server | 重启生效 |
 | EP__PROCURE__RETURN__MAX_LINES | u16 | 200 | core-server | 重启生效 |
+| EP__PROCURE__REQUISITION__STOCK_SHORTAGE_SCAN_ENABLED | bool | false | job-worker | 重启生效 |
+| EP__PROCURE__REQUISITION__STOCK_SHORTAGE_SCAN_INTERVAL_MINUTES | u32 | 60 | job-worker | 重启生效 |
 
 会话有效期 2 小时与空闲 15 分钟低于基线第 11.6 节对内部会话的 8 小时与 30 分钟，理由是门户是公网暴露面，规格第 21.17 章把该暴露面登记为风险。该差异是本阶段新增决定，回写基线第 11.6 节。
 
@@ -840,7 +843,7 @@ portal-gateway 在每个请求上做四件事：会话校验（结果按第 7 �
 
 单附件上限 50 MB 低于规格第 6.5 章的 5 GB 默认上限，只作用于门户上传通道，理由同上。内部通道不受影响。
 
-受限自助注册在本阶段不实现，因此不设 `EP__PORTAL__SELF_REGISTRATION__ENABLED` 这个配置键，见第 11.2 小节假设 A13。库存不足扫描的两个配置键同理删除，见假设 A10。
+`EP__PORTAL__SELF_REGISTRATION__ENABLED` 默认关闭。受限自助注册在代码上完整实现（注册频率限制、邀请码校验、待审核账号只能访问自身注册状态三项），但默认不开放，开放条件是 U-F-11 的决策落地。
 
 #### 7.2 业务参数（存库，经配置发布通道发布）
 
@@ -1020,7 +1023,7 @@ E2E-T-01 至 E2E-T-04 逐条对应规格第 19 章阶段 3 门户条目的四项
 18. 第 7.2 小节的八个业务参数已通过配置发布通道发布一次，改值不需要重启进程与改表结构。
 19. 本模块在规格第 6.2 章能力矩阵中取值为完整或简化的能力域，其四端界面已实现并通过 Playwright 与 tauri-driver 的桌面用例、XCUITest 与 Espresso 的移动用例；取值为 VIEW_ONLY 的能力域只实现只读视图；取值为 NOT_APPLICABLE 的不实现入口。供应商门户站点以浏览器承载，其用例由 Playwright 驱动。
 20. 本阶段全部路由的能力域码与动作类别常量已在 `crates/contract/procure/src/capability.rs` 与 `crates/contract/portal/src/capability.rs` 声明，`xtask configdoc` 通过。
-21. 本阶段不实现 `ProcureReferenceCounter` 与 `ProcureTradeHistoryProvider`，两个 wiring.rs 中不出现本模块对 `MasterReferenceCounterRegistry` 与 `TradeHistoryProviderRegistry` 的任何注册行；未终态采购单据的引用计数与采购订单行、收货行的历史成交资料改由阶段 11 的只读数据集以一条 SQL 的分支提供，本阶段不为只读展示倒置依赖。
+21. `ProcureReferenceCounter` 与 `ProcureTradeHistoryProvider` 已实现并在两个 wiring.rs 注册到 `MasterReferenceCounterRegistry` 与 `TradeHistoryProviderRegistry`，覆盖未终态采购需求、采购订单、收货、采购退货、付款申请与采购订单行、收货行的历史成交。
 22. 已提供本模块的子账侧余额查询函数，函数名 `GrniSubledgerBalanceQuery`、返回类型 `Money`，返回该法人该会计期间的已收货未收票暂估合计，由阶段 10 在其 `SubledgerBalanceProvider` 上包装。
 23. `PurchaseReturnLinkPort::link_drop_ship_return` 已实现并在两个 wiring.rs 首次接线，阶段 6 在本阶段之前未注入任何替身，直运退货勾稽端到端通过。
 24. 八个单据类型码 PR、PO、GR、RJ、PRT、PAYR、DN、SIU 已登记入 `docs/data-dictionary.md` 的单据类型码一节与 `ep-platform-sequence` 的常量表，`xtask configdoc --check-doc-type-codes` 通过。
@@ -1047,7 +1050,7 @@ E2E-T-01 至 E2E-T-04 逐条对应规格第 19 章阶段 3 门户条目的四项
 | 第 8 章 第 5 步 | 收货登记生成入库单，驱动库存两账与暂估；收货数量差异必须在应用内登记；直接费用类不产生收货 |
 | 第 8 章 第 10 步 | 付款申请的提交与审批部分；付款登记本身在财务阶段 |
 | 第 8 章 第 11 步 | 采购退货按出库方向登记；直运货物退回供应商另登记一笔采购退货并与销售退货单勾稽 |
-| 第 12.1 章 | 外部供应商用户由采购方邀请开通；受限自助注册首版不实现，在交付说明中列为未交付项；付款申请的提交与审批不属六类高风险操作 |
+| 第 12.1 章 | 外部供应商用户的邀请开通与受限自助注册（后者默认关闭）；付款申请的提交与审批不属六类高风险操作 |
 | 第 12.2 章 | 申请人不可自审、审批链不可越权跳过在采购订单、采购退货、付款申请三处生效；门户账号不得被授予任何内部角色 |
 | 第 12.4 章 | 浏览器门户端的脱敏投影、水印、操作审计强制执行，导出审批以无导出入口满足 |
 | 第 12.5 章 | 采购与门户的全部写操作、审批、门户操作写入审计事件，与业务变更同事务 |
@@ -1058,7 +1061,7 @@ E2E-T-01 至 E2E-T-04 逐条对应规格第 19 章阶段 3 门户条目的四项
 | 第 17.2 章 | 财务内核测试十五类必测分支中本阶段承担采购侧的第一、十、十一、十二、十三、四、七、十五类；数据保护控制测试的浏览器门户端条目；派生存储越权与删除传播测试中采购与门户对象的部分 |
 | 第 17.3 章 | 本阶段承担采购侧的六条守恒判据（第 8.6 小节），并为库存数量守恒与两账一致提供不产生负结存的提交时前置校验 |
 | 第 19 章 阶段 3 | 采购与 SRM 条目、供应商门户条目的四项闭环用例 |
-| 第 21.17 章 | 门户暴露面的三项遏制：独立进程与账户、会话与限流取值收窄、不提供自助注册入口 |
+| 第 21.17 章 | 门户暴露面的三项遏制：独立进程与账户、会话与限流取值收窄、受限自助注册默认关闭 |
 
 #### 10.2 PRD 条目
 
@@ -1098,7 +1101,7 @@ E2E-T-01 至 E2E-T-04 逐条对应规格第 19 章阶段 3 门户条目的四项
 
 风险二：跨模块的同事务契约调用把三个模块的失败耦合在一起。库存或总账任一实现出现长事务或锁等待，采购侧的提交一并失败。遏制手段是 `InventoryPostingPort`、`AvailabilityQueryPort`、`InventoryPricingLookupPort`、`PostingPort` 与 `AccountingPeriodResolver` 五个端口的方法签名不含任何 IO 之外的等待语义、不做外部调用、不做长时计算，并在契约测试中断言其单次调用的语句数与耗时上界。库存与总账的真实实现已分别在阶段 8 与阶段 9a 合入，本阶段的契约测试对真实实现直接执行一遍，不停留在桩上。
 
-风险三：门户是首版唯一的公网暴露面。遏制手段有三项：独立进程与独立系统账户、会话与限流取值收窄、不提供自助注册入口。原列的第四项即 cgroup 份额与突发上限已删除，理由是它在一台 20 人规模的服务器上不构成运行期保证，过载处置改由 portal-gateway 的限流与超时承担。残余风险按规格第 21.17 章保留，门户与核心之间只有进程与系统账户边界而不是机器边界这一点不因本阶段的措施改变。
+风险三：门户是首版唯一的公网暴露面。遏制手段有三项：独立进程与独立系统账户、会话与限流取值收窄、受限自助注册默认关闭。原列的 cgroup 份额与突发上限一项按总览第 6.3 节 R10 删除，理由是它在一台 20 人规模的服务器上不构成运行期保证，过载处置改由 portal-gateway 的限流与超时承担。残余风险按规格第 21.17 章保留，门户与核心之间只有进程与系统账户边界而不是机器边界这一点不因本阶段的措施改变。
 
 风险四：门户字段白名单一旦遗漏即构成数据外发。遏制手段是第 8.2 小节第 16 项的全字段快照测试，任何新增字段都会导致快照失败，必须显式更新快照并经评审。U-F-10 未决之前，白名单以本阶段第 4.7 小节的取值为准，发布前必须取得安全负责人批准，这是本阶段唯一的阻塞项。
 
@@ -1112,7 +1115,7 @@ E2E-T-01 至 E2E-T-04 逐条对应规格第 19 章阶段 3 门户条目的四项
 
 假设 A1：采购需求是单行单据。理由是 PRD 第 4.3.2 小节的字段表只有单个物料与单个数量，没有明细行的结构。切换代价为新增一张 `procure.purchase_requisition_lines` 表与一次数据回填迁移，属中等代价，因此在整合期确认。
 
-假设 A2：收货与采购退货的采购单据、库存两账与总账凭证在同一个数据库事务内同步写入，不经 Outbox 异步过账。理由有三条：规格第 17.3 章要求存货金额账合计等于总账存货科目余额；PRD 第 4.5.3 小节把凭证号列为收货登记的输出；PRD 第 4.5.6 小节要求库存或财务侧写入不一致时界面返回明确失败。三条同时成立只有同事务一种实现。由此产生的推论是：规格第 10.2 章关账受理前提下不存在收货与退货的异步过账路径，受理前提二统计的是这两个事件的未投递条目而不是未生成的凭证。本阶段仍在 Outbox 信封上携带 `posting_date` 与 `accounting_period_id`，两个事件在 `ledger.posting_trigger_event_types` 中的登记行按裁定 A-21 由阶段 9a 的种子迁移写入；`PostingTriggerRegistry::assert_registered` 的只读断言不进启动自检，改挂 CI 与 `--check` 两处静态判据以及关账受理的前置校验，使该统计可枚举而不把一次数据判读变成八个进程不启动。总账与库存的契约端口按 A-01 接受 `&mut dyn Tx`，已由阶段 1 提供。
+假设 A2：收货与采购退货的采购单据、库存两账与总账凭证在同一个数据库事务内同步写入，不经 Outbox 异步过账。理由有三条：规格第 17.3 章要求存货金额账合计等于总账存货科目余额；PRD 第 4.5.3 小节把凭证号列为收货登记的输出；PRD 第 4.5.6 小节要求库存或财务侧写入不一致时界面返回明确失败。三条同时成立只有同事务一种实现。由此产生的推论是：规格第 10.2 章关账受理前提下不存在收货与退货的异步过账路径，受理前提二统计的是这两个事件的未投递条目而不是未生成的凭证。本阶段仍在 Outbox 信封上携带 `posting_date` 与 `accounting_period_id`，两个事件在 `ledger.posting_trigger_event_types` 中的登记行按裁定 A-21 由阶段 9a 的种子迁移写入；`PostingTriggerRegistry::assert_registered` 按总览第 1.5 节第三条整项撤销，本阶段不做启动自检、不做 `--check` 静态断言，也不向关账受理追加前置校验，该统计的可枚举性由 `xtask configdoc` 在 CI 中对第 14 号种子迁移与 `docs/event-catalog.md` 的逐字比对以及阶段 3b 的 `event-catalog-consistent` 保证。总账与库存的契约端口按 A-01 接受 `&mut dyn Tx`，已由阶段 1 提供。
 
 假设 A3：采购退货在「采购发票已登记」分支下调用 `ep_contract_invoice::PurchaseCreditNotePort::register_credit_note`，进项红字发票由 invoice 模块登记，采购侧只提供 `RegisterPurchaseCreditNote` 所需的供应商、原采购发票、退货单标识、过账日期与逐行的原发票行、收货行、数量、净额、税额。理由是 PRD 第 4.6.2 小节的字段表没有红字发票字段，而规格第 5.2 章采购退货事件要求按红字发票价税合计入账。该端口由阶段 10 交付，本阶段不注入任何替身，也不写该端口的调用点，发票已登记分支连同红字发票登记按第 4.4 小节整条推迟到阶段 10 与该端口同批交付。同一小节的「供应商不接受退回而不冲回成本」对应 U-C-09，该事项属 PRD 待决且规格未强制，本阶段不代拍置位方与撤销规则，只取一条临时取值：采购侧不置位，理由是它影响的是成本归集查询而不是采购单据。切换代价是在采购退货过账用例内增加一次置位调用，不改本阶段的表结构与迁移。
 
@@ -1128,13 +1131,13 @@ E2E-T-01 至 E2E-T-04 逐条对应规格第 19 章阶段 3 门户条目的四项
 
 假设 A9（对应 U-F-01）：物料类采购订单必须关联采购需求，直接费用类允许不关联需求直接创建。理由是规格第 8 章限定采购需求只有四个来源，若直接费用类也强制关联则服务类采购无入口。该取值由第 7.2 小节的两个业务参数承载，改值不需改代码。
 
-假设 A10（对应 U-F-02）：库存不足触发采购需求所依据的补货阈值字段挂在物料与仓库的组合上，由库存或主数据模块承载。本阶段不建扫描定时任务，也不建阈值查询端口的消费点：阈值字段尚未落地，一个默认关闭且无阈值可读的定时任务在首版没有任何消费者。该来源的入口保留在 `PurchaseRequisitionIntakePort` 与 `RequisitionSource::StockShortage` 上，阈值落地后由库存侧经同一端口发起，采购侧不需要任何改动，因此本阶段不被 U-F-02 阻塞。
+假设 A10（对应 U-F-02）：库存不足触发采购需求所依据的补货阈值字段挂在物料与仓库的组合上，由库存或主数据模块承载，采购侧只消费其查询端口。本阶段的扫描任务默认关闭，因此本阶段不被该未决事项阻塞；开启条件是该阈值字段落地与 U-F-02 决策。
 
 假设 A11（对应 U-F-04、U-F-05、U-F-12、U-F-13、U-F-14）：五项待决按第 7.2 小节的业务参数取临时值，本阶段不被阻塞，切换代价为一次配置发布。
 
 假设 A12（对应 U-F-10）：门户返回字段白名单按第 4.7 小节取值，发布前必须由安全负责人批准。这是本阶段唯一的阻塞项，未获批准不得进入阶段 4 的发布门禁。
 
-假设 A13（对应 U-F-11）：受限自助注册在首版不实现。门户账号一律由采购方在应用内邀请开通，注册频率限制、邀请码校验与待审核账号三项都不建。理由是原形态是完整实现却默认关闭，代码、配置键与测试全部照付而没有任何使用者；U-F-11 决策落地后另行评估，届时沿用同一张门户绑定表与同一套能力白名单实现，不改表结构。该能力属规格第 12.1 章列举的两种开通形态之一，首版只交付邀请开通一种，须在交付说明中写明，本阶段不被阻塞。
+假设 A13（对应 U-F-11）：受限自助注册完整实现但默认关闭，开启条件是安全负责人对准入条件、审核人与防滥用措施的决策。本阶段不被阻塞。
 
 假设 A14（对应 U-F-03）：本阶段不实现采购需求的合并与拆分，一张采购订单可关联多条同法人同供应商的需求（多对一由订单行上的 `purchase_requisition_id` 表达），但不产生合并后的新需求单。理由是合并键与回写方式未决，而多对一的表达已足够支撑需求侧分批与订单侧分批两种形态。切换代价为新增一张合并关系表。
 

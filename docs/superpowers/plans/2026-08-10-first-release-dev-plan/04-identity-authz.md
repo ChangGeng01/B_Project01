@@ -1,13 +1,13 @@
 ## 阶段 4：身份、认证与权限
 
-本阶段交付平台内核的身份与访问控制层，覆盖规格第 12.1 章身份与认证、第 12.2 章授权、第 7.7 章安全上下文建立与法人越权测试集、PRD 第 10.1 节至第 10.3 节。本阶段不实现流程引擎本体、不实现配置发布通道本体、不实现审计哈希链本体、不实现通知投递本体。按裁定通则第四条，调整后的阶段顺序为 1、2、3a、4、3b，这四项本体均由阶段 3b 交付，落在本阶段之后。空实现通则已废止：本阶段不在 apps/core-server/src/wiring.rs 与 apps/job-worker/src/wiring.rs 注入任何以 Noop 前缀命名的空实现，两个 wiring 中不出现任何替身类型，装配期缺实现即拒绝启动。依赖这四项本体的功能点按同批交付处置，与阶段 3b 一并实现、一并验收，本阶段不为它们保留任何顺延登记。同批清单只有五项：一是高风险请求进入 IN_APPROVAL 之后的全部迁移与 submit、approve、reject、withdraw 四个端点；二是 authz-config-versions 的 stage-for-release 与 activate 两个端点及其配置包导出与差异视图；三是本阶段全部写事务中的审计事件写入，理由是 platform_audit.audit_events 本身由阶段 3b 建立；四是应急账号启用的站内通知投递；五是第 8.2 节第 16 项对模块许可状态的读取。清单之外的部分在本阶段内自足，不依赖阶段 3b 的任何交付物。ConfigItemApplier 端口按 A-19 由阶段 3a 交付，本阶段在该端口上实现三个 AUTHZ 类 applier，见第 4.8 节。全部接缝的归属按裁定表逐条写死，本阶段不再登记 needs。
+本阶段交付平台内核的身份与访问控制层，覆盖规格第 12.1 章身份与认证、第 12.2 章授权、第 7.7 章安全上下文建立与法人越权测试集、PRD 第 10.1 节至第 10.3 节。本阶段不实现流程引擎本体、不实现配置发布通道本体、不实现审计哈希链本体、不实现通知投递本体。按裁定通则第四条，阶段顺序固定为 1 → 2 → 3a → 4 → 3b-1 → T0 → 5 → 9a → 8 → 6 → 7 → 10 → 11 → 9b → 14，阶段 3b-2 不在这条链上，其各项按阶段 3 计划第 3.0 节判定四的下游拉动点排在 T0 之后；这四项本体均由阶段 3b 交付，落在本阶段之后，其中 T0 所需的部分属 3b-1 批。空实现通则已废止：本阶段不在 apps/core-server/src/wiring/ 与 apps/job-worker/src/wiring/ 两个目录下的任何文件中注入以 Noop、Stub、Fake、Dummy 四类前缀命名的替身，两个目录中不出现任何替身类型，装配期缺实现即拒绝启动；该断言由阶段 1 随 xtask 交付的 archcheck 规则 unwired-absent 承担，出现即构建失败。依赖这四项本体的功能点按同批交付处置，与阶段 3b 一并实现、一并验收，本阶段不为它们保留任何顺延登记。同批清单只有五项：一是高风险请求进入 IN_APPROVAL 之后的全部迁移与 submit、approve、reject、withdraw 四个端点；二是 authz-config-versions 的 stage-for-release 与 activate 两个端点及其配置包导出与差异视图；三是本阶段全部写事务中的审计事件写入，理由是 platform_audit.audit_events 本身由阶段 3b 建立；四是应急账号启用的站内通知投递；五是第 8.2 节第 16 项对模块许可状态的读取。清单之外的部分在本阶段内自足，不依赖阶段 3b 的任何交付物。ConfigItemApplier 端口按 A-19 由阶段 3a 交付，本阶段在该端口上实现三个 AUTHZ 类 applier，见第 4.8 节。全部接缝的归属按裁定表逐条写死，本阶段不再登记 needs。
 
 本计划遵守共享技术基线。凡基线已定死的取值直接引用不再重述；凡基线未覆盖而本阶段必须取值的，一律在第 12 节“本阶段新增决定与偏离项”中显式登记，并给出回写基线的位置。凡属 PRD 附录乙待决的，给出临时取值、是否阻塞与切换代价。
-本阶段与贯通线 T0 的关系。T0 是一条不新增任何范围的最薄贯通线，插在阶段 4 结束后、阶段 5 全量开工之前，从阶段 5、6、9a、10、11 各取最小切片，判据是一条合同从建单走到管理层看到一个数。本阶段整体排在 T0 之前，因此不从 T0 取切片，而是为 T0 提供它唯一需要的身份底座。本阶段内部的工作次序据此分两批，阶段范围归属不变，表与端点的阶段归属也不变，退出条件仍按第 9 节在本阶段结束时一次判定。
+本阶段与贯通线 T0 的关系。T0 是一条不新增任何范围的最薄贯通线，插在阶段 3b-1 与阶段 5 之间，即阶段 4 与 3b-1 两段都结束之后、阶段 5 全量开工之前，从阶段 5、6、9a、10、11 各取最小切片，判据是一条合同从建单走到管理层看到一个数。本阶段整体排在 T0 之前，因此不从 T0 取切片，而是为 T0 提供它唯一需要的身份底座。本阶段内部的工作次序据此分两批，阶段范围归属不变，表与端点的阶段归属也不变，退出条件仍按第 9 节在本阶段结束时一次判定。
 
-第一批是 T0 底座，15 张表加四条链路，在 T0 开跑之前完成。platform_core 五张：user_accounts、user_credentials、user_devices、sessions、reauth_challenges。platform_authz 十张：permission_items、object_scope_bindings、roles、role_permission_grants、user_legal_entity_grants、user_role_grants、approval_chains、approval_chain_nodes、high_risk_requests、authz_config_versions。四条链路是口令登录与设备登记、安全上下文建立与 app.legal_entity_id 写入、授权判定第一阶段与第二阶段、ContractEffective 一类高风险操作的重新认证与供 T0 使用的单节点审批链定义及其静态校验。T0 用到的身份数据只有一个法人、一个操作员账号、一个设备、一个业务角色与一条单节点合同审批链，由 ep-datagen 的 T0 最小样本生成，不用默认 scale 数据集，不要求分支覆盖，不要求四端，只要求桌面端。
+第一批是 T0 底座，15 张表加四条链路，在 T0 开跑之前完成。platform_core 五张：user_accounts、user_credentials、user_devices、sessions、reauth_challenges。platform_authz 十张：permission_items、object_scope_bindings、roles、role_permission_grants、user_legal_entity_grants、user_role_grants、approval_chains、approval_chain_nodes、high_risk_requests、authz_config_versions。四条链路是口令登录与设备登记、安全上下文建立与 app.legal_entity_id 写入、授权判定第一阶段与第二阶段、ContractEffective 与 InvoiceIssue 两类高风险操作的重新认证与供 T0 使用的单节点审批链定义及其静态校验。InvoiceIssue 一类与 ContractEffective 同批落在第一批，理由是授权清单第十条把 invoice.sales_invoices 的一张销项发票定死为 T0 内的切片，而阶段 10 的开票端点必带 X-Reauth-Token 且销项发票的 reauth_ref 与 approval_ref 两列非空，该类重新认证与其审批链不进第一批，T0 在开票一步即停。T0 用到的身份数据只有一个法人、一个操作员账号、一个设备、一个业务角色与四条单节点审批链，四条的 scenario 依次为合同生效、发票申请单、销项发票开具与资金账户建档，条数与阶段 10 第 0 节的 T0 切片清单对齐，由 ep-datagen 的 T0 最小样本生成，不用默认 scale 数据集，不要求分支覆盖，不要求四端，只要求桌面端。
 
-第二批是加厚，在 T0 贯通之后于同一条骨架上补齐，共 9 张表与其余功能。platform_core 四张：user_password_history、login_attempts、account_lockouts、breakglass_activations。platform_authz 五张：access_policies、field_permissions、user_org_assignments、user_scope_grants、sod_rules。功能侧包括多因子与 WebAuthn 与 X509 三类认证方式、其余五类高风险操作、职责分离四类规则、记录级与字段级与密级判定、受控应急本地账号、账号生命周期四操作、门户端点，以及第 8.3 节的 32 组完整矩阵与第 8.5 节的全部性能项。
+第二批是加厚，在第一批的底座上补齐，与第一批同在 T0 开跑之前完成，共 9 张表与其余功能。本阶段整体是 T0 的前置，两批都排在 T0 之前，第二批不跨到 T0 之后。platform_core 四张：user_password_history、login_attempts、account_lockouts、breakglass_activations。platform_authz 五张：access_policies、field_permissions、user_org_assignments、user_scope_grants、sod_rules。功能侧包括多因子与 WebAuthn 与 X509 三类认证方式、其余四类高风险操作、职责分离四类规则、记录级与字段级与密级判定、受控应急本地账号、账号生命周期四操作、门户端点，以及第 8.3 节的 32 组完整矩阵与第 8.5 节的全部性能项。
 
 ---
 
@@ -26,7 +26,7 @@
 9. tests/rls_matrix 的第三段。按 C-05，CI 目标名与 assert_read、assert_write、assert_update、assert_delete、assert_aggregate、assert_sort、assert_report_projection、assert_error_leak 八个断言函数骨架由阶段 1 在 `testkit/src/rls_matrix.rs` 提供，assert_replication_role_containment 与 assert_recon_context_borrow 两个函数由阶段 2 追加，本阶段交付 matrix_32.rs 的 32 组完整矩阵与发布门禁项 RG-RLS-MATRIX-GREEN 的判定，不重复实现上述十个同名函数。该目标可单独执行并输出结构化报告。
 10. 24 张表的迁移文件与其回退说明，可在空库上离线执行到最新版本并通过启动自检 rls-enabled-and-forced 与 runtime-role-privileges-bounded 两项。
 11. 三份文档增量：docs/error-codes.md 新增本阶段错误码，其中 PLATFORM.IDEMPOTENCY.KEY_REQUIRED、PLATFORM.IDEMPOTENCY.PAYLOAD_MISMATCH、PLATFORM.CONCURRENCY.STALE_VERSION、PLATFORM.AUTHZ.NOT_FOUND_OR_DENIED、PLATFORM.AUTHZ.OBJECT_FORBIDDEN、PLATFORM.CAPACITY.CONCURRENCY_LIMIT、PLATFORM.DB.MIGRATION_WINDOW_CLOSED 七个按 C-24 由阶段 1 登记，本阶段只引用不重复登记；docs/event-catalog.md 新增本阶段五个事件；docs/data-dictionary 新增本阶段 24 张表条目。
-12. ep-testkit 新增身份与授权夹具，ep-datagen 新增两档数据：T0 最小样本一次生成 1 个法人、1 个操作员账号、1 个设备、1 个业务角色与 1 条单节点合同审批链，供 T0 使用；默认 scale 数据集生成 2 个法人、50 名命名用户、角色与授权集合，供第二批的 32 组矩阵与第 8.5 节性能项使用。
+12. ep-testkit 新增身份与授权夹具，ep-datagen 新增两档数据：T0 最小样本一次生成 1 个法人、1 个操作员账号、1 个设备、1 个业务角色与 4 条单节点审批链，四条的 scenario 依次为合同生效、发票申请单、销项发票开具与资金账户建档，供 T0 使用；默认 scale 数据集生成 2 个法人、50 名命名用户、角色与授权集合，供第二批的 32 组矩阵与第 8.5 节性能项使用。
 
 ---
 
@@ -216,9 +216,13 @@ db/migrations/platform_authz/ 追加：
 27. V202610121125__platform_authz_backfill_admin_duty_roles.sql（同一文件内一并写入两个法人各一行 state 取 EFFECTIVE 的 authz_config_versions，checksum 按该文件写入的配置行现算；这是本阶段运行期唯一的生效版本来源，启动自检 authz-snapshot-loadable 据此可构造快照）
 28. V202610121130__platform_authz_backfill_default_sod_rules.sql
 
+db/migrations/platform_core/ 再追加一个回填文件，其主要创建对象是 platform_core.unpoliced_table_registry 的登记行，版本号晚于本阶段全部建表迁移，故列在最后：
+
+29. V202610121135__platform_core_backfill_unpoliced_table_registry.sql（按基线第 3.8 节的正向登记制，向阶段 2 交付的 platform_core.unpoliced_table_registry 写入本阶段 11 张不带法人列的表各一行，schema、table、准入判据、隔离承接入口与 rls_matrix 用例标识五列按阶段 2 冻结的列集填写；准入判据一列，platform_core 的 9 张身份主体表取隔离机制自身的元数据一档，platform_authz 的 permission_items 与 object_scope_bindings 两张取行在本部署内对全部法人取值相同一档，取值名以阶段 2 冻结的枚举为准，逐表的隔离承接入口按第 12.2 节偏离一写明）
+
 迁移执行顺序由单一全局 Runner 按文件版本号全序排定，不存在任何模块顺序声明文件，本阶段只需保证自己每个文件的版本号晚于其全部被引用对象；二十四个目录按 C-01 由阶段 1 建为空目录，platform_core 与 platform_authz 均在其中。本阶段有两处跨 schema 引用，其主要创建对象都在 platform_authz，按裁定通则第五条一律放在 db/migrations/platform_authz/ 目录下：platform_authz 的表引用 platform_core.user_accounts；user_org_assignments 的外键指向阶段 2 交付的 platform_core.departments 与 platform_core.positions，该外键落在 V202610121045。空库上按文件版本号全序执行时，两处引用的前置对象均已由阶段 2 版本号更早的迁移建立。
 
-每个迁移文件头部按基线第 3.9 节写 -- rollback: 段。10 号与 26 至 28 号是数据回填文件，slug 以 backfill_ 开头，回退说明为按 code 删除种子行。24 张建表迁移全部属于新增表，落在在线变更范围内，不需要停机窗口。V202610121030 号段作废，敏感字段登记表按 C-06 由阶段 2 在 platform_core 建立，本阶段不占用该号段。
+每个迁移文件头部按基线第 3.9 节写 -- rollback: 段。10 号、26 至 28 号与 29 号是数据回填文件，slug 以 backfill_ 开头，其中 10 号与 26 至 28 号的回退说明为按 code 删除种子行，29 号的回退说明为按 schema 与 table 两列删除本阶段登记的 11 行。24 张建表迁移全部属于新增表，落在在线变更范围内，不需要停机窗口。V202610121030 号段作废，敏感字段登记表按 C-06 由阶段 2 在 platform_core 建立，本阶段不占用该号段。
 
 第 10 号迁移写入 `00000000-0000-7000-8000-000000000001` 的系统主体账号行，account_kind 取 SYSTEM，login_name 取 system，status 取 ACTIVE，无凭据。该取值即 ep-foundation 的 SYSTEM_PRINCIPAL_ID 常量，按 A-02 由阶段 1 冻结。本阶段凡在种子迁移与系统上下文写 created_by 的一律引用该常量，设备标识引用 SYSTEM_DEVICE_ID，取值为 SYSTEM，不得自选其他值。
 
@@ -617,7 +621,7 @@ roles、role-permission-grants、access-policies、field-permissions、sod-rules
 
 - authz-snapshot-loadable：每个法人存在至少一个 EFFECTIVE 的 authz_config_versions，且据其配置行可构造出完整的 AuthzSnapshot。判据只到可构造为止，构造不出即以退出码 78 退出，理由是无快照则任何授权判定都做不了，全拒等价于停机、放行等于灾难，没有第三条路，这一项必须留在阻断级。
 
-checksum 与配置行重算值是否一致不进阻断判据。不一致时进程不退出，改为回退到上一版 EFFECTIVE 快照、经阶段 2 已交付的 DegradationLedger 开一个 kind 取 AUTHZ_SNAPSHOT_CHECKSUM_MISMATCH 的降级窗口并持续告警；运行期后果写明：授权配置的新版本不生效，判定按上一版快照执行，直到人工修复后关窗。
+checksum 与配置行重算值是否一致不进阻断判据。不一致时进程不退出，改为回退到上一版 EFFECTIVE 快照、经阶段 2 已交付的 DegradationLedger 开一个 kind 取 AUTHZ_SNAPSHOT_CHECKSUM_MISMATCH 的降级窗口并持续告警；该窗口的 scope_legal_entity_id 取校验和不符的那个法人，subject 列不填，本窗口不指向任何端口。DegradationKind 的唯一定义方是阶段 2，终态取值清单的唯一出处是阶段 14，AUTHZ_SNAPSHOT_CHECKSUM_MISMATCH 落在阶段 14 的终态十八项之内，本阶段只使用该取值，不自建第二套枚举，也不新增取值。运行期后果写明：授权配置的新版本不生效，判定按上一版快照执行，直到人工修复后关窗。
 
 原先登记的 duty-class-exclusivity 与 forbidden-permission-items-absent 两项删除。两者判读的都是数据库里的业务行，而这台服务器只有一台、没有备节点，把数据一致性校验做成启动硬失败等于把一处配置错误放大成全企业停摆，此时唯一可行的恢复动作恰是这些校验存在的理由所要禁止的手工改库。两项各有更早的落点：duty-class-exclusivity 下沉到角色授予与用户绑定两条写入路径，由第 4.5 节的同一份纯函数在保存期与运行期各判一次，规格第 12.2 章五类管理员职责分离的承载不变；forbidden-permission-items-absent 下沉为表 3-10 的 ck_permission_items_forbidden_codes 约束，禁止的东西写不进去，不必等下一次重启才发现。
 
@@ -716,10 +720,10 @@ checksum 与配置行重算值是否一致不进阻断判据。不一致时进�
 
 逐条可客观判定，全部达成才算完成。
 
-1. 28 个迁移文件在空库上按文件版本号全序离线执行成功，24 张表与 13 条行级策略全部建立，platform_core.schema_history 记录完整。
+1. 29 个迁移文件在空库上按文件版本号全序离线执行成功，24 张表与 13 条行级策略全部建立，本阶段 11 张不带法人列的表在 platform_core.unpoliced_table_registry 中各有一行登记且 db/checks 的第十三项返回零行，platform_core.schema_history 记录完整。
 2. core-server 与 job-worker 以 --check 模式退出码为 0，基线第 7.3 节的十三个命名项加本阶段的 authz-snapshot-loadable 一项全部通过，且 platform_ops.degradation_windows 中没有未关闭的 AUTHZ_SNAPSHOT_CHECKSUM_MISMATCH 窗口。
 3. 一条端到端脚本可在干净环境上完成：建号、开通、注册第二因子、登记设备、登录、选择法人、访问一个受保护端点、发起一次合同生效类高风险操作、完成重新认证并取得 X-Reauth-Token，全程无人工干预。脚本止于重新认证通过。提交、两级审批与留下审计证据三段属开篇同批清单，本阶段不以任何替身或假实现跑通，也不在本阶段声称可演示，三段与阶段 3b 一并实现并在阶段 3b 结束时一次判定。
-4. 本阶段交付的 matrix_32.rs 的 32 组交叉用例全部通过，入口借用测试在本阶段只有 4 项且全部通过，内部对账上下文一项按第 8.3 节整条归阶段 9a、不计入本阶段判定也不登记顺延，输出的结构化报告中越权读取、越权写入、跨法人聚合泄漏三项计数为零，发布门禁项 RG-RLS-MATRIX-GREEN 判定为绿。
+4. 本阶段交付的 matrix_32.rs 的 32 组交叉用例全部通过，入口借用测试在本阶段只有 4 项且全部通过，内部对账上下文一项按第 8.3 节整条归阶段 9a、不计入本阶段判定也不登记顺延，输出的结构化报告中越权读取、越权写入、跨法人聚合泄漏三项计数为零，发布门禁项 RG-RLS-MATRIX-GREEN 判定为绿；该门禁的判据按基线第 3.8 节为 platform_core.unpoliced_table_registry 的行数与 tests/rls_matrix 中承接入口用例数相等且全绿，本阶段交付的 matrix_32.rs 是其中一段。
 5. 规格第 17.2 章“身份与访问控制测试”条目的三段判据逐句有对应用例且全部通过。
 6. 六类高风险操作各自的重新认证允许路径与拒绝路径均有用例且通过，拒绝路径至少覆盖：摘要不符、令牌重复消费、非本人核销、挑战过期、移动端发起四类受限操作。未重新认证提交、发起人自审与跳过节点三条落在提交与审批段，属同批清单第一项，随阶段 3b 判定。
 7. 五类管理员职责互斥在配置期与运行期各有一条拒绝用例通过；不存在任何一个角色或用户可以同时命中两个互斥职责类，由第 4.5 节的同一份纯函数在角色授予与用户绑定两条写入路径上拒绝，另有一条集成用例断言种子角色包在这两条路径上不产生任何冲突，不再由启动自检在真实种子数据上验证。
@@ -736,8 +740,8 @@ checksum 与配置行重算值是否一致不进阻断判据。不一致时进�
 18. 本阶段不交付任何业务界面。A-23 的四端界面按规格第 6.2 章能力矩阵由阶段 5 至阶段 12 各自交付，客户端壳、路由注册表与能力矩阵闸由阶段 13 交付，本阶段只交付服务端端点与其契约。
 19. 按 A-15 的实现清单，MasterReferenceCounter、SalesTradeHistoryProvider 与 PurchaseTradeHistoryProvider 三个 trait 的实现方不含本阶段，本阶段不实现也不注册，注册表由阶段 5 提供。
 20. 敏感字段登记表在本阶段的迁移与建表语句中不存在，本阶段对 platform_core.sensitive_field_registry 只有读取路径，由一条集成用例断言本阶段代码不含对该表的 INSERT、UPDATE 与 DELETE。
-21. 第一批 T0 底座可独立验证：开篇所列 15 张表已建，四条链路各有一条用例通过，即口令登录与设备登记、安全上下文建立与 app.legal_entity_id 写入、授权判定第一阶段与第二阶段、ContractEffective 一类高风险操作的重新认证与单节点审批链定义的静态校验；ep-datagen 的 T0 最小样本可一次生成 1 个法人、1 个操作员账号、1 个设备、1 个业务角色与 1 条单节点合同审批链，且该样本不依赖默认 scale 数据集。
-22. 两个 wiring 中不出现任何 Noop 前缀的类型，本阶段不产生任何顺延登记项；开篇同批清单五项在本阶段的退出条件中均不被宣称达成。
+21. 第一批 T0 底座可独立验证：开篇所列 15 张表已建，四条链路各有一条用例通过，即口令登录与设备登记、安全上下文建立与 app.legal_entity_id 写入、授权判定第一阶段与第二阶段、ContractEffective 与 InvoiceIssue 两类高风险操作的重新认证与单节点审批链定义的静态校验；ep-datagen 的 T0 最小样本可一次生成 1 个法人、1 个操作员账号、1 个设备、1 个业务角色与 4 条单节点审批链，四条的 scenario 依次为合同生效、发票申请单、销项发票开具与资金账户建档，且该样本不依赖默认 scale 数据集。
+22. apps/core-server/src/wiring/ 与 apps/job-worker/src/wiring/ 两个目录下的全部文件中不出现以 Noop、Stub、Fake、Dummy 四类前缀命名的类型，由阶段 1 随 xtask 交付的 archcheck 规则 unwired-absent 断言且在本阶段构建中通过，本阶段不产生任何顺延登记项；开篇同批清单五项在本阶段的退出条件中均不被宣称达成。
 
 ---
 
@@ -794,7 +798,7 @@ checksum 与配置行重算值是否一致不进阻断判据。不一致时进�
 5. PRD 附录乙 U-B-01 与 U-B-02 未决导致种子角色包返工。本阶段的种子角色包只包含五类管理员与一个最小业务角色，业务角色包留空。风险是实施期无可用基准；缓解是把角色包做成配置发布包而不是迁移，决策落地后由配置包补齐，不需要改代码与改表。
 6. 身份主体表不带法人列这一偏离，若在评审中被否决，改造代价为：9 张表加列、加策略、登录路径改为先查一张不带法人的登录目录表。该改造集中在 identity crate 与其迁移，估计影响 6 个文件，不外溢到 authz 与业务模块。这是本阶段最大的一处返工风险，因此第 12.2 节把偏离的理由与补偿控制写全，供评审一次性裁定。
 7. 门户账号的法人范围问题（U-B-11）未决。同一供应商同时与两个法人交易时门户账号能否跨法人查看尚无结论。本阶段实现为门户账号与员工账号共用同一套法人授权集合机制，因此两种取值都能承载，不构成阻塞。
-8. 阶段顺序按裁定通则第四条调整为 1、2、3a、4、3b 之后，本阶段落在流程引擎、配置发布通道、审计哈希链与通知投递四项本体之前。原先的缓解是注入四个 Noop 前缀空实现并把验收顺延，该做法已废止：行为固定为返回成功且不产生任何副作用的空实现，会让审批放行与审计留痕在本阶段看起来成立，而这两件事恰恰是本阶段安全性最高的演示，把它押在四个静默返回成功的空壳上是最坏的一种形态；一旦某一行替换遗漏或被回退，系统会安静地产出不完整的安全事实，而唯一的守卫是一句注释。现处置是同批交付，开篇已逐项列出五项清单，本阶段不注入任何替身、不登记任何顺延项、不在退出条件中宣称这五项可演示，它们与阶段 3b 一并实现并在阶段 3b 结束时一次判定。残余风险是阶段 3b 的排期直接决定这五项的完成时点，控制手段是阶段 3b 紧接本阶段、两段之间不插入其他阶段，且两段合起来仍排在贯通线 T0 之前。
+8. 阶段顺序按裁定通则第四条固定为 1 → 2 → 3a → 4 → 3b-1 → T0 → 5 → 9a → 8 → 6 → 7 → 10 → 11 → 9b → 14 之后，本阶段落在流程引擎、配置发布通道、审计哈希链与通知投递四项本体之前。原先的缓解是注入四个 Noop 前缀空实现并把验收顺延，该做法已废止：行为固定为返回成功且不产生任何副作用的空实现，会让审批放行与审计留痕在本阶段看起来成立，而这两件事恰恰是本阶段安全性最高的演示，把它押在四个静默返回成功的空壳上是最坏的一种形态；一旦某一行替换遗漏或被回退，系统会安静地产出不完整的安全事实，而唯一的守卫是一句注释。现处置是同批交付，开篇已逐项列出五项清单，本阶段不注入任何替身、不登记任何顺延项、不在退出条件中宣称这五项可演示，它们与阶段 3b 一并实现并在阶段 3b 结束时一次判定。残余风险是阶段 3b 的排期直接决定这五项的完成时点，控制手段是 3b-1 批紧接本阶段、两段之间不插入其他阶段，且两段合起来仍排在贯通线 T0 之前；同批清单前四项所依赖的审批流程实例、最小发布通道 Draft 到 Released 的一条直路、审计哈希链与段行、同事务站内通知四者都在 3b-1 批之内，第五项的模块许可状态读取按阶段 3 计划落在 3b-2 批，按其下游拉动点就位，不构成 T0 的前置。
 9. 内部对账系统安全上下文借用测试的被测对象按 A-06 由阶段 9a 交付，而 9a 排在本阶段之后。处置是整条移交而非顺延：本阶段不建假执行器、不跑该项、不留登记，判据与断言函数已由阶段 2 冻结，阶段 9a 交付执行器后直接编入其退出条件。这样本阶段少一处假实现，也少一条要跨六个阶段记着的顺延项。
 
 #### 11.2 为后续阶段预留的扩展点
@@ -820,7 +824,7 @@ checksum 与配置行重算值是否一致不进阻断判据。不一致时进�
 3. 平台事件的模块段取 platform，事件名如 platform.authz_policy.published.v1。回写基线第 6.1 节。
 4. 平台事件的 posting_date 与 accounting_period_id 取 null；关账受理前提二的判定语句按 C-28 由阶段 9a 定死，本阶段第 6.3 节逐字采用，posting_date 为空的平台事件一律不计入。回写基线第 6.1 节。
 5. 本阶段的两张仅追加表（user_password_history、login_attempts）不在基线第 4 节列举的六类之内，两表均无冲销或更正语义，因此按仅追加处理且不带 reverses_id，取舍与理由已逐表写在第 3.2 节表 3-3 与表 3-7 的定义处。回写基线第 4 节，把该节仅追加表一条改为：仅追加表一律不带 row_version、updated_at、updated_by；是否带 reverses_id uuid null 由该表有无业务冲销或更正语义决定，有的必须带并在表定义处写明它指向哪张表的哪条记录，没有的不得为满足列约定而保留恒为 NULL 的该列；取舍与理由由所属阶段在其表定义处逐表写明，该节不再列举表名。
-6. 启动自检新增 authz-snapshot-loadable 一个命名项，按 C-25 以注册名标识，不用序号；判据只到可构造出完整 AuthzSnapshot 为止，checksum 不一致按降级窗口处理不阻断启动，窗口 kind 取 AUTHZ_SNAPSHOT_CHECKSUM_MISMATCH。原拟的 duty-class-exclusivity 与 forbidden-permission-items-absent 两项不登记，分别下沉到角色授予与用户绑定的写入路径、以及 permission_items 的 ck_permission_items_forbidden_codes 约束。回写基线第 7.3 节，并在该节写明启动自检的正当判据是这个二进制能否在这台机器上正确运行，数据是否一致属运行期不变量，不进阻断级。
+6. 启动自检新增 authz-snapshot-loadable 一个命名项，按 C-25 以注册名标识，不用序号；判据只到可构造出完整 AuthzSnapshot 为止，checksum 不一致按降级窗口处理不阻断启动，窗口 kind 取 AUTHZ_SNAPSHOT_CHECKSUM_MISMATCH，该取值不由本阶段定义：DegradationKind 的唯一定义方是阶段 2，终态取值清单的唯一出处是阶段 14，本阶段只使用不扩枚举。原拟的 duty-class-exclusivity 与 forbidden-permission-items-absent 两项不登记，分别下沉到角色授予与用户绑定的写入路径、以及 permission_items 的 ck_permission_items_forbidden_codes 约束。回写基线第 7.3 节，并在该节写明启动自检的正当判据是这个二进制能否在这台机器上正确运行，数据是否一致属运行期不变量，不进阻断级。
 7. 新增指标十个：ep_authn_login_attempts_total、ep_authn_active_sessions、ep_authz_decision_duration_seconds、ep_authz_denied_total、ep_authz_scope_truncated_total、ep_reauth_challenges_total、ep_high_risk_requests_open、ep_breakglass_active_sessions、ep_session_admission_queue_wait_seconds、ep_session_admission_rejected_total。标签只用 legal_entity_id、operation_type、outcome、reason 四类，不用 user_id 与 doc_no。回写基线第 9.2 节。
 8. 登录不设第二道并发信号量，登录与业务共用第 6.5 节的准入信号量，原拟的登录并发上限 4 撤销。回写基线第 11.6 节，该节只保留 20 人合计并发这一处仲裁，不新增第二处。
 9. 权限动作枚举固定为 VIEW、CREATE、UPDATE、SUBMIT、APPROVE、EXPORT 六个，不多不少。回写基线第 11 节。
@@ -828,7 +832,7 @@ checksum 与配置行重算值是否一致不进阻断判据。不一致时进�
 
 #### 12.2 偏离项（与基线冲突，需批准）
 
-偏离一。基线第 3.8 节原写的不带 legal_entity_id 的表只有四类这句封闭枚举，与其中无定义、容量无限的全局配置字典这一类名，一并作废，改为正向登记制：凡带 legal_entity_id 的表一律按模板建策略；不带该列的表必须同时给出准入判据与隔离承接点两项并逐表登记。本阶段据此登记 11 张表，不再以第五类例外的形态申报。准入判据统一取该表的行集合与法人无关这一条，逐组核对如下：platform_core 的 9 张身份主体表是隔离机制自身的元数据，只承载身份主体、凭据引用、会话与设备，用户是可被授权多个法人的主体，给其行贴单一法人标签在语义上不成立，且会使登录路径在建立法人上下文之前无法读取账号与凭据，从而被迫引入一条绕过行级策略的读路径，而绕过是基线与规格第 7.7 章都不允许的；platform_authz 的 permission_items 与 object_scope_bindings 两张的行在本部署内对两个法人取值相同。隔离承接点逐组写明：9 张身份主体表的法人可见性落在任何列出用户的查询一律与受策略约束的 platform_authz.user_legal_entity_grants 内联这一条上；permission_items 与 object_scope_bindings 两张不返回任何与法人相关的行，其可见性由授权判定第二阶段的对象级判定承担。核验方式：tests/rls_matrix 对这 11 张表的每一个 API 出口单独设越权用例，判据与其余表相同，并逐表断言其可见性不随 app.legal_entity_id 变化，取值一变即失格、必须补法人列。影响范围：基线第 3.8 节、第 3.10 节基线索引约定、第 4 节公共列。
+偏离一。基线第 3.8 节原写的不带 legal_entity_id 的表只有四类这句封闭枚举，与其中无定义、容量无限的全局配置字典这一类名，一并作废，改为正向登记制：凡带 legal_entity_id 的表一律按模板建策略；不带该列的表必须同时给出准入判据与隔离承接点两项并逐表登记。本阶段据此登记 11 张表，登记行落在阶段 2 交付的 platform_core.unpoliced_table_registry，由第 3.5 节第 29 号回填迁移一次写入，未登记的表按 db/checks 第十三项判为违规而建不出来，本阶段不再以第五类例外的形态申报。准入判据统一取该表的行集合与法人无关这一条，逐组核对如下：platform_core 的 9 张身份主体表是隔离机制自身的元数据，只承载身份主体、凭据引用、会话与设备，用户是可被授权多个法人的主体，给其行贴单一法人标签在语义上不成立，且会使登录路径在建立法人上下文之前无法读取账号与凭据，从而被迫引入一条绕过行级策略的读路径，而绕过是基线与规格第 7.7 章都不允许的；platform_authz 的 permission_items 与 object_scope_bindings 两张的行在本部署内对两个法人取值相同。隔离承接点逐组写明：9 张身份主体表的法人可见性落在任何列出用户的查询一律与受策略约束的 platform_authz.user_legal_entity_grants 内联这一条上；permission_items 与 object_scope_bindings 两张不返回任何与法人相关的行，其可见性由授权判定第二阶段的对象级判定承担。核验方式：tests/rls_matrix 对这 11 张表的每一个 API 出口单独设越权用例，判据与其余表相同，并逐表断言其可见性不随 app.legal_entity_id 变化，取值一变即失格、必须补法人列。影响范围：基线第 3.8 节、第 3.10 节基线索引约定、第 4 节公共列。
 
 偏离二。基线第 5.6 节规定 Authorization 与 X-Legal-Entity-Id 必填，第 5.4 节规定全部写请求 Idempotency-Key 必填。本阶段对三个认证前端点（sign-in、complete-mfa 之前的 sign-in、legal-entities 列表）豁免这三个头中的对应项。理由：这三个头在认证完成前不可能存在。补偿控制：白名单为固定三项的编译期常量，不可配置；豁免端点改用按登录名与来源地址的双维度速率限制并写入 login_attempts。影响范围：基线第 5.4 节、第 5.6 节。
 

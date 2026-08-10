@@ -7,7 +7,7 @@
 在范围内的：Cargo workspace 与全部 crate 骨架、八个进程的空壳二进制、进程运行时装配、配置模型与启动自检框架、统一封套与错误映射、集群引导脚本的目录与执行顺序约定、迁移目录骨架、迁移静态检查、`tools/ep-migrate` CLI 骨架与退出码约定、ep-foundation 的跨阶段冻结类型与常量、连接池与会话变量注入清除、测试分层与覆盖率门禁、结构门禁与依赖方向门禁、容器与单机编排骨架、cgroup 资源限额取值与一次性部署校验、供应链门禁与可复现构建、制品与版本号、本地开发环境。
 
 明确不在范围内的：集群引导五个脚本的内容、24 个 schema 与七个功能角色与 24 个属主角色、逐 schema 的默认权限、单一全局迁移 Runner 与其版本号断言、`ep-migrate` 五个子命令的实现，这五项按 C-01 与 C-02 归阶段 2；另有 Tauri 四端真机 PoC 与任何客户端代码，RLS 业务表，身份认证与授权判定，Outbox 消费与审计链，KMS 与信封加密，附件正文读写，电子签章对接，任何模块的领域模型。规格第 19 章的阶段 1 含四端 PoC 与安全密码抽象，本 14 阶段划分把它们分别归入客户端阶段与安全阶段，本阶段只交付它们的挂载点，不交付实现。
-本阶段与 T0 贯通线的关系。T0 是在阶段 4 结束后、阶段 5 全量开工之前执行的一条最薄贯通线，判据是一条合同从建单走到管理层看到一个数，其业务切片取自阶段 5、6、9a、10、11。本阶段不贡献任何业务切片，只交付 T0 赖以判定的三样手段：`xtask e2e --profile=t0` 这一条独立的端到端目标、`ep-datagen` 的 `t0-min` 最小样本档、以及 `deploy/` 下一条命令起全栈的单机编排。T0 只要求桌面端可达，不要求 scale 数据集，不要求分支覆盖，不要求四端。本阶段其余交付物不因 T0 增删一项，阶段 5 至 11 一律改为在 T0 贯通后的骨架上加厚，M7 保留为全分支闭环而不再是首次贯通。
+本阶段与 T0 贯通线的关系。按总览通则第四条的固定链 1 → 2 → 3a → 4 → 3b-1 → T0 → 5 → 9a → 8 → 6 → 7 → 10 → 11 → 9b → 14 共十五个环节，T0 是其中第六环，在阶段 3b-1 结束之后、阶段 5 全量开工之前执行，是一条最薄贯通线，判据是一条合同从建单走到管理层看到一个数，其业务切片取自阶段 5、6、9a、10、11。本阶段不贡献任何业务切片，只交付 T0 赖以判定的三样手段：`xtask e2e --profile=t0` 这一条独立的端到端目标、`ep-datagen` 的 `t0-min` 最小样本档、以及 `deploy/` 下一条命令起全栈的单机编排；这三样手段属本阶段本轮既有交付物，按总览第 2 节 T0 行的体量口径不计入 T0 的当量，也不从本阶段扣除。T0 只要求桌面端可达，不要求 scale 数据集，不要求分支覆盖，不要求四端。本阶段其余交付物不因 T0 增删一项，阶段 5 至 11 一律改为在 T0 贯通后的骨架上加厚，M7 保留为全分支闭环而不再是首次贯通。
 
 
 ### 2. 交付物清单
@@ -48,12 +48,14 @@
 | ep-domain-<15 个模块> | 骨架 | 不装配 |
 | ep-app-<15 个模块> | 骨架 | 不装配 |
 | ep-adapter-db | 实现 | core-server、job-worker、integration-gateway、ops-agent |
-| ep-adapter-db-pg | 实现 | 同上，且只在各进程的 wiring.rs 中出现 |
+| ep-adapter-db-pg | 实现 | 同上，且只在各进程的 `apps/<proc>/src/wiring/` 目录下出现 |
 | ep-adapter-file、kms、queue、search、doc、esign、wasm | 骨架 | 不装配 |
 | ep-adapter-ipc | 实现 | core-server、plugin-host、archive-writer、backup-writer |
 | ep-testkit | 实现 | 仅 dev-dependencies |
 | ep-datagen | 实现骨架 | 独立二进制，不属于八进程 |
 骨架 crate 中有三处落点在本阶段就写死，后续阶段只补内容不改位置。第一处，`ep-foundation` 下的 `src/port/search.rs` 与 `src/port/doc.rs` 两个文件本阶段只建空文件并写模块注释，检索端口的类型与 trait 按 A-07 由阶段 3b 补齐，文档与打印端口按 A-08 由阶段 5 补齐。第二处，`ep-adapter-db` 提供 `PgUnitOfWork` 与 `PgTx` 两个实现类型的声明位，实现体落在 `ep-adapter-db-pg`。第三处，跨 crate 取具体事务句柄的唯一写法是 `tx.as_any_mut().downcast_mut::<PgTx>()`，`xtask archcheck` 断言 `crates/adapter/db-pg/` 之外的任何目录都不出现 `downcast_mut::<PgTx>`。
+
+本阶段另交付一条 archcheck 规则，规则名 `unwired-absent`，承接总览通则第三条的空实现形态整体撤销。断言对象是 `apps/core-server/src/wiring/` 与 `apps/job-worker/src/wiring/` 两个目录下的全部文件，不是单个 `wiring.rs` 文件；判据是这些文件中不出现任何以 Noop、Stub、Fake、Dummy 为前缀的实现类型或注入行，出现即构建失败。前缀集合就是这四类，不设第五类。该规则随 `xtask` 在本阶段交付，并配一个故意违反的负样例，负样例构建必须失败；它在第 10 节单列一条退出条件，不并入退出条件 3 的依赖方向七条禁止项，其负样例也不计入那七条的负样例集。规格把交付时点冻结在末期的 WasmComputePort、RuleEvaluator 与 DisposalPort 三项平台能力不在此开例外，三者在其交付阶段之前本就不出现任何注入行，能力缺位改由降级窗口承载。阶段 14 的发布门禁项 `RG-UNWIRED-ABSENT` 的扫描面与本规则相同，其判据提供方即本规则。
 
 #### 3.2 本阶段八个进程各自的空壳内容
 
@@ -513,6 +515,7 @@ E2E 在单机编排上跑，覆盖规格第 17.2 章中本阶段可达的部分�
 23. `docs/data-dictionary.md` 的单据类型码一节存在，`xtask configdoc --check-doc-type-codes` 通过，判据为该节与 `ep-platform-sequence` 的常量表逐项一致且无重复。
 24. `docs/metrics-catalog.md` 的指标名唯一性校验在 `xtask` 中实现并通过，`ep_build_info`、`ep_selfcheck_pending_items`、`ep_db_pool_connections`、`ep_db_statement_duration_seconds`、`ep_http_request_duration_seconds`、`ep_quota_throttled_total` 六个指标已注册，`ep_db_retries_total` 与 `ep_tx_retry_total` 两个名字不出现在任何登记文件与代码中。
 25. T0 贯通线的判定手段就位：`xtask e2e --profile=t0` 作为独立目标可执行并返回 0，`ep-datagen` 的 `t0-min` 样本档在同一 seed 下两次生成字节一致，`deploy/` 一条命令起全栈。本阶段不提供 T0 的任何业务切片，也不为 T0 声称任何业务判据。
+26. `xtask archcheck` 的 `unwired-absent` 规则就位并通过：`apps/core-server/src/wiring/` 与 `apps/job-worker/src/wiring/` 两个目录下的全部文件中不出现任何以 Noop、Stub、Fake、Dummy 为前缀的实现类型或注入行；该规则配一个故意违反的负样例，负样例构建必须失败。本条单列，不并入退出条件 3 的依赖方向七条禁止项。
 
 ### 11. 与规格和 PRD 的对应
 
@@ -571,7 +574,7 @@ R-09，CI 平台选型属本阶段新增决定，若客户或团队后续改用�
 
 #### 12.2 为后续阶段预留的扩展点
 
-自检注册表预留 `secrets-resolvable`、`audit-chain-verifiable`、`file-store-writable` 三项的注册位，注册函数签名与 severity 取值域已冻结，各阶段追加项一律以注册名加一个档位登记，不用序号。本阶段不预留任何返回成功的空实现：跨阶段端口按同批交付、整条推迟、改用降级窗口三者择一处置，本阶段一律取整条推迟，因此 `AuthnPort`、`AuthzPort`、`AuditSink`、`OutboxSink` 与 Outbox 消费的去重钩子在本阶段都不存在，由阶段 4 与阶段 3a 在交付判定与本体的同一批里引入。HTTP 中间件栈只留 `IdempotencyStore` 一个注入点，按 C-07 其端口定义归阶段 2、存储与重放实现归阶段 3a，本阶段的 `IdempotencyKeyHeaderGuard` 只校验请求头，不需要任何桩。`db/migrations/` 下 24 个目录已列齐，迁移执行顺序由阶段 2 交付的单一全局 Runner 按文件版本号全序排定，业务阶段只按版本号加文件，不存在任何顺序声明文件要改。错误码表、事件目录、指标目录、数据字典的单据类型码一节四份登记内容已建立并被 CI 校验，后续阶段先登记后实现的纪律有强制点。`ep-adapter-db` 与 `ep-adapter-db-pg` 的分层已就位，多库延期不影响抽象层的稳定性。feature `ci-probe` 提供一个不进发布的探针通道，后续阶段可复用于横切链路验证。
+自检注册表预留 `secrets-resolvable`、`audit-chain-verifiable`、`file-store-writable` 三项的注册位，注册函数签名与 severity 取值域已冻结，各阶段追加项一律以注册名加一个档位登记，不用序号。本阶段不预留任何返回成功的空实现：跨阶段端口按同批交付、整条推迟、改用降级窗口三者择一处置，本阶段一律取整条推迟；这一纪律由本阶段随 `xtask` 交付的 archcheck 规则 `unwired-absent` 在 `apps/core-server/src/wiring/` 与 `apps/job-worker/src/wiring/` 两个目录上强制，因此 `AuthnPort`、`AuthzPort`、`AuditSink`、`OutboxSink` 与 Outbox 消费的去重钩子在本阶段都不存在，由阶段 4 与阶段 3a 在交付判定与本体的同一批里引入。HTTP 中间件栈只留 `IdempotencyStore` 一个注入点，按 C-07 其端口定义归阶段 2、存储与重放实现归阶段 3a，本阶段的 `IdempotencyKeyHeaderGuard` 只校验请求头，不需要任何桩。`db/migrations/` 下 24 个目录已列齐，迁移执行顺序由阶段 2 交付的单一全局 Runner 按文件版本号全序排定，业务阶段只按版本号加文件，不存在任何顺序声明文件要改。错误码表、事件目录、指标目录、数据字典的单据类型码一节四份登记内容已建立并被 CI 校验，后续阶段先登记后实现的纪律有强制点。`ep-adapter-db` 与 `ep-adapter-db-pg` 的分层已就位，多库延期不影响抽象层的稳定性。feature `ci-probe` 提供一个不进发布的探针通道，后续阶段可复用于横切链路验证。
 
 ### 13. 偏离基线与本阶段新增决定
 
@@ -602,7 +605,7 @@ R-09，CI 平台选型属本阶段新增决定，若客户或团队后续改用�
 新增决定十一，单据类型码的全局唯一登记表。按 C-26，`docs/data-dictionary.md` 增加单据类型码一节，本阶段建立该节与 CI 校验 `xtask configdoc --check-doc-type-codes`，判据为该节与 `ep-platform-sequence` 的常量表逐项一致且无重复；各类型码由其单据所在阶段登记，任何阶段不得新增未在该节登记的码。影响范围是基线第 11.1 节增加档案编码格式与类型码登记表的指引。
 
 新增决定十二，`SecurityContext` 七个字段类型的形态。基线第 1.4 节的字段表只给出 `DeviceId`、`RoleCode`、`DutyClass`、`RecordShare`、`DataScopeTag`、`RequestId`、`TraceId` 七个类型名，其后的配套枚举一段只冻结了 `AccountKind`、`ClientKind`、`DepartmentScope` 三个枚举，七个类型的形态在规格、PRD、基线与裁定表中均无定义，而按 A-03 其交付方同为本阶段，不给形态则该结构体写不出可编译的定义。取值见第 5.1 节。理由与代价：`DutyClass` 的六个取值与阶段 4 的 `platform_authz.roles.duty_class` 列取值同源，互斥关系属该阶段的职责分离种子规则，不进枚举定义；`RecordShare` 只表达一条记录被显式共享给当前主体，不承载判定，`RecordScope` 与 `RecordPredicate` 留在 ep-platform-authz，否则判定语义前移进 foundation 会与基线第 1.3 节的分层冲突；`TraceId` 与 `RequestId` 的形态在基线中原本只有日志样例与请求头描述，本决定把它们写成唯一形态定义。影响范围有两处：基线第 1.4 节的配套枚举一段由三个枚举扩为三个枚举加上述七个字段类型与 `RecordShareGrant`；基线第 5.6 节的请求头一节写入 `X-Request-Id` 与 `X-Device-Id` 的形态，与本决定逐字一致。
-新增决定十三，启动自检分两档并删除三项。`SelfCheckItem` 的 severity 取值域定死为 Blocking 与 Degrading 两值，第 5.4 节状态机的守卫由点名 `offsite-sink-requirements` 改为按档位判定，并写死一条禁令：任何阶段不得注册判读业务数据行的 Blocking 项。基线第 7.3 节的十三项删去三项，余十项。删 `license-and-modules-consistent`，理由是规格第 3.4 章明写平台不因许可状态停机、用量超上限不阻断业务、身份四项处置在任何许可状态下均可用，而以退出码 78 拒绝启动使规格设计的受限运行态整个不可达，承接方是规格第 3.4 章已有的四态机与阶段 3b 的 `ModuleLicenseQuery`；裁定 A-05 中阶段 1 登记 Pending 一句随之作废，按权威顺序规格高于裁定表。删 `current-period-open`，理由是该项缺失时按规格第 5.2 章自动建立期间，那是一次写操作而不是闸门，八个进程还会在自检阶段并发写 ledger 表，承接方下沉到阶段 9a 的过账路径。删 `cgroup-quota-matched`，理由与承接方见新增决定十四。`audit-chain-verifiable` 与 `offsite-sink-requirements` 两项定为 Degrading，理由是拒绝启动既修不好断链也补不上落点，而修复的唯一手段恰恰是人工介入，拒绝启动只会让这台没有备节点的服务器在最需要人操作的时候整体停摆。配置键 `selfcheck.pending_as_failure` 一并删除，Pending 一律不阻止启动，见假设二。影响范围是基线第 7.3 节由十三项编号列表改为十项命名列表并各带一个档位，且删去其中十三项为全部进程共有一句，改为不建库连接的四个进程对 SQL 类自检项一律标注 NotApplicable。
+新增决定十三，启动自检分两档并删除三项。`SelfCheckItem` 的 severity 取值域定死为 Blocking 与 Degrading 两值，第 5.4 节状态机的守卫由点名 `offsite-sink-requirements` 改为按档位判定，并写死一条禁令：任何阶段不得注册判读业务数据行的 Blocking 项。基线第 7.3 节的十三项删去三项，余十项。删 `license-and-modules-consistent`，理由是规格第 3.4 章明写平台不因许可状态停机、用量超上限不阻断业务、身份四项处置在任何许可状态下均可用，而以退出码 78 拒绝启动使规格设计的受限运行态整个不可达，承接方是规格第 3.4 章已有的四态机与阶段 3b 的 `ModuleLicenseQuery`；裁定 A-05 中阶段 1 登记 Pending 一句随之作废，按权威顺序规格高于裁定表。删 `current-period-open`，理由是该项缺失时按规格第 5.2 章自动建立期间，那是一次写操作而不是闸门，八个进程还会在自检阶段并发写 ledger 表；承接方定死为阶段 9a 的 `AccountingPeriodResolver::resolve` 第二步的零期间分支，即该法人 `ledger.accounting_periods` 无任何行时按 posting_date 所属自然月建立该期间并置 OPEN，在首次过账的同一业务事务内完成，该分支属阶段 9a 交付并落在阶段 9a 的 T0 切片内，本阶段不为该项保留任何注册位。删 `cgroup-quota-matched`，理由与承接方见新增决定十四。`audit-chain-verifiable` 与 `offsite-sink-requirements` 两项定为 Degrading，理由是拒绝启动既修不好断链也补不上落点，而修复的唯一手段恰恰是人工介入，拒绝启动只会让这台没有备节点的服务器在最需要人操作的时候整体停摆。配置键 `selfcheck.pending_as_failure` 一并删除，Pending 一律不阻止启动，见假设二。影响范围是基线第 7.3 节由十三项编号列表改为十项命名列表并各带一个档位，且删去其中十三项为全部进程共有一句，改为不建库连接的四个进程对 SQL 类自检项一律标注 NotApplicable。
 
 新增决定十四，删除 cgroup 配额生成器与配额清单，资源限额改为静态 drop-in 加一次性部署校验。取值三类见第 5.6 节，规格第 13.1 章的九行配额表仍逐行承载，只是承载物由生成结果换成随部署骨架交付的静态文件，核对由每进程每次启动一次换成部署与升级各一次，判定方为 `scripts/verify-resource-limits.sh`。理由是这台机器只有一台、并发上限 20，CPU 与内存不是稀缺资源，按可分配量折算与突发上限封顶两段算法解决的是不存在的争用，代价却是一个配置键、一份生成文件、一个自检项与一条八进程集体拒绝启动的路径；磁盘 IO 这一处真实稀缺由 backup-writer 的 `IOMax` 与两个 slice 的 `IOWeight` 次序表达。影响范围有两处：基线第 13 节的资源限额取值改为引用 `deploy/` 下的 drop-in 文件；配置键 `selfcheck.quota_manifest_path` 从配置参考中删除。
 

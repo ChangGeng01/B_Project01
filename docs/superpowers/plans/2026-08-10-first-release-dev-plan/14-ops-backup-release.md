@@ -17,9 +17,9 @@
 被阻塞事项：PRD 附录乙的 U-L-10 与 U-L-11 未决。U-L-10 影响台账的可见角色范围、界面入口与导出格式，本阶段临时取值为可见角色三类、入口在运维中心一级导航、导出格式为 JSON 与 CSV 两种，切换代价只在前端与导出适配层，服务端模型不变。U-L-11 影响诚实披露在界面内的呈现位置与客户确认是否留痕，本阶段临时取值为独立的部署状态与已知限制页面且客户确认留痕写审计，切换代价同样只在前端。两项都不阻塞服务端交付。
 ### 0.1 T0 贯通线、空实现硬规则与启动自检口径
 
-T0 贯通线。阶段 4 结束后、阶段 5 全量开工之前插入一条不新增任何范围的最薄贯通线 T0，从阶段 5、6、9a、10、11 各取最小切片，判据是一条合同从建单走到管理层看到一个数。本阶段不向 T0 贡献任何切片，理由是 T0 的九项切片没有一项落在运维、备份与发布硬化上，本阶段的范围、交付物与退出条件都不因 T0 变化。T0 对本阶段的唯一影响是前置到位的形态：阶段 5 至 11 改为在这条已贯通的骨架上加厚，本阶段开工时接手的是一条已被真实调用打通过的闭环，而不是十个阶段各自装配的接口假设，附录 A.6 两类演练的恢复对象因此是一个已贯通的系统而不是一次首次贯通。M7 保留为全分支闭环，本阶段的 M12 仍为交付验收。
+T0 贯通线。阶段 3b-1 结束后、阶段 5 全量开工之前插入一条不新增任何范围的最薄贯通线 T0，从阶段 5、6、9a、10、11 各取最小切片，判据是一条合同从建单走到管理层看到一个数。固定阶段顺序为 1 → 2 → 3a → 4 → 3b-1 → T0 → 5 → 9a → 8 → 6 → 7 → 10 → 11 → 9b → 14，共十五个环节，本阶段是末环；阶段 3b-2 不在这条链上，其各项按下游拉动点排在 T0 之后，阶段 12 在阶段 10 之后与阶段 11 并行，阶段 13 在阶段 12 之后与阶段 9b 并行。本阶段不向 T0 贡献任何切片，理由是 T0 从阶段 5、6、9a、10、11 各取的最小切片没有一项落在运维、备份与发布硬化上，本阶段的范围、交付物与退出条件都不因 T0 变化。T0 对本阶段的唯一影响是前置到位的形态：阶段 5 至 11 改为在这条已贯通的骨架上加厚，本阶段开工时接手的是一条已被真实调用打通过的闭环，而不是十个阶段各自装配的接口假设，附录 A.6 两类演练的恢复对象因此是一个已贯通的系统而不是一次首次贯通。M7 保留为全分支闭环，本阶段的 M12 仍为交付验收。
 
-空实现的硬规则。原裁定通则第三条那套 Noop 空实现加 TODO 加验收顺延的通用机制整体删除，改为一条硬规则：跨模块同步调用的被调方必须与调用方同批交付；做不到就把该用例整条推迟到被调方所在批次；两者都不可行时才用降级窗口把缺席表达成台账事实。三者之外不允许任何形态的替身，也不允许任何返回零值、空集合、固定业务分支或恒定成功的实现。本阶段没有向后续阶段留下的注入点。本阶段是 DisposalPort 的唯一实现方，按整条推迟处理：阶段 3b 至 13 的 apps/core-server/src/wiring.rs 与 apps/job-worker/src/wiring.rs 内不出现该端口的任何替身，处置路由在这些阶段一律不注册、请求返回 404，本阶段首次注册该路由并注入 OpsDisposalService。该规则由第 8.7 节新增的发布门禁项 RG-UNWIRED-ABSENT 强制，原先那句由 xtask 门禁统计空实现数量在八个子命令中无落点，一并删除。
+空实现的硬规则。原裁定通则第三条那套 Noop 空实现加 TODO 加验收顺延的通用机制整体删除，改为一条硬规则：跨模块同步调用的被调方必须与调用方同批交付；做不到就把该用例整条推迟到被调方所在批次；两者都不可行时才用降级窗口把缺席表达成台账事实。三者之外不允许任何形态的替身，也不允许任何返回零值、空集合、固定业务分支或恒定成功的实现。本阶段没有向后续阶段留下的注入点。DisposalPort 是通则第三条例外清单三项之一，例外档的落法就是降级窗口加直接拒绝，不走整条推迟：处置受理路由由阶段 3b 注册，阶段 3b 至阶段 13 之间 apps/core-server/src/wiring/ 与 apps/job-worker/src/wiring/ 两个目录内不出现该端口的任何替身也不出现任何注入行，物理删除请求一律以 PLATFORM.DISPOSAL.NOT_DELIVERED 直接拒绝，category 取 BUSINESS_CONFLICT，HTTP 409，不可重试，同时开一条 kind 取 PORT_NOT_IMPLEMENTED 且 subject 取 DisposalPort 的降级窗口，界面与健康端点显式呈现该能力未交付，指标 ep_degradation_windows_open 自动计数；本阶段是该端口的唯一实现方，注入 OpsDisposalService 后关闭该窗口。该规则由第 8.7 节的发布门禁项 RG-UNWIRED-ABSENT 强制，其判据提供方是阶段 1 随 xtask 交付并配负样例的 archcheck 规则 unwired-absent，断言对象是上述两个目录下的全部文件；原先那句由 xtask 门禁统计空实现数量在八个子命令中无落点，一并删除。
 
 启动自检的口径。启动自检不再充当数据一致性闸门。自检项按 severity 分 Blocking 与 Degrading 两档，判读运行期可变业务数据行的项一律不进 Blocking 档，闸门移到部署与升级前置的 --check。本阶段实现的 offsite-sink-requirements 全部子判定一律为 Degrading，任一不满足只按降级状态启动并持续告警、记录暴露窗口，不阻止任何进程投入运行，逐项口径见第 7 节末。archive-writer 与 backup-writer 只持 REPLICATION 属性连接、不持运行期应用账号，对全部 SQL 类自检项一律标 NotApplicable，基线第 7.3 节十三项为全部进程共有这一句随之作废并回写基线。
 
@@ -43,7 +43,7 @@ T0 贯通线。阶段 4 结束后、阶段 5 全量开工之前插入一条不�
 12. 供应链安全流水线：SBOM、签名、可复现构建、离线依赖仓库、客户侧验签工具。
 13. 等级保护三级控制项自评矩阵与四项永久性不符合项封闭清单，落在 docs/compliance/ 并由 CI 校验不得超出封闭清单。
 14. 恢复手册、运维手册、部署记录模板与交付说明的诚实披露八条文本，落在 docs/runbooks/ 与 docs/delivery/。
-15. OpsDisposalService，位于 crates/platform/obs/src/disposal.rs，实现阶段 3b 在 crates/platform/file/src/port/disposal.rs 定义的 DisposalPort，承担附件对象、密钥域、备份集与扩展表四类处置范围的执行，含密钥销毁与到达备份保留期的备份集处置，产出销毁证明。
+15. OpsDisposalService，位于 crates/platform/obs/src/disposal.rs，实现阶段 3b 在 crates/platform/file/src/port/disposal.rs 定义的 DisposalPort，承担附件对象、密钥域、备份集与扩展表四类处置范围的执行，含密钥销毁与到达备份保留期的备份集处置，产出销毁证明；注入后关闭阶段 3b 起开着的 kind 取 PORT_NOT_IMPLEMENTED 且 subject 取 DisposalPort 的降级窗口。
 
 ---
 
@@ -68,11 +68,11 @@ T0 贯通线。阶段 4 结束后、阶段 5 全量开工之前插入一条不�
 | ep-adapter-ipc | 全部 | 新增本阶段七种报文类型 |
 | ep-platform-recon | job-worker | 本体、三张表、ReconCheck 与 ReconExecutor 由阶段 9a 交付；本阶段只新增恢复验收模式的调用入口与留证字段，调用形态为 ReconExecutor::run，run_kind 取 RECOVERY_ACCEPTANCE；本阶段不实现也不注册任何 ReconCheck，注册方清单见裁定 A-06 |
 | apps/archive-writer、apps/backup-writer、apps/ops-agent | 同名 | 由骨架变为完整实现 |
-| apps/core-server | core-server | 新增运维中心用例、上报受理器、交叉核对器的装配 |
+| apps/core-server | core-server | 新增运维中心用例、上报受理器、未知复制会话检出的装配 |
 
 依赖方向核对。ep-adapter-sink 只依赖 ep-foundation 与 ep-contract-*，不依赖 application，其重试与退避逻辑下沉 ep-foundation。ep-platform-obs 不依赖任何 domain 与 application。archive-writer 与 backup-writer 两个 apps 不依赖任何 ep-app-*，其与 core-server 的全部交互只经 ep-adapter-ipc 的报文类型，报文类型定义在 ep-contract-portal 之外的独立位置，即放在 ep-foundation 的 ipc 模块下，理由是它跨越 platform 与 adapter 两侧且不属于任何业务模块；两者对 pg_receivewal 与 pg_basebackup 的监管只经进程启停与退出码，不链接任何 PostgreSQL 客户端库。
 
-前置依赖。本阶段在调整后的阶段顺序中排在最后，下列前置件在本阶段开工前均已存在，本阶段不重复交付，也不向任何后续阶段留空实现。一，ep-foundation 的 SecurityContext、SYSTEM_PRINCIPAL_ID、SYSTEM_DEVICE_ID、CapabilityDomain 与 ActionClass 由阶段 1 提供。二，platform_ops schema、platform_ops.degradation_windows 与 ep-platform-obs 的 DegradationLedger 由阶段 2 提供。三，crates/platform/file/src/port/disposal.rs 的 DisposalPort、DisposalRequest 与 DisposalReceipt 由阶段 3b 提供。四，ep-platform-recon 本体、三张表与 ReconExecutor 由阶段 9a 提供。五，ep-adapter-esign 与其 crates/adapter/esign/tests/contract_sandbox.rs 契约测试由阶段 6 提供，本阶段只执行并归档其对真实沙箱的通过记录。
+前置依赖。本阶段在调整后的阶段顺序中排在最后，下列前置件在本阶段开工前均已存在，本阶段不重复交付，也不向任何后续阶段留空实现。一，ep-foundation 的 SecurityContext、SYSTEM_PRINCIPAL_ID、SYSTEM_DEVICE_ID、CapabilityDomain 与 ActionClass 由阶段 1 提供。二，platform_ops schema、platform_ops.degradation_windows（含 subject 列与 OFFSITE_SINK_NOT_CONFIGURED、WRITER_NOT_IN_SERVICE、PORT_NOT_IMPLEMENTED 三个初始 kind 取值）与 ep-platform-obs 的 DegradationLedger 由阶段 2 提供，阶段 2 是 DegradationKind 的唯一定义方。三，crates/platform/file/src/port/disposal.rs 的 DisposalPort、DisposalRequest 与 DisposalReceipt 及其处置受理路由由阶段 3b 提供。四，ep-platform-recon 本体、三张表与 ReconExecutor 由阶段 9a 提供。五，ep-adapter-esign 与其 crates/adapter/esign/tests/contract_sandbox.rs 契约测试由阶段 6 提供，本阶段只执行并归档其对真实沙箱的通过记录。
 
 ---
 
@@ -99,9 +99,9 @@ T0 贯通线。阶段 4 结束后、阶段 5 全量开工之前插入一条不�
 说明：media_type 取 NONE 表示客户未配置任何服务器之外落点，此时该部署没有 RPO 承诺。
 
 表 3 platform_ops.degradation_windows，降级与暴露窗口台账，可更新。本表由阶段 2 按 A-26 建立，列定义与下列各行完全一致，本阶段只做扩展，不重建表、不增删列。
-列：id、security_level、data_scope_tags、row_version、kind text not null CHECK in（下列 15 个取值）、scope_key text not null（CHECK 长度不超过 200）、scope_legal_entity_id uuid null、scope_accounting_period_id uuid null、basis text not null（CHECK 长度不超过 2000）、detail jsonb not null default '{}'、opened_at timestamptz not null、closed_at timestamptz not null default 'infinity'、closing_condition text not null（CHECK 长度不超过 2000）、is_suppressible boolean not null、suppressed_until timestamptz null、created_at、created_by、updated_at、updated_by。
-kind 取值：OFFSITE_SINK_NOT_CONFIGURED、OFFSITE_SINK_OFFLINE_MEDIA_RPO_DEGRADED、WAL_ARCHIVE_WRITEOUT_OVERDUE_OR_FAILED、ATTACHMENT_INCREMENTAL_WRITEOUT_OVERDUE_OR_FAILED、ATTACHMENT_BOOTSTRAP_WINDOW_EXCEEDED、ATTACHMENT_RPO_NOT_YET_ACHIEVED、AUDIT_EVIDENCE_WRITEOUT_OVERDUE_OR_FAILED、PORTAL_WAF_NOT_CONFIGURED、AUDIT_ANCHOR_OVERDUE、WRITER_NOT_IN_SERVICE、OFFSITE_COPY_PROTECTION_MISSING、ARCHIVE_SLOT_RETENTION_WARNING、ARCHIVE_CHAIN_BROKEN、RECON_RUN_UNFINISHED、PERIOD_CLOSE_ACCEPTANCE_REJECTED，共 15 个。其中 OFFSITE_SINK_NOT_CONFIGURED 由阶段 2 建表时给出并原样保留；阶段 2 同时给出的 WRITER_ROLE_CONTAINMENT_MISSING 由本阶段的 ALTER 改名为 WRITER_NOT_IN_SERVICE，其触发条件同时由三项遏制手段配置缺失改为客观事实，即任一写出进程未在运行或连续两个写出周期无上报，改名与改条件回写阶段 2 计划；其余 13 个由本阶段扩展该列的 CHECK 取值。原列表中的 REPLICATION_CROSSCHECK_NO_RESULT 随第 4.8 节交叉核对子系统删除，BACKGROUND_TASK_WINDOW_MISSED 与 RESOURCE_QUOTA_EXPOSURE 随让路顺序与配额事件台账删除，三者一并撤销。
-约束：ux_degradation_windows_kind_scope_closed (kind, scope_key, closed_at) 与 ck_degradation_windows_open_order CHECK (closed_at > opened_at) 两条由阶段 2 建表时交付，前者保证同一 kind 与作用域至多一条活动条目，本阶段不改写这两条；本阶段追加 ck_degradation_windows_le_required CHECK (kind not in ('RECON_RUN_UNFINISHED','PERIOD_CLOSE_ACCEPTANCE_REJECTED') or (scope_legal_entity_id is not null and scope_accounting_period_id is not null)) 与 ck_degradation_windows_not_suppressible CHECK (kind <> 'OFFSITE_SINK_NOT_CONFIGURED' or (is_suppressible = false and suppressed_until is null)) 两条，后者只护住未配置落点这一类。WRITER_NOT_IN_SERVICE 改为可抑制并从该 CHECK 的 kind 清单中摘除，理由是它现在反映的是真实的备份缺失而非配置漏项，运维在已知维护窗口内应能临时静音并记名记时。
+列：id、security_level、data_scope_tags、row_version、kind text not null CHECK in（下列 18 个取值）、subject text null（CHECK 长度不超过 200，承载端口或能力的完整类型名，由阶段 2 建表时给出）、scope_key text not null（CHECK 长度不超过 200）、scope_legal_entity_id uuid null、scope_accounting_period_id uuid null、basis text not null（CHECK 长度不超过 2000）、detail jsonb not null default '{}'、opened_at timestamptz not null、closed_at timestamptz not null default 'infinity'、closing_condition text not null（CHECK 长度不超过 2000）、is_suppressible boolean not null、suppressed_until timestamptz null、created_at、created_by、updated_at、updated_by。
+kind 取值：OFFSITE_SINK_NOT_CONFIGURED、WRITER_NOT_IN_SERVICE、PORT_NOT_IMPLEMENTED、OFFSITE_SINK_OFFLINE_MEDIA_RPO_DEGRADED、WAL_ARCHIVE_WRITEOUT_OVERDUE_OR_FAILED、ATTACHMENT_INCREMENTAL_WRITEOUT_OVERDUE_OR_FAILED、ATTACHMENT_BOOTSTRAP_WINDOW_EXCEEDED、ATTACHMENT_RPO_NOT_YET_ACHIEVED、AUDIT_EVIDENCE_WRITEOUT_OVERDUE_OR_FAILED、PORTAL_WAF_NOT_CONFIGURED、AUDIT_ANCHOR_OVERDUE、OFFSITE_COPY_PROTECTION_MISSING、ARCHIVE_SLOT_RETENTION_WARNING、ARCHIVE_CHAIN_BROKEN、RECON_RUN_UNFINISHED、PERIOD_CLOSE_ACCEPTANCE_REJECTED、AUTHZ_SNAPSHOT_CHECKSUM_MISMATCH、CUSTOM_OBJECT_DDL_INCONSISTENT，共 18 个。其中 OFFSITE_SINK_NOT_CONFIGURED、WRITER_NOT_IN_SERVICE 与 PORT_NOT_IMPLEMENTED 三项由阶段 2 建表时给出并原样保留，本阶段不改名、不改其触发条件、不改其可抑制性；其余 15 项由本阶段扩展该列的 CHECK 取值。PORT_NOT_IMPLEMENTED 是跨模块与平台能力缺位的唯一登记形态，由缺位期间的调用方开窗、由被调方所在阶段注入实现后关窗，端口名记在 subject 列，本阶段只保证该取值在 CHECK 中存在并在台账与视图上展示，不代任何阶段开闭；AUTHZ_SNAPSHOT_CHECKSUM_MISMATCH 由阶段 4 在授权快照校验和不符时开窗，CUSTOM_OBJECT_DDL_INCONSISTENT 由阶段 13 在自定义对象 DDL 不一致时开窗，两者本阶段同样只提供取值与展示。原列表中的 REPLICATION_CROSSCHECK_NO_RESULT 随第 4.8 节交叉核对子系统删除，BACKGROUND_TASK_WINDOW_MISSED 与 RESOURCE_QUOTA_EXPOSURE 随让路顺序与配额事件台账删除，三者一并撤销。
+约束：ux_degradation_windows_kind_scope_closed (kind, subject, scope_legal_entity_id, scope_accounting_period_id, closed_at) 与 ck_degradation_windows_open_order CHECK (closed_at > opened_at) 两条由阶段 2 建表时交付，前者保证同一 kind 与同一 subject 在同一法人与会计期间作用域下至多一条活动条目，从而使同一 kind 下多个端口可同时开窗，本阶段不改写这两条；scope_key 保留为展示用的作用域说明列，不进该唯一约束。本阶段追加 ck_degradation_windows_le_required CHECK (kind not in ('RECON_RUN_UNFINISHED','PERIOD_CLOSE_ACCEPTANCE_REJECTED') or (scope_legal_entity_id is not null and scope_accounting_period_id is not null)) 与 ck_degradation_windows_not_suppressible CHECK (kind <> 'OFFSITE_SINK_NOT_CONFIGURED' or (is_suppressible = false and suppressed_until is null)) 两条，后者只护住未配置落点这一类。WRITER_NOT_IN_SERVICE 由阶段 2 定为可抑制并不在该 CHECK 的 kind 清单内，理由是它反映的是真实的备份缺失而非配置漏项，运维在已知维护窗口内应能临时静音并记名记时。
 索引：全部索引由本阶段追加，即 ix_degradation_windows_kind_opened_at；ix_degradation_windows_closed_at_opened_at；ix_degradation_windows_scope_legal_entity_id_opened_at。
 说明：归档通道暂停不单列 kind，按规格第 15.3 章含在 ARCHIVE_CHAIN_BROKEN 的同一个暴露窗口内，其 detail 内以 sub_state 取值 SUSPENDED 标注；这与规格“含落点持续不可写期间暂不重建复制槽的那一段”一致，窗口自断点起算，只在新的全量基础备份写出并通过自动校验时闭合。
 
@@ -140,7 +140,7 @@ kind 取值：OFFSITE_SINK_NOT_CONFIGURED、OFFSITE_SINK_OFFLINE_MEDIA_RPO_DEGRA
 表 11 platform_ops.replication_reports，写出进程的复制生命周期上报，仅追加。
 列：id、security_level、data_scope_tags、writer_process text not null CHECK in ('archive-writer','backup-writer')、db_role text not null CHECK in ('ep_archiver','ep_backuper')、report_kind text not null CHECK in ('CONN_ESTABLISHED','CONN_CLOSED','SLOT_CREATED','SLOT_INVALIDATED','BASEBACKUP_STARTED','BASEBACKUP_FINISHED')、slot_name text null、backend_pid int null、occurred_at timestamptz not null、outcome text not null CHECK in ('OK','FAILED')、report_id uuid not null、spooled boolean not null default false、created_at、created_by。
 约束：ux_replication_reports_report_id。索引：ix_replication_reports_occurred_at；ix_replication_reports_db_role_occurred_at。
-说明：spooled 为真表示该条是 core-server 不可用期间在写出进程本地暂存后补写的，交叉核对按 occurred_at 而非写入时刻比对。
+说明：spooled 为真表示该条是 core-server 不可用期间在写出进程本地暂存后补写的，复制生命周期的时序一律按 occurred_at 而非写入时刻判读。
 
 表 12 platform_ops.wal_retention_samples，复制槽本机保留量采样，可按期清理。
 列：id、security_level、data_scope_tags、sampled_at timestamptz not null、slot_name text not null、retained_bytes bigint not null、max_slot_wal_keep_bytes bigint not null、retention_ratio numeric(9,6) not null、pg_wal_bytes bigint not null、created_at、created_by。
@@ -171,7 +171,7 @@ kind 取值：OFFSITE_SINK_NOT_CONFIGURED、OFFSITE_SINK_OFFLINE_MEDIA_RPO_DEGRA
 
 #### 3.2 视图
 
-- platform_ops.v_degradation_open：closed_at = 'infinity' 的全部条目，含是否被抑制、抑制到期时间与是否可抑制。
+- platform_ops.v_degradation_open：closed_at = 'infinity' 的全部条目，含 kind 与 subject、是否被抑制、抑制到期时间与是否可抑制。
 - platform_ops.v_rpo_status：输出两行，target 取 DATABASE 与 ATTACHMENT，各行含 effective_seconds、basis、basis_source_kind、evidence_ref；判定算法见第 4.6 节。
 - platform_ops.v_backup_last_success：按 kind 给出最近一次 VERIFIED 的备份集及其时间。
 - platform_ops.v_capacity_current：六项组件的最近一次采样与占容量下限比。
@@ -187,7 +187,7 @@ ep_ops_ro 授予上述五个视图的 SELECT，不授予任何基表。ep_app_rw
 
 1. V202611030900__platform_ops_deployment_records.sql
 2. V202611030905__platform_ops_offsite_sinks.sql
-3. V202611030910__platform_ops_extend_degradation_windows.sql，只做 ALTER：把 kind 的 CHECK 取值由阶段 2 的 2 个扩展至 15 个、把阶段 2 给出的 WRITER_ROLE_CONTAINMENT_MISSING 就地改名为 WRITER_NOT_IN_SERVICE（先更新既有行再重建 CHECK）、追加 ck_degradation_windows_le_required 与 ck_degradation_windows_not_suppressible 两条 CHECK、追加三个索引；本表由阶段 2 建立，本文件不建表。
+3. V202611030910__platform_ops_extend_degradation_windows.sql，只做 ALTER：把 kind 的 CHECK 取值由阶段 2 的 3 个扩展至 18 个、追加 ck_degradation_windows_le_required 与 ck_degradation_windows_not_suppressible 两条 CHECK、追加三个索引；本表、subject 列与两条既有约束均由阶段 2 建立，本文件不建表、不增删列、不改名任何既有取值。重建 kind 的 CHECK 时既有行的取值必然落在这 18 个之内，阶段 7 至阶段 13 期间写入的 PORT_NOT_IMPLEMENTED、AUTHZ_SNAPSHOT_CHECKSUM_MISMATCH 与 CUSTOM_OBJECT_DDL_INCONSISTENT 三类行不被判违约。
 4. V202611030915__platform_ops_writeout_runs.sql
 5. V202611030920__platform_ops_attachment_watermarks.sql
 6. V202611030925__platform_ops_backup_sets.sql
@@ -206,7 +206,7 @@ ep_ops_ro 授予上述五个视图的 SELECT，不授予任何基表。ep_app_rw
 19. V202611031040__platform_ops_grants_ops_ro.sql
 20. V202611031045__backfill_platform_ops_singletons.sql，插入 archive_channel 与 backup_runner_slot 两行常量。
 
-每个文件头部带 -- rollback: 段。第 7 号与第 9 号两个单行表的回退为 DROP TABLE；第 3 号回退为把 kind 的 CHECK 取值收回阶段 2 的两个、把 WRITER_NOT_IN_SERVICE 改回 WRITER_ROLE_CONTAINMENT_MISSING、删除本阶段追加的两条 CHECK 与三个索引，不删表；第 20 号回退为按常量 id 置 archive_channel.state 与 backup_runner_slot.current_backup_set_id 为初值，不删除行。除第 3 号外全部为新增表与新增索引，第 3 号为约束、取值改名与索引的在线增补，均属基线第 3.9 节的在线变更范围，索引一律 CREATE INDEX CONCURRENTLY，迁移会话固定 lock_timeout 5s 与 statement_timeout 30min。
+每个文件头部带 -- rollback: 段。第 7 号与第 9 号两个单行表的回退为 DROP TABLE；第 3 号回退为把 kind 的 CHECK 取值收回阶段 2 的三个、删除本阶段追加的两条 CHECK 与三个索引，不删表、不改名任何取值；第 20 号回退为按常量 id 置 archive_channel.state 与 backup_runner_slot.current_backup_set_id 为初值，不删除行。除第 3 号外全部为新增表与新增索引，第 3 号为约束、取值扩展与索引的在线增补，均属基线第 3.9 节的在线变更范围，索引一律 CREATE INDEX CONCURRENTLY，迁移会话固定 lock_timeout 5s 与 statement_timeout 30min。
 
 ---
 
@@ -222,7 +222,7 @@ ep_ops_ro 授予上述五个视图的 SELECT，不授予任何基表。ep_app_rw
 - ArchiveChannelState 取 Healthy、RetentionWarning、SlotInvalidated、Rebuilding、Suspended。
 - BreakCause 取 SlotWalLimit、WriterStopped、WriterNotAdvancing、SinkUnwritable。
 - BackupSetState 取 Planned、Running、Written、Verified、VerifyFailed、Aborted。
-- DegradationKind 为第 3.1 节表 3 的 15 个取值，其中 OFFSITE_SINK_NOT_CONFIGURED 与改名后的 WRITER_NOT_IN_SERVICE 两项由阶段 2 在 ep-platform-obs 中定义，本阶段扩展其余 13 项。
+- DegradationKind 为第 3.1 节表 3 的 18 个取值，其中 OFFSITE_SINK_NOT_CONFIGURED、WRITER_NOT_IN_SERVICE 与 PORT_NOT_IMPLEMENTED 三项由唯一定义方阶段 2 在 ep-platform-obs 中定义，本阶段扩展其余 15 项，不自建第二套标记取值。
 - RpoBasis 取 Default15Min、DegradedToMediaRotation、NoCommitment、BootstrapNotYetAchieved、ExposureWindowOpen、WriterNotInService、ArchiveChainBroken。
 - AttachmentWatermark { at: DateTime<Utc>, pending: u32, oldest_pending_committed_at: Option<DateTime<Utc>>, manifest_ref: String }。
 - RecoveryPoint { db_point: Lsn 与时间、attachment_point: 水位时刻、aligned: DateTime<Utc> }。
@@ -325,7 +325,7 @@ ep_ops_ro 授予上述五个视图的 SELECT，不授予任何基表。ep_app_rw
 
 #### 4.10 处置执行与 DisposalPort 实现
 
-端口由阶段 3b 在 crates/platform/file/src/port/disposal.rs 定义，含 DisposalRequest、DisposalReceipt 与 DisposalPort 三项。本阶段提供其唯一实现 OpsDisposalService，位于 crates/platform/obs/src/disposal.rs，在 apps/core-server/src/wiring.rs 与 apps/job-worker/src/wiring.rs 注入。阶段 2 的密钥销毁实际执行、阶段 3b 的附件与审计证据物理删除、阶段 13 的扩展对象物理删除路径一律指向该实现，各阶段不自建第二条销毁路径。
+端口由阶段 3b 在 crates/platform/file/src/port/disposal.rs 定义，含 DisposalRequest、DisposalReceipt 与 DisposalPort 三项，处置受理路由亦由阶段 3b 注册。本阶段提供其唯一实现 OpsDisposalService，位于 crates/platform/obs/src/disposal.rs，在 apps/core-server/src/wiring/ 与 apps/job-worker/src/wiring/ 两个目录内注入。阶段 3b 至阶段 13 之间该端口不注入任何实现，物理删除请求经该受理路由以 PLATFORM.DISPOSAL.NOT_DELIVERED 直接拒绝，category 取 BUSINESS_CONFLICT，HTTP 409，不可重试，同时有一条 kind 取 PORT_NOT_IMPLEMENTED 且 subject 取 DisposalPort 的降级窗口持续活动，本阶段注入实现后关闭该窗口；该错误码随阶段 3b 的受理路由登记，不在本文第 5 节的本阶段新增错误码清单内。阶段 2 的密钥销毁实际执行、阶段 3b 的附件与审计证据物理删除、阶段 13 的扩展对象物理删除路径一律指向该实现，各阶段不自建第二条销毁路径。
 
 触发面。只由 ops 专用路径与 ops 专用账号触发，不在 /api/v1/platform 前缀下对外暴露，因此不进入第 5 节端点表。
 
@@ -351,7 +351,7 @@ ep_ops_ro 授予上述五个视图的 SELECT，不授予任何基表。ep_app_rw
 
 | 方法与路径 | 请求 | 响应 data | 主要错误码 | 幂等 | 权限 |
 |---|---|---|---|---|---|
-| GET /degradation-windows | filter[kind]、filter[state]=open\|closed、filter[scope_legal_entity_id]、分页排序 | 台账条目数组，含 kind、scope、basis、opened_at、closed_at、closing_condition、is_suppressible、suppressed_until | 无 | 读 | 三类角色 |
+| GET /degradation-windows | filter[kind]、filter[subject]、filter[state]=open\|closed、filter[scope_legal_entity_id]、分页排序 | 台账条目数组，含 kind、subject、scope、basis、opened_at、closed_at、closing_condition、is_suppressible、suppressed_until | 无 | 读 | 三类角色 |
 | GET /degradation-windows/{id} | 无 | 单条含 detail | PLATFORM.AUTHZ.NOT_FOUND_OR_DENIED | 读 | 三类角色 |
 | POST /degradation-windows/{id}/actions/suppress | { until_at, reason } | 抑制结果 | PLATFORM.DEGRADATION_WINDOW.NOT_SUPPRESSIBLE 409、PLATFORM.DEGRADATION_WINDOW.ALREADY_CLOSED 409、PLATFORM.CONCURRENCY.STALE_VERSION 409 | 键相同重放返回首次结果 | 运维管理员与安全管理员 |
 | POST /degradation-windows/{id}/actions/unsuppress | { reason } | 同上 | 同上 | 同上 | 同上 |
@@ -395,7 +395,7 @@ PLATFORM.DEGRADATION_WINDOW.NOT_SUPPRESSIBLE、PLATFORM.DEGRADATION_WINDOW.ALREA
 
 事务边界。上报受理器一个报文一个事务，事务内完成三件事：写对应 platform_ops 表、写 platform_audit.audit_events、写 platform_msg.outbox_events。台账开闭与状态机迁移在同一事务内完成，不拆分。隔离级别 READ COMMITTED。事务内禁止外部调用与文件正文读写，落点写出全部发生在写出进程内且在事务之外。
 
-锁策略。archive_channel 与 backup_runner_slot 两个单行表的更新一律 SELECT ... FOR UPDATE 加乐观锁 row_version，受影响行数为 0 判版本冲突并返回 PLATFORM.CONCURRENCY.STALE_VERSION。degradation_windows 的开窗依赖阶段 2 交付的 ux_degradation_windows_kind_scope_closed 唯一约束，重复开窗触发唯一冲突后转为读取既有活动条目并返回，即开窗天然幂等。台账的开与闭一律经阶段 2 在 ep-platform-obs 交付的 DegradationLedger 的 open 与 close，本阶段扩展其 kind 取值与实现，不另建第二条写入路径。
+锁策略。archive_channel 与 backup_runner_slot 两个单行表的更新一律 SELECT ... FOR UPDATE 加乐观锁 row_version，受影响行数为 0 判版本冲突并返回 PLATFORM.CONCURRENCY.STALE_VERSION。degradation_windows 的开窗依赖阶段 2 交付的 ux_degradation_windows_kind_scope_closed 唯一约束，其列组为 kind、subject、两个作用域列与开窗状态，同一 kind 下 subject 不同的两条窗口互不冲突；重复开窗触发唯一冲突后转为读取既有活动条目并返回，即开窗天然幂等。台账的开与闭一律经阶段 2 在 ep-platform-obs 交付的 DegradationLedger 的 open 与 close，本阶段扩展其 kind 取值与实现，不另建第二条写入路径。
 
 幂等键。IPC 报文以 report_id 唯一约束幂等；HTTP 写请求以 Idempotency-Key 按基线第 5.4 节幂等；备份与写出任务以 period_seq 与 backup_set_id 幂等，重复触发返回既有结果。
 
@@ -496,7 +496,7 @@ PLATFORM.DEGRADATION_WINDOW.NOT_SUPPRESSIBLE、PLATFORM.DEGRADATION_WINDOW.ALREA
 13. 时间点恢复：把库恢复到指定 R，验证数据一致。
 14. core-server 不可用期间写出继续、上报进 spool、恢复后补写不重不漏。
 15. 混沌与故障注入六类：依赖服务超时、连接池与内存资源耗尽、消息积压、系统时钟漂移、磁盘写满、进程崩溃后重启恢复；预期行为为核心交易按第 15.1 章返回可重试或明确失败、不产生数据不一致、故障移除后 5 分钟内自愈；进程崩溃场景另验证重启后未完成任务自动恢复、已确认事务零丢失。
-16. 台账十五类 kind 的开闭各一条，其中 RECON_RUN_UNFINISHED 与 PERIOD_CLOSE_ACCEPTANCE_REJECTED 两类由 ep-platform-recon 与 ledger 侧触发，本阶段只验证受理与展示；WRITER_NOT_IN_SERVICE 一类按写出进程停止与连续两周期无上报两条触发路径各验一次。
+16. 台账十八类 kind 的开闭各一条，其中 RECON_RUN_UNFINISHED 与 PERIOD_CLOSE_ACCEPTANCE_REJECTED 两类由 ep-platform-recon 与 ledger 侧触发，PORT_NOT_IMPLEMENTED 一类由各调用方按端口开闭并以 subject 区分、本阶段以 DisposalPort 一支为样本，AUTHZ_SNAPSHOT_CHECKSUM_MISMATCH 与 CUSTOM_OBJECT_DDL_INCONSISTENT 两类分别由阶段 4 与阶段 13 触发，这五类本阶段只验证受理与展示；WRITER_NOT_IN_SERVICE 一类按写出进程停止与连续两周期无上报两条触发路径各验一次。另验一次同一 kind 下 subject 不同的两条窗口同时活动，唯一约束不误判为冲突。
 
 #### 8.4 端到端与演练
 
@@ -540,7 +540,7 @@ ep-release-gate 逐项判定，判定结论进入发布证据包，任一为否�
 | RG-CI-PROBE-ABSENT | 发布制品的 cargo tree -e features 输出中不含 ci-probe，且镜像内不含符号 api_v1_system_echo | 阶段 1 的 ci-probe feature 门控 |
 | RG-TOOLS-EXCLUDED | SBOM 中不含 ep-bench 与 ep-release-gate 两个包名 | 本阶段 |
 | RG-RLS-MATRIX-GREEN | tests/rls_matrix 的 32 组矩阵全部通过，另含两个复制角色的五个入口借用测试 | 阶段 4 |
-| RG-UNWIRED-ABSENT | 发布制品的 apps/core-server/src/wiring.rs 与 apps/job-worker/src/wiring.rs 中不出现 Noop、Stub、Fake、Dummy 与 Unwired 五类前缀的注入行，且无返回固定业务分支的占位类型 | 本阶段 |
+| RG-UNWIRED-ABSENT | 发布制品源码树中 apps/core-server/src/wiring/ 与 apps/job-worker/src/wiring/ 两个目录下的全部文件中不出现 Noop、Stub、Fake、Dummy 四类前缀的实现类型或注入行，且无返回固定业务分支的占位类型 | 阶段 1 的 archcheck 规则 unwired-absent |
 
 ---
 
@@ -549,9 +549,9 @@ ep-release-gate 逐项判定，判定结论进入发布证据包，任一为否�
 全部为可客观判定项。
 
 1. archive-writer、backup-writer、ops-agent 三个进程在 BC-1 基线组合上以 --check 通过本进程适用的全部已注册自检项，两个写出进程对 SQL 类自检项一律标 NotApplicable，报告中无 FAILED 也无 DEGRADED；并在生产配置下连续运行不少于 7 个自然日，期间三类写出周期无一次超过 15 分钟。
-2. 第 3 节的 17 张表（其中 degradation_windows 由阶段 2 建立，本阶段只做取值、约束与索引扩展）、5 个视图与 20 个迁移文件全部落库，每个迁移带 rollback 段，refinery 历史表与二进制期望版本一致。
+2. 第 3 节的 17 张表（其中 degradation_windows 由阶段 2 建立，本阶段只做取值、约束与索引扩展）、5 个视图与 20 个迁移文件全部落库，每个迁移带 rollback 段，platform_core.schema_history 与二进制期望版本一致。
 3. 归档通道状态机的八条迁移在集成测试中逐条通过，落点可写与不可写两支各完整走通一次，暂停态在落点恢复后自动转入重建且无需人工发起。
-4. 台账十五类 kind 的开闭各至少一条实证记录；OFFSITE_SINK_NOT_CONFIGURED 这一类不可关闭告警在管理员尝试关闭时被拒并写审计；其余类含 WRITER_NOT_IN_SERVICE 的抑制与静音记名记时写入审计。
+4. 台账十八类 kind 的开闭各至少一条实证记录；OFFSITE_SINK_NOT_CONFIGURED 这一类不可关闭告警在管理员尝试关闭时被拒并写审计；其余类含 WRITER_NOT_IN_SERVICE 的抑制与静音记名记时写入审计；同一 kind 下 subject 不同的两条窗口可同时活动且各自独立开闭。
 5. v_rpo_status 在七种依据下各输出一次正确取值，且在任一降级、未达成或承诺不成立状态下均未输出 900。
 6. 落点上的全部写出对象为密文；无恢复材料时无法从副本读出任何业务数据，含未被字段级加密的明文业务表内容；以写出组件系统账户之外的身份读取落点被拒绝并告警；落点访问控制核对结论与实测证据已写入部署记录。
 7. 两个专用角色的越权测试在 tests/rls_matrix 目标内全部通过，断言取阶段 2 提供的 assert_replication_role_containment，本阶段无同名函数的第二份实现；三项遏制手段任一缺失时按降级状态启动并持续告警，两个写出进程照常投入运行，连续归档与每日全量备份不停止，交付说明中已按第 21.21 章披露这三项遏制都不阻止本机特权主体这条路径。
@@ -564,10 +564,10 @@ ep-release-gate 逐项判定，判定结论进入发布证据包，任一为否�
 14. 供应链安全五项齐备：SBOM、构建来源证明、可复现构建两次比对一致、离线依赖仓库、客户侧验签工具。
 15. ep-release-gate 对第 22 章十五条与第 17.2 章通过标准逐条产出判定结论，第 8.7 节的 RG-CI-PROBE-ABSENT、RG-TOOLS-EXCLUDED、RG-RLS-MATRIX-GREEN 与 RG-UNWIRED-ABSENT 四个门禁项全部为通过，发布证据包组装完成，含认证报告、演练报告、台账快照与暴露窗口记录、缺陷台账、渗透测试结论、等保自评结论、各业务阶段四端界面交付情况汇总矩阵、签字验收记录。
 16. PRD 第 11.11 节八条诚实披露文本已进入交付说明与客户合同模板，并在产品界面可达处呈现；交付、认证与验收材料经文本检查未出现高可用、零停机、自动切换、受控读取、法人隔离、等效、已满足、优先级隔离、资源隔离、性能保证十项禁用措辞。
-17. OpsDisposalService 已实现阶段 3b 定义的 DisposalPort 并在 core-server 与 job-worker 两处 wiring 首次注入，阶段 3b 至 13 的两处 wiring 内均未出现该端口的任何替身、处置路由亦未注册；AttachmentObjects、KeyDomain、BackupSets、ExtTables 四类处置范围各有一次完整执行记录，销毁证明对象与审计条目齐备，落点侧历史副本在同一次处置内一并覆盖；缺审批链、缺第二审批人或缺重新认证凭证时执行被拒并写审计。
+17. OpsDisposalService 已实现阶段 3b 定义的 DisposalPort 并在 core-server 与 job-worker 两个 wiring 目录内首次注入，阶段 3b 至阶段 13 的两个目录内均未出现该端口的任何替身与任何注入行；其间的物理删除请求经阶段 3b 注册的受理路由以 PLATFORM.DISPOSAL.NOT_DELIVERED 与 HTTP 409 被拒且不可重试，subject 取 DisposalPort 的 PORT_NOT_IMPLEMENTED 降级窗口全程活动并已在本阶段注入后关闭，该窗口的开闭两端各有一条实证记录；AttachmentObjects、KeyDomain、BackupSets、ExtTables 四类处置范围各有一次完整执行记录，销毁证明对象与审计条目齐备，落点侧历史副本在同一次处置内一并覆盖；缺审批链、缺第二审批人或缺重新认证凭证时执行被拒并写审计。
 18. 电子签章的认证清单已补齐：crates/adapter/esign/tests/contract_sandbox.rs 对真实沙箱的一次通过记录已归档，或已提交规格附录 B 允许的等效验证证据。
 19. 本阶段未注册任何新指标，docs/metrics-catalog.md 中无本阶段新增条目；ep_degradation_windows_open 由阶段 2 注册并填充，本阶段只扩展其 kind 取值；ep_db_pool_connections 与 ep_db_statement_duration_seconds 由阶段 1 注册，本阶段未重复登记；原裁定 C-22 的 ep_replication_crosscheck_age_seconds 已撤销，阶段 2 与本阶段均不登记。
-20. platform_ops.degradation_windows 的 kind 取值已由阶段 2 的 2 个扩展至 15 个，其中阶段 2 的 WRITER_ROLE_CONTAINMENT_MISSING 已改名为 WRITER_NOT_IN_SERVICE 并改按客观事实触发、已回写阶段 2 计划，两条 CHECK 与三个索引已追加，阶段 2 交付的 ux_degradation_windows_kind_scope_closed 与 ck_degradation_windows_open_order 未被改写。
+20. platform_ops.degradation_windows 的 kind 取值已由阶段 2 的 3 个扩展至 18 个，两条 CHECK 与三个索引已追加，本阶段未对阶段 2 已交付的任何取值改名、也未增删该表的任何列；阶段 2 交付的 subject 列、ux_degradation_windows_kind_scope_closed 与 ck_degradation_windows_open_order 未被本阶段改写。
 21. 本阶段全部 /api/v1/ 路由的能力域码与动作类别常量已按 A-20 声明在 crates/platform/obs/src/capability.rs，能力域一律取 foundation::CapabilityDomain::PlatformAdminLowcodeOps，动作类别取 foundation::ActionClass，xtask configdoc 通过。
 
 ---

@@ -55,7 +55,7 @@ crate 命名前缀统一为 `ep-`，crate 目录名不带前缀，`Cargo.toml` �
 | ep-platform-file | 附件对象元数据、版本、上传流水线状态机、正文引用。 |
 | ep-platform-recon | 内部对账与强制不变量校验的语句集、分批与快照口径、差异事项模型。 |
 | ep-platform-obs | 日志字段约定、指标注册表、追踪上下文、运维中心台账模型。 |
-| ep-platform-runtime | 进程生命周期状态机、分层配置加载、第 7.3 节的 `SelfCheckRegistry`、健康与就绪端点，以及以 trait 表达的服务器骨架。具体 HTTP 与 IPC 传输实现分别留在对应的 ep-adapter-*，由 apps 在 wiring.rs 注入，本 crate 不依赖任何 ep-adapter-*。 |
+| ep-platform-runtime | 进程生命周期状态机、分层配置加载、第 7.3 节的 `SelfCheckRegistry`、健康与就绪端点，以及以 trait 表达的服务器骨架。具体 HTTP 与 IPC 传输实现分别留在对应的 ep-adapter-*，由 apps 在 `apps/<proc>/src/wiring/` 目录下注入，本 crate 不依赖任何 ep-adapter-*。 |
 
 本表是平台底座 crate 的现状记录，不是冻结清单。archcheck 不再对 crate 清单逐项比对，阶段 1 退出条件第 2 条中的该项断言撤销；crate 的增删走普通提交，只受第 1.3 节依赖方向七条禁止项约束，该七条仍由 archcheck 逐条断言并配负样例。
 
@@ -228,6 +228,8 @@ pub enum ActionClass { Read, Write, Submit, Approve, Export }
 ## 2. 进程清单
 
 八个进程，与规格第 4.3 章的 apps 清单一一对应。新增或合并进程须先修订本节并写明其信任边界或资源理由，不设不得新增也不得合并的封条。
+
+本节的八个进程是规格第 4.3 章 apps 清单的固定项。其中 plugin-host 承载规格第 9.3 章首版服务端唯一的扩展形态，即签名 WASM Component，并与第 9.1 章复杂计算调用受限 WASM 函数一项对应，规格第 5.7 章延期目录不含服务端 WASM 插件。任何阶段计划不得删除该进程及其系统账户 ep-plugin、其 cgroup 分片 app-plugin.slice、其套接字 `/run/ep/ipc/plugin.sock` 与第 1.2 节的 ep-adapter-wasm crate；删除须先修订规格第 4.3、7.7、9.3、13.1 四章与附录 A.4 并经产品负责人批准，在此之前七进程是被禁止的第二套取值。
 
 | 进程 | 职责 | 监听 | 数据库连接 | 系统账户 | cgroup slice |
 |---|---|---|---|---|---|
@@ -715,7 +717,7 @@ let result = uow.transact(ctx, |tx| async move {
 - 一切 IO 表达为 domain/port 中的 trait，实现在 adapter。trait 方法只用 domain 类型与 foundation 类型，不得出现数据库行类型与 HTTP 类型。
 - application 负责四件事且只负责这四件事：授权判定的调用、事务边界、领域调用的编排、审计与 Outbox 的写入。业务规则不得写在 application，查询组装不得写在 domain。
 - adapter 负责映射与协议，不得包含业务分支。凡是 adapter 里出现 `if` 判断业务状态，即为分层错误。
-- 装配只在 `apps/<proc>/src/wiring/` 目录下发生，按模块一个文件，构造具体实现并注入 trait 对象。该目录之外任何地方不得 `use ep_adapter_db_pg::...`，该目录之内不得出现业务分支。`xtask archcheck` 另断言该目录下不出现任何以 Noop、Stub、Fake、Dummy 为前缀的实现类型，出现即构建失败。
+- 装配只在 `apps/<proc>/src/wiring/` 目录下发生，按模块一个文件，构造具体实现并注入 trait 对象。该目录之外任何地方不得 `use ep_adapter_db_pg::...`，该目录之内不得出现业务分支。`xtask archcheck` 另断言 `apps/core-server/src/wiring/` 与 `apps/job-worker/src/wiring/` 两个目录下的全部文件中不出现任何以 Noop、Stub、Fake、Dummy 为前缀的实现类型或注入行，出现即构建失败。该规则名为 unwired-absent，由阶段 1 随 `xtask` 一并交付，在阶段 1 的 archcheck 规则段与退出条件中各单列一条，不并入依赖方向七条禁止项，并配一个故意违反的负样例，负样例构建必须失败。前缀集合就是这四类，`Unwired` 一名撤销；阶段 14 的发布门禁项 RG-UNWIRED-ABSENT 的扫描面同为发布制品源码树中这两个目录下的全部文件，其判据提供方一列为阶段 1 的该 archcheck 规则。各阶段计划中出现的两个 `wiring.rs` 一律指这两个目录，不逐处改写。
 
 ## 11. 本基线一并定死的若干全局取值
 

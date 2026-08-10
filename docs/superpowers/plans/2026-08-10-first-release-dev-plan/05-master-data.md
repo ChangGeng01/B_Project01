@@ -1,6 +1,6 @@
 ## 阶段 5 主数据
 
-本阶段交付客户、供应商、物料、产品四类档案，与之绑定的价目表、档案编码规则的使用侧、启用停用、批量导入导出。历史成交资料带出与客户 360 视图不在本阶段承载，前者折叠进阶段 11 的受治理只读数据集，后者改由桌面端按能力矩阵组合各模块既有端点，两处删除的完整理由见第 4.12 节与第 4.14 节。本阶段不产生任何会计凭证、不写库存数量账与库存金额账、不触发任何账务事件，规格第 5.2 章财务规则条目的事件-分录表在本阶段没有适用条目，本阶段只保证被这些规则用作分组键的物料、产品、仓库以外的档案标识稳定且冻结规则可执行。
+本阶段交付客户、供应商、物料、产品四类档案，与之绑定的价目表、历史成交资料带出、档案编码规则的使用侧、启用停用、批量导入导出，以及客户 360 视图的数据基础。本阶段不产生任何会计凭证、不写库存数量账与库存金额账、不触发任何账务事件，规格第 5.2 章财务规则条目的事件-分录表在本阶段没有适用条目，本阶段只保证被这些规则用作分组键的物料、产品、仓库以外的档案标识稳定且冻结规则可执行。
 
 本阶段严格照抄共享技术基线的命名、类型、封套、分页、幂等、错误分类与依赖方向。基线未覆盖而本阶段必须取值的事项集中在第 12 节与第 13 节，正文中逐处标注。
 
@@ -16,28 +16,28 @@
 - 组织、法人、部门、岗位、用户账号属 platform 侧，本阶段只读引用：集团与组织架构取 platform_core.enterprise_groups、platform_core.organizations、platform_core.departments、platform_core.positions 与 platform_core.department_closures 五张表，法人清单经 ep-platform-tenancy 的 LegalEntityDirectory::list_active 读取，部门子树经 DepartmentClosureQuery::descendant_ids 读取，五张表与两个契约由阶段 2 按裁定 A-04 交付。
 - 价格权限校验、折扣与折扣审批属销售阶段，本阶段只交付价目表本体与取价命中，并对外暴露取价端口。
 - 供应商门户的入口、会话与脱敏投影属门户阶段，本阶段只对外暴露供应商自维护变更申请的受控命令端口 ep_contract_mdm::SupplierSelfServiceCommand，名字按裁定 B-10 固定，不另起第二套措辞。
-- 客户 360 视图不设服务端聚合。本阶段不建 crm 侧 crate、不定义区块注册契约、不提供 /customer-360 端点，客户 360 由桌面端按规格第 6.2 章能力矩阵组合各模块既有的客户详情与列表端点得到，本阶段只保证 GET /api/v1/mdm/customers/{id} 返回档案区块所需字段，详见第 4.14 节。
+- 客户 360 视图中来自合同、订单、回款、投诉、设备与服务记录的区块，属各自模块阶段，本阶段只交付区块注册契约 ep_contract_crm::Customer360SectionProvider 与视图端点 GET /api/v1/crm/customers/{id}/customer-360 的骨架；端点与契约按裁定 C-09 与阶段 12 共用，阶段 12 只扩充区块不新增路径。
 - 历史数据迁移导入走规格第 7.10 章的迁移接口，与本阶段的日常批量导入是两条互不混用的通道；本阶段只交付日常批量导入。按裁定 A-24 不设独立数据迁移阶段，期初与历史数据导入通道分别落在阶段 9a 的总账期初余额批次、阶段 10 的应收应付预收预付与资金账户期初、阶段 8 的库存期初，四类档案自身不设期初通道。
 
 ### 0.1 本阶段在 T0 贯通线中的最小切片
 
-T0 是阶段 4 结束后、本阶段全量开工之前插入的一条最薄贯通线，不新增任何范围，只把阶段 5、6、9a、10、11 各自的最小切片先接成一条可运行的骨架，判据是一条合同从建单走到管理层看到一个数。本阶段向 T0 贡献下列内容，且只贡献这些。
+T0 是固定阶段链 1 → 2 → 3a → 4 → 3b-1 → T0 → 5 → 9a → 8 → 6 → 7 → 10 → 11 → 9b → 14 上的第六环，插在阶段 3b-1 与本阶段之间，其前置为阶段 1、2、3a、4 与 3b-1，本阶段的硬依赖因此为 1、2、3a、4、3b-1 与 T0；阶段 3b-2 不在这条链上，其各项按下游拉动点排在 T0 之后。T0 不新增任何范围，只把阶段 5、6、9a、10、11 各自的最小切片先接成一条可运行的骨架，判据是一条合同从建单走到管理层看到一个数。本阶段向 T0 贡献下列内容，且只贡献这些，其工作量从本阶段本轮工作量中扣除，不另计为一个新增阶段。
 
-- 第 3.1 节迁移表中的第 1、2、3、15 号四个文件与第 23 号 RLS 迁移中对应的四条策略，即 mdm.uoms、mdm.classification_items、mdm.customers、mdm.products 四张表。其余 26 张表不在 T0 内。
+- 第 3.1 节迁移表中的第 1 至 5 号五个文件，即 mdm.uoms、mdm.classification_items、mdm.customers、mdm.products 四张表的建表迁移，与只对这四张表启用并强制行级安全的第 5 号迁移。五个文件一律整文件执行，不存在只执行一个文件中部分语句的形态；其余 26 张表与其余迁移文件不在 T0 内。
 - 一条计量单位、一条 CUSTOMER_TYPE 取值、一条 PRODUCT_CATEGORY 取值、一个客户、一个产品，由 ep-datagen 的最小样本产出，不用规格附录 A.3 的 scale 数据集。
 - 第 5.1 节通用端点中客户与产品两类资源的建档、提交审批与查询，以及第 5.2 节变更申请端点中 CREATION 一种 change_kind 走完单节点审批链并应用生效的路径。FIELD_CHANGE、DEACTIVATION 与 REACTIVATION 三种 change_kind 不在 T0 内。
 - MasterDataLookup 的 resolve_reference 与 assert_referenceable 两个方法，供合同行与订单行引用客户与产品。load_version 不在 T0 内。
 - 桌面端 clients/desktop/src/modules/mdm 中客户与产品两个建档界面。移动端与其余两端不在 T0 内。
 
-T0 不要求分支覆盖，不要求供应商、物料、价目表、取价、导入导出、全文检索、导出脱敏与四端矩阵，不要求第 8.5 节的任何性能度量项。T0 通过后，本节以下全部内容改为在这条已贯通的骨架上加厚：第 3 节其余 26 张表、第 4 节其余算法、第 5 节其余端点、第 8 节全部测试与基准数据集、第 9 节全部退出条件仍按原样交付，只是不再承担首次贯通的职责。T0 未通过时本阶段不进入全量开工。
+T0 不要求分支覆盖，不要求供应商、物料、价目表、取价、导入导出、全文检索、导出脱敏与四端矩阵，不要求第 8.5 节的任何性能度量项。税率字典 invoice.tax_rate_options 的建表与种子两条迁移及 ep_contract_invoice::TaxRateOptionQuery 的两个方法属阶段 10 的 T0 切片第五项，由阶段 10 在 T0 期间交付，本阶段既不贡献也不代做，也不提供任何税率桩。T0 通过后，本节以下全部内容改为在这条已贯通的骨架上加厚：第 3 节其余 26 张表、第 4 节其余算法、第 5 节其余端点、第 8 节全部测试与基准数据集、第 9 节全部退出条件仍按原样交付，只是不再承担首次贯通的职责。T0 未通过时本阶段不进入全量开工。
 
 ### 1 交付物清单
 
 本阶段结束时下列内容可运行、可测试、可演示。
 
-1. 六个新增业务 crate 编译通过并接入依赖方向自检脚本：ep-contract-mdm、ep-domain-mdm、ep-app-mdm、ep-contract-cpq、ep-domain-cpq、ep-app-cpq，以及按裁定 A-08 归本阶段的 ep-adapter-doc。原列的 ep-contract-crm 与 ep-app-crm 两个 crate 删除，理由见第 4.14 节。
+1. 六个新增业务 crate 编译通过并接入依赖方向自检脚本：ep-contract-mdm、ep-domain-mdm、ep-app-mdm、ep-contract-cpq、ep-domain-cpq、ep-app-cpq，另加 ep-contract-crm 与 ep-app-crm 两个仅承载客户 360 视图骨架的 crate，以及按裁定 A-08 归本阶段的 ep-adapter-doc。
 2. mdm 与 cpq 两个 schema 的全部迁移可离线执行、可重复执行、可按文件头的回退说明逆向，迁移历史统一落在全局唯一的 platform_core.schema_history。
-3. core-server 暴露本阶段的全部同步端点，四类档案的建档、提交、撤回、作废、变更申请、审批结论应用、停用、启用、查询、版本查询、引用校验，价目表的建档与取价，导入批次与导出任务的发起与回执。其中客户与产品两类档案的建档、提交、查询与 CREATION 变更申请属第 0.1 节的 T0 切片，先于其余端点交付。
+3. core-server 暴露本阶段的全部同步端点，四类档案的建档、提交、撤回、作废、变更申请、审批结论应用、停用、启用、查询、版本查询、引用校验，价目表的建档与取价，历史成交资料查询，导入批次与导出任务的发起与回执，客户 360 概览。其中客户与产品两类档案的建档、提交、查询与 CREATION 变更申请属第 0.1 节的 T0 切片，先于其余端点交付。
 4. job-worker 承载本阶段的五类后台任务：审批结论消费、导入文件解析与草稿落库、导出文件渲染、价目表失效日扫描、供应商资质到期日扫描；另承载档案变更事件到内置搜索索引的写入，写入经 ep_foundation::port::search::SearchIndexPort，投影结构取 ep_foundation::port::search::SearchDocument，端口与适配实现按裁定 A-07 分别由阶段 1 与阶段 3b 提供，本阶段只提供投影函数。
 5. 一套可运行的档案生命周期：草稿到待审批到已生效启用到已生效停用到再启用，全程经变更申请单承载并留版本快照，全程写审计。
 6. 一套可运行的取价带出：给定法人、客户、产品、计量单位与单据日期，返回零命中、单命中、多命中三种结果，多命中时显式要求人工选择。
@@ -48,9 +48,9 @@ T0 不要求分支覆盖，不要求供应商、物料、价目表、取价、�
 11. 规格附录 A.1 中归属本阶段的四个度量项的 EXPLAIN 证据与 P95 实测记录：客户列表按条件过滤并翻页、客户详情打开、附件列表加载、全文检索返回首页结果，另加销售订单表单打开并带出默认值这一项中的取价子段实测。
 12. crates/foundation/src/port/doc.rs 按裁定 A-08 补齐 SheetSpec、ColumnSpec、CellValue、PdfSource、PrintLayout 五个类型与 SpreadsheetPort、DocTemplatePort、PdfRenderPort 三个 trait，并交付 ep-adapter-doc 的实现，覆盖导入模板生成、错误行清单渲染、XLSX 读写三项用途。
 13. mdm.v_customers_dataset、mdm.v_products_dataset、mdm.v_materials_dataset 三个受治理数据集视图已发布并授予 ep_analyst_ro，dataset code 依次为 mdm_customers、mdm_products、mdm_materials，grain 均为 DOCUMENT，按裁定 A-18 交付。
-14. 本模块的四端界面：clients/desktop/src/modules/mdm、clients/desktop/src/modules/cpq 与 clients/mobile/src/modules/mdm、clients/mobile/src/modules/cpq 四个目录，按裁定 A-23 交付；其中桌面端的客户与产品两个建档界面属第 0.1 节的 T0 切片，先于其余界面交付。crm 侧两个目录不再交付。
-15. 能力域码与动作类别常量：crates/contract/mdm/src/capability.rs 与 crates/contract/cpq/src/capability.rs 中为每个用例声明一对 <USECASE_SCREAMING>_DOMAIN 与 <USECASE_SCREAMING>_ACTION 常量，取值来自阶段 1 冻结的 foundation::CapabilityDomain 与 foundation::ActionClass，xtask configdoc 通过。
-16. 引用计数与历史成交资料不在本阶段承载：MasterReferenceCounterRegistry 与 TradeHistoryProviderRegistry 两个注册表，连同 MasterReferenceCounter、SalesTradeHistoryProvider、PurchaseTradeHistoryProvider 三个 trait 与十一份反向注入的实现，一并删除，两项内容折叠进阶段 11 的受治理只读数据集，本阶段不留注册位。
+14. 本模块的四端界面：clients/desktop/src/modules/mdm、clients/desktop/src/modules/cpq、clients/desktop/src/modules/crm 与 clients/mobile/src/modules/mdm、clients/mobile/src/modules/cpq、clients/mobile/src/modules/crm 六个目录，按裁定 A-23 交付；其中桌面端的客户与产品两个建档界面属第 0.1 节的 T0 切片，先于其余界面交付。
+15. 能力域码与动作类别常量：crates/contract/mdm/src/capability.rs、crates/contract/cpq/src/capability.rs 与 crates/contract/crm/src/capability.rs 中为每个用例声明一对 <USECASE_SCREAMING>_DOMAIN 与 <USECASE_SCREAMING>_ACTION 常量，取值来自阶段 1 冻结的 foundation::CapabilityDomain 与 foundation::ActionClass，xtask configdoc 通过。
+16. ep-contract-mdm 的两个注册表 MasterReferenceCounterRegistry 与 TradeHistoryProviderRegistry 及其聚合逻辑可运行，注册项由阶段 6、7、8、10、12 按裁定 A-15 反向注入。
 
 ### 2 crate 与进程归属
 
@@ -60,13 +60,15 @@ T0 不要求分支覆盖，不要求供应商、物料、价目表、取价、�
 |---|---|---|---|
 | ep-contract-mdm | crates/contract/mdm | 四类档案与两类辅助资料的命令、查询、事件类型与 DTO；对外的四个端口 trait；供其他模块调用的引用校验与版本读取 trait | ep-foundation |
 | ep-domain-mdm | crates/domain/mdm | 四类档案聚合、变更申请聚合、值对象、状态机、冻结规则、唯一性规则、编码规则、版本差异计算 | ep-foundation、ep-contract-mdm |
-| ep-app-mdm | crates/application/mdm | 全部用例、事务边界、授权调用、审计与 Outbox 写入、导入导出编排 | ep-foundation、ep-platform-*、ep-domain-mdm、ep-contract-* |
+| ep-app-mdm | crates/application/mdm | 全部用例、事务边界、授权调用、审计与 Outbox 写入、导入导出编排、历史成交资料聚合 | ep-foundation、ep-platform-*、ep-domain-mdm、ep-contract-* |
 | ep-contract-cpq | crates/contract/cpq | 价目表命令与查询、取价端口 PriceResolver、取价结果 DTO | ep-foundation |
 | ep-domain-cpq | crates/domain/cpq | 价目表聚合、明细行值对象、状态机、生效期与适用范围规则、取价命中规则 | ep-foundation、ep-contract-cpq |
 | ep-app-cpq | crates/application/cpq | 价目表用例、取价用例、失效扫描用例 | ep-foundation、ep-platform-*、ep-domain-cpq、ep-contract-mdm、ep-contract-cpq |
+| ep-contract-crm | crates/contract/crm | 客户 360 区块注册契约 Customer360SectionProvider 与区块 DTO，按裁定 C-09 由阶段 12 扩充，不新增第二套契约 | ep-foundation |
+| ep-app-crm | crates/application/crm | 客户 360 查询用例，组装 mdm 档案区块与已注册的其他区块 | ep-foundation、ep-platform-*、ep-contract-crm、ep-contract-mdm |
 | ep-adapter-doc | crates/adapter/doc | SpreadsheetPort、DocTemplatePort、PdfRenderPort 三个端口的实现，覆盖导入模板生成、错误行清单渲染与 XLSX 读写；按裁定 A-08 本阶段是该 crate 的唯一提供方 | ep-foundation |
 
-本阶段不新增任何 crm 侧 crate。客户 360 视图既无自有聚合也无自有不变量，服务端连组装逻辑也不保留，因此 crates/contract/crm 与 crates/application/crm 一并不建，删除的完整理由见第 4.14 节。
+本阶段不新增 crates/domain/crm，理由是首版客户 360 视图没有自有聚合与自有不变量，只有组装逻辑，建立空领域 crate 会制造无内容的分层。
 
 #### 2.2 改动的既有 crate
 
@@ -75,7 +77,7 @@ T0 不要求分支覆盖，不要求供应商、物料、价目表、取价、�
 | ep-adapter-db-pg | 新增 mdm 与 cpq 两个仓储实现目录，按 schema 分文件，一个仓储只访问自己模块的 schema |
 | ep-foundation | 在阶段 1 建立的空文件 crates/foundation/src/port/doc.rs 中补齐 SheetSpec、ColumnSpec、CellValue、PdfSource、PrintLayout 五个类型与 SpreadsheetPort、DocTemplatePort、PdfRenderPort 三个 trait，签名按裁定 A-08 冻结，阶段 6、10、11、13 只在其上增量取值，不新增 trait |
 | ep-adapter-search | 按 ep_foundation::port::search::SearchDocument 结构定义四类档案与价目表的投影函数，写入方为 job-worker 的索引消费者；索引正文只含编码、名称、简称、规格型号、类别与备注，不含开票要素与银行信息 |
-| ep-testkit | 新增 CustomerBuilder、SupplierBuilder、MaterialBuilder、ProductBuilder、PriceListBuilder、ChangeRequestBuilder 六个构造器 |
+| ep-testkit | 新增 CustomerBuilder、SupplierBuilder、MaterialBuilder、ProductBuilder、PriceListBuilder、ChangeRequestBuilder 六个构造器与探针桩；探针桩只出现在测试装配中，不进入 apps/core-server/src/wiring/ 与 apps/job-worker/src/wiring/ 两个目录 |
 | ep-datagen | 新增主数据分片，按规格附录 A.3 取值产出 |
 | apps/core-server | 在 wiring.rs 中装配本阶段的仓储、端口实现与路由 |
 | apps/job-worker | 在 wiring.rs 中注册本阶段的五类后台任务与两类事件消费者 |
@@ -87,13 +89,13 @@ T0 不要求分支覆盖，不要求供应商、物料、价目表、取价、�
 | core-server | 本阶段全部 HTTP 端点、全部同步用例、全部业务事务、档案附件正文的读写转发 |
 | job-worker | 审批结论消费、导入解析、导出渲染、价目表失效扫描、资质到期扫描、搜索索引写入、本阶段事件的死信重投 |
 | portal-gateway | 无本阶段代码，门户阶段经 core-server 的 /api/v1/portal 受控能力 API 调用本阶段暴露的供应商自维护命令 |
-| 其余进程 | 无本阶段代码 |
+| integration-gateway、plugin-host、ops-agent、archive-writer、backup-writer | 无本阶段代码 |
 
 ### 3 数据库变更
 
 #### 3.1 总览与迁移顺序
 
-新增两个 schema 下的 30 张表，其中 mdm 27 张、cpq 3 张。schema 与角色已在基线第 3.1 节登记，本阶段不新增 schema，不新增角色。迁移执行顺序由单一全局 Runner 按文件版本号全序排定，本阶段 mdm 建表文件的版本号一律早于引用它们的 cpq 文件。
+新增两个 schema 下的 30 张表，其中 mdm 27 张、cpq 3 张。schema 与角色已在基线第 3.1 节登记，本阶段不新增 schema，不新增角色。迁移执行顺序由单一全局 Runner 按文件版本号全序排定，本阶段 mdm 建表文件的版本号一律早于引用它们的 cpq 文件，且被同 schema 内其他文件外键引用的表一律先建：mdm.materials 早于引用它的供应商价格与交期两张资料表，mdm.products 与 mdm.materials 早于产品物料关联表。属 T0 切片的四张表与只覆盖这四张表的行级安全迁移排在最前，构成第 1 至 5 号五个整文件，使 T0 段与全量段的版本号不交错。
 
 迁移文件按下表顺序，路径 db/migrations/mdm/ 与 db/migrations/cpq/，命名按基线第 3.9 节。每个文件只做一件事，每个文件头部带 -- rollback: 段。
 
@@ -102,44 +104,47 @@ T0 不要求分支覆盖，不要求供应商、物料、价目表、取价、�
 | 1 | V202609010900__mdm_create_uoms.sql | 建 mdm.uoms |
 | 2 | V202609010905__mdm_create_classification_items.sql | 建 mdm.classification_items |
 | 3 | V202609010910__mdm_create_customers.sql | 建 mdm.customers |
-| 4 | V202609010915__mdm_create_customer_contacts.sql | 建 mdm.customer_contacts |
-| 5 | V202609010920__mdm_create_customer_addresses.sql | 建 mdm.customer_addresses |
-| 6 | V202609010925__mdm_create_customer_invoice_profiles.sql | 建 mdm.customer_invoice_profiles |
-| 7 | V202609010930__mdm_create_suppliers.sql | 建 mdm.suppliers |
-| 8 | V202609010935__mdm_create_supplier_contacts.sql | 建 mdm.supplier_contacts |
-| 9 | V202609010940__mdm_create_supplier_payment_profiles.sql | 建 mdm.supplier_payment_profiles |
-| 10 | V202609010945__mdm_create_supplier_qualifications.sql | 建 mdm.supplier_qualifications |
-| 11 | V202609010950__mdm_create_supplier_price_records.sql | 建 mdm.supplier_price_records |
-| 12 | V202609010955__mdm_create_supplier_leadtime_records.sql | 建 mdm.supplier_leadtime_records |
-| 13 | V202609011000__mdm_create_supplier_risk_records.sql | 建 mdm.supplier_risk_records |
-| 14 | V202609011005__mdm_create_materials.sql | 建 mdm.materials |
-| 15 | V202609011010__mdm_create_products.sql | 建 mdm.products |
-| 16 | V202609011015__mdm_create_product_material_links.sql | 建 mdm.product_material_links |
-| 17 | V202609011020__mdm_create_change_requests.sql | 建 mdm.change_requests |
-| 18 | V202609011025__mdm_create_record_versions.sql | 建 mdm.record_versions |
-| 19 | V202609011030__mdm_create_import_batches.sql | 建 mdm.import_batches |
-| 20 | V202609011035__mdm_create_import_batch_rows.sql | 建 mdm.import_batch_rows |
-| 21 | V202609011040__mdm_create_export_jobs.sql | 建 mdm.export_jobs |
-| 22 | V202609011045__mdm_create_attachment_link_tables.sql | 建六张附件关联表 |
-| 23 | V202609011050__mdm_enable_rls.sql | 对 mdm 的 27 张表按基线第 3.8 节模板启用并强制行级安全 |
-| 24 | V202609011055__mdm_create_lookup_indexes.sql | 建本节声明的全部非基线索引，一律 CREATE INDEX CONCURRENTLY |
-| 25 | V202609011057__mdm_backfill_sensitive_field_registry.sql | 按裁定 A-28 向 platform_core.sensitive_field_registry 插入四行，逐行给全裁定 C-06 冻结的十一列取值，公共列另按基线第 4 节；四行 schema_name 均取 mdm，table_name 取 customer_invoice_profiles 与 supplier_payment_profiles，column_name 取 bank_name 与 bank_account_no 且为逻辑列名不带 _enc 后缀，category 均取 ACCOUNT，security_level 均取 30，is_field_encrypted 取 bank_account_no 两行为 true 与 bank_name 两行为 false，normalization 均取 TRIM_NFKC，release_ref 均取 MIGRATION 加本迁移版本号；bank_name 两行的 blind_index 取 NONE、blind_index_column 留空、mask_style 取 NONE，bank_account_no 两行的 blind_index 取 EXACT、blind_index_column 取 bank_account_no_bidx、mask_style 取 KEEP_LAST_4；created_by 取 foundation::SYSTEM_PRINCIPAL_ID |
-| 26 | V202609011058__mdm_create_dataset_views.sql | 按裁定 A-18 建 mdm.v_customers_dataset、mdm.v_products_dataset、mdm.v_materials_dataset 三个视图，每个视图带 legal_entity_id、security_level、data_scope_tags 三列，并在同一迁移中 GRANT SELECT TO ep_analyst_ro |
-| 27 | V202609011100__cpq_create_price_lists.sql | 建 cpq.price_lists |
-| 28 | V202609011105__cpq_create_price_list_lines.sql | 建 cpq.price_list_lines |
-| 29 | V202609011110__cpq_create_price_list_customer_links.sql | 建 cpq.price_list_customer_links |
-| 30 | V202609011115__cpq_enable_rls.sql | 对 cpq 的 3 张表启用并强制行级安全 |
-| 31 | V202609011120__cpq_create_lookup_indexes.sql | 建 cpq 的取价索引 |
+| 4 | V202609010912__mdm_create_products.sql | 建 mdm.products |
+| 5 | V202609010913__mdm_enable_rls_t0.sql | 对 mdm.uoms、mdm.classification_items、mdm.customers、mdm.products 四张表按基线第 3.8 节模板启用并强制行级安全，本文件是第 0.1 节 T0 切片的第五个文件 |
+| 6 | V202609010914__mdm_create_materials.sql | 建 mdm.materials |
+| 7 | V202609010915__mdm_create_customer_contacts.sql | 建 mdm.customer_contacts |
+| 8 | V202609010920__mdm_create_customer_addresses.sql | 建 mdm.customer_addresses |
+| 9 | V202609010925__mdm_create_customer_invoice_profiles.sql | 建 mdm.customer_invoice_profiles |
+| 10 | V202609010930__mdm_create_suppliers.sql | 建 mdm.suppliers |
+| 11 | V202609010935__mdm_create_supplier_contacts.sql | 建 mdm.supplier_contacts |
+| 12 | V202609010940__mdm_create_supplier_payment_profiles.sql | 建 mdm.supplier_payment_profiles |
+| 13 | V202609010945__mdm_create_supplier_qualifications.sql | 建 mdm.supplier_qualifications |
+| 14 | V202609010950__mdm_create_supplier_price_records.sql | 建 mdm.supplier_price_records |
+| 15 | V202609010955__mdm_create_supplier_leadtime_records.sql | 建 mdm.supplier_leadtime_records |
+| 16 | V202609011000__mdm_create_supplier_risk_records.sql | 建 mdm.supplier_risk_records |
+| 17 | V202609011015__mdm_create_product_material_links.sql | 建 mdm.product_material_links |
+| 18 | V202609011020__mdm_create_change_requests.sql | 建 mdm.change_requests |
+| 19 | V202609011025__mdm_create_record_versions.sql | 建 mdm.record_versions |
+| 20 | V202609011030__mdm_create_import_batches.sql | 建 mdm.import_batches |
+| 21 | V202609011035__mdm_create_import_batch_rows.sql | 建 mdm.import_batch_rows |
+| 22 | V202609011040__mdm_create_export_jobs.sql | 建 mdm.export_jobs |
+| 23 | V202609011045__mdm_create_attachment_link_tables.sql | 建六张附件关联表 |
+| 24 | V202609011050__mdm_enable_rls_rest.sql | 对 mdm 其余 23 张表按基线第 3.8 节模板启用并强制行级安全，与第 5 号合起来覆盖 mdm 全部 27 张表 |
+| 25 | V202609011055__mdm_create_lookup_indexes.sql | 建本节声明的全部非基线索引，一律 CREATE INDEX CONCURRENTLY |
+| 26 | V202609011057__mdm_backfill_sensitive_field_registry.sql | 按裁定 A-28 向 platform_core.sensitive_field_registry 插入四行，逐行给全裁定 C-06 冻结的十一列取值，公共列另按基线第 4 节；四行 schema_name 均取 mdm，table_name 取 customer_invoice_profiles 与 supplier_payment_profiles，column_name 取 bank_name 与 bank_account_no 且为逻辑列名不带 _enc 后缀，category 均取 ACCOUNT，security_level 均取 30，is_field_encrypted 取 bank_account_no 两行为 true 与 bank_name 两行为 false，normalization 均取 TRIM_NFKC，release_ref 均取 MIGRATION 加本迁移版本号；bank_name 两行的 blind_index 取 NONE、blind_index_column 留空、mask_style 取 NONE，bank_account_no 两行的 blind_index 取 EXACT、blind_index_column 取 bank_account_no_bidx、mask_style 取 KEEP_LAST_4；created_by 取 foundation::SYSTEM_PRINCIPAL_ID |
+| 27 | V202609011058__mdm_create_dataset_views.sql | 按裁定 A-18 建 mdm.v_customers_dataset、mdm.v_products_dataset、mdm.v_materials_dataset 三个视图，每个视图带 legal_entity_id、security_level、data_scope_tags 三列，并在同一迁移中 GRANT SELECT TO ep_analyst_ro |
+| 28 | V202609011100__cpq_create_price_lists.sql | 建 cpq.price_lists |
+| 29 | V202609011105__cpq_create_price_list_lines.sql | 建 cpq.price_list_lines |
+| 30 | V202609011110__cpq_create_price_list_customer_links.sql | 建 cpq.price_list_customer_links |
+| 31 | V202609011115__cpq_enable_rls.sql | 对 cpq 的 3 张表启用并强制行级安全 |
+| 32 | V202609011120__cpq_create_lookup_indexes.sql | 建 cpq 的取价索引 |
+| 33 | V<晚于阶段 4 建立 platform_core 用户表与阶段 3b 建立 platform_file.attachment_objects 两个文件的真实时间戳>__mdm_add_cross_schema_fks.sql | 按阶段 2 计划第 3.8 节的补建路径，为 mdm 全部 owner_user_id 列与全部 attachment_object_id 列一次性 ALTER TABLE ADD CONSTRAINT 建立跨 schema 外键，一律 ON DELETE RESTRICT，不建表也不回填数据 |
+| 34 | V<晚于第 33 号的真实时间戳>__cpq_add_cross_schema_fks.sql | 同上，为 cpq.price_lists.owner_user_id 建立指向 platform_core 用户表的跨 schema 外键，按引用方所属 schema 放在 db/migrations/cpq/ 目录下 |
 
-文件名中的时间戳按实际撰写时间取值，同一 schema 内的执行顺序由文件名字典序决定，上表给出的是相对顺序，不是绝对时间承诺。全部迁移属基线第 3.9 节的在线变更范围，无一项需要停机窗口。索引创建一律并发执行，迁移会话固定 SET lock_timeout = '5s' 与 SET statement_timeout = '30min'。
+文件名中的时间戳按实际执行时间取值，全库唯一且严格递增，由 xtask sqlcheck 断言；执行顺序由单一全局 Runner 按版本号一次全序排定，不存在按 schema 或按模块的第二套序。上表给出的是本阶段内部的先后次序与必须满足的约束，其绝对取值须同时满足两条：第 1 至 5 号五个文件的版本号落在 T0 段，第 6 号及其后的文件落在本阶段全量段；第 33 号与第 34 号的版本号晚于阶段 4 与阶段 3b 两处被引用对象的建表文件。全部迁移属基线第 3.9 节的在线变更范围，无一项需要停机窗口。索引创建一律并发执行，迁移会话固定 SET lock_timeout = '5s' 与 SET statement_timeout = '30min'。
 
-本阶段的迁移只有第 25 号一处回填数据，即按裁定 A-28 向 platform_core.sensitive_field_registry 登记银行字段四行，该表是平台侧的字段元数据登记入口，登记内容属字段治理而非业务数据。该迁移跨 schema 写入，其主要创建对象是 mdm 银行字段的登记行，按裁定通则第五条放在 db/migrations/mdm/ 目录下，其版本号晚于阶段 2 建立 platform_core.sensitive_field_registry 的迁移，空库上按文件版本号全序执行时该表已经建立。四类档案与价目表的编号规则行仍不由 mdm 的迁移写入 platform_core.number_sequences，理由是那会构成跨模块直接写业务表；改由 ep-app-mdm 在模块生命周期的启用动作中经 ep-platform-sequence 的注册端口幂等登记。本阶段不依赖 platform_meta，字段元数据的登记入口只有阶段 2 的 platform_core.sensitive_field_registry 与阶段 4 的 platform_authz.field_permissions 两处，后者的字段级授权行由阶段 3b 的配置发布通道在本阶段之后写入，本阶段交付时按默认拒绝处理。
+本阶段的迁移只有第 26 号一处回填数据，即按裁定 A-28 向 platform_core.sensitive_field_registry 登记银行字段四行，该表是平台侧的字段元数据登记入口，登记内容属字段治理而非业务数据。该迁移跨 schema 写入，其主要创建对象是 mdm 银行字段的登记行，按裁定通则第五条放在 db/migrations/mdm/ 目录下，其版本号晚于阶段 2 建立 platform_core.sensitive_field_registry 的迁移，空库上按文件版本号全序执行时该表已经建立。四类档案与价目表的编号规则行仍不由 mdm 的迁移写入 platform_core.number_sequences，理由是那会构成跨模块直接写业务表；改由 ep-app-mdm 在模块生命周期的启用动作中经 ep-platform-sequence 的注册端口幂等登记。本阶段不依赖 platform_meta，字段元数据的登记入口只有阶段 2 的 platform_core.sensitive_field_registry 与阶段 4 的 platform_authz.field_permissions 两处，后者的字段级授权行由阶段 3b 的配置发布通道在本阶段之后写入，本阶段交付时按默认拒绝处理。
 
 #### 3.2 公共列与共通约定
 
 每张表都带基线第 4 节的公共列，顺序按基线：id、legal_entity_id、security_level、data_scope_tags、row_version、created_at、created_by、updated_at、updated_by。仅追加表去掉 row_version、updated_at、updated_by 三列。下文各表只列专有列。
 
-主键类型 uuid，取值为应用侧生成的 UUIDv7，数据库侧不设默认值。同 schema 内的引用建真实外键，ON DELETE RESTRICT。跨 schema 的引用凡目标单一的一律同样建真实外键并 ON DELETE RESTRICT，不再只留逻辑列：目标表带 legal_entity_id 时外键取 legal_entity_id 与引用列的复合形式，指向目标表 legal_entity_id 与 id 的复合唯一键，跨法人引用因此由数据库强制而不再靠写入前校验；目标表不带 legal_entity_id 时取单列外键。本阶段涉及的跨 schema 引用共四类，全部按此建外键：cpq.price_list_lines.product_id 与 uom_id 指向 mdm、cpq.price_list_customer_links.customer_id 指向 mdm、全部 owner_user_id 指向 platform_core 的用户表、全部 attachment_object_id 指向 platform_file.attachment_objects。为承接前两类，mdm.uoms、mdm.customers 与 mdm.products 三张表各加一条 legal_entity_id 与 id 的复合唯一键，分别随第 1 号、第 3 号与第 15 号迁移建表一并建立；cpq 建表文件的版本号晚于对应的 mdm 建表文件，四条外键均可随建表直接建立，不需要补建语句。application 层对对方模块契约的调用降级为可引用性与业务状态判定，引用存在性由外键强制，SQLSTATE 23503 按应用缺陷处理并告警，不作为用户可恢复错误。该口径与基线第 3.3 节现行措辞不同，按第 12.1 节 D4 登记为偏离并附基线修订建议。
+主键类型 uuid，取值为应用侧生成的 UUIDv7，数据库侧不设默认值。同 schema 内的引用建真实外键，ON DELETE RESTRICT。跨 schema 的引用凡目标单一的一律同样建真实外键并 ON DELETE RESTRICT，不再只留逻辑列：目标表带 legal_entity_id 时外键取 legal_entity_id 与引用列的复合形式，指向目标表 legal_entity_id 与 id 的复合唯一键，跨法人引用因此由数据库强制而不再靠写入前校验；目标表不带 legal_entity_id 时取单列外键。本阶段涉及的跨 schema 引用共四类，全部按此建外键：cpq.price_list_lines.product_id 与 uom_id 指向 mdm、cpq.price_list_customer_links.customer_id 指向 mdm、全部 owner_user_id 指向 platform_core 的用户表、全部 attachment_object_id 指向 platform_file.attachment_objects。为承接前两类，mdm.uoms、mdm.customers 与 mdm.products 三张表各加一条 legal_entity_id 与 id 的复合唯一键，分别随第 1 号、第 3 号与第 4 号迁移建表一并建立；cpq 建表文件的版本号晚于对应的 mdm 建表文件，cpq 指向 mdm 的两类外键随建表直接建立。指向 platform_core 用户表与 platform_file.attachment_objects 的另两类，其被引用对象分别由阶段 4 与阶段 3b 建立，建表迁移的版本号晚于本阶段 mdm 的全部建表文件，因此按阶段 2 计划第 3.8 节写明的补建路径处理：由第 33 号与第 34 号两条 ALTER TABLE ADD CONSTRAINT 迁移在两侧建表迁移都已执行之后统一补建，两条迁移分别放在引用方所属的 db/migrations/mdm/ 与 db/migrations/cpq/ 目录下。application 层对对方模块契约的调用降级为可引用性与业务状态判定，引用存在性由外键强制，SQLSTATE 23503 按应用缺陷处理并告警，不作为用户可恢复错误。该口径与基线第 3.3 节现行措辞不同，按第 12.1 节 D4 登记为偏离并附基线修订建议。
 
 档案类表的状态表达按下列映射，PRD 第 2.2.1 节的五个状态映射到 status 与 is_active 两列，不引入第三套写法。
 
@@ -172,7 +177,7 @@ mdm.uoms 计量单位，档案类，不走审批链。
 
 索引：pk_uoms、ix_uoms_legal_entity_id_created_at、ux_uoms_legal_entity_id_code。
 
-mdm.classification_items 受控取值字典，档案类，承载客户类型、供应商分类、物料类别、产品类别、证照类型、风险类别、结算方式七类取值。税率一类按裁定 C-11 移出本表，唯一出处为阶段 10 的 invoice.tax_rate_options。
+mdm.classification_items 受控取值字典，档案类，承载客户类型、供应商分类、物料类别、产品类别、证照类型、风险类别、结算方式七类取值。税率一类按裁定 C-11 移出本表，本表不存在 TAX_RATE_PRESET 取值，唯一出处为 invoice.tax_rate_options，由阶段 10 在 T0 期间交付。
 
 | 列 | 类型 | 可空 | 约束 |
 |---|---|---|---|
@@ -200,7 +205,7 @@ mdm.customers 客户档案，档案类。
 | unified_social_credit_code | text | 是 | ck 长度等于 18 |
 | alternate_identifier | text | 是 | ck 长度不超过 64 |
 | customer_type | text | 否 | 逻辑引用 classification_items.code |
-| owner_user_id | uuid | 否 | 逻辑引用平台用户 |
+| owner_user_id | uuid | 否 | 跨 schema 外键指向 platform_core 用户表，ON DELETE RESTRICT，按第 3.2 节由第 33 号迁移补建 |
 | settlement_method | text | 是 | 逻辑引用 classification_items.code |
 | payment_term_days | int | 是 | ck 大于等于 0 |
 | credit_limit | numeric(18,2) | 是 | ck 大于等于 0 |
@@ -288,9 +293,9 @@ cpq.price_lists 价目表，档案类另带扩展状态机。
 
 ck_price_lists_version_effective 调整为：(version_no > 0) = (status in ('EFFECTIVE','EXPIRED'))，理由是已失效是从已生效自动流转而来，版本号必须保留。索引：pk、ix_price_lists_legal_entity_id_created_at、ux_price_lists_legal_entity_id_code、ix_price_lists_legal_entity_id_status_effective_to_date。最后一条支撑每日失效扫描。
 
-cpq.price_list_lines 价目表明细行。专有列：price_list_id uuid 非空外键、product_id uuid 非空跨模块逻辑引用、uom_id uuid 非空跨模块逻辑引用、is_tax_included boolean 非空、unit_price numeric(18,6) 非空且大于等于 0、floor_price numeric(18,6) 可空且大于等于 0、active_slot uuid 可空、sort_no int 非空默认 0、is_active boolean 非空默认 true、deactivated_at timestamptz 可空。约束 ck_price_list_lines_floor：floor_price is null or floor_price <= unit_price。约束 ck_price_list_lines_active_slot：active_slot is not distinct from (case when is_active then price_list_id else null end)。索引：pk、ix_price_list_lines_legal_entity_id_created_at、ux_price_list_lines_legal_entity_id_active_slot_product_id_uom_id、ix_price_list_lines_legal_entity_id_product_id_uom_id、fk_price_list_lines_price_lists。倒数第二条是取价的主索引。
+cpq.price_list_lines 价目表明细行。专有列：price_list_id uuid 非空外键、product_id uuid 非空跨 schema 复合外键指向 mdm.products、uom_id uuid 非空跨 schema 复合外键指向 mdm.uoms、is_tax_included boolean 非空、unit_price numeric(18,6) 非空且大于等于 0、floor_price numeric(18,6) 可空且大于等于 0、active_slot uuid 可空、sort_no int 非空默认 0、is_active boolean 非空默认 true、deactivated_at timestamptz 可空。约束 ck_price_list_lines_floor：floor_price is null or floor_price <= unit_price。约束 ck_price_list_lines_active_slot：active_slot is not distinct from (case when is_active then price_list_id else null end)。索引：pk、ix_price_list_lines_legal_entity_id_created_at、ux_price_list_lines_legal_entity_id_active_slot_product_id_uom_id、ix_price_list_lines_legal_entity_id_product_id_uom_id、fk_price_list_lines_price_lists。倒数第二条是取价的主索引。
 
-cpq.price_list_customer_links 指定客户范围。专有列：price_list_id uuid 非空外键、customer_id uuid 非空跨模块逻辑引用、active_slot uuid 可空、is_active、deactivated_at。索引：pk、ix_..._legal_entity_id_created_at、ux_price_list_customer_links_legal_entity_id_active_slot_customer_id、ix_price_list_customer_links_legal_entity_id_price_list_id_customer_id。
+cpq.price_list_customer_links 指定客户范围。专有列：price_list_id uuid 非空外键、customer_id uuid 非空跨 schema 复合外键指向 mdm.customers、active_slot uuid 可空、is_active、deactivated_at。索引：pk、ix_..._legal_entity_id_created_at、ux_price_list_customer_links_legal_entity_id_active_slot_customer_id、ix_price_list_customer_links_legal_entity_id_price_list_id_customer_id。
 
 #### 3.5 RLS 策略
 
@@ -336,7 +341,7 @@ ep-domain-mdm 中的聚合根共六个：Customer、Supplier、Material、Produc
 | price_lists 的 EFFECTIVE | EXPIRED | 每日失效扫描 | effective_to_date 非空且早于服务器自然日 |
 | price_lists 的 EXPIRED | PENDING_APPROVAL | 提交变更申请以延长生效期 | 与 FIELD_CHANGE 同 |
 
-停用与启用同样经变更申请与审批链，因此 DEACTIVATION 与 REACTIVATION 两类申请的 proposed 快照与基线快照除 is_active 外完全相同，diff 只有一行。停用不校验该档案上是否还有未完成单据，也不自动关闭这些单据，也不在提交界面展示引用计数，依据 PRD 第 2.2.5 节。该节要求的引用计数提示折叠进阶段 11 的受治理只读数据集，本阶段不为一处只读提示把五个阶段的依赖倒置回来，详见第 4.13 节。
+停用与启用同样经变更申请与审批链，因此 DEACTIVATION 与 REACTIVATION 两类申请的 proposed 快照与基线快照除 is_active 外完全相同，diff 只有一行。停用不校验该档案上是否还有未完成单据，也不自动关闭这些单据，只在提交界面展示引用计数作为提示，依据 PRD 第 2.2.5 节。
 
 #### 4.3 冻结字段判定
 
@@ -350,11 +355,12 @@ ep-domain-mdm 中的聚合根共六个：Customer、Supplier、Material、Produc
 | 产品 | code、legal_entity_id | sales_uom_id | 该产品被已生效合同行或销售订单行引用 |
 | 价目表 | code、legal_entity_id | 无 | |
 
-条件冻结的判定必须查询库存与销售两个模块的数据，本阶段取不到这些数据，也不为此先注入空实现占位。按空实现通则删除后的硬规则，本项按整条推迟处理：MaterialUsageProbe 与 ProductUsageProbe 两个 trait 的定义、实现与 ep-app-mdm 中的调用点，由阶段 8 与阶段 6 分别与其取数实现同批交付；本阶段既不定义这两个 trait，也不在两个 wiring.rs 中留注册位，不追加任何启动自检项，不留 TODO 注释。
+条件冻结的判定不由 mdm 自行查询别的模块的表，而是经 ep-contract-mdm 中定义的两个消费方端口完成，实现由后续阶段的模块在 apps/core-server/src/wiring/ 与 apps/job-worker/src/wiring/ 两个目录中注入。本阶段按裁定通则第三条不注入任何以 Noop、Stub、Fake、Dummy 为前缀的实现类型，也不留 TODO 注释：两个端口在本阶段一律以空注册集合承载，空集合不是空实现，不落入这四类前缀。
 
-推迟期间的行为是确定的，不是降级的。本阶段交付时库存流水与销售引用在数据上必然为空，条件冻结的守卫条件恒为放行，因此物料的 base_uom_id、is_batch_managed、is_serial_managed 与产品的 sales_uom_id 在本阶段可经 FIELD_CHANGE 变更申请修改，这与判定接入后在同一数据状态下的结果逐字相同，不需要任何占位实现来表达这个事实。阶段 8 接入取数实现时把物料三项的守卫条件一并加入本表，阶段 6 接入时把产品一项一并加入，两处的单元、集成与端到端用例各自落在其交付阶段的退出条件，本阶段不登记顺延项。PRD 第 2.5 节与第 2.6 节的条件冻结要求因此仍有承接，只是承接点从没有数据可判的本阶段移到有数据可判的阶段。
+- MaterialUsageProbe::has_stock_movement(&self, ctx: &SecurityContext, material_id: Id<Material>) -> Result<bool, AppError>，实现类型 InventoryMaterialUsageProbe 由阶段 8 交付，位于 crates/application/inventory/src/probe/material_usage.rs，取数为 inventory.stock_qty_entries 上按 material_id 的数量流水存在性判定，命中索引 ix_stock_qty_entries_legal_entity_id_material_id，索引列为 legal_entity_id 与 material_id，按裁定 A-13 执行；inventory.stock_value_entries 中 qty_entry_id 为空的纯金额调整行不参与该判定。
+- ProductUsageProbe::is_referenced_by_effective_sales(&self, ctx: &SecurityContext, product_id: Id<Product>) -> Result<bool, AppError>，两个实现类型 ClmProductUsageProbe 与 SalesProductUsageProbe 由阶段 6 交付，组合类型 AnyProductUsageProbe(Vec<Arc<dyn ProductUsageProbe>>) 由本阶段在 ep-app-mdm 中提供，任一返回 true 即为 true，集合为空时返回 false。
 
-组合类型 AnyProductUsageProbe 一并删除，它存在的唯一目的是把阶段 6 的两份实现聚成一份注入本阶段的空位；判定移入阶段 6 之后，合同侧与订单侧的两次判定在同一个阶段内直接串联即可。
+探针缺位时的行为固定为：判定为不存在使用，即放行修改，同时写一条 WARN 日志与一条审计备注。理由是阶段 5 交付时点库存与销售模块尚未交付，不可能存在流水与引用，若默认拒绝则整个实施期无法修改这三个字段。为防止后续模块交付后忘记注入探针，按裁定 C-25 本阶段不追加启动自检项，该保证下沉为模块启用动作的前置校验：ep-app-mdm 在 inventory 模块的启用动作中校验 MaterialUsageProbe 已注册，在 clm 与 sales 任一模块的启用动作中校验 ProductUsageProbe 已注册，未注册即拒绝该次启用并在响应中给出未注册的端口名，启用完成后不在每次进程启动时复判，八个进程不因该项拒绝启动；模块状态经 ep_platform_license::ModuleLicenseQuery::module_state 读取，该契约由阶段 3b 按裁定 A-05 提供，本阶段只读不实现。物料三项与产品一项条件冻结的覆盖面按注册表实时判定，未注册模块在变更与停用界面显式列为未覆盖，本阶段不登记顺延验收项，各实现的验收落在其交付阶段。
 
 #### 4.4 唯一性、重名与引用校验
 
@@ -423,7 +429,7 @@ ep-domain-mdm 中的聚合根共六个：Customer、Supplier、Material、Produc
 
 批量取价把第 1 步的输入表达为一个 VALUES 列表并与明细行表连接，一次往返完成至多 200 行的取价，避免 200 次往返击穿规格附录 A.1 中销售订单表单打开并带出默认值这一项的通过线。该查询的 EXPLAIN 必须显示明细行表走索引扫描、价目表头走主键扫描、客户范围表走索引扫描，不得出现顺序扫描。
 
-历史成交资料不参与上述默认值计算，本阶段也不再提供该资料的查询入口，其承接方式见第 4.12 节。销售阶段的价格权限规则只对操作者手工录入或从命中价目表选定的单价生效，依据 PRD 第 2.8.3 节。
+历史成交资料不参与上述默认值计算，只作为并列的参考列表展示，操作者显式选用后才回填，回填后由销售阶段按价格权限规则重新判定，依据 PRD 第 2.8.3 节与第 2.9.3 节。
 
 #### 4.9 价目表失效扫描与资质到期扫描
 
@@ -453,15 +459,18 @@ ep-domain-mdm 中的聚合根共六个：Customer、Supplier、Material、Produc
 
 #### 4.12 历史成交资料聚合
 
-历史成交资料不在本阶段承载。PRD 第 2.9 节的取数键横跨销售、采购与发票三个模块，本阶段既取不到数，也不为它把三个后续阶段的依赖倒置回来：SalesTradeHistoryProvider 与 PurchaseTradeHistoryProvider 两个 trait、TradeHistoryProviderRegistry 注册表、四份反向注入的实现与 GET /api/v1/mdm/trade-histories 端点一并删除。
+历史成交资料不是本阶段的表，是一次跨模块聚合查询，取数键与来源按 PRD 第 2.9 节。
 
-承接方式是折叠进阶段 11 的受治理只读数据集：取数键与展示字段由那条数据集的 SQL 直接表达，覆盖了哪些单据来源由它的 UNION 分支表达，比注册表在运行期枚举更易核对，也不需要每个业务阶段各写一份实现并各自注册。跨法人不可见与记录级、字段级裁剪由该数据集所在的报表通道按规格第 7.7 章与第 12.2 章统一施加，本阶段不再重复表达一遍。
+- 销售侧取数键为客户加产品，来源为合同行、销售订单行及其关联的交付确认与销项发票登记结果。
+- 采购侧取数键为供应商加物料，来源为采购订单行、采购发票行与本阶段的 mdm.supplier_price_records。
 
-采购侧的 mdm.supplier_price_records 是本模块自有表，仍按第 5.3 节的供应商价格资料端点独立可查，采购侧的参考取价不因本项删除而丢失。历史成交资料本就不参与第 4.8 节的默认值计算，删除不影响取价与建单，PRD 第 2.9.3 节的条数、窗口与排序取值随之一并归阶段 11。
+实现方式为消费方定义端口：ep-contract-mdm 定义 SalesTradeHistoryProvider 与 PurchaseTradeHistoryProvider 两个 trait 与 TradeHistoryProviderRegistry 注册表，两个 trait 的方法固定为 module_code() 与 recent(ctx, customer_id 或 supplier_id, item_id, limit)，返回统一的 TradeHistoryItem（单据类型、单据编号、单据日期、数量、计量单位、单价、含税标记、当前状态、来源模块）。实现清单按裁定 A-15 固定为四个：阶段 6 的 SalesTradeHistoryProviderImpl、阶段 10 的 InvoiceSalesTradeHistoryProvider、阶段 7 的 ProcureTradeHistoryProvider、阶段 10 的 InvoicePurchaseTradeHistoryProvider，各自在本阶段之后于两个 wiring 目录中注册到该注册表，本阶段不代做任何一份，也不注入任何以 Noop、Stub、Fake、Dummy 为前缀的实现类型。ep-app-mdm 的用例把注册表中已注册的实现依次调用并按单据日期倒序合并，条数与时间窗口由配置项限制。采购侧的 mdm.supplier_price_records 是本模块自有表，由 ep-app-mdm 直接读取，不经注册表；因此阶段 5 交付时注册表为空而端点可用，返回内容只有供应商价格资料一项，来源模块的覆盖面由注册表实时枚举，未注册模块在响应的 meta 中显式列为未覆盖。各实现的验收落在其交付阶段，本阶段不登记顺延验收项。
+
+结果一律只读，权限按规格第 7.7 章的法人行级隔离与第 12.2 章的记录级与字段级权限裁剪，跨法人不可见。
 
 #### 4.13 引用计数与可引用性判定
 
-引用计数不在本阶段承载。MasterReferenceCounter trait 与 MasterReferenceCounterRegistry 注册表连同七份反向注入的实现一并删除。删除的依据是它只服务于停用提交界面的一处只读提示，不构成任何强制点，本阶段唯一的强制点是下段的 assert_referenceable，与计数无关；而为这一处提示要让阶段 6、7、8、10、12 五个阶段各写一份实现并各自注册。PRD 第 2.2.5 节要求的计数提示折叠进阶段 11 的受治理只读数据集，覆盖了哪些模块由那条 SQL 的 UNION 分支表达。本阶段不留注册位，不登记顺延项。
+ep-contract-mdm 定义 MasterReferenceCounter trait 与 MasterReferenceCounterRegistry 注册表，trait 的方法固定为 module_code() 与 count_open_documents(ctx, object_kind: MasterObjectKind, object_id)，MasterObjectKind 取 Customer、Supplier、Material、Product、PriceList 五值，返回某档案在某模块下的未完成单据数量。实现清单按裁定 A-15 固定为七个：阶段 6 的 ClmReferenceCounter 与 SalesReferenceCounter、阶段 7 的 ProcureReferenceCounter、阶段 8 的 InventoryReferenceCounter、阶段 10 的 InvoiceReferenceCounter 与 FinanceReferenceCounter、阶段 12 的 ServiceReferenceCounter，各自在本阶段之后注册，本阶段不代做任何一份，也不注入任何以 Noop、Stub、Fake、Dummy 为前缀的实现类型。停用提交界面把注册表中已注册实现的计数求和展示，计数覆盖的模块清单由注册表实时枚举，未注册的模块不计入并显式列为未覆盖，避免用户误以为为零即无引用。覆盖面按注册表实时判定，本阶段不登记顺延验收项，各实现的验收落在其交付阶段。
 
 可引用性判定由 MasterDataLookup::assert_referenceable 提供，判定规则为 status 等于 EFFECTIVE 且 is_active 为真，产品另加 is_sellable 为真才可进入合同行、销售订单行与价目表明细行。不满足时返回 BUSINESS_CONFLICT 与 MDM.<RESOURCE>.NOT_REFERENCEABLE，details 中给出停用时间。这是 PRD 第 2.10 节停用后对新建单据一律拒绝的唯一强制点。该判定与 MasterDataLookup::resolve_reference、MasterDataLookup::load_version 一并列入第 4.15 节的对外契约端口清单，跨模块调用一律经该清单中的 trait，其他模块不得直接读 mdm 与 cpq 的表，依据基线第 1.3 节。
 
@@ -469,31 +478,37 @@ ep-domain-mdm 中的聚合根共六个：Customer、Supplier、Material、Produc
 
 本节之后新增第 4.15 节，集中列出本阶段对外冻结的契约端口，避免同一事物在多处出现两套名字。
 
-客户 360 视图不设服务端聚合端点。Customer360SectionProvider trait、ep-contract-crm 与 ep-app-crm 两个 crate、GET /api/v1/crm/customers/{id}/customer-360 端点及其区块注册位一并删除，裁定 C-09 中关于该端点与该契约的部分随之失效。删除的依据是该视图只做只读展示，不承载任何强制点，也不在闭环的任何一步上，而为它倒置六个模块的依赖是本阶段最不划算的一处。规格第 5.2 章 CRM 条目与 PRD 附录乙 U-C-04 的承接方式改为：桌面端按规格第 6.2 章能力矩阵直接组合各模块既有的客户详情与列表端点，可用区块清单来自客户端自己的能力矩阵而不是服务端响应的 meta，服务端零新增。本阶段只需保证 GET /api/v1/mdm/customers/{id} 的完整视图含编码、名称、客户类型、责任人、联系人、开票要素可见部分、信用额度、状态与版本号九项，这九项本就在该端点内。20 人并发下桌面端多发几个只读请求的代价可以忽略。
+ep-contract-crm 定义 Customer360SectionProvider trait，含 section_key、section_title、load(ctx, customer_id, limit) 三项，名字按裁定 C-09 固定，CustomerPanelProvider 作废。ep-app-crm 的 query_customer_360 用例组装两部分：一是从 ep-contract-mdm 取得的档案区块，含编码、名称、客户类型、责任人、联系人、开票要素可见部分、信用额度、状态与版本号；二是已注册的其他区块。未注册的区块不出现在响应中，响应的 meta 中列出当前可用区块清单，供客户端判断是哪些模块尚未启用。唯一端点为 GET /api/v1/crm/customers/{id}/customer-360，本阶段交付时该路径已启用并只挂载 mdm 自己的区块，阶段 12 接管后追加其余区块，不新增路径，不保留 /overview。
 
 #### 4.15 本阶段对外冻结的契约端口清单
 
-下列 trait 由本阶段在 ep-contract-mdm 与 ep-contract-cpq 中定义并冻结，跨模块调用一律经这些 trait。事务句柄类型为 ep_foundation::port::Tx，快照上下文为 ep_foundation::port::SnapshotCtx，两者由阶段 1 按裁定 A-01 冻结，本阶段只引用不重定义；跨模块方法签名一律写 &mut dyn Tx。本清单只列由本阶段定义并由本阶段实现的 trait，本阶段不再定义任何交由后续阶段实现的消费方端口。
+下列 trait 由本阶段在 ep-contract-mdm、ep-contract-cpq 与 ep-contract-crm 中定义并冻结，跨模块调用一律经这些 trait。事务句柄类型为 ep_foundation::port::Tx，快照上下文为 ep_foundation::port::SnapshotCtx，两者由阶段 1 按裁定 A-01 冻结，本阶段只引用不重定义；跨模块方法签名一律写 &mut dyn Tx。由本阶段定义而由后续阶段实现的消费方端口一律以注册集合承载，本阶段不注入任何以 Noop、Stub、Fake、Dummy 为前缀的实现类型。
 
 | trait | crate | 方法 | 实现方 |
 |---|---|---|---|
 | MasterDataLookup | ep-contract-mdm | resolve_reference、load_version、assert_referenceable | 本阶段 |
+| MasterReferenceCounter | ep-contract-mdm | module_code、count_open_documents | 阶段 6、7、8、10、12 按裁定 A-15 |
+| SalesTradeHistoryProvider | ep-contract-mdm | module_code、recent | 阶段 6 与阶段 10 按裁定 A-15 |
+| PurchaseTradeHistoryProvider | ep-contract-mdm | module_code、recent | 阶段 7 与阶段 10 按裁定 A-15 |
+| MaterialUsageProbe | ep-contract-mdm | has_stock_movement | 阶段 8 的 InventoryMaterialUsageProbe |
+| ProductUsageProbe | ep-contract-mdm | is_referenced_by_effective_sales | 阶段 6 的 ClmProductUsageProbe 与 SalesProductUsageProbe |
 | SupplierRiskRecordPort | ep-contract-mdm | append、list | 本阶段 |
 | SupplierSelfServiceCommand | ep-contract-mdm | submit_profile_change、upload_qualification | 本阶段 |
 | PriceResolver | ep-contract-cpq | resolve_batch | 本阶段 |
+| Customer360SectionProvider | ep-contract-crm | section_key、section_title、load | 本阶段与阶段 12 |
 
 两个由本阶段实现的跨模块端口签名按裁定 C-10 与 B-10 逐字固定，其他阶段不得改写。
 
 - SupplierRiskRecordPort::append(tx: &mut dyn Tx, ctx: &SecurityContext, supplier_id: Id<Supplier>, record: SupplierRiskRecord) -> Result<(), AppError> 与 SupplierRiskRecordPort::list(tx: &mut dyn Tx, ctx: &SecurityContext, supplier_id: Id<Supplier>) -> Result<Vec<SupplierRiskRecord>, AppError>，写入落在 mdm.supplier_risk_records。
 - SupplierSelfServiceCommand::submit_profile_change(&self, tx: &mut dyn Tx, ctx: &SecurityContext, supplier_id: Id<Supplier>, patch: SupplierProfilePatch) -> Result<SupplierChangeRequestView, AppError> 与 SupplierSelfServiceCommand::upload_qualification(&self, tx: &mut dyn Tx, ctx: &SecurityContext, supplier_id: Id<Supplier>, doc: QualificationUpload) -> Result<(), AppError>，两者一律生成待审批的变更申请，不直接写档案。
 
-税率不在本清单内。本阶段不对外提供税率查询端口，默认税率的唯一取用入口是阶段 10 的 ep_contract_invoice::TaxRateOptionQuery；阶段 10 交付前由本阶段的字典桩 MdmTaxRateStub 承担临时取值，阶段 10 交付时执行 V…__invoice_backfill_migrate_tax_rates_from_mdm.sql 并删除该桩，按裁定 C-11 执行。
+税率不在本清单内。本阶段不对外提供税率查询端口，也不交付任何税率桩。税率字典的唯一出处为 invoice.tax_rate_options，唯一取用入口为 ep_contract_invoice::TaxRateOptionQuery 的 default_rate 与 list，该表的建表迁移与种子迁移两条及该查询的两个方法属阶段 10 的 T0 切片第五项，在 T0 期间交付，早于本阶段全量开工，按裁定 C-11 与总览第 1.5 节第五条执行。
 
 ### 5 API 契约
 
 全部端点遵循基线第 5 节：路径前缀 /api/v1，字段 snake_case，封套固定，分页排序过滤参数固定，全部写请求必带 Idempotency-Key，鉴权头固定集合。下表中的权限一列写的是所需的对象级权限动作，记录级与字段级由 ep-platform-authz 在用例内判定。
 
-每条路由另按裁定 A-20 在 crates/contract/<module>/src/capability.rs 中声明一对 <USECASE_SCREAMING>_DOMAIN 与 <USECASE_SCREAMING>_ACTION 常量，取值来自阶段 1 冻结的 foundation::CapabilityDomain 与 foundation::ActionClass。本阶段路由涉及的能力域为 MdmMasterData、PlatformFullTextSearch 与 PlatformDocumentAttachment，价目表与取价路由取 SalesOrderFulfillment；动作类别按 Read、Write、Submit、Approve、Export 五类逐路由取值。xtask configdoc 断言每个 /api/v1/ 路由都能解析到一对常量，缺失即构建失败；ci-probe feature 门控的探针路由与 /internal/v1/ 下不对四端暴露的内部端点不参与判定，不声明常量。本阶段只引用 foundation::CapabilityDomain，不重新定义能力域码。
+每条路由另按裁定 A-20 在 crates/contract/<module>/src/capability.rs 中声明一对 <USECASE_SCREAMING>_DOMAIN 与 <USECASE_SCREAMING>_ACTION 常量，取值来自阶段 1 冻结的 foundation::CapabilityDomain 与 foundation::ActionClass。本阶段路由涉及的能力域为 MdmMasterData、CrmCustomer360、PlatformFullTextSearch 与 PlatformDocumentAttachment，价目表与取价路由取 SalesOrderFulfillment；动作类别按 Read、Write、Submit、Approve、Export 五类逐路由取值。xtask configdoc 断言每个 /api/v1/ 路由都能解析到一对常量，缺失即构建失败；ci-probe feature 门控的探针路由与 /internal/v1/ 下不对四端暴露的内部端点不参与判定，不声明常量。本阶段只引用 foundation::CapabilityDomain，不重新定义能力域码。
 
 #### 5.1 四类档案的通用端点
 
@@ -514,7 +529,7 @@ ep-domain-mdm 中的聚合根共六个：Customer、Supplier、Material、Produc
 
 | 方法与路径 | 说明 | 主要错误码 |
 |---|---|---|
-| POST /api/v1/mdm/change-requests | 对已生效档案发起 FIELD_CHANGE、DEACTIVATION 或 REACTIVATION 申请，请求含 object_type、object_id、change_kind、proposed、reason | MDM.CHANGE_REQUEST.ALREADY_OPEN、MDM.MASTER_RECORD.FROZEN_FIELD_MODIFIED；条件冻结的 MDM.MATERIAL.STOCK_MOVEMENT_EXISTS 与 MDM.PRODUCT.SALES_REFERENCE_EXISTS 两个码随其判定分别由阶段 8 与阶段 6 登记 |
+| POST /api/v1/mdm/change-requests | 对已生效档案发起 FIELD_CHANGE、DEACTIVATION 或 REACTIVATION 申请，请求含 object_type、object_id、change_kind、proposed、reason | MDM.CHANGE_REQUEST.ALREADY_OPEN、MDM.MASTER_RECORD.FROZEN_FIELD_MODIFIED、MDM.MATERIAL.STOCK_MOVEMENT_EXISTS、MDM.PRODUCT.SALES_REFERENCE_EXISTS |
 | GET /api/v1/mdm/change-requests | 列表，支持按 object_type、status、object_id 过滤 | |
 | GET /api/v1/mdm/change-requests/{id} | 详情，含逐字段变更前后对照 | PLATFORM.AUTHZ.NOT_FOUND_OR_DENIED |
 | PATCH /api/v1/mdm/change-requests/{id} | 编辑 DRAFT 状态的申请 | PLATFORM.CONCURRENCY.STALE_VERSION |
@@ -547,11 +562,12 @@ ep-domain-mdm 中的聚合根共六个：Customer、Supplier、Material、Produc
 
 取价端点无副作用但仍按基线第 5.4 节必填并落库幂等键，重复请求直接回放。该开销可接受：一次表单打开只产生一条幂等键，7 天保留期内的总量在 20 并发规模下不构成负担。取价响应每行的结构为 { product_id, uom_id, hits: [PriceHit], requires_manual_selection: bool }。
 
-#### 5.5 引用校验与导入导出端点
+#### 5.5 引用校验、历史成交与导入导出端点
 
 | 方法与路径 | 说明 |
 |---|---|
 | POST /api/v1/mdm/master-records/actions/assert-referenceable-batch | 单据侧批量校验引用可用性，返回逐条结论与不可用原因 |
+| GET /api/v1/mdm/trade-histories | 历史成交资料查询，参数 side 取 SALES 或 PURCHASE，另带 customer_id 与 product_id 或 supplier_id 与 material_id |
 | GET /api/v1/mdm/import-templates/{object_type} | 下载导入模板 |
 | POST /api/v1/mdm/import-batches | 创建导入批次 |
 | GET /api/v1/mdm/import-batches/{id} | 批次进度与结果 |
@@ -559,6 +575,7 @@ ep-domain-mdm 中的聚合根共六个：Customer、Supplier、Material、Produc
 | POST /api/v1/mdm/import-batches/{id}/actions/submit-drafts-for-approval | 通过行草稿批量提交审批，单次至多 200 条按基线第 5.1 节批量上限拆批 |
 | POST /api/v1/mdm/exports | 创建导出任务，含敏感字段时必带 X-Reauth-Token 与审批引用 |
 | GET /api/v1/mdm/exports/{id} | 导出任务回执 |
+| GET /api/v1/crm/customers/{id}/customer-360 | 客户 360 概览，按裁定 C-09 是唯一端点，与阶段 12 共用，不保留 /overview |
 
 #### 5.6 存在性泄漏与错误封套
 
@@ -583,7 +600,7 @@ ep-domain-mdm 中的聚合根共六个：Customer、Supplier、Material、Produc
 
 事务预算沿用基线第 10.3 节：业务事务不超过 5 秒，读写池 statement_timeout 10 秒，lock_timeout 3 秒。job-worker 池 statement_timeout 300 秒，导入解析的单批事务在该预算内。事务内禁止外部 HTTP 调用、文件正文读写、发送通知与长时计算，本阶段的四处涉及文件正文的地方（导入源文件读取、错误清单渲染、导出文件渲染、模板生成）一律在事务外完成，只把附件对象 ID 写入事务。
 
-事务的开启与提交一律经 ep_foundation::port::UnitOfWork 的 transact 与 snapshot_transact 两个方法，只读快照事务的唯一入口是 snapshot_transact；ep-app-mdm 与 ep-app-cpq 对 UnitOfWork 取泛型参数 U: UnitOfWork 而不是 trait 对象，理由是该 trait 含泛型方法不满足对象安全。跨模块端口的事务句柄参数一律写 &mut dyn Tx，取具体连接的 downcast 只允许出现在 crates/adapter/db-pg 内，按裁定 A-01 执行。
+事务的开启与提交一律经 ep_foundation::port::UnitOfWork 的 transact 与 snapshot_transact 两个方法，只读快照事务的唯一入口是 snapshot_transact；ep-app-mdm、ep-app-cpq 与 ep-app-crm 对 UnitOfWork 取泛型参数 U: UnitOfWork 而不是 trait 对象，理由是该 trait 含泛型方法不满足对象安全。跨模块端口的事务句柄参数一律写 &mut dyn Tx，取具体连接的 downcast 只允许出现在 crates/adapter/db-pg 内，按裁定 A-01 执行。
 
 #### 6.2 锁策略
 
@@ -624,6 +641,10 @@ ep-domain-mdm 中的聚合根共六个：Customer、Supplier、Material、Produc
 | EP__MDM__NAME_DUPLICATE__PROBE_LIMIT | u32 | 20 | 重启生效 | 同名提示中列出的档案条数上限 |
 | EP__MDM__QUALIFICATION__EXPIRY_LEAD_DAYS | u32 | 30 | 重启生效 | 资质到期提醒提前天数，临时取值，U-A-11 决策后改为低代码定时器配置 |
 | EP__MDM__QUALIFICATION__SCAN_ENABLED | bool | true | 重启生效 | 资质到期扫描开关 |
+| EP__MDM__TRADE_HISTORY__MAX_ROWS | u32 | 20 | 重启生效 | 历史成交资料展示条数上限，临时取值 |
+| EP__MDM__TRADE_HISTORY__WINDOW_MONTHS | u32 | 12 | 重启生效 | 历史成交资料时间窗口，临时取值 |
+| EP__MDM__TRADE_HISTORY__INCLUDE_VOIDED | bool | false | 重启生效 | 是否包含已作废、已红冲与已退货单据，临时取值 |
+| EP__MDM__FREEZE__REQUIRE_PROBE_WHEN_MODULE_ENABLED | bool | true | 重启生效 | 经 ModuleLicenseQuery::module_state 判定相关模块已启用而探针未注册时，模块启用动作的前置校验是否拒绝该次启用；该判定不在进程启动路径上执行 |
 | EP__CPQ__PRICE_RESOLVE__MAX_LINES | u32 | 200 | 重启生效 | 批量取价单次行数上限，与基线第 5.1 节批量上限一致 |
 | EP__CPQ__PRICE_LIST__EXPIRY_SCAN_ENABLED | bool | true | 重启生效 | 价目表失效扫描开关 |
 
@@ -649,7 +670,7 @@ ep-domain-mdm 中的聚合根共六个：Customer、Supplier、Material、Produc
 
 - 档案状态机：第 4.2 节表中的每一条合法流转各一例，另加每个状态下的全部非法流转各一例，共 11 条合法流转与 34 条非法流转。
 - 价目表状态机：含自动失效流转与从已失效提交变更两条特有路径。
-- 冻结字段判定：五类对象的永久冻结字段各一例。条件冻结的判定按第 4.3 节整条推迟，其真值与假值两种情形的用例随判定分别落在阶段 8 与阶段 6，本阶段不表达。
+- 冻结字段判定：五类对象的永久冻结字段各一例，物料三项与产品一项的条件冻结在探针返回真与返回假两种情形下各一例，探针缺位时的放行一例。
 - 统一社会信用代码校验：30 组正样本、10 组单字符篡改样本、长度不足、含非法码字、校验值为 31 的边界样本各一例。
 - 编码生成：自动生成、人工指定、流水溢出到 7 位、法人码两位补零四例。
 - 版本差异计算：头字段变更、子表新增行、子表停用行、子表重排序、附件关联变更、无差异提交六例，另加同一份数据两次计算路径稳定性一例。
@@ -662,7 +683,7 @@ ep-domain-mdm 中的聚合根共六个：Customer、Supplier、Material、Produc
 用 proptest 表达，是规格第 17.2 章要求的独立测试类型。本阶段虽不承载第 17.3 章的五组账务不变量，仍须表达四条与其前提相关的属性。
 
 1. 版本号单调且连续：对任意合法操作序列，record_versions 中同一 object_id 的 version_no 集合等于 1 至 N 的连续整数集合，且档案上的 version_no 等于 N。
-2. 冻结字段不可变：对任意合法操作序列，四类档案的 code 与 legal_entity_id 在首次生效之后不再变化。规格第 17.3 章库存数量守恒按仓库、物料、批次逐项核对所依赖的分组键是物料与产品的主键与法人归属，该属性即其落点；物料三项与产品一项的条件冻结属阶段 8 与阶段 6 的判定，其属性测试随判定一并交付。
+2. 冻结字段不可变：对任意合法操作序列，物料的 base_uom_id、is_batch_managed、is_serial_managed 在探针返回真之后不再变化。该属性是规格第 17.3 章库存数量守恒按仓库、物料、批次逐项核对得以成立的前提。
 3. 停用的最小影响：DEACTIVATION 应用前后，除 is_active、deactivated_at、version_no、row_version、updated_at、updated_by 六列外，档案的全部字段与全部子表行逐字段相等。该属性对应 PRD 第 2.10 节停用不触发任何单据状态变化、不产生凭证、不影响任何强制不变量。
 4. 取价命中集合的等价性：批量取价的结果与逐条取价的结果逐行相等，且命中集合等于对全部明细行逐条施加命中判定后得到的集合。
 
@@ -683,11 +704,13 @@ ep-domain-mdm 中的聚合根共六个：Customer、Supplier、Material、Produc
 11. 取价 EXPLAIN：在基准数据集上对批量取价语句执行 EXPLAIN，断言不出现 Seq Scan，输出作为证据归档。
 12. 列表查询 EXPLAIN：客户列表的默认排序、按状态过滤、按名称前缀过滤三条语句各断言不出现 Seq Scan。
 13. 深偏移拒绝：page 乘 page_size 超过 10000 时服务端拒绝并要求改用键集分页。
-14. 迁移可逆：对全部 31 个迁移文件按其 rollback 段执行逆向，再重新执行，数据库结构逐对象比对一致。
-15. 附件关联：解除关联后再重新关联同一附件对象成功，验证空槽写法在附件表上的行为。
-16. 搜索索引传播：档案生效后 15 分钟内索引可查，停用后索引中的可引用标记同步更新，跨法人检索不返回无权数据，对应规格第 7.9 章的派生存储越权与传播测试。
-17. 受治理数据集视图：三个视图在 ep_analyst_ro 角色下可读、在其他只读角色下不可读，返回列含 legal_entity_id、security_level、data_scope_tags 三列，列名与类型签名与阶段 11 的 reporting.dataset_fields 登记一致，按裁定 A-18 执行。
-18. 敏感字段登记与盲索引：第 25 号迁移执行后 platform_core.sensitive_field_registry 中存在 mdm.customer_invoice_profiles 与 mdm.supplier_payment_profiles 的 bank_name 与 bank_account_no 共四行，四行的 category 均为 ACCOUNT、security_level 均为 30，bank_account_no 两行的 is_field_encrypted 为真且 blind_index 为 EXACT 且 blind_index_column 为 bank_account_no_bidx，bank_name 两行的 is_field_encrypted 为假；两张表上存在 bank_account_no_enc bytea 与 bank_account_no_key_ref text 与 bank_account_no_tail text 三列且不存在同名明文列 bank_account_no，db/checks/11 返回零行；以同一明文两次计算 derive_blind_key 得到相同结果，跨法人得到不同结果，按裁定 A-28 与 B-04 执行。
+14. 跨模块引用校验：以未注册探针与已注册探针两种装配分别运行冻结字段修改，验证第 4.3 节的两种行为；已注册一侧用 ep-testkit 的探针桩装配，该桩只出现在测试装配中，不进入两个 wiring 目录。
+15. 模块启用前置校验：inventory 模块在 MaterialUsageProbe 未注册时启用被拒并给出未注册的端口名，注册后启用成功；clm 与 sales 两个模块对 ProductUsageProbe 同理；该校验不在进程启动路径上执行，进程不因其失败而拒绝启动。
+16. 迁移可逆：对全部 34 个迁移文件按其 rollback 段执行逆向，再重新执行，数据库结构逐对象比对一致。
+17. 附件关联：解除关联后再重新关联同一附件对象成功，验证空槽写法在附件表上的行为。
+18. 搜索索引传播：档案生效后 15 分钟内索引可查，停用后索引中的可引用标记同步更新，跨法人检索不返回无权数据，对应规格第 7.9 章的派生存储越权与传播测试。
+19. 受治理数据集视图：三个视图在 ep_analyst_ro 角色下可读、在其他只读角色下不可读，返回列含 legal_entity_id、security_level、data_scope_tags 三列，列名与类型签名与阶段 11 的 reporting.dataset_fields 登记一致，按裁定 A-18 执行。
+20. 敏感字段登记与盲索引：第 26 号迁移执行后 platform_core.sensitive_field_registry 中存在 mdm.customer_invoice_profiles 与 mdm.supplier_payment_profiles 的 bank_name 与 bank_account_no 共四行，四行的 category 均为 ACCOUNT、security_level 均为 30，bank_account_no 两行的 is_field_encrypted 为真且 blind_index 为 EXACT 且 blind_index_column 为 bank_account_no_bidx，bank_name 两行的 is_field_encrypted 为假；两张表上存在 bank_account_no_enc bytea 与 bank_account_no_key_ref text 与 bank_account_no_tail text 三列且不存在同名明文列 bank_account_no，db/checks/11 返回零行；以同一明文两次计算 derive_blind_key 得到相同结果，跨法人得到不同结果，按裁定 A-28 与 B-04 执行。
 
 外部依赖只有电子签章一类，本阶段不涉及，因此本阶段不引入 wiremock 打桩。
 
@@ -700,17 +723,17 @@ ep-domain-mdm 中的聚合根共六个：Customer、Supplier、Material、Produc
 | E5-01 | 客户建档、提交、审批、生效、出现在引用校验结果中 | 桌面端、移动端简化 |
 | E5-02 | 已生效客户发起变更、审批、版本递增、历史版本可查、按旧版本号可还原引用时点取值 | 桌面端 |
 | E5-03 | 供应商建档含资质附件、准入审批、资质到期扫描置 EXPIRING 与 EXPIRED、站内通知送达采购负责人 | 桌面端、移动端简化 |
-| E5-04 | 物料建档、提交、审批、生效并可被引用校验命中 | 桌面端 |
+| E5-04 | 物料建档、产生流水后修改冻结字段被拒并提示改用新建物料 | 桌面端 |
 | E5-05 | 产品建档、关联唯一物料、销售侧带出物料字段并允许改选 | 桌面端 |
 | E5-06 | 价目表建档、审批生效、零命中、单命中、多命中三分支的界面表现 | 桌面端 |
 | E5-07 | 批量导入 1000 行含 50 行错误、错误清单下载、通过行批量提交审批 | 桌面端，移动端按规格第 6.2 章转桌面端执行 |
 | E5-08 | 导出含敏感字段触发重新认证与审批、回执由站内通知送达 | 桌面端 |
-| E5-09 | 停用客户后新建引用被拒、存量引用不受影响 | 桌面端 |
+| E5-09 | 停用客户后新建引用被拒、存量引用不受影响、停用提示展示引用计数与覆盖模块清单 | 桌面端 |
 | E5-10 | 法人 A 的档案在法人 B 上下文不可见、不可写、检索不返回、错误信息不泄露存在性 | 桌面端 |
 | E5-11 | 门户提交的供应商自维护变更生成待审批申请，不直接写入档案 | 后端 E2E 加门户桩 |
 | E5-12 | 申请人尝试审批自己提交的申请被拒并提示不可自审 | 桌面端 |
 
-本阶段的四端界面按裁定 A-23 由本阶段交付，代码位于 clients/desktop/src/modules/mdm、cpq 与 clients/mobile/src/modules/mdm、cpq 四个目录，其中桌面端的客户与产品两个建档界面属第 0.1 节的 T0 切片，先于其余界面交付。规格第 6.2 章能力矩阵中取值为完整或简化的能力域实现完整入口，取值为 VIEW_ONLY 的能力域只实现只读视图，取值为 NOT_APPLICABLE 的不实现入口。原先依赖阶段 8 与阶段 6 探针的条件冻结分支已按第 4.3 节整条推迟，随判定落在那两个阶段的端到端用例；E5-09 不再展示引用计数与覆盖模块清单。本阶段不以空实现装配执行任何端到端用例，本节全部用例的断言在本阶段即为终态。
+本阶段的四端界面按裁定 A-23 由本阶段交付，代码位于 clients/desktop/src/modules/mdm、cpq、crm 与 clients/mobile/src/modules/mdm、cpq、crm 六个目录，其中桌面端的客户与产品两个建档界面属第 0.1 节的 T0 切片，先于其余界面交付。规格第 6.2 章能力矩阵中取值为完整或简化的能力域实现完整入口，取值为 VIEW_ONLY 的能力域只实现只读视图，取值为 NOT_APPLICABLE 的不实现入口。E5-04 的冻结字段被拒分支依赖阶段 8 的 InventoryMaterialUsageProbe，E5-05 的产品条件冻结分支依赖阶段 6 的 ClmProductUsageProbe 与 SalesProductUsageProbe，E5-09 的引用计数覆盖模块清单依赖阶段 6、7、8、10、12 各自的 MasterReferenceCounter，三处在本阶段以 ep-testkit 的探针桩装配执行，探针桩只出现在测试装配中，不进入两个 wiring 目录；三处的覆盖面按注册表实时枚举判定，未注册模块在界面上显式列为未覆盖，本阶段不登记顺延验收项，各实现的验收落在其交付阶段。
 
 #### 8.5 性能相关项
 
@@ -731,7 +754,7 @@ ep-domain-mdm 中的聚合根共六个：Customer、Supplier、Material、Produc
 | 范围 | 门槛 | 依据 |
 |---|---|---|
 | ep-domain-mdm、ep-domain-cpq | 行覆盖率不低于 85% | 冻结字段判定与取价命中直接决定规格第 17.3 章库存与存货一致性所依赖的分组键稳定性，按强制不变量相关代码取值 |
-| ep-app-mdm、ep-app-cpq、ep-contract-* | 行覆盖率不低于 70% | 规格第 17.2 章其余代码档 |
+| ep-app-mdm、ep-app-cpq、ep-app-crm、ep-contract-* | 行覆盖率不低于 70% | 规格第 17.2 章其余代码档 |
 | 本阶段新增与修改代码 | 不低于 80% | 规格第 17.2 章 |
 | 工作区整体 | 不低于 80% | 基线第 8.2 节 |
 
@@ -741,7 +764,7 @@ ep-domain-mdm 中的聚合根共六个：Customer、Supplier、Material、Produc
 
 下列各条可客观判定，全部达成才算本阶段完成。
 
-1. 30 张表与 31 个迁移文件在空库上一次执行成功，逆向执行成功，再次正向执行成功，结构逐对象比对一致。
+1. 30 张表与 34 个迁移文件在空库上一次执行成功，逆向执行成功，再次正向执行成功，结构逐对象比对一致；执行顺序按文件版本号全序，无一个文件早于它引用的对象。
 2. 全部 30 张表已 ENABLE 且 FORCE 行级安全，命名自检项 rls-enabled-and-forced 在本阶段表上通过。
 3. tests/rls_matrix 中本阶段的八类用例全部通过，零跳过。
 4. 第 8.1 至 8.4 节列出的全部用例通过，无长期跳过项。
@@ -754,14 +777,14 @@ ep-domain-mdm 中的聚合根共六个：Customer、Supplier、Material、Produc
 11. 五个新增指标在 ops-agent 端点上可抓取，标签基数符合纪律。
 12. ep-datagen 可产出符合规格附录 A.3 主数据规模的数据集，生成器版本已冻结。
 13. 一次完整的手工演示可跑通：建立两个法人各自的四类档案与一张价目表，导入 1000 行物料，停用一个客户，导出一份含敏感字段的客户清单，并在法人 B 的上下文下验证法人 A 的全部数据不可见。该演示以第 0.1 节的 T0 切片已通过为前提，T0 未通过时本阶段不进入全量开工。
-14. 本阶段的四处偏离与六项新增决定已回写共享技术基线对应章节，并经评审确认。
+14. 本阶段的四处偏离与七项新增决定已回写共享技术基线对应章节，并经评审确认。
 15. 本模块在规格第 6.2 章能力矩阵中取值为完整或简化的能力域，其四端界面已实现并通过 Playwright 与 tauri-driver 的桌面用例、XCUITest 与 Espresso 的移动用例；取值为 VIEW_ONLY 的能力域只实现只读视图；取值为 NOT_APPLICABLE 的不实现入口。
 16. 本模块数据集视图已发布并授予 ep_analyst_ro，列签名已同步给阶段 11。
-17. 本阶段全部路由的能力域码与动作类别常量已声明，常量分别位于 crates/contract/mdm/src/capability.rs 与 crates/contract/cpq/src/capability.rs，xtask configdoc 通过；按裁定 A-20 阶段 6 只对 crates/contract/cpq/src/capability.rs 追加常量，不重定义本阶段已声明的常量。
+17. 本阶段全部路由的能力域码与动作类别常量已声明，常量分别位于 crates/contract/mdm/src/capability.rs、crates/contract/cpq/src/capability.rs 与 crates/contract/crm/src/capability.rs，xtask configdoc 通过；按裁定 A-20 阶段 6 只对 crates/contract/cpq/src/capability.rs 追加常量，不重定义本阶段已声明的常量。
 18. crates/foundation/src/port/doc.rs 的五个类型与三个 trait 已按裁定 A-08 冻结，ep-adapter-doc 的实现覆盖导入模板生成、错误行清单渲染与 XLSX 读写三项，后续阶段无需新增 trait。
-19. mdm.classification_items 中不存在 TAX_RATE_PRESET 取值，字典桩 MdmTaxRateStub 已交付并在代码注释与本计划中标注其撤销时点为阶段 10 交付 invoice.tax_rate_options 之日。
+19. mdm.classification_items 中不存在 TAX_RATE_PRESET 取值，本阶段不交付任何税率桩，全库不存在 MdmTaxRateStub 及任何第二套税率取值实现；取默认税率一律经阶段 10 在 T0 期间交付的 ep_contract_invoice::TaxRateOptionQuery，按裁定 C-11 与总览第 1.5 节第五条执行。
 20. platform_core.sensitive_field_registry 中存在 mdm.customer_invoice_profiles 与 mdm.supplier_payment_profiles 的 bank_name 与 bank_account_no 共四行，bank_account_no 两行的 is_field_encrypted 为真、bank_name 两行为假；两张表上不存在同名明文列 bank_account_no，bank_account_no_enc 为 bytea 且 bank_account_no_key_ref 与 bank_account_no_tail 两列齐备，db/checks/11 返回零行；本阶段不引用 platform_meta 的任何对象。
-21. 本阶段不登记任何顺延项，也不注入任何空实现：条件冻结判定按第 4.3 节整条推迟到阶段 8 与阶段 6，引用计数与历史成交资料按第 4.13 节与第 4.12 节折叠进阶段 11 的受治理只读数据集，客户 360 聚合按第 4.14 节改由桌面端组合既有端点，四处均不留 trait、不留注册位、不留 TODO 注释；本阶段交付的两个 wiring.rs 中不出现任何以 Noop 为前缀的符号。
+21. 本阶段不注入任何空实现，也不登记任何顺延验收项：MaterialUsageProbe、ProductUsageProbe、MasterReferenceCounter、SalesTradeHistoryProvider、PurchaseTradeHistoryProvider 五个消费方端口与 MasterReferenceCounterRegistry、TradeHistoryProviderRegistry 两个注册表已按第 4.3、4.12、4.13 三节定义并留出注册位，注册集合在本阶段为空，覆盖面按注册表实时枚举判定，未注册模块显式列为未覆盖；apps/core-server/src/wiring/ 与 apps/job-worker/src/wiring/ 两个目录下的全部文件中不出现任何以 Noop、Stub、Fake、Dummy 为前缀的实现类型，由阶段 1 随 xtask 交付的 archcheck 规则 unwired-absent 断言，出现即构建失败。
 
 ### 10 与规格和 PRD 的对应
 
@@ -771,7 +794,7 @@ ep-domain-mdm 中的聚合根共六个：Customer、Supplier、Material、Produc
 |---|---|
 | 5.1 平台内核 | 作为使用方接入编号、Outbox、幂等、通知、审计、文件引用六项能力；不实现这些能力本身 |
 | 5.2 MDM 条目 | 客户、供应商、物料、产品四类主数据的编码、责任人、版本与变更审批全量实现；单位以最小档案实现；地点不实现；首版不含质量评分、数据血缘、记录合并去重、跨法人分发四项按不实现处理 |
-| 5.2 CRM 条目 | 客户档案本体实现；客户 360 视图不设服务端聚合端点与区块注册契约，由桌面端按规格第 6.2 章能力矩阵组合各模块既有的客户详情与列表端点得到，历史合同、回款、投诉、设备与服务记录五类内容随其所属模块阶段的既有端点自然可用 |
+| 5.2 CRM 条目 | 客户档案本体实现；客户 360 视图交付 Customer360SectionProvider 区块注册契约与 GET /api/v1/crm/customers/{id}/customer-360 端点骨架，历史合同、回款、投诉、设备与服务记录五类区块由阶段 12 按裁定 C-09 在同一端点上扩充 |
 | 5.2 CPQ 条目 | 产品价目实现；价格权限校验与折扣审批不实现，只暴露价格下限供其取用 |
 | 5.2 采购与 SRM 条目 | 供应商档案与资质、价格、交期、质量、风险五类记录实现；准入即档案生效审批；询比价、招投标、VMI 与绩效考核模型不实现 |
 | 5.5 全文检索条目 | 四类档案与价目表的关键字检索文档写入与字段裁剪实现 |
@@ -784,13 +807,13 @@ ep-domain-mdm 中的聚合根共六个：Customer、Supplier、Material、Produc
 | 7.7 法人行级隔离 | 30 张表按统一模板建策略；跨法人查询逐法人设置会话变量后合并；不使用 BYPASSRLS |
 | 7.9 派生存储安全继承 | 档案事件携带 security_level 与 data_scope_tags；搜索索引正文不含开票要素与银行信息；删除与更正在 15 分钟内传播 |
 | 7.10 历史数据导入 | 明确日常批量导入与迁移通道互不混用，本阶段只交付前者；按裁定 A-24 不设独立数据迁移阶段，期初与历史数据导入通道分别归阶段 9a、阶段 10 与阶段 8 |
-| 8 黄金业务闭环第 1 步 | 建单时自动带出客户、产品与价目三项的服务端取数；历史成交资料一项按第 4.12 节折叠进阶段 11 的受治理只读数据集，不参与默认值计算 |
+| 8 黄金业务闭环第 1 步 | 建单时自动带出客户、产品、价目与历史成交资料四项中的全部四项的服务端取数 |
 | 12.2 授权 | 审批链不可越权跳过与申请人不可自审在变更申请上执行；字段级权限与密级在开票要素与银行信息上执行 |
 | 12.5 审计 | 档案的新建、变更、停用、启用、作废、审批、导入批次、导出任务、敏感导出的重新认证一律与业务变更同事务写审计 |
 | 15.1 错误分类 | 本阶段全部错误落在五类分类内，封套四要素齐备，权限拒绝与不存在不可区分 |
 | 16 与附录 A.1 | 承担四个度量项与一个观察子段 |
 | 17.2 自动化测试 | 单元、领域属性、集成与契约、四端端到端五类测试在本阶段范围内执行 |
-| 17.3 强制不变量 | 本阶段不直接承载账务不变量，通过物料与产品编码及其法人归属的永久冻结保证库存数量守恒与存货金额账一致所用分组键稳定，并通过法人隔离测试集保证权限不越权一项；物料三项条件冻结的判定按第 4.3 节由阶段 8 承接 |
+| 17.3 强制不变量 | 本阶段不直接承载账务不变量，但通过物料三项冻结字段保证库存数量守恒与存货金额账一致的分组键稳定，并通过法人隔离测试集保证权限不越权一项 |
 
 #### 10.2 PRD 条目
 
@@ -803,16 +826,16 @@ ep-domain-mdm 中的聚合根共六个：Customer、Supplier、Material、Produc
 | 2.2.2 变更审批与版本 | 变更申请单承载新版本、档案继续按当前生效版本对外可用、单据引用不中断、同一档案单例约束、逐字段前后对照、冻结字段拒绝、变更不回溯 |
 | 2.2.3 编码与编号规则 | 四类档案各一套独立序列、法人内唯一、生效后冻结、不可回收复用 |
 | 2.2.4 唯一性与重复校验 | 四项校验全部实现，名称重复的确认动作写入审批意见 |
-| 2.2.5 停用与启用 | 停用只改可引用性、不校验未完成单据、启用走同一审批；引用计数提示折叠进阶段 11 的受治理只读数据集 |
+| 2.2.5 停用与启用 | 停用只改可引用性、不校验未完成单据、展示引用计数、启用走同一审批 |
 | 2.2.6 附件、检索与列表 | 附件按版本保存、检索按法人与字段级权限裁剪、列表默认值按基线第 11.5 节 |
 | 2.2.7 并发编辑 | 乐观并发、版本冲突按业务冲突拒绝、展示冲突对象与当前版本、不静默覆盖 |
 | 2.3 客户档案 | 全部 13 类字段与其必填、可变更、校验规则 |
 | 2.4 供应商档案 | 全部 12 类字段、资质到期扫描与标注、四类供应商侧记录、门户提交生成待审批申请 |
-| 2.5 物料档案 | 全部 11 类字段；三项条件冻结的判定按第 4.3 节整条推迟到阶段 8 |
-| 2.6 产品档案 | 全部 11 类字段；销售计量单位的条件冻结判定按第 4.3 节整条推迟到阶段 6 |
+| 2.5 物料档案 | 全部 11 类字段与三项条件冻结规则 |
+| 2.6 产品档案 | 全部 11 类字段与销售计量单位的条件冻结规则 |
 | 2.7 物料与产品的关系 | 编码空间独立、口径分工、只有物料无产品与只有产品无物料两类允许、建单带出物料 |
 | 2.8 价目表 | 全部字段、六状态机、取价命中三分支 |
-| 2.9 历史成交资料 | 不在本阶段实现，取数键、展示内容、只读与权限裁剪一并折叠进阶段 11 的受治理只读数据集，见第 4.12 节 |
+| 2.9 历史成交资料 | 销售侧与采购侧的取数键、展示内容、只读、权限裁剪、显式选用才回填 |
 | 2.10 引用关系与停用影响 | 五类档案停用后对新建与存量的行为，统一规则不触发单据状态变化 |
 | 2.11.1 与 2.11.3 | 日常批量导入与导出全量实现 |
 | 2.11.2 | 明确不在本阶段，走规格第 7.10 章通道；通道归属按裁定 A-24 分列于阶段 9a、阶段 10 与阶段 8 |
@@ -825,7 +848,7 @@ ep-domain-mdm 中的聚合根共六个：Customer、Supplier、Material、Produc
 
 R1 供应商档案的模块归属分歧。基线第 1.2 节把供应商档案与资质列在 procure 行，PRD 第 2.4 节把档案本体、资质、价格、交期、质量、风险全部写在主数据节，这是 PRD 附录乙 U-C-08 登记的双归属问题。本阶段收口到 mdm。若整合期改判归 procure，代价为把 8 张表跨 schema 迁移并把 ep-contract-mdm 的三个供应商侧 trait 反向，属一次停机窗口内的表迁移，估算 1 至 2 人日加一次数据搬迁。缓解方式是把供应商侧的对外接口全部收敛到 ep-contract-mdm 的四个 trait 上，采购阶段不直接读 mdm 的表。
 
-R2 条件冻结判定的承接遗漏。物料三项与产品一项的条件冻结按第 4.3 节整条推迟到阶段 8 与阶段 6。风险不在推迟期间，那段时间库存流水与销售引用在数据上必然为空、判定结果恒为放行；风险在承接遗漏，即那两个阶段交付取数实现时忘记把守卫条件加进 mdm 的变更申请路径，使这四个字段长期可改。遏制手段只有一条且不新增机制：把守卫条件的端到端用例写进那两个阶段的退出条件，与其取数实现同批验收。本阶段不为此设启动自检项，理由是启动自检拦不住忘记接入这件事，只能在每次启动时重复判读模块状态，把一处遗漏放大成八个进程拒绝启动，而这台服务器没有备节点。
+R2 探针缺位期的冻结字段放行。库存与销售模块交付前，物料三项与产品一项冻结字段实际不受保护。缓解手段两条且都不新增机制：一是按第 4.3 节把探针注册的强制点下沉为模块启用动作的前置校验，inventory、clm 与 sales 三个模块在其对应探针未注册时不允许启用；二是在验收演练前用一次全量对账脚本核对，对每个物料，若库存流水存在则其 base_uom_id 必须与首次流水记录的单位一致，该脚本在阶段 8 交付 InventoryMaterialUsageProbe 时一并加入内部对账组件。本阶段不为此设启动自检项，理由是启动自检只能在每次启动时重复判读模块状态，把一处遗漏放大成八个进程拒绝启动，而这台服务器没有备节点；覆盖面按注册表实时判定，本阶段不登记顺延验收项。
 
 R3 取价多行命中无优先级。PRD 第 2.8.3 节明确该规则未定义。本阶段返回全部命中行并强制人工选择。若决策改为系统自动取一行，CPQ 的返回值语义从命中集合变为单一默认值，销售阶段的取数代码需同步改，估算半人日，且 price_lists 需新增一个优先级列，属在线变更范围内的新增可空列。本阶段按纪律不预建该列。
 
@@ -843,7 +866,8 @@ R8 枚举字典化与固定枚举的切换。四类分类取值由 mdm.classific
 
 预留一律以接口与索引形态存在，不预建未登记的列，遵守基线第 12 节的落地纪律。
 
-- 本阶段不为后续阶段预留任何跨模块消费方端口与注册位。MaterialUsageProbe 与 ProductUsageProbe 随其判定由阶段 8 与阶段 6 自行定义并实现，MasterReferenceCounter、SalesTradeHistoryProvider、PurchaseTradeHistoryProvider 三个 trait 与两个注册表一并删除，裁定 A-13、A-14 与 A-15 中关于向本阶段反向注入的部分随之失效。本阶段对外冻结的四个 trait 见第 4.15 节，全部由本阶段自行实现。
+- 跨模块引用的五个消费方端口 MaterialUsageProbe、ProductUsageProbe、MasterReferenceCounter、SalesTradeHistoryProvider 与 PurchaseTradeHistoryProvider 已定义，两个注册表 MasterReferenceCounterRegistry 与 TradeHistoryProviderRegistry 已在 apps/core-server/src/wiring/ 与 apps/job-worker/src/wiring/ 两个目录中留出注册位，实现方与实现类型名按裁定 A-13、A-14 与 A-15 固定，后续阶段只需实现并注入；注册位是空集合而不是空实现，两个目录下的全部文件中不出现任何以 Noop、Stub、Fake、Dummy 为前缀的实现类型。
+- 客户 360 的 Customer360SectionProvider 已定义并留出注册位，合同、订单、回款、投诉、设备与服务记录六类区块由各自阶段在同一端点上注册。
 - 供应商自维护命令端口 SupplierSelfServiceCommand 已定义，门户阶段只需实现门户侧端点并调用。
 - 产品与物料关联基数放开为多对多，只需删除一条唯一索引，属在线变更。
 - 价目表适用范围扩展新的取值，只需扩展 CHECK 约束与 ScopeKind 枚举，客户端按基线第 5.6 节容忍未知取值并降级展示。
@@ -872,7 +896,8 @@ R8 枚举字典化与固定枚举的切换。四类分类取值由 mdm.classific
 | N3 | 档案五状态到 status 与 is_active 两列的映射 | 见第 3.2 节，回写基线第 4 节档案类表补充规则 |
 | N4 | 空槽唯一索引的写法 | 可空槽位列加普通唯一索引加 CASE 表达式的 CHECK，作为首版不使用部分索引前提下表达条件唯一的统一写法，回写基线第 3.10 节 |
 | N5 | 带操作符类的复合索引 | text_pattern_ops 类索引不属基线第 3.10 节禁止的函数索引与部分索引，允许用于前缀匹配，回写基线第 3.10 节 |
-| N6 | 主数据事件不进入关账枚举 | 不带 posting_date 与 accounting_period_id 的领域事件不计入关账受理前提中待消费过账条目数的枚举范围，回写基线第 6.1 节 |
+| N6 | 探针注册的强制点下沉为模块启用动作的前置校验 | 按裁定 C-25 撤销启动自检项 master-data-usage-probes-registered，改由 ep-app-mdm 在模块启用动作中校验相关消费方端口已注册，未注册即拒绝该次启用，启用完成后不在每次进程启动时复判，回写基线第 7.3 节 |
+| N7 | 主数据事件不进入关账枚举 | 不带 posting_date 与 accounting_period_id 的领域事件不计入关账受理前提中待消费过账条目数的枚举范围，回写基线第 6.1 节 |
 
 ### 13 被阻塞的业务决策与临时取值
 
@@ -888,15 +913,15 @@ R8 枚举字典化与固定枚举的切换。四类分类取值由 mdm.classific
 | U-A-08 | 默认审批链 | 阻塞演示不阻塞开发 | 出厂预置一条单节点审批链，审批人取该对象类型的主数据审批人角色 | 改审批链配置 |
 | U-A-09 | 导入模板列、最大行数、失败语义 | 不阻塞 | 最大 5000 行，通过行落库，错误行不落库，错误清单逐行标注 | 改配置项与校验分支 |
 | U-A-11 | 提醒提前量 | 不阻塞 | 资质到期提前 30 天 | 改配置项，决策后改为低代码定时器配置 |
-| U-A-12 | 开户银行是否同列敏感清单、三场景脱敏形态、导出是否触发重新认证 | 不阻塞 | 待决范围只有三问，裁定表与本阶段均不代拍：开户银行是否同列敏感字段清单、列表与详情与导出三场景的脱敏形态、导出是否触发重新认证。银行账号纳入行内敏感字段并做字段级加密由规格第 7.8 章强制，不在待决范围内，第 25 号迁移中 bank_account_no 两行的 is_field_encrypted 取真，物理列为 bank_account_no_enc 与 bank_account_no_key_ref 与 bank_account_no_tail 三列且不保留同名明文列。三问的临时取值依次为：开户银行纳入并登记两行，其 is_field_encrypted 取假、物理列保持 bank_name text 明文；bank_account_no 两行的 mask_style 取 KEEP_LAST_4 且后四位取自 bank_account_no_tail，bank_name 两行取 NONE，三场景同形态并一律经阶段 4 的 FieldProjector 渲染；导出是否触发重新认证不由本表列承载，统一指向阶段 4 的重新认证判定函数，该函数对这四列判真。四行的 security_level 与 mask_style 同为未决期间的临时取值 | 第一问改判为不纳入时删除或改写 bank_name 两行，属数据行变更，不改代码也不改表；改判为开户银行也做字段级加密时，须在一次变更内同时把 bank_name 两行的 is_field_encrypted 改为真、把物理列改为 bank_name_enc bytea 并补 bank_name_key_ref text、删去同名明文列，缺一 db/checks/11 必然判负。第二问改判只改这四行的 mask_style，不改代码。第三问改判限于阶段 4 判定函数的入参配置，本阶段不在表列上另给第二套答案。决策人为安全负责人与产品负责人，截止点按总览 R12 的 M3 之前关闭 U-A 组 |
+| U-A-12 | 开户银行是否同列敏感清单、三场景脱敏形态、导出是否触发重新认证 | 不阻塞 | 待决范围只有三问，裁定表与本阶段均不代拍：开户银行是否同列敏感字段清单、列表与详情与导出三场景的脱敏形态、导出是否触发重新认证。银行账号纳入行内敏感字段并做字段级加密由规格第 7.8 章强制，不在待决范围内，第 26 号迁移中 bank_account_no 两行的 is_field_encrypted 取真，物理列为 bank_account_no_enc 与 bank_account_no_key_ref 与 bank_account_no_tail 三列且不保留同名明文列。三问的临时取值依次为：开户银行纳入并登记两行，其 is_field_encrypted 取假、物理列保持 bank_name text 明文；bank_account_no 两行的 mask_style 取 KEEP_LAST_4 且后四位取自 bank_account_no_tail，bank_name 两行取 NONE，三场景同形态并一律经阶段 4 的 FieldProjector 渲染；导出是否触发重新认证不由本表列承载，统一指向阶段 4 的重新认证判定函数，该函数对这四列判真。四行的 security_level 与 mask_style 同为未决期间的临时取值 | 第一问改判为不纳入时删除或改写 bank_name 两行，属数据行变更，不改代码也不改表；改判为开户银行也做字段级加密时，须在一次变更内同时把 bank_name 两行的 is_field_encrypted 改为真、把物理列改为 bank_name_enc bytea 并补 bank_name_key_ref text、删去同名明文列，缺一 db/checks/11 必然判负。第二问改判只改这四行的 mask_style，不改代码。第三问改判限于阶段 4 判定函数的入参配置，本阶段不在表列上另给第二套答案。决策人为安全负责人与产品负责人，截止点按总览 R12 的 M3 之前关闭 U-A 组 |
 | U-B-05 | 权限求值顺序 | 不阻塞 | 按基线第 11.3 节，显式拒绝优先 | 无 |
 | U-B-06 | 字段权限是否有脱敏中间态 | 不阻塞 | 假定存在可见但脱敏中间态，掩码保留后 4 位 | 改字段元数据 |
 | U-B-07 | 记录级权限授予方式 | 不阻塞 | 假定按责任人授予，因此四类档案均建 owner_user_id 索引 | 若改为按创建人或显式共享，索引仍可用，只改判定策略 |
-| U-C-04 | 客户 360 视图无定义节 | 不阻塞 | 本阶段不交付任何客户 360 服务端对象，桌面端按规格第 6.2 章能力矩阵组合各模块既有的客户详情与列表端点展示 | 定义落地后按其内容决定由哪个模块的既有端点承载，服务端无契约需要改，代价落在桌面端的组合布局 |
+| U-C-04 | 客户 360 视图无定义节 | 部分阻塞 | 本阶段只交付 Customer360SectionProvider 区块注册契约与 /customer-360 端点骨架，区块内容由各模块阶段在同一端点上注册 | 区块内容为增量注册，不改契约 |
 | U-C-05 | 计量单位与地点的承载节 | 阻塞物料与产品建档 | 计量单位由本阶段以最小档案交付，不走审批链；地点不交付 | 若改归其他模块，需迁移 mdm.uoms 一张表并改两条外键为跨模块逻辑引用 |
 | U-C-06 | 仓库档案归属 | 不阻塞 | 归 inventory，本阶段不建表 | 无 |
 | U-C-08 | 供应商档案双归属 | 不阻塞 | 归 mdm，见第 12.1 节 D1 | 见 R1 |
-| U-D-04 | 税率可选值集合 | 不阻塞 | 列上只校验大于等于 0 小于 1；可选值集合按裁定 C-11 归阶段 10 的 invoice.tax_rate_options，阶段 10 交付前由本阶段的字典桩 MdmTaxRateStub 承担临时取值 | 阶段 10 交付时执行税率迁移并删除 MdmTaxRateStub，取用入口改为 ep_contract_invoice::TaxRateOptionQuery |
+| U-D-04 | 税率可选值集合 | 不阻塞 | 列上只校验大于等于 0 小于 1；可选值集合按裁定 C-11 归 invoice.tax_rate_options，取用入口为 ep_contract_invoice::TaxRateOptionQuery 的 default_rate 与 list，该表与该查询由阶段 10 在 T0 期间交付，早于本阶段全量开工，本阶段不交付任何税率桩 | 本阶段不承载税率取值，切换只落在阶段 10 的字典行，本阶段无代码与表需要改 |
 | U-E-01 | 信用额度按客户还是按客户加法人 | 不阻塞 | 落在 mdm.customers 上，因主数据按法人隔离且首版不含跨法人分发，等价于按客户加法人 | 若改为按客户全局，与首版不含跨法人主数据分发直接冲突，需先修订规格 |
 | U-E-02 | 信用额度为空的默认行为 | 不阻塞 | 列可空，NULL 表示未维护，0 表示零额度，两者语义不同；判定归销售阶段 | 无 |
 | U-F-08 | 供应商状态集合与语义 | 不阻塞 | 沿用四类档案的统一状态机，不另设暂停与终止 | 若新增状态，需扩 CHECK 约束 |
@@ -905,6 +930,6 @@ R8 枚举字典化与固定枚举的切换。四类分类取值由 mdm.classific
 | U-G-05 | 空批次标识 | 不阻塞 | 按基线第 11.4 节取固定值单个连字符，本阶段只在物料的批次管理标记上体现 | 无 |
 | PRD 2.3.1 无统一社会信用代码的客户类型 | 客户建档 | 不阻塞 | 客户类型落入 INDIVIDUAL 与 OVERSEAS 时免校验并要求 alternate_identifier 非空 | 改配置项 EP__MDM__USCC__EXEMPT_CUSTOMER_TYPES |
 | PRD 2.2.1 | 已生效档案的删除口径 | 不阻塞 | 不提供删除路径，只提供停用 | 若决策提供删除，需新增状态与一套引用检查 |
-| PRD 2.2.5 | 是否在有未结清应收或非零结存时阻断停用 | 不阻塞 | 不阻断，也不展示计数 | 若改为阻断，由 DEACTIVATION 变更申请的守卫条件读取阶段 11 的只读数据集判定，半人日 |
+| PRD 2.2.5 | 是否在有未结清应收或非零结存时阻断停用 | 不阻塞 | 不阻断，只展示引用计数 | 若改为阻断，由 MasterReferenceCounter 的返回值加一条守卫条件，半人日 |
 | PRD 2.8.3 | 多行命中优先级 | 不阻塞 | 返回全部命中行并强制人工选择 | 见 R3 |
-| PRD 2.9.3 | 历史成交的条数、窗口、排序与是否含作废单据 | 不阻塞 | 本阶段不承载，取值随第 4.12 节一并归阶段 11 的只读数据集 | 改那条数据集的 SQL 与其参数 |
+| PRD 2.9.3 | 历史成交的条数、窗口、排序与是否含作废单据 | 不阻塞 | 20 条、12 个月、按单据日期倒序、不含作废红冲与退货 | 改三个配置项 |
