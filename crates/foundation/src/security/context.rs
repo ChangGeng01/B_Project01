@@ -2,7 +2,8 @@
 
 use std::sync::Arc;
 
-use crate::error::{AppError, E_INVALID_ARGUMENT};
+use crate::error::codes::PLATFORM_REQUEST_INVALID_PAYLOAD;
+use crate::error::AppError;
 use crate::id::marker::{
     Customer, Department, LegalEntity, Position, Project, Session, UserAccount,
 };
@@ -21,13 +22,13 @@ fn checked(
     let len = raw.chars().count();
     if len < min || len > max {
         return Err(AppError::new(
-            E_INVALID_ARGUMENT,
+            PLATFORM_REQUEST_INVALID_PAYLOAD,
             format!("{field} 长度需在 {min}..={max}，实际 {len}"),
         ));
     }
     if let Some(bad) = raw.chars().find(|c| !allowed(*c)) {
         return Err(AppError::new(
-            E_INVALID_ARGUMENT,
+            PLATFORM_REQUEST_INVALID_PAYLOAD,
             format!("{field} 含非法字符 {bad:?}"),
         ));
     }
@@ -84,7 +85,7 @@ pub struct DataScopeTag(Arc<str>);
 
 impl DataScopeTag {
     pub fn new(raw: &str) -> Result<Self, AppError> {
-        let err = |m: String| AppError::new(E_INVALID_ARGUMENT, m);
+        let err = |m: String| AppError::new(PLATFORM_REQUEST_INVALID_PAYLOAD, m);
         if raw.chars().count() > 128 {
             return Err(err(format!("DataScopeTag 总长上限 128，实际 {}", raw.chars().count())));
         }
@@ -126,11 +127,17 @@ pub enum AccountKind {
 /// 序列化取值与第 5.6 节 X-Client 头的六个取值一一对应。
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug, serde::Serialize, serde::Deserialize)]
 pub enum ClientKind {
+    #[serde(rename = "win")]
     Win,
+    #[serde(rename = "mac")]
     Mac,
+    #[serde(rename = "ios")]
     Ios,
+    #[serde(rename = "android")]
     Android,
+    #[serde(rename = "portal")]
     Portal,
+    #[serde(rename = "ops")]
     Ops,
 }
 
@@ -365,5 +372,42 @@ mod tests {
         assert_eq!(ctx.device_id.as_str(), SYSTEM_DEVICE_ID);
         assert_eq!(ctx.department_scope, DepartmentScope::All);
         assert!(!ctx.is_breakglass);
+    }
+}
+
+#[cfg(test)]
+mod client_kind_tests {
+    use super::*;
+
+    /// 序列化取值与技术基线第 5.6 节 X-Client 头的六个取值一一对应。
+    ///
+    /// 此前六个变体没有任何 serde 属性，会序列化为 `"Win"` 这样的大驼峰，
+    /// 而同一文件内的 `DutyClass` 有 rename——同一处冻结项两套做法。
+    #[test]
+    fn serializes_as_the_x_client_header_values() {
+        const WANT: [(ClientKind, &str); 6] = [
+            (ClientKind::Win, "\"win\""),
+            (ClientKind::Mac, "\"mac\""),
+            (ClientKind::Ios, "\"ios\""),
+            (ClientKind::Android, "\"android\""),
+            (ClientKind::Portal, "\"portal\""),
+            (ClientKind::Ops, "\"ops\""),
+        ];
+        for (kind, want) in WANT {
+            assert_eq!(serde_json::to_string(&kind).expect("可序列化"), want);
+        }
+    }
+
+    #[test]
+    fn rejects_the_camel_case_form() {
+        assert!(serde_json::from_str::<ClientKind>("\"Win\"").is_err(), "大驼峰不是合法取值");
+        assert_eq!(serde_json::from_str::<ClientKind>("\"win\"").expect("合法"), ClientKind::Win);
+    }
+
+    /// DutyClass 的六个取值与 platform_authz.roles.duty_class 逐字一致。
+    #[test]
+    fn duty_class_matches_the_column() {
+        assert_eq!(serde_json::to_string(&DutyClass::System).expect("可序列化"), "\"SYSTEM\"");
+        assert_eq!(serde_json::to_string(&DutyClass::Config).expect("可序列化"), "\"CONFIG\"");
     }
 }

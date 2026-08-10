@@ -5,6 +5,7 @@
 //! 未实现的子命令一律以退出码 70 明确报「本阶段未交付」，不静默返回 0。
 
 mod archcheck;
+mod errorcodes;
 mod graph;
 
 use std::path::PathBuf;
@@ -38,11 +39,26 @@ fn main() -> ExitCode {
     }
     match cmd {
         "archcheck" => run_archcheck(),
+        "errorcodes" => run_errorcodes(),
         other => {
             eprintln!("子命令 {other} 在本阶段尚未交付（退出码 {EXIT_NOT_DELIVERED}）");
             ExitCode::from(EXIT_NOT_DELIVERED)
         }
     }
+}
+
+fn run_errorcodes() -> ExitCode {
+    let report = errorcodes::run(&workspace_root());
+    println!("errorcodes 比对了 {} 条错误码。", report.compared);
+    if report.ok() {
+        println!("docs/error-codes.md 与代码常量表逐项一致。");
+        return ExitCode::SUCCESS;
+    }
+    eprintln!("\n不一致（{} 处）：", report.problems.len());
+    for p in &report.problems {
+        eprintln!("  {p}");
+    }
+    ExitCode::from(1)
 }
 
 fn run_archcheck() -> ExitCode {
