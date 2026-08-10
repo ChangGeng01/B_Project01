@@ -1,0 +1,13 @@
+        [package]
+        name = "ep-app-procure"
+        edition.workspace = true
+        version.workspace = true
+        publish.workspace = true
+
+        [lints]
+        workspace = true
+
+        [dependencies]
+        ep-foundation.workspace = true
+ep-contract-procure.workspace = true
+ep-domain-procure.workspace = true

@@ -1,0 +1,13 @@
+        [package]
+        name = "ep-app-reporting"
+        edition.workspace = true
+        version.workspace = true
+        publish.workspace = true
+
+        [lints]
+        workspace = true
+
+        [dependencies]
+        ep-foundation.workspace = true
+ep-contract-reporting.workspace = true
+ep-domain-reporting.workspace = true

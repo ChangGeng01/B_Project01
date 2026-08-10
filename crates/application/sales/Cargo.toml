@@ -1,0 +1,13 @@
+        [package]
+        name = "ep-app-sales"
+        edition.workspace = true
+        version.workspace = true
+        publish.workspace = true
+
+        [lints]
+        workspace = true
+
+        [dependencies]
+        ep-foundation.workspace = true
+ep-contract-sales.workspace = true
+ep-domain-sales.workspace = true

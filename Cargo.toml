@@ -1,0 +1,105 @@
+[workspace]
+resolver = "2"
+members = [
+    "crates/foundation",
+    "crates/platform/*",
+    "crates/contract/*",
+    "crates/domain/*",
+    "crates/application/*",
+    "crates/adapter/*",
+    "apps/*",
+    "testkit",
+    "datagen",
+    "xtask",
+    "tools/*",
+]
+
+[workspace.package]
+edition = "2021"
+version = "0.1.0"
+publish = false
+
+# 退出条件 1：零 warning，-D warnings 生效。
+[workspace.lints.rust]
+warnings = "deny"
+
+[workspace.dependencies]
+uuid = { version = "1", features = ["v7", "serde"] }
+chrono = { version = "0.4", features = ["serde", "clock"], default-features = false }
+async-trait = "0.1"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+thiserror = "2"
+
+ep-foundation = { path = "crates/foundation" }
+ep-platform-tenancy = { path = "crates/platform/tenancy" }
+ep-platform-identity = { path = "crates/platform/identity" }
+ep-platform-authz = { path = "crates/platform/authz" }
+ep-platform-meta = { path = "crates/platform/meta" }
+ep-platform-flow = { path = "crates/platform/flow" }
+ep-platform-audit = { path = "crates/platform/audit" }
+ep-platform-outbox = { path = "crates/platform/outbox" }
+ep-platform-sequence = { path = "crates/platform/sequence" }
+ep-platform-notify = { path = "crates/platform/notify" }
+ep-platform-license = { path = "crates/platform/license" }
+ep-platform-release = { path = "crates/platform/release" }
+ep-platform-file = { path = "crates/platform/file" }
+ep-platform-recon = { path = "crates/platform/recon" }
+ep-platform-obs = { path = "crates/platform/obs" }
+ep-platform-runtime = { path = "crates/platform/runtime" }
+ep-contract-mdm = { path = "crates/contract/mdm" }
+ep-contract-crm = { path = "crates/contract/crm" }
+ep-contract-cpq = { path = "crates/contract/cpq" }
+ep-contract-clm = { path = "crates/contract/clm" }
+ep-contract-sales = { path = "crates/contract/sales" }
+ep-contract-procure = { path = "crates/contract/procure" }
+ep-contract-inventory = { path = "crates/contract/inventory" }
+ep-contract-costing = { path = "crates/contract/costing" }
+ep-contract-project = { path = "crates/contract/project" }
+ep-contract-service = { path = "crates/contract/service" }
+ep-contract-finance = { path = "crates/contract/finance" }
+ep-contract-ledger = { path = "crates/contract/ledger" }
+ep-contract-invoice = { path = "crates/contract/invoice" }
+ep-contract-portal = { path = "crates/contract/portal" }
+ep-contract-reporting = { path = "crates/contract/reporting" }
+ep-domain-mdm = { path = "crates/domain/mdm" }
+ep-domain-crm = { path = "crates/domain/crm" }
+ep-domain-cpq = { path = "crates/domain/cpq" }
+ep-domain-clm = { path = "crates/domain/clm" }
+ep-domain-sales = { path = "crates/domain/sales" }
+ep-domain-procure = { path = "crates/domain/procure" }
+ep-domain-inventory = { path = "crates/domain/inventory" }
+ep-domain-costing = { path = "crates/domain/costing" }
+ep-domain-project = { path = "crates/domain/project" }
+ep-domain-service = { path = "crates/domain/service" }
+ep-domain-finance = { path = "crates/domain/finance" }
+ep-domain-ledger = { path = "crates/domain/ledger" }
+ep-domain-invoice = { path = "crates/domain/invoice" }
+ep-domain-portal = { path = "crates/domain/portal" }
+ep-domain-reporting = { path = "crates/domain/reporting" }
+ep-app-mdm = { path = "crates/application/mdm" }
+ep-app-crm = { path = "crates/application/crm" }
+ep-app-cpq = { path = "crates/application/cpq" }
+ep-app-clm = { path = "crates/application/clm" }
+ep-app-sales = { path = "crates/application/sales" }
+ep-app-procure = { path = "crates/application/procure" }
+ep-app-inventory = { path = "crates/application/inventory" }
+ep-app-costing = { path = "crates/application/costing" }
+ep-app-project = { path = "crates/application/project" }
+ep-app-service = { path = "crates/application/service" }
+ep-app-finance = { path = "crates/application/finance" }
+ep-app-ledger = { path = "crates/application/ledger" }
+ep-app-invoice = { path = "crates/application/invoice" }
+ep-app-portal = { path = "crates/application/portal" }
+ep-app-reporting = { path = "crates/application/reporting" }
+ep-adapter-db = { path = "crates/adapter/db" }
+ep-adapter-db-pg = { path = "crates/adapter/db-pg" }
+ep-adapter-file = { path = "crates/adapter/file" }
+ep-adapter-kms = { path = "crates/adapter/kms" }
+ep-adapter-queue = { path = "crates/adapter/queue" }
+ep-adapter-search = { path = "crates/adapter/search" }
+ep-adapter-doc = { path = "crates/adapter/doc" }
+ep-adapter-esign = { path = "crates/adapter/esign" }
+ep-adapter-wasm = { path = "crates/adapter/wasm" }
+ep-adapter-ipc = { path = "crates/adapter/ipc" }
+ep-testkit = { path = "testkit" }

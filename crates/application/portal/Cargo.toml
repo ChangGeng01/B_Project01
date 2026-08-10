@@ -1,0 +1,13 @@
+        [package]
+        name = "ep-app-portal"
+        edition.workspace = true
+        version.workspace = true
+        publish.workspace = true
+
+        [lints]
+        workspace = true
+
+        [dependencies]
+        ep-foundation.workspace = true
+ep-contract-portal.workspace = true
+ep-domain-portal.workspace = true

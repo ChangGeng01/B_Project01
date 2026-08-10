@@ -1,0 +1,11 @@
+[package]
+name = "ep-adapter-ipc"
+edition.workspace = true
+version.workspace = true
+publish.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+ep-foundation.workspace = true

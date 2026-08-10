@@ -1,0 +1,5 @@
+# 工具链版本唯一来源。阶段 1 冻结，其后不得单独升级（ADR-0002）。
+[toolchain]
+channel = "1.95.0"
+components = ["rustfmt", "clippy"]
+profile = "minimal"

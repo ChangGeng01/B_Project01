@@ -1,0 +1,13 @@
+        [package]
+        name = "ep-app-crm"
+        edition.workspace = true
+        version.workspace = true
+        publish.workspace = true
+
+        [lints]
+        workspace = true
+
+        [dependencies]
+        ep-foundation.workspace = true
+ep-contract-crm.workspace = true
+ep-domain-crm.workspace = true

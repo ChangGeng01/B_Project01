@@ -1,3 +1,5 @@
 .DS_Store
 .venv-docx/
 __pycache__/
+
+/target

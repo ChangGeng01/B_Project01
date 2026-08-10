@@ -1,0 +1,13 @@
+        [package]
+        name = "ep-app-clm"
+        edition.workspace = true
+        version.workspace = true
+        publish.workspace = true
+
+        [lints]
+        workspace = true
+
+        [dependencies]
+        ep-foundation.workspace = true
+ep-contract-clm.workspace = true
+ep-domain-clm.workspace = true

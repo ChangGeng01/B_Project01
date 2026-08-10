@@ -1,0 +1,13 @@
+        [package]
+        name = "backup-writer"
+        edition.workspace = true
+        version.workspace = true
+        publish.workspace = true
+
+        [lints]
+        workspace = true
+
+        [dependencies]
+        ep-foundation.workspace = true
+ep-platform-runtime.workspace = true
+ep-platform-obs.workspace = true
