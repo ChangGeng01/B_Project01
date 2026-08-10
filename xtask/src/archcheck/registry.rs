@@ -135,3 +135,108 @@ mod negative_samples {
         assert!(compare("delegated", &rows(TABLE), &code).is_empty(), "续行不算差异");
     }
 }
+
+// ---------------------------------------------------------------- 规则花名册
+
+const ROSTER_DOC: &str =
+    "docs/superpowers/plans/2026-08-10-first-release-dev-plan/01-engineering-baseline.md";
+const ROSTER_MARKER: &str = "`xtask archcheck` 的规则面与三态输出就位。已判定规则共 ";
+
+/// `rule-roster-matched` —— 阶段 1 退出条件 27 声称的规则条数与规则名，
+/// 必须与本工具实际判定的一一相等。
+///
+/// 立这条的理由是计数漂移在本项目已复发四次（A-06 的注册方与校验项、
+/// 「允许项五条」实为七条、本条自己写 14 条而工具实为 16 条、「两条裁定」实为四条）。
+/// 判据完全可判定：被测输入只有该行与本工具自身的输出两项。
+pub fn rule_roster(root: &Path, checked: &[&'static str]) -> Vec<Violation> {
+    const RULE: &str = "rule-roster-matched";
+    let make = |d: String| Violation { rule: RULE, package: ROSTER_DOC.to_string(), detail: d };
+
+    let Ok(text) = fs::read_to_string(root.join(ROSTER_DOC)) else {
+        return vec![make("读不到阶段 1 计划".into())];
+    };
+    let Some(line) = text.lines().find(|l| l.contains(ROSTER_MARKER)) else {
+        return vec![make(format!("找不到退出条件 27 的花名册句，锚点为「{ROSTER_MARKER}」"))];
+    };
+
+    let mut found = Vec::new();
+
+    let claimed_count: Option<usize> = line
+        .split_once(ROSTER_MARKER)
+        .and_then(|(_, rest)| rest.split_once(' ').map(|(n, _)| n.trim_end_matches('条')))
+        .and_then(|n| cn_number(n));
+    match claimed_count {
+        None => found.push(make("退出条件 27 的条数读不出来".into())),
+        Some(n) if n != checked.len() => found.push(make(format!(
+            "退出条件 27 声称已判定规则共 {n} 条，本工具实际判定 {} 条",
+            checked.len()
+        ))),
+        Some(_) => {}
+    }
+
+    let listed: Vec<&str> = backticked(line);
+    for name in checked {
+        if !listed.contains(name) {
+            found.push(make(format!("本工具判定了 {name}，但退出条件 27 的名单里没有它")));
+        }
+    }
+    for name in &listed {
+        // 名单里也会出现非规则名的反引号词（`ep-platform-*`、路径、类型名），
+        // 只对规则形态的词判定：小写字母、连字符与斜杠，且含至少一个连字符。
+        // crate 名一律 `ep-` 前缀，规则名一律不是——这是排除 crate 名的唯一判据。
+        let rule_shaped = name.contains('-')
+            && !name.starts_with("ep-")
+            && name.chars().all(|c| c.is_ascii_lowercase() || c == '-' || c == '/');
+        if rule_shaped && !checked.contains(name) {
+            found.push(make(format!("退出条件 27 列了 {name}，但本工具没有这条规则")));
+        }
+    }
+    found
+}
+
+/// 只认阿拉伯数字。中文数字在本句里不出现，出现即视为读不出来。
+fn cn_number(s: &str) -> Option<usize> {
+    s.trim().parse().ok()
+}
+
+fn backticked(line: &str) -> Vec<&str> {
+    let mut out = Vec::new();
+    let mut rest = line;
+    while let Some(a) = rest.find('`') {
+        let after = &rest[a + 1..];
+        let Some(b) = after.find('`') else { break };
+        out.push(&after[..b]);
+        rest = &after[b + 1..];
+    }
+    out
+}
+
+#[cfg(test)]
+mod roster_negative_samples {
+    use super::*;
+
+    #[test]
+    fn negative_backtick_extraction() {
+        let got = backticked("共 3 条：`a-b`、`c-d`，其中 `e-f` 新增");
+        assert_eq!(got, ["a-b", "c-d", "e-f"]);
+    }
+
+    #[test]
+    fn negative_rule_shape() {
+        let shaped = |n: &str| n.contains('-')
+            && !n.starts_with("ep-")
+            && n.chars().all(|c| c.is_ascii_lowercase() || c == '-' || c == '/');
+        assert!(shaped("platform-no-adapter"));
+        assert!(shaped("foundation-no-business/necessity"));
+        // 通配 crate 名与类型名不是规则名。
+        assert!(!shaped("ep-platform-*"));
+        assert!(!shaped("PgTx"));
+        assert!(!shaped("ep-foundation"), "crate 名一律 ep- 前缀，规则名一律不是");
+    }
+
+    #[test]
+    fn negative_count_parse() {
+        assert_eq!(cn_number("17"), Some(17));
+        assert_eq!(cn_number("十七"), None, "中文数字视为读不出来，宁可报错不可静默");
+    }
+}

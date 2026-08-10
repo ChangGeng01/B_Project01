@@ -98,11 +98,13 @@ pub fn evaluate(ws: &Workspace) -> Report {
     ]);
 
     checked.push("undecidable-registry-matched");
+    checked.push("rule-roster-matched");
 
     // 裁定 F-03 后本工具不再声称判定必要性，因此没有任何不可判定项。
     // 该表保留是为了让「未来新增的不可判定判据」有唯一且诚实的落点。
     let undecidable: Vec<(&'static str, String)> = Vec::new();
     violations.extend(registry::check(root, &DELEGATED, &undecidable));
+    violations.extend(registry::rule_roster(root, &checked));
 
     Report { violations, checked, undecidable }
 }
