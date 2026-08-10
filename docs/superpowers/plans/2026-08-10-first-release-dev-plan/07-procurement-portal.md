@@ -30,14 +30,14 @@
 
 | crate | 目录 | 职责 | 依赖 |
 |---|---|---|---|
-| ep-contract-procure | crates/contract/procure | 采购模块对外公开的命令、查询、事件类型与 DTO；供其他模块调用的 trait，含 `PaymentRequestWritebackPort`、`PurchaseOrderInvoicingPort`、`GoodsReceiptQueryPort`、`PurchaseRequisitionIntakePort`、`PurchaseReturnLinkPort`；`src/capability.rs` 中为每个用例声明 `<USECASE_SCREAMING>_DOMAIN` 与 `<USECASE_SCREAMING>_ACTION` 一对常量 | 仅 ep-foundation |
+| ep-contract-procure | crates/contract/procure | 采购模块对外公开的命令、查询、事件类型与 DTO；供其他模块调用的 trait，含 `PaymentRequestWritebackPort`、`PurchaseOrderInvoicingPort`、`GoodsReceiptQueryPort`、`PurchaseRequisitionIntakePort`、`PurchaseReturnLinkPort`、`GrniSubledgerBalancePort`（子账侧余额端口，定义在 `src/port/subledger_balance.rs`，见裁定 G-01）；`src/capability.rs` 中为每个用例声明 `<USECASE_SCREAMING>_DOMAIN` 与 `<USECASE_SCREAMING>_ACTION` 一对常量 | 仅 ep-foundation |
 | ep-domain-procure | crates/domain/procure | 采购需求、采购订单、收货单、采购退货单、付款申请、供应商准入与质量记录六类聚合；数量守恒、可退数量、累计下达数量、占用金额四组不变量；业务端口 trait | ep-foundation、ep-contract-procure |
-| ep-app-procure | crates/application/procure | 采购各用例、事务边界、授权调用、审计与 Outbox 写入、与库存与总账两个模块契约的编排；`src/probe/` 下的 `ProcureReferenceCounter` 与 `ProcureTradeHistoryProvider`；六个 `ReconCheck` 实现（R-PROC-01 至 R-PROC-05 与 R-PORT-01）；`GrniSubledgerBalanceQuery` 子账侧余额查询函数 | ep-foundation、ep-platform-*、ep-domain-procure、ep-contract-* |
+| ep-app-procure | crates/application/procure | 采购各用例、事务边界、授权调用、审计与 Outbox 写入、与库存与总账两个模块契约的编排；`src/probe/` 下的 `ProcureReferenceCounter` 与 `ProcureTradeHistoryProvider`；六个 `ReconCheck` 实现（R-PROC-01 至 R-PROC-05 与 R-PORT-01）；`GrniSubledgerBalanceQuery`，即 `ep_contract_procure::GrniSubledgerBalancePort` 的实现类型，位于 `crates/application/procure/src/projection/subledger_balance.rs` | ep-foundation、ep-platform-*、ep-domain-procure、ep-contract-* |
 | ep-contract-portal | crates/contract/portal | 门户受控能力的命令、查询与 DTO；门户投影的字段白名单类型；`PortalCapability` 枚举；`src/capability.rs` 中为每个门户用例声明 `<USECASE_SCREAMING>_DOMAIN` 与 `<USECASE_SCREAMING>_ACTION` 一对常量 | 仅 ep-foundation |
 | ep-domain-portal | crates/domain/portal | 门户账号绑定、送货通知、发票上传记录三类聚合；能力白名单与供应商数据范围两组不变量 | ep-foundation、ep-contract-portal |
 | ep-app-portal | crates/application/portal | 门户五项能力的受控用例、投影组装与脱敏裁剪、门户操作审计写入 | ep-foundation、ep-platform-*、ep-domain-portal、ep-contract-* |
 
-依赖方向逐条自检：`ep-domain-procure` 不依赖 `ep-contract-inventory` 与 `ep-contract-ledger`，跨模块调用一律经 `ep-app-procure`；`ep-app-portal` 不依赖 `ep-app-procure`，门户对采购单据的读写经 `ep-contract-procure` 的 trait，实现在 `apps/core-server/src/wiring.rs` 注入。这两条是本阶段最容易被违反的两条，列入 CI 的 `cargo metadata` 自检断言。
+依赖方向逐条自检：`ep-domain-procure` 不依赖 `ep-contract-inventory` 与 `ep-contract-ledger`，跨模块调用一律经 `ep-app-procure`；`ep-app-portal` 不依赖 `ep-app-procure`，门户对采购单据的读写经 `ep-contract-procure` 的 trait，实现在 `apps/core-server/src/wiring.rs` 注入。这两条是本阶段最容易被违反的两条，由阶段 1 交付的 `xtask archcheck` 按层位断言：前者落禁止项第一条 `domain-no-cross-module`，后者落禁止项第二条 `app-no-peer-app`，被测输入是 `cargo metadata --no-deps` 建出的层位图；本阶段不另立按 crate 逐项比对期望依赖清单的自检脚本（裁定 F-05 通则甲-3）。
 
 #### 2.2 改动的既有 crate
 
@@ -1024,7 +1024,7 @@ E2E-T-01 至 E2E-T-04 逐条对应规格第 19 章阶段 3 门户条目的四项
 19. 本模块在规格第 6.2 章能力矩阵中取值为完整或简化的能力域，其四端界面已实现并通过 Playwright 与 tauri-driver 的桌面用例、XCUITest 与 Espresso 的移动用例；取值为 VIEW_ONLY 的能力域只实现只读视图；取值为 NOT_APPLICABLE 的不实现入口。供应商门户站点以浏览器承载，其用例由 Playwright 驱动。
 20. 本阶段全部路由的能力域码与动作类别常量已在 `crates/contract/procure/src/capability.rs` 与 `crates/contract/portal/src/capability.rs` 声明，`xtask configdoc` 通过。
 21. `ProcureReferenceCounter` 与 `ProcureTradeHistoryProvider` 已实现并在两个 wiring.rs 注册到 `MasterReferenceCounterRegistry` 与 `TradeHistoryProviderRegistry`，覆盖未终态采购需求、采购订单、收货、采购退货、付款申请与采购订单行、收货行的历史成交。
-22. 已提供本模块的子账侧余额查询函数，函数名 `GrniSubledgerBalanceQuery`、返回类型 `Money`，返回该法人该会计期间的已收货未收票暂估合计，由阶段 10 在其 `SubledgerBalanceProvider` 上包装。
+22. 已在 `crates/contract/procure/src/port/subledger_balance.rs` 定义 `GrniSubledgerBalancePort`（`Send + Sync`，带 `#[async_trait::async_trait]`），方法为 `async fn balance(&self, snapshot: &dyn SnapshotCtx, legal_entity_id: Id<LegalEntity>, accounting_period_id: Id<AccountingPeriod>) -> Result<Money, AppError>`，返回该法人该会计期间的已收货未收票暂估合计；实现类型 `GrniSubledgerBalanceQuery` 位于 `crates/application/procure/src/projection/subledger_balance.rs`，`impl` 与类型同 crate。本阶段不写任何注入行，注入由阶段 10 在 `apps/core-server/src/wiring/` 与 `apps/job-worker/src/wiring/` 两个目录写入（裁定 G-01；`ep_contract_finance::SubledgerBalanceProvider` 一名全卷作废，本阶段不引用）。
 23. `PurchaseReturnLinkPort::link_drop_ship_return` 已实现并在两个 wiring.rs 首次接线，阶段 6 在本阶段之前未注入任何替身，直运退货勾稽端到端通过。
 24. 八个单据类型码 PR、PO、GR、RJ、PRT、PAYR、DN、SIU 已登记入 `docs/data-dictionary.md` 的单据类型码一节与 `ep-platform-sequence` 的常量表，`xtask configdoc --check-doc-type-codes` 通过。
 25. 两个 wiring.rs 中不出现任何以 `Noop` 前缀命名的注入行，也不出现 `ReceiptInvoiceMatchQueryPort`、`PurchaseCreditNotePort`、`PayableLedgerQuery` 与 `SupplierStatementQuery` 四个端口的调用点。本阶段推迟到阶段 10 的四项在此逐条列名：采购退货的发票已登记分支与红字发票登记（第 4.4 小节）、付款申请的 `INVOICE_PAYMENT` 分支与占用写入路径（第 4.5 小节）、三个门户对账端点 `/portal/v1/reconciliation/purchase-invoices` 与 `/payments` 与 `/payable-balance`（第 5.7 小节）、集成场景第 12 项与第 20 项。四项的实现与验收在阶段 10 同批执行，本阶段不为其登记任何顺延验收。

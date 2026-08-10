@@ -19,7 +19,7 @@ T0 的通过判据只有一条：收入卡上该法人该会计期间的取值�
 
 | 编号 | 内容 | 理由 | 影响范围 |
 |---|---|---|---|
-| D-11-01 | reporting 的分析取数经 ep_analyst_ro 直接读取来源模块在其自身 schema 内发布的 v_ 受治理数据集视图，不逐条经 contract trait 往返。基线第 1.3 节的禁止跨模块直接读写业务表在本阶段被界定为只约束基表 | 规格第 5.5 章与第 16 章要求分析与经营报表在同一实例的独立只读角色上以聚合执行；在会计分录 150 万条的基准数据集上逐行往返无法满足附录 A.1 常用报表 P95 在 10 秒内 | 只读、只经 ep_analyst_ro、只经已登记数据集视图、SQL 中不得出现来源模块基表名、不得出现任何写语句，由 CI 的 SQL 静态检查与数据集注册表双重约束 |
+| D-11-01 | 本条为已回写决定，不是相对基线的偏离，编号保留 D-11-01 不重排。reporting 的分析取数经 ep_analyst_ro 直接读取来源模块在其自身 schema 内发布的 v_ 受治理数据集视图，不逐条经 contract trait 往返。本条不再单边界定基线第 1.3 节禁止项第七条的适用面：按裁定 F-05，该条已在基线内改写为通道一与通道二两条通道，通道一是跨模块取数经被调方 ep-contract-* 中的 trait 往返，通道二是只读分析取数经 ep_analyst_ro 读已登记的 v_ 受治理数据集视图；取值的唯一出处在基线，本行只写通道二在本阶段的落地口径 | 规格第 5.5 章与第 16 章要求分析与经营报表在同一实例的独立只读角色上以聚合执行；在会计分录 150 万条的基准数据集上逐行往返无法满足附录 A.1 常用报表 P95 在 10 秒内 | 只读、只经 ep_analyst_ro、只经已登记数据集视图、SQL 中不得出现来源模块基表名、不得出现任何写语句。不得出现来源模块基表名一条的机检面为 xtask archcheck 的 db-pg-one-schema-per-file，判据是仓储文件内出现自身 schema 之外的非 v_ 对象即违反，另由数据集注册表在运行期约束取数入口；只经 ep_analyst_ro 一条无机检承接方，按基线第 12.1 节 delegated 段登记，承接方为本阶段的启动自检项 reporting-dataset-signature-matched 加评审。本阶段唯一不落在通道二内的跨模块取数是第 6.6 节第三个对账校验项，它在 job-worker 自身连接池上执行，已按通道一改经 contract trait |
 | D-11-02 | 分析查询使用单个只读 REPEATABLE READ 事务。基线第 8.4 节只为内部对账与关账前校验规定该级别 | PRD 第 8.2.3 与第 8.3.2 节要求各维度合计加未分摊差异等于总额可由用户在结果表上直接验算。汇总行、未分摊差异行与总计行若分处不同快照，并发写入会使该恒等式在结果页上不成立 | 只影响 costing 与 reporting 的只读查询路径，不改变任何业务事务的隔离级别 |
 | D-11-03 | reporting.datasets 与 reporting.dataset_fields 不带 legal_entity_id，按基线第 3.8 节的全局配置字典归类，不建行级策略 | 两表是随版本发布的内置数据集目录，不承载业务数据，对全部法人取值相同。加法人列会产生两份完全相同的目录与两套目录不一致的可能 | 两表禁止承载业务数据，禁止出现指向具体业务记录的列，由本阶段越权测试目标逐列核对 |
 | D-11-04 | 启动自检新增命名项 reporting-dataset-signature-matched，severity 取 Degrading：已登记数据集的来源视图存在，且其列名与类型签名与 reporting.dataset_fields 一致；不一致不阻断启动，改为关闭该数据集及其依赖的报表对象的运行期入口，经阶段 2 交付的 ep_platform_obs::DegradationLedger 开降级窗口并按规格第 15.3 章告警。自检项按基线第 7.3 节注册进 SelfCheckRegistry，用注册名标识，不用序号称呼 | 来源视图缺失或列签名漂移会使已发布报表在运行期取数失败。PRD 第 8.6 节要求该场景不返回可能错位的结果，关闭入口即满足该要求；而以退出码 78 拒绝启动会把一个报表入口不可用放大为八进程集体停机，这台服务器没有备节点，且此时可行的修复动作恰恰被拒绝启动本身阻断 | core-server 与 job-worker 执行；--check 模式一并执行且 DEGRADED 与 FAILED 同样以非零退出，闸门落在部署与升级前置，不落在进程启动；来源视图尚未发布的目录行与列签名漂移共用这一条降级口径，不另设放行条款与解除时点 |
@@ -69,7 +69,7 @@ T0 的通过判据只有一条：收入卡上该法人该会计期间的取值�
 6. 统一前置查询服务的分析取数侧：数据集白名单、字段级与密级重写、记录级谓词注入、结果限量、高级只读 SQL 的解析与重写、超限终止到运维中心的记录。
 7. 同实例只读角色的取数隔离：ep_analyst_ro 独立连接池的取用路径、会话参数、只读事务、语句超时与单查询资源上限的实测触发与错误映射。
 8. 导出与打印渲染的后台任务：render_tasks 台账、job-worker 侧渲染、产物落为附件对象、站内通知回执、敏感导出的重新认证与审批留痕。
-9. 内部对账新增三个子账与总账勾稽项：在 ep-app-costing 实现三个 ep_platform_recon::ReconCheck，经 ReconRegistry::register 在 apps/job-worker/src/wiring.rs 注册，进入每日校验与关账前强制校验。对账框架本体、platform_core 的三张对账表与 ReconExecutor 由阶段 9a 交付，本阶段不建框架，也不复述注册方清单与校验项总数，该清单的唯一出处是裁定 A-06。
+9. 内部对账新增三个子账与总账勾稽项：在 ep-app-costing 实现三个 ep_platform_recon::ReconCheck，经 ReconRegistry::register 在 apps/job-worker/src/wiring/ 目录下注册，进入每日校验与关账前强制校验。三项一律在 job-worker 自身连接池上执行，不落在基线第 1.3 节禁止项第七条通道二的只读分析角色一维内，因此第三项的库存出库金额按通道一经阶段 8 交付的 ep_contract_inventory::StockValueOutboundPort 取得，本模块的对账语句内不出现 inventory 的任何对象。对账框架本体、platform_core 的三张对账表与 ReconExecutor 由阶段 9a 交付，本阶段不建框架，也不复述注册方清单与校验项总数，该清单的唯一出处是裁定 A-06。
 10. 基准数据集扩展：ep-datagen 产出成本与收入归集条目、交付节点与分批交付、账龄可测的历史分布，规模与规格附录 A.3 一致。
 11. 测试目标：tests/rls_matrix 的 costing 与 reporting 扩展、tests/analytics_isolation、tests/finance_metrics_consistency、四个 E2E 用例与六项常用报表性能用例。
 12. 文档：docs/data-dictionary 的 costing 与 reporting 两节、docs/error-codes.md 新增 36 条、docs/event-catalog.md 新增 3 条、docs/adr 中 D-11-01 至 D-11-05 五份决策记录。
@@ -109,7 +109,7 @@ T0 的通过判据只有一条：收入卡上该法人该会计期间的取值�
 
 #### 2.3 依赖方向自检
 
-ep-domain-costing 只依赖 ep-foundation 与 ep-contract-costing。ep-app-costing 依赖 ep-foundation、ep-platform-*（含 ep-platform-recon 以实现三个 ReconCheck）、ep-domain-costing 与 ep-contract-ledger、ep-contract-clm、ep-contract-sales、ep-contract-procure、ep-contract-mdm、ep-contract-project 六个契约。ep-app-reporting 另依赖 ep-platform-release 以实现四个 ConfigItemApplier。ep-app-ledger 只新增对 ep-contract-costing 的依赖，实现在 apps/core-server/src/wiring.rs 注入，不产生 ep-app-ledger 对 ep-app-costing 的依赖。ep-app-finance 只新增对 ep-contract-reporting 的依赖以取用账龄分档，方向为 finance 到 reporting，与 reporting 到 finance 的数据集读取不构成 crate 级环，因为后者不经 crate 依赖而经数据库视图。按通则第三条，全卷不再有先注入空实现后反向替换这一形态，本阶段的三处跨模块接法固定如下。成本与收入捕获的调用点由本阶段在 ep-app-ledger 的过账用例内追加，与两个实现同批交付，两个 wiring.rs 直接注入真实实现。已退货未冲回成本的置位方按 PRD 附录乙 U-C-09 待决，本阶段只交付 CostReturnMarkPort 的实现与注册，不指名调用方。账龄分档按裁定 C-08 由阶段 10 先建临时表自行取数，本阶段迁移并删除该临时表后 finance 台账查询改经 AgingBucketQuery。三处均为同批交付，本阶段不产生任何顺延到后续阶段的验收项，也不接受任何早期阶段向本阶段派工的空实现。上述自检写入 CI 的 cargo metadata 断言脚本。
+ep-domain-costing 只依赖 ep-foundation 与 ep-contract-costing。ep-app-costing 依赖 ep-foundation、ep-platform-*（含 ep-platform-recon 以实现三个 ReconCheck）、ep-domain-costing 与 ep-contract-ledger、ep-contract-clm、ep-contract-sales、ep-contract-procure、ep-contract-mdm、ep-contract-project、ep-contract-inventory 七个契约，其中 ep-contract-inventory 供第 6.6 节第三个 ReconCheck 经阶段 8 交付的 StockValueOutboundPort 取库存出库金额。ep-app-reporting 另依赖 ep-platform-release 以实现四个 ConfigItemApplier。ep-app-ledger 只新增对 ep-contract-costing 的依赖，实现在 apps/core-server/src/wiring.rs 注入，不产生 ep-app-ledger 对 ep-app-costing 的依赖。ep-app-finance 只新增对 ep-contract-reporting 的依赖以取用账龄分档，方向为 finance 到 reporting，与 reporting 到 finance 的数据集读取不构成 crate 级环，因为后者不经 crate 依赖而经数据库视图。按通则第三条，全卷不再有先注入空实现后反向替换这一形态，本阶段的三处跨模块接法固定如下。成本与收入捕获的调用点由本阶段在 ep-app-ledger 的过账用例内追加，与两个实现同批交付，两个 wiring.rs 直接注入真实实现。已退货未冲回成本的置位方按 PRD 附录乙 U-C-09 待决，本阶段只交付 CostReturnMarkPort 的实现与注册，不指名调用方。账龄分档按裁定 C-08 由阶段 10 先建临时表自行取数，本阶段迁移并删除该临时表后 finance 台账查询改经 AgingBucketQuery。三处均为同批交付，本阶段不产生任何顺延到后续阶段的验收项，也不接受任何早期阶段向本阶段派工的空实现。上述依赖枚举是本阶段结束时的快照，不按 crate 逐项比对期望依赖清单：层位与方向的判定由阶段 1 交付的 xtask archcheck 承担，后续阶段可在基线第 1.3 节允许项内增边，只需在该阶段的 crate 改动表写出增量并在提交说明中给出使用位，不回改本节。
 
 ### 3. 数据库变更
 
@@ -619,13 +619,13 @@ core-server 在一个事务内取号、插入 render_tasks 行（status 为 QUEU
 
 #### 6.6 内部对账新增校验项
 
-本阶段在 ep-app-costing 实现三个 ep_platform_recon::ReconCheck，经 ReconRegistry::register 在 apps/job-worker/src/wiring.rs 注册；对账框架本体、platform_core 的三张对账表与 ReconExecutor 由阶段 9a 交付，本阶段不建框架、不改其实现。三个实现的 code 返回下表校验项列的取值，category 三项一律取 SUBLEDGER_VS_LEDGER，blocks_period_close 三项均为 true。第三项虽跨 costing 与 inventory 两个 schema 取数，其判据是金额勾稽而不是引用完整性，归入 CROSS_MODULE_LINK 会使同一类别同时承载两种性质的判据。run_batch 接受执行器传入的 &dyn SnapshotCtx 与 BatchWindow，按规格第 10.2 章的分批与快照口径执行，进入每日校验与关账前强制校验，属子账与总账勾稽这一既有类别下的新增勾稽项，不新增校验类别。
+本阶段在 ep-app-costing 实现三个 ep_platform_recon::ReconCheck，经 ReconRegistry::register 在 apps/job-worker/src/wiring/ 目录下注册；对账框架本体、platform_core 的三张对账表与 ReconExecutor 由阶段 9a 交付，本阶段不建框架、不改其实现。三个实现的 code 返回下表校验项列的取值，category 三项一律取 SUBLEDGER_VS_LEDGER，blocks_period_close 三项均为 true。第三项的库存侧金额不由本模块直接取数，而经阶段 8 交付的 ep_contract_inventory::StockValueOutboundPort 取得：三项均由 ReconExecutor 在 job-worker 自身连接池上调度执行，不落在基线第 1.3 节禁止项第七条通道二的只读分析角色一维内，因此按通道一经被调方契约中的 trait 往返取数，本节的对账语句内不出现 inventory 的任何对象。该端口的实现类型 InventoryStockValueOutboundQuery 由阶段 8 落 crates/application/inventory/src/projection/stock_value_outbound.rs，本阶段只在 apps/job-worker/src/wiring/ 目录下注入。本项的判据是金额勾稽而不是引用完整性，归入 CROSS_MODULE_LINK 会使同一类别同时承载两种性质的判据。run_batch 接受执行器传入的 &dyn SnapshotCtx 与 BatchWindow，按规格第 10.2 章的分批与快照口径执行，进入每日校验与关账前强制校验，属子账与总账勾稽这一既有类别下的新增勾稽项，不新增校验类别。
 
 | 校验项 | 子账侧 | 总账侧 | 判据 |
 |---|---|---|---|
 | COSTING_COST_VS_LEDGER | Σ costing.cost_entries.amount，按法人与会计期间 | 成本科目集合的当期借方净发生额 | 差额为零，且每条成本归集条目的 accounting_period_id 与其 voucher_id 所属凭证的会计期间相同；后一条谓词并入本项判据，不为期间一致另立校验项 |
 | COSTING_REVENUE_VS_LEDGER | Σ costing.revenue_entries.amount，按法人与会计期间 | 收入科目集合的当期贷方净发生额 | 差额为零，且每条收入归集条目的 accounting_period_id 与其 voucher_id 所属凭证的会计期间相同；后一条谓词并入本项判据，不为期间一致另立校验项 |
-| COSTING_INVENTORY_COGS_VS_STOCK_VALUE | Σ source_type 为 INVENTORY_COGS 的 amount | inventory_stock_value_entries 中出库方向的金额合计，按法人与会计期间 | 差额为零，对应规格第 22 章第 6 条的库存金额账一致 |
+| COSTING_INVENTORY_COGS_VS_STOCK_VALUE | Σ source_type 为 INVENTORY_COGS 的 amount | 经 ep_contract_inventory::StockValueOutboundPort 取得的出库方向金额合计，按法人与会计期间 | 差额为零，对应规格第 22 章第 6 条的库存金额账一致 |
 
 差异事项按规格第 10.2 章载明勾稽项、法人、会计期间、子账侧金额、总账侧金额与差额，落 platform_core.recon_discrepancies，差额不清零不得关账。三项由阶段 9a 的 ReconExecutor 调度，在 job-worker 自身连接池上执行，不使用只读分析池。
 
@@ -822,7 +822,7 @@ tests/analytics_isolation 新增测试目标，承担规格第 17.2 章派生存
 | R-1 只读分析负载与交易负载在同一实例上抢占。规格第 13.1 章明确不表述为隔离保证 | 报表跑起来时交易时延劣化，可能击穿普通交易提交 P95 在 3 秒内 | 只读池上限 10 且与读写池合计不超过 30；statement_timeout 60 秒硬截断；聚合结果 2000 行上限；导出一律转 job-worker 并受 app-worker.slice 配额约束；性能测试必须在同时施加备份负载的条件下取样；该风险在交付说明中按规格第 21.19 章明写，不承诺隔离 |
 | R-2 六个维度索引加在仅追加的大表上，写放大影响过账时延 | 交付确认、采购发票登记等提交类操作的 P95 上升 | 在基准数据集上先测捕获路径的单条插入耗时；若超出预算，退路是把三个低频维度索引（项目、产品、客户）合并为一个覆盖索引并在查询侧接受一次额外过滤，该退路不改变任何口径 |
 | R-3 D-11-01 的跨模块只读投影使 reporting 的运行期正确性依赖 13 个外部数据集视图的列签名，其提供阶段为 5、6、8、9a、10、12 六个 | 来源模块改列会使报表在运行期失败 | 主控制是 CI 的视图列签名快照测试，来源模块改列即构建失败，挡在发布之前；运行期由启动自检项 reporting-dataset-signature-matched 按 D-11-04 降级处置，关闭受影响入口并开窗告警而不阻断启动，阶段 12 的 project_projects 在其视图交付前即处于该窗口内；视图被界定为契约级，变更走契约变更流程；各提供阶段按 A-18 在本阶段之前发布视图并同步列签名 |
-| R-4 A-1 与 A-2 两条假设把捕获绑死在 ledger 的过账用例上，而该用例由阶段 9a 先行交付 | 本阶段要在别的模块的既有用例内追加调用点，可能与其事务边界或科目判定冲突，改不动即无法在同事务捕获 | 调用点、两个捕获实现与 wiring 注入由本阶段同批交付，见第 2.2 节 ep-app-ledger 一行、第 2.3 节与第 4.2 节；阶段 9a 不预留空实现，本阶段也不向其派工；接口形状由本阶段在 ep-contract-costing 自定，改动范围限于过账用例内的一段调用与一条 crate 依赖，依赖方向由 CI 的 cargo metadata 断言脚本守住；退路为 Outbox 异步补写，代价是正常运行期出现秒级差额，需要同时放宽 PRD 第 8.3.2 节的差额为零判定到关账时点判定，属口径变更，必须由财务负责人批准 |
+| R-4 A-1 与 A-2 两条假设把捕获绑死在 ledger 的过账用例上，而该用例由阶段 9a 先行交付 | 本阶段要在别的模块的既有用例内追加调用点，可能与其事务边界或科目判定冲突，改不动即无法在同事务捕获 | 调用点、两个捕获实现与 wiring 注入由本阶段同批交付，见第 2.2 节 ep-app-ledger 一行、第 2.3 节与第 4.2 节；阶段 9a 不预留空实现，本阶段也不向其派工；接口形状由本阶段在 ep-contract-costing 自定，改动范围限于过账用例内的一段调用与一条 crate 依赖，依赖方向由阶段 1 交付的 xtask archcheck 的层位判定守住，不另立按 crate 逐项比对期望依赖清单的脚本；退路为 Outbox 异步补写，代价是正常运行期出现秒级差额，需要同时放宽 PRD 第 8.3.2 节的差额为零判定到关账时点判定，属口径变更，必须由财务负责人批准 |
 | R-5 高级只读 SQL 的白名单可能被绕过，成为越权入口，对应规格第 21.7 章 | 报表成为越权读取通道 | AST 白名单而不是正则黑名单；执行只在受行级策略约束的 ep_analyst_ro 上，即使解析层被绕过，法人隔离仍由数据库承担；模糊测试对解析器施加不少于 10 万条变异输入；tests/analytics_isolation 属发布门禁项 |
 | R-6 未分摊差异桶可能显著偏大，取决于 U-F-06 的决策 | 管理层下钻可用性下降，指标被质疑 | 本阶段在成本归集查询响应中固定返回 unallocated_ratio，实施期可据此度量；不做任何分摊，也不隐藏 |
 | R-7 13 条未决事项若在阶段末仍未决策，交付的是临时取值 | 客户验收期返工 | 除 U-C-12 外的临时取值集中在配置键与两处纯函数中，第 0.2 节已逐条给出切换代价；U-C-12、U-I-06 与 U-I-08 三条属结构性，若决策与临时取值相反需要重新评估工期，其中 U-C-12 的临时取值落在第 4.6 节状态机与第 4.8 节四个 ConfigItemApplier 上 | 

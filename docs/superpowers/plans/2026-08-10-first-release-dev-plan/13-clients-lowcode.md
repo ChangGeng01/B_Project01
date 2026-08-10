@@ -57,9 +57,9 @@ T0 不要求本阶段的下列各项，它们一律排在阶段 11 之后：移�
 | crate | 归属进程 | 本阶段职责 | 依赖方向核对 |
 |---|---|---|---|
 | ep-platform-meta | core-server、job-worker | 自定义对象与字段与关系与索引与视图的建模、在线 DDL 计划与影响分析、界面布局、能力等价矩阵判定、声明式规则 AST 与解释器实现 `AstRuleEvaluator`、自定义对象向权限与流程与搜索与报表的注册端口、六个 CUSTOM_ 与 UI_LAYOUT 类 `ConfigItemApplier` 实现 | 只依赖 ep-foundation 与其他 ep-platform-*，无 sqlx、无 reqwest |
-| ep-platform-release | core-server、job-worker | 本 crate 由阶段 3b 按裁定 A-27 交付最小发布通道，`ConfigItemApplier` 端口与 `ConfigItemApplierRegistry` 由阶段 3a 按裁定 A-19 交付；本阶段在其上扩展内容项差异算法、自动测试编排、把发布状态机由阶段 3b 的六态补齐为十一态、DDL 段编排与回退编排 | 依赖 ep-foundation、ep-platform-meta、ep-platform-audit、ep-platform-outbox |
-| ep-adapter-wasm | plugin-host、core-server、job-worker | wasmtime Component 宿主、能力清单裁剪、燃料与内存与时限限额、编译缓存、宿主导入函数四件套，实现类型 `PluginHostWasmCompute` 对应阶段 3b 定义的 `ep_platform_flow::port::WasmComputePort`，见裁定 B-05；core-server 与 job-worker 侧只编入其 IPC 客户端 | adapter 层，可依赖 foundation 与 platform/domain 的端口 trait，不依赖 application |
-| ep-adapter-ipc | plugin-host、core-server、job-worker | 复用基线第 2 节已定的帧格式，新增 plugin 通道的请求与响应类型 | 同上 |
+| ep-platform-release | core-server、job-worker | 本 crate 由阶段 3b 按裁定 A-27 交付最小发布通道，`ConfigItemApplier` 端口与 `ConfigItemApplierRegistry` 由阶段 3a 按裁定 A-19 交付；本阶段在其上扩展内容项差异算法、把发布状态机由阶段 3b 的六态补齐为十一态、段二按 `sort_no` 升序的 applier 调用与回退时的逆序 `revert` 编排、自动测试结论的记录与守卫判定（判据只读 `platform_meta.config_autotest_runs` 的 `outcome` 列，本 crate 不执行任何 suite）；DDL 段编排与在线 DDL 执行落在 job-worker，见第 1.1 节第 2 项与裁定 B-03 | 依赖 ep-foundation、ep-platform-audit、ep-platform-outbox 三项，与阶段 3 计划为 3b 段所定的边集逐项相等，本阶段不为本 crate 新增任何依赖；本 crate 一律不反向依赖任何 `ConfigItemApplier` 属主 crate，含 ep-platform-meta、ep-platform-flow、ep-platform-notify、ep-platform-authz 与 ep-app-reporting |
+| ep-adapter-wasm | plugin-host | wasmtime Component 宿主、能力清单裁剪、燃料与内存与时限限额、编译缓存、宿主导入函数四件套；实现类型 `WasmtimeComponentCompute` 是阶段 3b 定义的 `ep_platform_flow::port::WasmComputePort` 的进程内执行实现，装配进 `apps/plugin-host`，见裁定 B-05 与 H-02 | adapter 层，不依赖 application，也不依赖任何其他 ep-adapter-*；其余依赖按基线第 1.3 节允许项第六条，本 crate 取 ep-foundation、`ep_platform_flow::port` 的端口 trait 与第三方 wasmtime |
+| ep-adapter-ipc | plugin-host、core-server、job-worker | 复用基线第 2 节已定的帧格式，新增 plugin 通道的服务端与客户端；实现类型 `PluginHostWasmCompute` 是 `ep_platform_flow::port::WasmComputePort` 的跨进程实现，经 `/run/ep/ipc/plugin.sock` 转发至 plugin-host，装配进 `apps/core-server/src/wiring/` 与 `apps/job-worker/src/wiring/` 两个目录，见裁定 B-05 与 H-02；plugin 通道的请求体与响应体即该端口的入参与出参类型，取自 `ep_platform_flow::port`，本 crate 不另立第二套 DTO | adapter 层，不依赖 application，也不依赖任何其他 ep-adapter-*；其余依赖按基线第 1.3 节允许项第六条，本 crate 依赖 ep-platform-runtime 以实现基线第 1.2 节所定的 IPC 服务端接口，依赖 ep-platform-flow 以实现 `WasmComputePort` |
 | ep-foundation | 全部 | 本阶段不新增也不改动 foundation 类型：`Tx`、`SnapshotCtx`、`UnitOfWork` 由阶段 1 按裁定 A-01 在 `port::tx` 中冻结，`SecurityContext` 与 `ClientKind` 按裁定 A-03 冻结，`ModuleCode`、`CapabilityDomain`、`ActionClass` 按裁定 A-20 冻结，`Redacted<T>` 同由阶段 1 提供，本阶段只引用 | 不依赖工作区内任何 crate |
 | ep-platform-obs | ops-agent | 注册本阶段 9 个新指标 | 只登记，不改结构 |
 
@@ -523,7 +523,7 @@ pub enum ChangeKind { Add, Modify, Remove }
 4. 移动端遇到 `requires_wasm` 为真的规则时不求值，单据保存为本地草稿并置 `pending_central_validation`，不产生正式业务记录也不产生正式会计分录，照抄规格第 6.2 章与第 6.3 章。恢复连接后按该业务模块的正常提交端点提交，中心执行全部规则并把“该单据曾以待中心校验草稿提交”写入审计。
 5. 联网状态下客户端可调用 `POST /api/v1/platform/rule-evaluations/actions/evaluate` 获得与中心一致的预校验结果，该端点只读不写，不建立业务记录。
 6. 桌面端同样不在本地执行 WASM 计算，首版 WASM 宿主只在服务端 plugin-host 中存在，照抄规格第 9.3 章“首版服务端只有这一种扩展形态”。
-7. 实现类型按裁定 B-05 固定：规则求值实现类型为 `AstRuleEvaluator`，位于 `crates/platform/meta/src/rule/`，装配进 core-server，实现阶段 3b 定义的 `ep_platform_flow::port::RuleEvaluator`；WASM 计算实现类型为 `PluginHostWasmCompute`，位于 `crates/adapter/wasm/`，装配进 plugin-host，实现阶段 3b 定义的 `ep_platform_flow::port::WasmComputePort`。`POST /api/v1/platform/rule-evaluations/actions/evaluate` 只调用 `AstRuleEvaluator`，本阶段不新建第二条求值路径。
+7. 实现类型按裁定 B-05 固定：规则求值实现类型为 `AstRuleEvaluator`，位于 `crates/platform/meta/src/rule/`，装配进 core-server，实现阶段 3b 定义的 `ep_platform_flow::port::RuleEvaluator`；WASM 计算的跨进程实现类型为 `PluginHostWasmCompute`，位于 `crates/adapter/ipc/`，装配进 `apps/core-server/src/wiring/` 与 `apps/job-worker/src/wiring/` 两个目录，实现阶段 3b 定义的 `ep_platform_flow::port::WasmComputePort`，其调用经 `/run/ep/ipc/plugin.sock` 转发至 plugin-host；plugin-host 侧的进程内执行实现类型为 `WasmtimeComponentCompute`，位于 `crates/adapter/wasm/`，装配进 `apps/plugin-host`，实现同一端口；`ep-adapter-wasm` 与 `ep-adapter-ipc` 互不依赖，见裁定 H-02。`POST /api/v1/platform/rule-evaluations/actions/evaluate` 只调用 `AstRuleEvaluator`，本阶段不新建第二条求值路径。
 
 #### 4.6 配置发布执行与回退算法
 
@@ -944,7 +944,7 @@ pub trait ConfigItemApplier: Send + Sync {
 
 #### 8.6 覆盖率门槛
 
-- `ep-platform-meta`、`ep-platform-release`、`ep-adapter-wasm` 属平台内核代码，行覆盖率不低于 85%。
+- `ep-platform-meta`、`ep-platform-release`、`ep-adapter-wasm` 与 `ep-adapter-ipc` 属平台内核代码，行覆盖率不低于 85%。
 - 客户端 Rust 核心 crate（`ep-client-core`、`ep-client-cache`、`ep-client-keystore`、`ep-client-plughost`、`ep-client-audit`）行覆盖率不低于 85%。这是本阶段在规格之上追加的取值，理由是这五个 crate 承担认证、安全策略、本地缓存加密与审计提交，属规格第 17.2 章“平台内核代码”的同类。
 - 其余客户端 crate 与 `/clients/ui` 的 TypeScript 代码行覆盖率不低于 70%。
 - 新增与修改代码行覆盖率不低于 80%。
@@ -987,12 +987,12 @@ pub trait ConfigItemApplier: Send + Sync {
 15. 含受限 WASM 计算的规则在移动端只能保存为待中心校验草稿，恢复连接后由中心重新校验并写入审计，该场景在 iOS 与 Android 各执行一次。
 16. 覆盖率门槛按第 8.6 节逐项达成，CI 强制生效。
 17. 本阶段新增的 37 条错误码、10 个事件类型、19 张表、9 个指标、35 个配置项在 `docs/error-codes.md`、`docs/event-catalog.md`、`docs/data-dictionary.md` 与代码常量表中登记齐备，CI 一致性校验通过；本阶段引用但由阶段 1 按裁定 C-24 登记的 `PLATFORM.CONCURRENCY.STALE_VERSION`、`PLATFORM.AUTHZ.NOT_FOUND_OR_DENIED` 与 `PLATFORM.DB.MIGRATION_WINDOW_CLOSED` 不计入本阶段条数。
-18. 依赖方向自检脚本通过：客户端 crate 不依赖任何 `ep-app-*` 与 `ep-adapter-db*`；`ep-platform-meta` 与 `ep-platform-release` 不出现 sqlx、reqwest、`std::fs`、`std::net` 与 `SystemTime::now` 符号。
+18. 依赖方向自检脚本通过：客户端 crate 不依赖任何 `ep-app-*` 与 `ep-adapter-db*`；`ep-platform-meta` 与 `ep-platform-release` 不出现 sqlx、reqwest、`std::fs`、`std::net` 与 `SystemTime::now` 符号。`ep-platform-release` 的工作区内直接依赖在本阶段结束时恰为 ep-foundation、ep-platform-audit、ep-platform-outbox 三项，不含 ep-platform-meta；`ep-platform-meta` 对 `ep-platform-release` 的依赖为单向。该断言按 F-05 通则甲-2 只约束本阶段结束时的快照，不封禁后续阶段在基线第 1.3 节允许项内增边。`xtask archcheck` 的 `platform-acyclic` 与 `platform-no-adapter` 两条规则全绿。
 19. 一次完整的配置发布与回退演练证据包归档，含差异审查记录、8 个 suite 的自动测试报告、审批与签名记录、执行耗时、锁持有时长、回退结果与审计链验证结论。
 20. 本阶段的偏离项与新增决定（第 12 节）已回写共享技术基线，基线更新经平台架构负责人确认。
 21. 模块许可的停用与再启用验收通过：按裁定 A-05，`ep-platform-license` 本体与其三张表由阶段 3b 交付，本阶段只保留一条验收，即某模块置 INSTALLED_DISABLED 后其定时任务停止、对外事件停发，再启用后两者恢复，执行记录见集成测试 26。
 22. 本阶段全部 `/api/v1/` 路由，即 `/api/v1/platform/` 与 `/api/v1/ext/` 两段，其能力域码与动作类别常量已按裁定 A-20 声明：第 5.3 节配置包与发布单两段落 `crates/platform/release/src/capability.rs`，其余各段与 `/api/v1/ext/` 的五个路由形状落 `crates/platform/meta/src/capability.rs`，能力域一律取 `CapabilityDomain::PlatformAdminLowcodeOps`，`xtask configdoc` 通过；自定义单据对象的 `doc_type_code` 与 `docs/data-dictionary.md` 单据类型码一节的全量表无重复，`xtask configdoc --check-doc-type-codes` 通过。
-23. 含 DDL 段的发布在未打开迁移窗口时被经装配注入的 `ep_foundation::port::db::MigrationWindowGuard` 实例的 `assert_open` 拒绝并返回 409 与 `PLATFORM.DB.MIGRATION_WINDOW_CLOSED`，留有一次拒绝与一次放行的执行记录；`ep_platform_flow::port::RuleEvaluator` 与 `WasmComputePort` 的实现类型 `AstRuleEvaluator` 与 `PluginHostWasmCompute` 已在 wiring 注册，规则求值端点只经 `AstRuleEvaluator`。
+23. 含 DDL 段的发布在未打开迁移窗口时被经装配注入的 `ep_foundation::port::db::MigrationWindowGuard` 实例的 `assert_open` 拒绝并返回 409 与 `PLATFORM.DB.MIGRATION_WINDOW_CLOSED`，留有一次拒绝与一次放行的执行记录；`ep_platform_flow::port::RuleEvaluator` 与 `WasmComputePort` 的实现类型 `AstRuleEvaluator` 与 `PluginHostWasmCompute` 已在 `apps/core-server/src/wiring/` 与 `apps/job-worker/src/wiring/` 两个目录注册，plugin-host 侧注册 `WasmtimeComponentCompute`，规则求值端点只经 `AstRuleEvaluator`。
 24. 本阶段向 T0 贡献的桌面壳最小切片按第 1.5 节的五项逐项交付，并在 T0 演练中完成一次判据走查：T0 的那一条合同在 Windows 桌面端建单，并在同一端看到 T0 的那张收入报表；该切片之外的本阶段交付物不参与 T0，也不因 T0 提前交付。
 
 ---

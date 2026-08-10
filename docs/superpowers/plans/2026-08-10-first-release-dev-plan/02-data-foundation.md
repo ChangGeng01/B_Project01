@@ -28,7 +28,7 @@
 | D-04 | `db/checks/` 合规断言集 | 13 个编号断言脚本加 `append_only_consistency.sql` | 每脚本返回 0 行，非 0 行即列出违规对象；编号脚本由 `ep-migrate check` 执行，`append_only_consistency.sql` 按 B-02 由 `xtask sqlcheck` 执行 |
 | D-05 | `ep-foundation` 的 `port::db` | 库模块 | `IdempotencyStore` 与 `MigrationWindowGuard` 两个端口 trait 与公共能力基线能力描述编译通过，不含任何 PostgreSQL 专有语法 |
 | D-06 | `ep-adapter-db-pg` | 库 crate | 五池连接管理、会话变量注入与清除、工作单元、重试、编解码全部实现并被集成测试覆盖 |
-| D-07 | `ep-adapter-kms` | 库 crate | 内置 KMS 载体实现并通过全部用例；HSM 载体在 `hsm` feature 下编译通过 |
+| D-07 | `ep-adapter-kms` | 库 crate | 按裁定 F-04，`ep_foundation::port::kms` 的 `KmsBackend` 与八个词汇类型编译通过；本 crate 的 `BuiltinKmsBackend` 实现该 trait 六个方法并通过全部用例；`HsmKmsBackend` 在 `hsm` feature 下编译通过；端口 trait 与其调用词汇不在本 crate |
 | D-08 | `ep-testkit` 数据库夹具 | 库 crate 增量 | `PgTestDb::new()` 按 `ep_test_<nanoid>` 独占建库，用例结束即删库 |
 | D-09 | `ep-datagen` 骨架 | 二进制 crate | 接受 `--seed` 与 `--scale`，`--scale t0` 产出 T0 最小样本的平台部分，即 1 个法人及其组织架构最小行，`--scale small` 产出 2 个法人；公共列填充器就位，业务维度的最小样本由各模块在生成器注册点上追加 |
 | D-10 | `tests/rls_matrix` 的本阶段那一段 | 独立集成测试目标的增量 | 16 组法人越权用例、5 项复制角色用例、5 个系统上下文入口用例全绿；按 C-05 本阶段追加 `assert_replication_role_containment` 与 `assert_recon_context_borrow` 两个函数 |
@@ -49,9 +49,9 @@
 | crate | 归属层 | 装配进程 | 本阶段职责 |
 |---|---|---|---|
 | `ep-adapter-db-pg` | adapter | 同上 | 唯一 PostgreSQL 16 实现：五池构建、`after_connect` 与 `after_release` 钩子、RLS 会话变量、编解码、迁移历史读取、SQLSTATE 23503 的统一错误映射；`PgTx` 与 `PgUnitOfWork` 的声明与实现、`UnitOfWork` 两个方法的唯一实现、重试执行体、四个连接模型类型的定义与取值、公共能力基线到 PostgreSQL 类型与索引的映射 |
-| `ep-adapter-kms` | adapter | core-server、job-worker | 内置 KMS 与 HSM 两种载体的统一接口、信封加密、字段级密钥与盲索引密钥的派生与缓存 |
+| `ep-adapter-kms` | adapter | core-server、job-worker | 内置 KMS 与 HSM 两种载体的实现，即 `ep_foundation::port::kms::KmsBackend` 的两个实现类型 `BuiltinKmsBackend` 与 `HsmKmsBackend`，后者在 `hsm` feature 下；含信封加密、字段级密钥与盲索引密钥的派生与缓存、密钥材料与密钥域状态。端口 trait 与其调用词汇按裁定 F-04 不在本 crate，在 `ep_foundation::port::kms` |
 | `tools/ep-migrate` | 工具二进制 | 不属八进程，只在迁移窗口内以 `ep_migrator` 运行 | 按 C-02 补齐 `apply`、`status`、`check`、`gen-rls`、`open-window` 五个子命令的实现与六个退出码 |
-| `ep-foundation` | 底座 | 全部 | 只增三项：`crypto::CipherText`、`crypto::KeyDomainId`、`crypto::BlindIndex`。不新增业务概念。必要性按基线第 12 节通则第六条在提交说明中逐项举证使用位 |
+| `ep-foundation` | 底座 | 全部 | 只在阶段 1 已建的 `port::kms` 空文件内补齐端口面九项：`KmsBackend` trait 与 `CipherText`、`KeyDomainId`、`BlindIndex`、`Aad`、`KeyRef`、`Signature`、`CipherEnvelope`、`KeyPurpose` 八个词汇类型；三个密码学值类型经 `lib.rs` 按既有 `pub use` 惯例再导出。不新增顶层模块，`crypto::` 一套命名按裁定 F-04 作废，理由是顶层模块已被 archcheck 规则 `foundation-module-registry` 冻结为七项。不新增业务概念。必要性按基线第 12 节通则第六条在提交说明中逐项举证使用位 |
 | `ep-testkit` | 测试 | 无 | 独占库夹具、法人夹具、安全上下文夹具、越权矩阵驱动器 |
 | `ep-datagen` | 工具 | 无 | 规模参数框架与公共列填充器 |
 | `ep-platform-tenancy` | platform | core-server、job-worker | 按 A-04 交付组织架构五张表的迁移，以及 `LegalEntityDirectory` 与 `DepartmentClosureQuery` 两个 trait 及其 pg 实现 |
@@ -407,9 +407,31 @@ end $$;
 
 按 C-07，本阶段在 `ep_foundation::port::db` 中定义幂等存储端口，签名见第 6 节，其表与重放实现属阶段 3a，请求头校验属阶段 1。
 
-`ep-adapter-kms` 中：`KeyDomain`、`DataKey`、`KeyPurpose`、`CipherEnvelope`、`Aad`、`BlindIndexKey`、`KmsBackend` trait（方法 `wrap`、`unwrap`、`derive_blind_key`、`health`）。
+按裁定 F-04，KMS 能力的端口 trait 与其调用词汇落 `ep_foundation::port::kms`，不落 `ep-adapter-kms`。该模块承载端口面九项：`KmsBackend` trait 与 `CipherText`、`KeyDomainId`、`BlindIndex`、`Aad`、`KeyRef`、`Signature`、`CipherEnvelope`、`KeyPurpose` 八个词汇类型，空文件由阶段 1 建，内容由本阶段补齐。`ep-adapter-kms` 中只留 `KeyDomain`（含 `domain_kind` 与第 4.2 节四态）、`DataKey`、`BlindIndexKey` 三个密钥材料与密钥域状态类型，以及 `BuiltinKmsBackend` 与 `HsmKmsBackend` 两个载体实现类型，两个实现类型的声明位与实现位同在本 crate。全卷不再出现密钥经 `ep-adapter-kms` 取用这一说法，私钥与数据密钥材料一律不出载体。
 
-`ep-foundation` 增：`CipherText(Vec<u8>)`、`KeyDomainId(Uuid)`、`BlindIndex([u8; 16])`。三者均不实现 `Debug` 与 `Display` 的明文形态，`CipherText` 的 `Debug` 输出固定为 `CipherText(len=N)`。
+`KmsBackend` 的方法由四个增为六个，补 `sign` 与 `verify`；签名算法在全卷已固定为 ECDSA P-256，端口不带算法参数。该 trait 无泛型方法，对象安全，装配时以 `Arc<dyn KmsBackend>` 注入，注入点为 `apps/core-server/src/wiring/` 与 `apps/job-worker/src/wiring/` 两个目录。六个方法的形态如下。
+
+```rust
+// crates/foundation/src/port/kms.rs
+#[async_trait::async_trait]
+pub trait KmsBackend: Send + Sync + 'static {
+    async fn wrap(&self, domain: KeyDomainId, purpose: KeyPurpose, aad: &Aad, plaintext: &[u8])
+        -> Result<CipherEnvelope, AppError>;
+    async fn unwrap(&self, domain: KeyDomainId, aad: &Aad, envelope: &CipherEnvelope)
+        -> Result<Vec<u8>, AppError>;
+    // derive_blind_key 只冻结三参数形态，返回宽度是待决项，见下段
+    async fn derive_blind_key(&self, legal_entity_id: Id<LegalEntity>, column_fqn: &str,
+                              plaintext: &[u8]) -> Result<BlindIndex, AppError>;
+    async fn sign(&self, key: &KeyRef, payload: &[u8]) -> Result<Signature, AppError>;
+    async fn verify(&self, key: &KeyRef, payload: &[u8], signature: &Signature)
+        -> Result<bool, AppError>;
+    async fn health(&self) -> Result<(), AppError>;
+}
+```
+
+本代码块的冻结范围逐项写死，不得整块读成已冻结。`wrap`、`unwrap`、`sign`、`verify`、`health` 五个方法的参数与返回类型冻结，任何阶段不得改写；`verify` 取 `Result<bool, AppError>` 而不是 `Result<(), AppError>`，`false` 表示验签不通过，由调用方映射到其已登记的错误码，本阶段不因此新增错误码。`derive_blind_key` 只冻结 `legal_entity_id`、`column_fqn`、`plaintext` 三参数形态，该形态取自第 4.4 节与阶段 5、阶段 10 的既有逐字原文；其返回宽度不随本批冻结，理由是第 4.4 节与第 11 节假设三要求 `finance.cash_accounts` 走确需唯一路径时取完整 32 字节，第 4.1 节下一段的 `BlindIndex` 现取 `[u8; 16]`，第 7 节 `EP__CRYPTO__BLIND_INDEX__BYTES` 又允许取 16 或 32，三处不能同时为真。该返回类型因此是待决项，落码前由本阶段与阶段 5、阶段 10 同批定，定前任何阶段不得据本代码块把 16 字节当作已冻结结论。
+
+`ep-foundation` 的 `port::kms` 增：`CipherText(Vec<u8>)`、`KeyDomainId(Uuid)` 与 `BlindIndex`，三者由 `crates/foundation/src/lib.rs` 按既有 `pub use` 惯例再导出，使第 4.4 节与阶段 5、阶段 10 逐字写的 `foundation::BlindIndex` 继续成立。三者均不实现 `Debug` 与 `Display` 的明文形态，`CipherText` 的 `Debug` 输出固定为 `CipherText(len=N)`。`BlindIndex` 现取 `[u8; 16]`，该宽度按上段是待决项，不随本批冻结。
 
 #### 4.2 密钥域状态机
 

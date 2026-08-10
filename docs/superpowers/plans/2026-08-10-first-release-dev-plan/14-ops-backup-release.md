@@ -35,7 +35,7 @@ T0 贯通线。阶段 3b-1 结束后、阶段 5 全量开工之前插入一条�
 4. core-server 内的运维中心用例集与只读 API：降级与暴露窗口台账、两个 RPO 取值与依据、备份集与校验结论、归档通道状态、容量水位、部署记录、密钥恢复材料核验登记、恢复演练登记。
 5. core-server 内的写出上报受理器：接收两个写出进程经 Unix domain socket 上报的四类内容，在同一事务内写 platform_ops 表、写审计事件、写 Outbox 条目，并按第 15.3 章开闭暴露窗口。
 6. ep-adapter-sink，落点适配层，三种认证落点类型的统一写入、读回、探针与吞吐实测。
-7. 部署级备份加密实现，落在 ep-adapter-kms 之上，实例级密钥、信封加密、写出前施加、附件正文保持法人密钥域原密文不二次加密。
+7. 部署级备份加密实现，落在 ep_foundation::port::kms::KmsBackend 端口之上，载体实现由 ep-adapter-kms 提供，实例级密钥、信封加密、写出前施加、附件正文保持法人密钥域原密文不二次加密。
 8. 归档通道状态机与断链处置器，含落点可写与不可写两支，含归档通道暂停终态。
 9. 恢复编排与恢复点对齐算法，含附件元数据与正文逐条一致性校验的流式实现。
 10. 性能与容量认证工装 ep-bench：负载生成器、必判必记项采集器、认证报告生成器。
@@ -64,13 +64,13 @@ T0 贯通线。阶段 3b-1 结束后、阶段 5 全量开工之前插入一条�
 | ep-platform-obs | core-server、job-worker、ops-agent | 扩展阶段 2 已交付的 DegradationLedger 与 degradation_windows 的 kind 取值；新增运维中心台账模型：RPO 依据判定、容量水位、部署记录；新增 crates/platform/obs/src/disposal.rs 的 OpsDisposalService，实现阶段 3b 在 crates/platform/file/src/port/disposal.rs 定义的 DisposalPort；新增 crates/platform/obs/src/capability.rs 中本阶段各用例的能力域码与动作类别常量；本阶段不新增任何指标注册项 |
 | ep-platform-file | core-server | 新增附件写出范围查询端口，向 archive-writer 提供对象范围与元数据提交状态；不改动上传流水线状态机 |
 | ep-platform-audit | core-server | 新增审计证据存储的写出范围查询端口，供 archive-writer 取段根与签名对象；审计链与分段签名本身不改 |
-| ep-platform-kms 侧 ep-adapter-kms | archive-writer、backup-writer | 新增实例级部署备份加密密钥的解封与信封操作 |
+| ep-adapter-kms | archive-writer、backup-writer | 新增实例级部署备份加密密钥的解封与信封操作；端口 trait 为 ep_foundation::port::kms::KmsBackend，本 crate 只提供其载体实现；工作区内不存在 ep-platform-kms，该名作废 |
 | ep-adapter-ipc | 全部 | 新增本阶段七种报文类型 |
 | ep-platform-recon | job-worker | 本体、三张表、ReconCheck 与 ReconExecutor 由阶段 9a 交付；本阶段只新增恢复验收模式的调用入口与留证字段，调用形态为 ReconExecutor::run，run_kind 取 RECOVERY_ACCEPTANCE；本阶段不实现也不注册任何 ReconCheck，注册方清单见裁定 A-06 |
 | apps/archive-writer、apps/backup-writer、apps/ops-agent | 同名 | 由骨架变为完整实现 |
 | apps/core-server | core-server | 新增运维中心用例、上报受理器、未知复制会话检出的装配 |
 
-依赖方向核对。ep-adapter-sink 只依赖 ep-foundation 与 ep-contract-*，不依赖 application，其重试与退避逻辑下沉 ep-foundation。ep-platform-obs 不依赖任何 domain 与 application。archive-writer 与 backup-writer 两个 apps 不依赖任何 ep-app-*，其与 core-server 的全部交互只经 ep-adapter-ipc 的报文类型，报文类型定义在 ep-contract-portal 之外的独立位置，即放在 ep-foundation 的 ipc 模块下，理由是它跨越 platform 与 adapter 两侧且不属于任何业务模块；两者对 pg_receivewal 与 pg_basebackup 的监管只经进程启停与退出码，不链接任何 PostgreSQL 客户端库。
+依赖方向核对。ep-adapter-sink 只依赖 ep-foundation 与 ep-contract-*，不依赖 application，其重试与退避逻辑下沉 ep-foundation。ep-platform-obs 不依赖任何 domain 与 application。archive-writer 与 backup-writer 两个 apps 不依赖任何 ep-app-*，其与 core-server 的全部交互只经 ep-adapter-ipc 的报文类型，这七种报文类型定义在 ep-adapter-ipc 内，与本节改动表中 ep-adapter-ipc 一行是同一批，也与阶段 13 对 plugin 通道请求与响应类型的处置同形，ep-foundation 不新增 ipc 模块；这七种类型不得被任何 ep-platform-* 命名，ep-platform-runtime 侧的 IPC 服务端 trait 一律以泛型参数或字节切片表达，不出现其中任何一种，否则即构成 ep-platform-* 依赖 ep-adapter-*，由阶段 1 随 xtask 交付并配负样例的 archcheck 规则 platform-no-adapter 判红；core-server 侧对上报内容的落库与审计在 apps/core-server/src/wiring/ 处转换为 platform 类型。两者对 pg_receivewal 与 pg_basebackup 的监管只经进程启停与退出码，不链接任何 PostgreSQL 客户端库。
 
 前置依赖。本阶段在调整后的阶段顺序中排在最后，下列前置件在本阶段开工前均已存在，本阶段不重复交付，也不向任何后续阶段留空实现。一，ep-foundation 的 SecurityContext、SYSTEM_PRINCIPAL_ID、SYSTEM_DEVICE_ID、CapabilityDomain 与 ActionClass 由阶段 1 提供。二，platform_ops schema、platform_ops.degradation_windows（含 subject 列与 OFFSITE_SINK_NOT_CONFIGURED、WRITER_NOT_IN_SERVICE、PORT_NOT_IMPLEMENTED 三个初始 kind 取值）与 ep-platform-obs 的 DegradationLedger 由阶段 2 提供，阶段 2 是 DegradationKind 的唯一定义方。三，crates/platform/file/src/port/disposal.rs 的 DisposalPort、DisposalRequest 与 DisposalReceipt 及其处置受理路由由阶段 3b 提供。四，ep-platform-recon 本体、三张表与 ReconExecutor 由阶段 9a 提供。五，ep-adapter-esign 与其 crates/adapter/esign/tests/contract_sandbox.rs 契约测试由阶段 6 提供，本阶段只执行并归档其对真实沙箱的通过记录。
 

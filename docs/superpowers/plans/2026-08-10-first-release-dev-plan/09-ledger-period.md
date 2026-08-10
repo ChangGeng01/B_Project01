@@ -6,7 +6,7 @@
 
 本阶段不定义任何借贷方向、取价、价差拆分、匹配与核销规则。上述规则一律按规格第 5.2 章财务规则条目的事件-分录表及其后的七个规则块执行。本计划在需要时按事件名称或规则块名称指向该处，不复述其内容。凡本计划出现分录相关表述，一律限于承载结构、映射表的形状、校验与幂等，不涉及规则本身。
 
-本阶段不建设应收应付台账、发票台账、库存台账与成本归集，四者分别归阶段 10、阶段 10、阶段 8 与阶段 11。子账侧取数在关账勾稽中一律经 ep-contract-finance 的 ReconciliationItemQuery 按法人与会计期间取十项勾稽的子账侧合计，结构为 ReconciliationItemView，该 trait 由阶段 10 定义；SubledgerBalanceProvider 是阶段 10 内部组装该结果的手段，本阶段不直接调用。十项中的存货与已收货未收票两项，其子账侧实现体分别由阶段 8 的 InventorySubledgerBalanceQuery 与阶段 7 的 GrniSubledgerBalanceQuery 先行交付并由阶段 10 包装为 SubledgerBalanceProvider 的实现，其余八项取自阶段 10 自有表、不经该 trait。本阶段只提供总账侧余额。本阶段也不建交付确认单，该单据按 A-09 归阶段 6 的 sales schema，本阶段只提供其收入与成本腿所调用的过账端口。
+本阶段不建设应收应付台账、发票台账、库存台账与成本归集，四者分别归阶段 10、阶段 10、阶段 8 与阶段 11。子账侧取数在关账勾稽中一律经 ep-contract-finance 的 ReconciliationItemQuery 按法人与会计期间取十项勾稽的子账侧合计，结构为 ReconciliationItemView，该 trait 由阶段 10 定义；阶段 8 在 ep-contract-inventory 定义的 StockValueSubledgerBalancePort 与阶段 7 在 ep-contract-procure 定义的 GrniSubledgerBalancePort 是阶段 10 内部组装该结果的手段，本阶段不直接调用。十项中的存货与已收货未收票两项，其子账侧实现体分别由阶段 8 的 InventorySubledgerBalanceQuery 与阶段 7 的 GrniSubledgerBalanceQuery 各自在本模块 contract 的端口上实现，阶段 10 只注入，其余八项取自阶段 10 自有表、不经这两个端口。本阶段只提供总账侧余额。本阶段也不建交付确认单，该单据按 A-09 归阶段 6 的 sales schema，本阶段只提供其收入与成本腿所调用的过账端口。
 
 取值优先级按共享技术基线第 0 节：规格第 13.1、13.3、13.4、7.7 章最高，其次规格其余各章，其次 PRD，最后共享技术基线。本计划中标注为本阶段新增决定与偏离项的条目集中在第 9.12 节，评审时按该节逐条核对。文中出现的按裁定 A-nn、B-nn、C-nn 一律只是决策出处标注，取值以本计划正文与共享技术基线为准，二者不一致时以正文为准，任何取值都不得以裁定表为唯一出处。
 #### 9.0.1 本阶段的两段拆分
@@ -87,7 +87,7 @@ job-worker 承载：期间自动建立定时任务、ep-platform-recon 的分批
 
 本阶段不新增进程，不新增 schema，不新增模块码，不新增错误分类，不新增依赖方向。
 
-依赖方向自检：ep-domain-ledger 只依赖 ep-foundation 与 ep-contract-ledger；ep-app-ledger 依赖 ep-foundation、ep-platform-authz、ep-platform-audit、ep-platform-outbox、ep-platform-sequence、ep-platform-flow、ep-platform-recon、ep-platform-release、ep-platform-notify、ep-platform-obs、ep-domain-ledger、ep-contract-ledger 与 ep-contract-finance，其中 ep-contract-finance 一项只用于 9b 段消费 ReconciliationItemQuery，按基线第 1.3 节 ep-app-<模块> 可依赖任意模块的 ep-contract-* 成立；ep-app-ledger 不依赖任何其他模块的 ep-app-*，也不依赖其他模块的 ep-domain-*。ep-platform-recon 只依赖 ep-foundation、ep-platform-obs 与 ep-platform-tenancy，不依赖任何模块的 ep-contract-*、ep-domain-* 与 ep-app-*，各模块的 ReconCheck 实现落在其自身的 ep-app-* 中并在 wiring 注册，该方向由同一自检脚本断言。其他模块经 ep-contract-ledger 的 trait 反向调用本阶段，实现在 wiring 注入。阶段 11 按其第 2.2 节与第 4.2 节在本阶段的过账用例内追加成本与收入捕获的调用点，并为 ep-app-ledger 新增一条对 ep-contract-costing 的依赖；该调用点按同批交付处理，即它与阶段 11 的实现同批加入代码，在此之前根本不存在于代码中，本阶段没有任何未接线端口注入点，不注入任何空实现，届时 CI 的 cargo metadata 断言脚本中 ep-app-ledger 的期望依赖清单由阶段 11 同批更新。
+依赖方向自检：ep-domain-ledger 只依赖 ep-foundation 与 ep-contract-ledger；ep-app-ledger 依赖 ep-foundation、ep-platform-authz、ep-platform-audit、ep-platform-outbox、ep-platform-sequence、ep-platform-flow、ep-platform-recon、ep-platform-release、ep-platform-notify、ep-platform-obs、ep-domain-ledger、ep-contract-ledger 与 ep-contract-finance，其中 ep-contract-finance 一项只用于 9b 段消费 ReconciliationItemQuery，按基线第 1.3 节 ep-app-<模块> 可依赖任意模块的 ep-contract-* 成立；ep-app-ledger 不依赖任何其他模块的 ep-app-*，也不依赖其他模块的 ep-domain-*。ep-platform-recon 只依赖 ep-foundation、ep-platform-obs 与 ep-platform-tenancy，不依赖任何模块的 ep-contract-*、ep-domain-* 与 ep-app-*，各模块的 ReconCheck 实现落在其自身的 ep-app-* 中并在 wiring 注册，该方向由同一自检脚本断言。其他模块经 ep-contract-ledger 的 trait 反向调用本阶段，实现在 wiring 注入。阶段 11 按其第 2.2 节与第 4.2 节在本阶段的过账用例内追加成本与收入捕获的调用点，并为 ep-app-ledger 新增一条对 ep-contract-costing 的依赖；该调用点按同批交付处理，即它与阶段 11 的实现同批加入代码，在此之前根本不存在于代码中，本阶段没有任何未接线端口注入点，不注入任何空实现，届时该依赖随阶段 11 的实现同批加入，依赖方向由 xtask archcheck 的七条禁止项按层位断言，不存在也不新建按 crate 逐项比对的期望依赖清单；本段的依赖枚举一律是本阶段结束时的快照，后续阶段可在基线第 1.3 节允许项内增边，不回改本段（裁定 F-05 通则甲-2 与甲-3）。
 
 ### 9.3 数据库变更
 
@@ -455,7 +455,7 @@ ep-platform-recon 的本体按 A-06 由本阶段 9a 段提供：crate、platform
 
 二是年度末次期间损益归零：只在 is_fiscal_year_last 为真的期间执行，在同一快照上核对该期间 category = PROFIT_LOSS 的科目期末余额合计为零。该项差异事项载明法人、会计期间与该期间损益类科目余额合计，不载明子账侧金额，与勾稽类差异事项区分。年中期间不设该要求。
 
-三是总账侧余额提供者：ep-contract-ledger 暴露 TotalAccountBalanceProvider trait，按 (法人, 会计期间, AccountRole) 返回该科目在快照上的余额。子账与总账勾稽的比较由本阶段的 ReconExecutor 驱动，子账侧一律经 ep-contract-finance 的 ReconciliationItemQuery 按法人与会计期间取十项勾稽的子账侧合计，结构为 ReconciliationItemView，该 trait 由阶段 10 定义；SubledgerBalanceProvider 是阶段 10 内部组装该结果的手段，本阶段的 ReconCheck 不直接调用它。十项中的存货与已收货未收票两项，其子账侧实现体分别由阶段 8 的 InventorySubledgerBalanceQuery 与阶段 7 的 GrniSubledgerBalanceQuery 先行交付并由阶段 10 包装为 SubledgerBalanceProvider 的实现，其余八项取自阶段 10 自有表、不经该 trait。本阶段不定义总账侧接口之外的任何东西。
+三是总账侧余额提供者：ep-contract-ledger 暴露 TotalAccountBalanceProvider trait，按 (法人, 会计期间, AccountRole) 返回该科目在快照上的余额。子账与总账勾稽的比较由本阶段的 ReconExecutor 驱动，子账侧一律经 ep-contract-finance 的 ReconciliationItemQuery 按法人与会计期间取十项勾稽的子账侧合计，结构为 ReconciliationItemView，该 trait 由阶段 10 定义；阶段 8 在 ep-contract-inventory 定义的 StockValueSubledgerBalancePort 与阶段 7 在 ep-contract-procure 定义的 GrniSubledgerBalancePort 是阶段 10 内部组装该结果的手段，本阶段的 ReconCheck 不直接调用它们。十项中的存货与已收货未收票两项，其子账侧实现体分别由阶段 8 的 InventorySubledgerBalanceQuery 与阶段 7 的 GrniSubledgerBalanceQuery 各自在本模块 contract 的端口上实现，阶段 10 只注入，其余八项取自阶段 10 自有表、不经这两个端口。本阶段不定义总账侧接口之外的任何东西。
 
 四是科目余额一致性：核对 account_period_balances 的本期发生额与按 voucher_lines 在同一期间的聚合相等，期初已固化的核对与上一期间期末相等。该项是本阶段引入增量余额表所必须的自检，属本阶段新增决定。
 
@@ -969,7 +969,7 @@ E-23 testkit/scenarios/golden_loop_14_steps.rs 在 ep-datagen 默认 scale 数�
 
 一是 VoucherSourceKind 与 source_sequence_no 的组合已为手工凭证与更正凭证留出位置，U-H-07 与 U-H-08 决策后新增来源类型即可，不需改表结构；新增按第 9.4.1 节的同批约束执行，即映射行、CHECK 迁移与借贷平衡属性测试三者同批，不再以不得新增封住，也不因此单独升主版本。
 
-二是 TotalAccountBalanceProvider 是子账与总账勾稽的总账侧唯一入口，子账侧统一经阶段 10 定义的 ep-contract-finance 的 ReconciliationItemQuery 接入；inventory 与 procure 两个模块在阶段 8 与阶段 7 各提供本模块的余额查询函数并由阶段 10 包装为 SubledgerBalanceProvider 的实现，finance 与 invoice 两个模块的其余八项子账侧取自阶段 10 自有表、不经该 trait，两条路径都不需改动本阶段代码。
+二是 TotalAccountBalanceProvider 是子账与总账勾稽的总账侧唯一入口，子账侧统一经阶段 10 定义的 ep-contract-finance 的 ReconciliationItemQuery 接入；inventory 与 procure 两个模块在阶段 8 与阶段 7 各在本模块的 ep-contract-* 中定义并实现本模块的子账余额端口，即 ep-contract-inventory 的 StockValueSubledgerBalancePort 与 ep-contract-procure 的 GrniSubledgerBalancePort，阶段 10 只注入，finance 与 invoice 两个模块的其余八项子账侧取自阶段 10 自有表、不经这两个端口，两条路径都不需改动本阶段代码。
 
 三是 AccountRole 的 17 个取值中 DIRECT_EXPENSE_COST 预留了按费用类别细分的位置，U-H-05 决策后可扩展为角色加限定符的两段结构，event_account_bindings 的唯一键需相应扩展。
 

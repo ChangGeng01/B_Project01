@@ -76,7 +76,7 @@ T0 不要求分支覆盖，不要求供应商、物料、价目表、取价、�
 |---|---|
 | ep-adapter-db-pg | 新增 mdm 与 cpq 两个仓储实现目录，按 schema 分文件，一个仓储只访问自己模块的 schema |
 | ep-foundation | 在阶段 1 建立的空文件 crates/foundation/src/port/doc.rs 中补齐 SheetSpec、ColumnSpec、CellValue、PdfSource、PrintLayout 五个类型与 SpreadsheetPort、DocTemplatePort、PdfRenderPort 三个 trait，签名按裁定 A-08 冻结，阶段 6、10、11、13 只在其上增量取值，不新增 trait；必要性按基线第 12 节通则第六条在提交说明中逐项举证使用位 |
-| ep-adapter-search | 按 ep_foundation::port::search::SearchDocument 结构定义四类档案与价目表的投影函数，写入方为 job-worker 的索引消费者；索引正文只含编码、名称、简称、规格型号、类别与备注，不含开票要素与银行信息 |
+| ep-adapter-search | 本阶段不改动本 crate，本行只登记检索文档投影函数的落点：四类档案与价目表的 ep_foundation::port::search::SearchDocument 投影函数落在 ep-app-mdm 与 ep-app-cpq，路径各为 crates/application/mdm/src/projection/search_document.rs 与 crates/application/cpq/src/projection/search_document.rs，由 job-worker 的索引消费者调用后经 ep_foundation::port::search::SearchIndexPort 写入；索引正文只含编码、名称、简称、规格型号、类别与备注，不含开票要素与银行信息。落点依据是裁定 F-05 通则甲-1，以及 03-platform-kernel.md 第 3.1 节第 18 项「本阶段不交付任何业务对象的检索文档投影函数，投影由各业务阶段按 SearchDocument 结构提供」与 00-overview.md 第 4.1 节 A-07 行「各阶段只产出 SearchDocument，不自建写入路径」；本 crate 保持只依赖 ep-foundation，本阶段不为它新增任何依赖边 |
 | ep-testkit | 新增 CustomerBuilder、SupplierBuilder、MaterialBuilder、ProductBuilder、PriceListBuilder、ChangeRequestBuilder 六个构造器与探针桩；探针桩只出现在测试装配中，不进入 apps/core-server/src/wiring/ 与 apps/job-worker/src/wiring/ 两个目录 |
 | ep-datagen | 新增主数据分片，按规格附录 A.3 取值产出 |
 | apps/core-server | 在 wiring.rs 中装配本阶段的仓储、端口实现与路由 |

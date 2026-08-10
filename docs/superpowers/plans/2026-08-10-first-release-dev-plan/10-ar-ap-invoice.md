@@ -103,9 +103,9 @@ PRD 第 6.2.2 的资金账户字段表没有期初余额，而第 6.2.4 的资�
 2. `db/migrations/invoice/` 与 `db/migrations/finance/` 两个迁移目录可离线执行到最新版本，且可按各文件头 `-- rollback:` 段回退到本阶段起点。
 3. 36 张业务表与 17 个只读视图在 `ep` 库中建立，其中 invoice 13 张、finance 23 张；17 个视图为 10 个对账视图、4 个业务查询视图与 3 个受治理数据集视图。全部带法人列的表已 `ENABLE` 且 `FORCE` 行级安全并挂上统一策略。
 4. 58 个 HTTP 端点在 `/api/v1/invoice/**` 与 `/api/v1/finance/**` 下可用，含 OpenAPI 描述文件 `docs/openapi/invoice.v1.yaml` 与 `docs/openapi/finance.v1.yaml`。相对原计划新增两个：`POST /api/v1/invoice/purchase-invoices` 与 `POST /api/v1/finance/opening-balances/actions/import`。
-5. 16 个对外契约 trait 在 `ep-contract-finance` 与 `ep-contract-invoice` 中定义并有实现注册到 `apps/core-server/src/wiring.rs` 与 `apps/job-worker/src/wiring.rs`，供 sales、procure、clm、portal、reporting、ledger 六个模块调用，清单见第 5.9 节。其中 8 个 trait 按第 0.5 节的三档处置与其调用方同批接线，阶段 6 与阶段 7 不注入任何空实现，本阶段也不承接任何顺延验收。
+5. 15 个对外契约 trait 在 `ep-contract-finance` 与 `ep-contract-invoice` 中定义并有实现注册到 `apps/core-server/src/wiring/` 与 `apps/job-worker/src/wiring/` 两个目录，供 sales、procure、clm、portal、reporting、ledger 六个模块调用，清单见第 5.9 节。其中 8 个 trait 按第 0.5 节的三档处置与其调用方同批接线，阶段 6 与阶段 7 不注入任何空实现，本阶段也不承接任何顺延验收。
 6. 12 个领域事件登记到 `docs/event-catalog.md` 并可从 `platform_msg.outbox_events` 中查得，其中 8 个在 `ledger.posting_trigger_event_types` 中有登记行，按裁定 A-21 该登记行由阶段 9a 的种子迁移写入且每行只填 `event_type`；本阶段只在 CI 中由 `xtask configdoc` 与 `docs/event-catalog.md` 逐字比对，不进启动自检，不作为关账受理的前置校验，也不交付回填迁移。
-7. 规格第 17.3 章与 PRD 第 6.13.1 合计 10 个勾稽项的对账视图全部完整实现，可在应用内按法人与会计期间查询并展示子账侧、总账侧与差额三列。其中存货与已收货未收票两项按裁定 B-08 由本阶段把阶段 8 的 `InventorySubledgerBalanceQuery` 与阶段 7 的 `GrniSubledgerBalanceQuery` 两个查询函数包装为 `SubledgerBalanceProvider` 实现后接入，不再是外壳。
+7. 规格第 17.3 章与 PRD 第 6.13.1 合计 10 个勾稽项的对账视图全部完整实现，可在应用内按法人与会计期间查询并展示子账侧、总账侧与差额三列。其中存货与已收货未收票两项按裁定 B-08 与 G-01 由本阶段注入阶段 8 的 `InventorySubledgerBalanceQuery`（`ep_contract_inventory::StockValueSubledgerBalancePort` 的实现）与阶段 7 的 `GrniSubledgerBalanceQuery`（`ep_contract_procure::GrniSubledgerBalancePort` 的实现）两个端口实现后接入，不再是外壳。
 8. 一条可重复执行的端到端脚本 `testkit/scenarios/stage10_ar_ap_closed_loop.rs`，覆盖规格第 8 章闭环第 6、7、9、10、11 步，并串起规格第 17.2 章十五类必测分支中的第二、五、六、八、九、十三类。该脚本在 T0 已跑通的最小路径上加厚，开票与到款两段直接复用 T0 的步骤函数而不重写；该脚本的步骤函数再供阶段 9b 的 `testkit/scenarios/golden_loop_14_steps.rs` 复用，黄金业务闭环十四步的整体端到端验收落在阶段 9b，本阶段不承担。
 9. `ep-datagen` 增加往来与发票子集生成器，可在基准规模下产出销项发票 6 万张、进项发票 4 万张、应收明细条目 6 万条、应付明细条目 4 万条、到款单 3 万张、付款单 2 万张、资金腿明细 6 万条，用于附录 A.1 的应收账龄分析与应付账龄分析两项报表实测。
 10. `docs/error-codes.md` 增补本阶段错误码（第 5 节列出的全部错误码，含采购发票登记与期初导入两组，合计 90 个上下），`docs/data-dictionary/invoice.md` 与 `docs/data-dictionary/finance.md` 两份数据字典；`docs/data-dictionary.md` 的单据类型码一节增补 PINV 一码，见裁定 C-26。
@@ -127,7 +127,7 @@ PRD 第 6.2.2 的资金账户字段表没有期初余额，而第 6.2.4 的资�
 | ep-contract-invoice | crates/contract/invoice | 装配进 core-server、job-worker | 发票申请、销项发票、进项发票、冲销登记的命令与查询 DTO、事件类型、能力域码与动作类别常量、供 clm、sales、procure、reporting 调用的五个 trait，含 `ReceiptInvoiceMatchQueryPort`、`PurchaseCreditNotePort`、`TaxRateOptionQuery` |
 | ep-domain-invoice | crates/domain/invoice | 同上 | 发票申请单与销项发票聚合、剩余可开比例值对象、税额勾稽规则、冲销互斥规则 |
 | ep-app-invoice | crates/application/invoice | core-server 承载全部用例，job-worker 承载批量导入任务 | 开具登记、冲销登记、批量导入、采购发票登记与三单匹配、进项红字发票登记、进项发票台账、`InvoiceReferenceCounter` 与两个历史成交提供者 |
-| ep-contract-finance | crates/contract/finance | 装配进 core-server、job-worker、portal-gateway 的调用方 | 应收应付预收预付台账查询 DTO、供 sales、procure、inventory、portal 调用的 trait |
+| ep-contract-finance | crates/contract/finance | 装配进 core-server、job-worker、portal-gateway 的调用方 | 应收应付预收预付台账查询 DTO、供 invoice、sales、procure、portal、reporting、crm、ledger 调用的 trait |
 | ep-domain-finance | crates/domain/finance | 同上 | 台账条目聚合、核销分配算法、账龄分桶、可退上限、超量开票余额推进 |
 | ep-app-finance | crates/application/finance | core-server 承载全部用例，job-worker 承载对账取数 | 到款、付款、退款、冲正、资金账户、对账视图 |
 
@@ -141,10 +141,10 @@ PRD 第 6.2.2 的资金账户字段表没有期初余额，而第 6.2.4 的资�
 | ep-platform-authz | 注册 14 个对象类型与 12 个动作 | 阶段 2 建立，本阶段追加注册项 |
 | ep-testkit | 增加 `CashAccountFixture`、`InvoiceApplicationBuilder`、`SalesInvoiceBuilder`、`ReceiptBuilder`、`PaymentBuilder`、`RefundBuilder`、`ReceivableEntryProbe`、`ReconciliationProbe` 八个构造器与探针 | 阶段 1 建立，本阶段追加 |
 | ep-datagen | 增加往来与发票子集 | 阶段 1 建立，本阶段追加 |
-| apps/core-server | `wiring.rs` 注入 16 个契约实现，路由注册 58 个端点；其中 8 个注入行按第 0.5 节的三档处置与调用方同批接线，两个 `wiring.rs` 中不出现任何 Noop、Stub、Fake、Dummy 前缀的占位类型 | 本阶段追加 |
+| apps/core-server | `apps/core-server/src/wiring/` 目录注入 15 个本阶段契约实现，另注入阶段 8 的 `InventorySubledgerBalanceQuery` 与阶段 7 的 `GrniSubledgerBalanceQuery` 两个外部端口实现，合计 17 个注入行；路由注册 58 个端点；其中 8 个注入行按第 0.5 节的三档处置与调用方同批接线，两个 wiring 目录中不出现任何 Noop、Stub、Fake、Dummy 前缀的占位类型 | 本阶段追加 |
 | apps/job-worker | 注册批量导入任务处理器；按裁定 A-06 实现一个 `ReconCheck` 并在 `apps/job-worker/src/wiring.rs` 经 `ReconRegistry::register` 注册，`check_code` 为 `FIN_CROSS_MODULE_LINK`、`category` 为 `CROSS_MODULE_LINK`，一次覆盖本阶段 invoice 与 finance 两个模块的全部跨模块逻辑引用，不按引用逐条建校验项；判据为被引用行存在且其 `accounting_period_id` 与本行相同，不新增第二个 `check_code` | 本阶段追加 |
 
-本阶段不新增进程、不新增 schema、不新增模块码、不新增错误分类、不新增依赖方向。`ep-domain-finance` 与 `ep-domain-invoice` 不依赖对方，跨模块只由 `ep-app-invoice` 依赖 `ep-contract-finance`，反向不成立。
+本阶段不新增进程、不新增 schema、不新增模块码、不新增错误分类、不新增依赖方向。`ep-domain-finance` 与 `ep-domain-invoice` 不依赖对方；两个模块之间只由 `ep-app-invoice` 依赖 `ep-contract-finance`，`ep-app-finance` 不依赖 `ep-contract-invoice`。按裁定 G-01，`ep-app-finance` 另依赖 `ep-contract-inventory` 与 `ep-contract-procure` 两个契约，用于注入两个子账余额端口的实现，其中对 `ep-contract-procure` 的依赖先于本裁定已存在（见第 6.1 节 register_payment 行的付款申请已付金额回写），本裁定只新增对 `ep-contract-inventory` 一条边；三条边方向均为 app 到 contract，落在基线第 1.3 节允许项内，承接方为 `xtask archcheck` 的层位判定，本阶段不另立任何按 crate 逐项比对的期望依赖清单。
 
 ---
 
@@ -516,7 +516,7 @@ PRD 第 6.1.4 要求系统不提供新增资金流水入口，本表在 API 层�
 
 #### 3.3 视图
 
-十个勾稽项对应十个对账视图，本阶段全部完整实现。其中八项的子账侧取自本阶段自有表；存货与已收货未收票两项按裁定 B-08 由本阶段把阶段 8 与阶段 7 各自提供的查询函数包装为 `ep_contract_finance::SubledgerBalanceProvider` 的实现后接入，实现类型名固定为 `InventorySubledgerBalanceQuery` 与 `GrniSubledgerBalanceQuery`。另有四个业务查询视图与三个受治理数据集视图，合计 17 个。
+十个勾稽项对应十个对账视图，本阶段全部完整实现。其中八项的子账侧取自本阶段自有表；存货与已收货未收票两项按裁定 B-08 与 G-01 由本阶段注入阶段 8 的 `ep_contract_inventory::StockValueSubledgerBalancePort` 与阶段 7 的 `ep_contract_procure::GrniSubledgerBalancePort` 两个端口实现后接入，实现类型名固定为 `InventorySubledgerBalanceQuery` 与 `GrniSubledgerBalanceQuery`，分别由阶段 8 与阶段 7 在其自身阶段定义端口并实现，本阶段只写注入行。另有四个业务查询视图与三个受治理数据集视图，合计 17 个。
 
 | 视图 | 子账侧取数 | 归属 |
 |---|---|---|
@@ -528,8 +528,8 @@ PRD 第 6.1.4 要求系统不提供新增资金流水入口，本表在 API 层�
 | finance.v_recon_overbilling | `sum(open_amount)` from `finance.overbilling_entries` | 本阶段完整实现 |
 | finance.v_recon_cash_bank | `opening_balance` 加 `finance.cash_ledger_entries` 的方向净额，限 `account_type` 为 BANK | 本阶段完整实现 |
 | finance.v_recon_cash_on_hand | 同上，限 `account_type` 为 CASH | 本阶段完整实现 |
-| finance.v_recon_inventory | 存货金额账，经 `InventorySubledgerBalanceQuery` | 本阶段完整实现，实现体包装阶段 8 交付的本模块查询函数 |
-| finance.v_recon_grni | 已收货未收票暂估，经 `GrniSubledgerBalanceQuery` | 本阶段完整实现，实现体包装阶段 7 交付的本模块查询函数 |
+| finance.v_recon_inventory | 存货金额账，经 `InventorySubledgerBalanceQuery` | 本阶段完整实现，实现体由阶段 8 在 `ep-contract-inventory` 的 `StockValueSubledgerBalancePort` 上交付，本阶段只注入 |
+| finance.v_recon_grni | 已收货未收票暂估，经 `GrniSubledgerBalanceQuery` | 本阶段完整实现，实现体由阶段 7 在 `ep-contract-procure` 的 `GrniSubledgerBalancePort` 上交付，本阶段只注入 |
 
 另有四个业务查询视图：`finance.v_unbilled_ar_net`、`finance.v_receivable_aging`、`finance.v_payable_aging`、`finance.v_cash_account_period_balance`。账龄视图不做物化，理由是共享基线第 3.2 节禁用物化视图。
 
@@ -897,7 +897,7 @@ OPEN 到 PARTIALLY_SETTLED 到 SETTLED，三条结清路径任一条都推进该
 | GET /api/v1/finance/overbilling-entries 与 /{id} | 待处理超量开票查询视图，`meta` 返回该法人该期间的挂账合计 |
 | POST /api/v1/finance/overbilling-entries/{id}/actions/settle-by-write-off | 路径三，必带 `X-Reauth-Token` 并进审批 |
 | POST /api/v1/finance/overbilling-entries/{id}/actions/reverse-write-off | 冲回路径三，必带 `X-Reauth-Token` 并进审批 |
-| GET /api/v1/finance/reconciliations | 查询参数 `accounting_period_id` 与可选 `item`；返回十项的子账侧、总账侧与差额三列，十项的子账侧均已接入，存货与已收货未收票两项经 `SubledgerBalanceProvider` 的两个实现取数，见第 3.3 节；差额非零时附差异事项引用；本端点不提供任何调整入口，对应 PRD 第 6.13.2 |
+| GET /api/v1/finance/reconciliations | 查询参数 `accounting_period_id` 与可选 `item`；返回十项的子账侧、总账侧与差额三列，十项的子账侧均已接入，存货与已收货未收票两项经 `ep_contract_inventory::StockValueSubledgerBalancePort` 与 `ep_contract_procure::GrniSubledgerBalancePort` 两个模块端口取数，见第 3.3 节；差额非零时附差异事项引用；本端点不提供任何调整入口，对应 PRD 第 6.13.2 |
 | GET /api/v1/finance/cash-ledger-entries | 全法人资金腿明细，按账户筛选 |
 | POST /api/v1/finance/opening-balances/actions/import | 往来与预收预付期初导入，请求体 `{ledger_side, accounting_period_id, rows[]}`，见第 4.12 节；逐行独立事务，不生成凭证；错误码 FINANCE.OPENING_BALANCE.PERIOD_NOT_FIRST、FINANCE.OPENING_BALANCE.ROW_LIMIT_EXCEEDED、FINANCE.OPENING_BALANCE.PARTY_NOT_FOUND |
 
@@ -957,7 +957,7 @@ OPEN 到 PARTIALLY_SETTLED 到 SETTLED，三条结清路径任一条都推进该
 
 #### 5.9 对外契约 trait
 
-16 个 trait，定义在两个 contract crate 中，实现注册在 `apps/core-server/src/wiring.rs` 与 `apps/job-worker/src/wiring.rs`。调用方按共享基线第 1.3 节只依赖 contract，不依赖 application。全部方法的事务句柄一律为 `&mut dyn Tx`，只读对账取数为 `&dyn SnapshotCtx`，两个类型取自 `ep_foundation::port`，按裁定 A-01 由阶段 1 冻结。
+15 个 trait，定义在两个 contract crate 中，实现注册在 `apps/core-server/src/wiring/` 与 `apps/job-worker/src/wiring/` 两个目录。调用方按共享基线第 1.3 节只依赖 contract，不依赖 application。全部方法的事务句柄一律为 `&mut dyn Tx`，只读对账取数为 `&dyn SnapshotCtx`，两个类型取自 `ep_foundation::port`，按裁定 A-01 由阶段 1 冻结。
 
 | trait | 所在 crate | 调用方 | 语义 |
 |---|---|---|---|
@@ -970,13 +970,13 @@ OPEN 到 PARTIALLY_SETTLED 到 SETTLED，三条结清路径任一条都推进该
 | SupplierStatementQuery | ep-contract-finance | ep-app-portal | 供应商收付款对账查询的取数，方法按裁定 C-15 固定为 `statement(tx, ctx, supplier_id: Id<Supplier>, period: PeriodRange) -> Result<SupplierStatementView, AppError>`，返回未脱敏结构，脱敏在门户侧完成；阶段 7 的 `PayableStatementQueryPort` 作废 |
 | CashAccountQuery | ep-contract-finance | ep-app-procure、ep-app-reporting | 资金账户与资金腿明细只读查询 |
 | AgingQuery | ep-contract-finance | ep-app-reporting | 应收账龄与应付账龄两张基础表的取数；分档定义不由本 trait 承载，取用入口见第 4.5 节 |
-| ReconciliationItemQuery | ep-contract-finance | ep-app-ledger 中 9b 段实现的子账与总账勾稽 `ReconCheck` | 按法人与会计期间返回十项勾稽的子账侧合计，结构为 `ReconciliationItemView`；按裁定 B-08 该 `ReconCheck` 由 ep-platform-recon 的执行器驱动，执行器不直接依赖本 crate |
-| SubledgerBalanceProvider | ep-contract-finance | 本阶段自用，由 ReconciliationItemQuery 组装 | `balance(snapshot: &dyn SnapshotCtx, legal_entity_id, accounting_period_id) -> Result<Money, AppError>`；按裁定 B-08 由本阶段定义，两个实现 `InventorySubledgerBalanceQuery` 与 `GrniSubledgerBalanceQuery` 由本阶段包装阶段 8 与阶段 7 各自提供的查询函数；十项中的其余八项子账侧取自本阶段自有表，不经本 trait，阶段 9b 的关账前强制校验与其 `ReconCheck` 一律调用 `ReconciliationItemQuery`，不直接调用本 trait |
+| ReconciliationItemQuery | ep-contract-finance | ep-app-ledger 中 9b 段实现的子账与总账勾稽 `ReconCheck` | 按法人与会计期间返回十项勾稽的子账侧合计，结构为 `ReconciliationItemView`；按裁定 B-08 与 G-01 该 `ReconCheck` 由 ep-platform-recon 的执行器驱动，执行器不直接依赖本 crate |
 | SalesInvoiceQuery | ep-contract-invoice | ep-app-clm、ep-app-sales、ep-app-reporting | 销项发票与收款计划勾稽的只读查询，方法按裁定 C-16 固定为 `by_sales_order_line(tx, ctx, sales_order_line_id) -> Result<Vec<SalesInvoiceRef>, AppError>` |
 | InvoiceReversalStatusQuery | ep-contract-invoice | ep-app-sales、ep-app-procure | 方法按裁定 C-16 固定为 `is_fully_credit_noted(tx, ctx, sales_order_line_id, quantity: Quantity) -> Result<CreditNoteStatus, AppError>`，供销售退货与采购退货的前置校验，对应 PRD 第 6.5.4；阶段 6 的 `InvoiceStatusPort` 作废；接线次序见第 0.5 节，与阶段 6 第三批同批接线同批验收，阶段 6 不注入任何替身 |
 | ReceiptInvoiceMatchQueryPort | ep-contract-invoice | ep-app-procure | 按裁定 A-11 提供 `match_state` 与 `match_states` 两个方法，返回 `ReceiptInvoiceMatchState`；其承载的采购退货已登记分支按第 0.5 节整条推迟到本阶段，阶段 7 不建该调用点也不注入任何替身，本阶段首次接线 |
 | PurchaseCreditNotePort | ep-contract-invoice | ep-app-procure | 按裁定 A-11 提供 `register_credit_note(tx, ctx, cmd: RegisterPurchaseCreditNote) -> Result<PurchaseCreditNoteView, AppError>`，采购退货在采购发票已登记分支下由本端口登记红字进项发票；该分支按第 0.5 节整条推迟到本阶段，阶段 7 不建该调用点也不注入任何替身，本阶段首次接线 |
 | TaxRateOptionQuery | ep-contract-invoice | ep-app-sales、ep-app-clm、ep-app-procure | 按裁定 C-11 提供 `default_rate(tx, ctx, legal_entity_id, item_id: uuid::Uuid) -> Result<Rate, AppError>` 与 `list(tx, ctx, legal_entity_id) -> Result<Vec<TaxRateOption>, AppError>`，是税率字典的唯一取用入口 |
+十项勾稽中的存货与已收货未收票两项，其子账侧不由本节的 trait 承载，取数经 `ep_contract_inventory::StockValueSubledgerBalancePort` 与 `ep_contract_procure::GrniSubledgerBalancePort` 两个外部端口，两个端口分别由阶段 8 与阶段 7 在其自身阶段定义并实现，由 `ReconciliationItemQuery` 的实现在组装时调用，注入行由本阶段写入 `apps/core-server/src/wiring/` 与 `apps/job-worker/src/wiring/` 两个目录，见裁定 G-01。
 
 ---
 
@@ -1128,7 +1128,7 @@ OPEN 到 PARTIALLY_SETTLED 到 SETTLED，三条结清路径任一条都推进该
 14. 超量开票路径三之后到货：验证必须先冲回成本再走路径一。
 15. 资金单据冲正：到款冲正、付款冲正、退款冲正各一个用例，含预收已被消费时的拒绝。
 16. 会计期间顺延：在一次关账受理之后提交一笔到款，凭证与全部子账条目落入其后最早的可入账期间且 `deferred_from_period_id` 非空，两条检索路径均可查得，对应规格第 10.2 章的注入用例其一。
-17. 对账视图十项：正常态差额为零；逐项注入差额后差额非零并生成差异事项引用；差额清零后恢复。存货与已收货未收票两项经 `SubledgerBalanceProvider` 的两个实现取数，其注入方式为改变阶段 8 与阶段 7 的子账侧样例数据。其余八项的注入方式为直接对台账条目做受控 UPDATE，仅在测试库上执行。
+17. 对账视图十项：正常态差额为零；逐项注入差额后差额非零并生成差异事项引用；差额清零后恢复。存货与已收货未收票两项经 `ep_contract_inventory::StockValueSubledgerBalancePort` 与 `ep_contract_procure::GrniSubledgerBalancePort` 两个模块端口取数，其注入方式为改变阶段 8 与阶段 7 的子账侧样例数据。其余八项的注入方式为直接对台账条目做受控 UPDATE，仅在测试库上执行。
 18. 批量导入：2000 行成功、含 3 行失败的部分失败、重跑同批次不产生重复发票。
 19. 幂等：全部 10 个写端点各一次重放，返回首次结果并带 `Idempotent-Replay: true`；载荷不同时返回 409。
 20. 法人越权矩阵：并入独立测试目标 `tests/rls_matrix`，覆盖读取、写入、更新、删除、聚合、排序、报表投影与错误信息泄漏八类，本阶段追加 36 张表与 17 个视图的条目，另覆盖资金账户银行账号字段级权限的两种上下文；八类断言函数名与 32 组矩阵按裁定 C-05 由阶段 1、阶段 2 与阶段 4 分段提供，本阶段只追加条目，不重复实现同名函数。
@@ -1204,7 +1204,7 @@ OPEN 到 PARTIALLY_SETTLED 到 SETTLED，三条结清路径任一条都推进该
 5. 第 8.2 节列出的 8 组领域属性测试在 1000 次随机用例下全部通过。
 6. 第 8.3 节列出的 24 组集成测试全部通过。
 7. 规格第 17.2 章十五类必测分支中的第二、五、六、八、九、十三类在本阶段的用例中通过，第十三类的三条结清路径逐条通过。
-8. 十个勾稽项全部在基准数据集上差额为零；逐项注入差额后对账视图差额非零、可下钻、可追溯，清零后恢复为零，其中待处理超量开票一项以关账前余额非零的方式注入，对应规格第 10.2 章的发布验收口径；存货与已收货未收票两项经 `SubledgerBalanceProvider` 的两个实现接入并同样通过该判定。
+8. 十个勾稽项全部在基准数据集上差额为零；逐项注入差额后对账视图差额非零、可下钻、可追溯，清零后恢复为零，其中待处理超量开票一项以关账前余额非零的方式注入，对应规格第 10.2 章的发布验收口径；存货与已收货未收票两项经 `ep_contract_inventory::StockValueSubledgerBalancePort` 与 `ep_contract_procure::GrniSubledgerBalancePort` 两个端口实现接入并同样通过该判定。
 9. 规格第 10.2 章的顺延入账注入用例在本阶段的到款登记上通过：凭证与全部子账条目落入同一个顺延后的期间，两条检索路径均可查得。
 10. 法人越权测试集 `tests/rls_matrix` 追加本阶段条目后全部通过，八类判据无一泄漏。
 11. 三项高风险操作的重新认证与审批控制通过身份与访问控制测试，认证方式、待签内容摘要、时间与设备可在审计证据中查得。
@@ -1270,7 +1270,7 @@ OPEN 到 PARTIALLY_SETTLED 到 SETTLED，三条结清路径任一条都推进该
 | 6.7 全节 | 到款登记的九个字段、核销明细行与核销顺序的六条规则、剩余款项与预收账款、五项输出、状态机、七种异常 |
 | 6.8 全节 | 付款登记的读取信息、十个字段、核销与分次付款的五条规则、高风险控制、六项输出、状态机、七种异常 |
 | 6.9 全节 | 应收台账的九类信息、核销守恒、核销关系的四条规则、账龄的五条规则、查询与权限 |
-| 6.10 全节 | 应付台账同构内容；已收货未收票视图完整实现，子账侧包装阶段 7 提供的查询函数；待处理超量开票视图 |
+| 6.10 全节 | 应付台账同构内容；已收货未收票视图完整实现，子账侧经阶段 7 定义并实现的 `ep_contract_procure::GrniSubledgerBalancePort` 取数，本阶段只注入；待处理超量开票视图 |
 | 6.11 全节 | 预收台账与预付台账的六条与五条规则、三条用户可见校验、无人工新增与调整入口 |
 | 6.12 全节 | 两类退款单的区分、十一个字段、四项校验、五项输出、状态机、直运情形、五种异常 |
 | 6.13 全节 | 十个勾稽项的对账视图全部、三条用户可见规则、八条本节内部勾稽 |
@@ -1305,7 +1305,7 @@ OPEN 到 PARTIALLY_SETTLED 到 SETTLED，三条结清路径任一条都推进该
 #### 11.2 为后续阶段预留的扩展点
 
 1. `ep-contract-finance` 的 `ReceivableExposureQuery` 端口返回应收未收金额与已交付未开票金额两项，销售阶段在 `ep_contract_sales::CreditExposureQueryPort` 内消费该结果并补上在途订单金额，对外唯一入口为销售侧端口，对应规格第 5.2 章客户信用额度校验条目的三部分构成，见裁定 C-14。
-2. `finance.v_recon_inventory` 与 `finance.v_recon_grni` 两个视图在本阶段已完整接入，子账侧由本阶段把阶段 8 的 `InventorySubledgerBalanceQuery` 与阶段 7 的 `GrniSubledgerBalanceQuery` 包装为 `SubledgerBalanceProvider` 实现；后续版本新增子账来源时只需追加一个实现并在 wiring 注册，不改视图结构，见裁定 B-08。
+2. `finance.v_recon_inventory` 与 `finance.v_recon_grni` 两个视图在本阶段已完整接入，子账侧由本阶段注入阶段 8 的 `InventorySubledgerBalanceQuery`（`ep_contract_inventory::StockValueSubledgerBalancePort` 的实现）与阶段 7 的 `GrniSubledgerBalanceQuery`（`ep_contract_procure::GrniSubledgerBalancePort` 的实现）两个端口实现；后续版本新增子账来源时，在该来源模块的 `ep-contract-<m>` 增加一个同形端口、由该来源模块定义并实现、由本模块在组装处接入并在两个 wiring 目录注册，不改视图结构，见裁定 B-08 与 G-01。
 3. `finance.receivable_entries.source_doc_type` 与 `finance.payable_entries.source_doc_type` 是可扩展枚举，为后续版本的其他应收应付来源留位，首版只有一个取值。
 4. `invoice.sales_invoices` 不设明细行表，但 `invoice.invoice_receipt_plan_links` 已按多行结构建立，将来支持一张发票多行明细时只需新增 `invoice.sales_invoice_lines` 并把税额校验从头表下移到行表。
 5. `finance.cash_ledger_entries.source_doc_type` 为可扩展枚举，后续版本引入银企直连流水时新增取值即可，但资金流水不得独立登记的约束在首版必须保持。

@@ -67,7 +67,7 @@ ep-contract-service 对外只暴露 ReturnRepairTraceQuery 一个 trait。按裁
 | ep-contract-crm | 扩充阶段 5 已建立的 crm 契约：在既有 Customer360SectionProvider 上追加 Customer360SectionKind 的 Complaints、Equipments、WorkOrders 三个取值与配套的 Customer360Item 字段，不新增 trait，不新增端点 |
 | ep-app-crm | 新增 usecase/query_customer_360.rs，做区块扇出、超时降级与合并 |
 | ep-adapter-db-pg | 新增 repository/service/ 与 repository/project/ 两个目录，各仓储只访问自己模块的 schema |
-| ep-adapter-search | 五类对象的检索文档投影一律产出 foundation::port::search::SearchDocument，object_type 取表全名如 service.equipment_records，写入方仍为 job-worker 的索引消费者，该消费者与 ep-adapter-search 本体按裁定 A-07 由阶段 3b 交付 |
+| ep-adapter-search | 本阶段不改动本 crate，原记在本行的检索文档投影职责按裁定 F-05 移出：五类对象的 foundation::port::search::SearchDocument 投影函数落在 ep-app-service 与 ep-app-project，各自置于 src/projection/search_document.rs，object_type 取表全名如 service.equipment_records，由 job-worker 的索引消费者调用后经 SearchIndexPort 写入；ep-adapter-search 本体与该消费者按裁定 A-07 由阶段 3b 交付。落点依据为裁定 F-05 通则甲一与阶段 3 计划第 18 项「本阶段不交付任何业务对象的检索文档投影函数，投影由各业务阶段按 SearchDocument 结构提供」 |
 | apps/core-server/src/wiring.rs | 注册两个模块的仓储与用例，注册三个客户 360 区块提供者，并把 ServiceReferenceCounter 注册进阶段 5 提供的 MasterReferenceCounterRegistry |
 | apps/job-worker/src/wiring.rs | 注册三个 Outbox 消费者 project.contract_derivation、project.requisition_intake 与 service.return_repair_writeback、一个定时器回调，并把 ServiceReferenceCounter 注册进 MasterReferenceCounterRegistry |
 | ep-testkit | 新增 EquipmentRecordBuilder、WorkOrderBuilder、ComplaintBuilder、ProjectBuilder、ProjectTaskBuilder、ContractDerivationPlanFake、SalesReturnPortFake，后两者分别按裁定 A-16 与 A-17 冻结的签名实现；另新增 testkit/scenarios/stage12_service_step12.rs，内含闭环第 12 步的步骤函数与断言，由阶段 9b 的 testkit/scenarios/golden_loop_14_steps.rs 引用 |
@@ -352,7 +352,7 @@ PRD 9.3.4 要求状态变更记录变更前后取值、操作者、时间与原�
 
 #### 3.6 联系方式的字段级加密
 
-规格第 12.3 章把联系方式列为行内敏感字段。投诉与工单上的联系方式按字段级信封加密存储于 `contact_info_enc bytea`，密钥经 ep-adapter-kms 在该法人密钥域下取用，`contact_info_key_ref` 记录密钥标识与版本。该列不参与过滤、排序、聚合、唯一约束与全文检索，检索文档投影中该字段以掩码写入。日志、错误消息与指标标签中一律不出现该字段，Rust 侧用 foundation::Redacted 包装。含该字段的列表导出按规格第 12.1 章敏感数据导出执行重新认证与审批，由平台导出能力承担，本阶段只声明字段敏感标记与密级。
+规格第 12.3 章把联系方式列为行内敏感字段。投诉与工单上的联系方式按字段级信封加密存储于 `contact_info_enc bytea`，密钥经 `ep_foundation::port::kms::KmsBackend` 在该法人密钥域下取用（该端口 trait 定义在 ep-foundation，其实现落 ep-adapter-kms，本阶段只作为调用方，不命名任何实现类型），`contact_info_key_ref` 记录密钥标识与版本。该列不参与过滤、排序、聚合、唯一约束与全文检索，检索文档投影中该字段以掩码写入。日志、错误消息与指标标签中一律不出现该字段，Rust 侧用 foundation::Redacted 包装。含该字段的列表导出按规格第 12.1 章敏感数据导出执行重新认证与审批，由平台导出能力承担，本阶段只声明字段敏感标记与密级。
 
 #### 3.7 受治理数据集视图
 

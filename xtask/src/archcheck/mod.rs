@@ -24,12 +24,19 @@ use deps::Violation;
 ///
 /// 出处：裁定 F-03 第二段与技术基线第 12.1 节 delegated 段。
 /// 本表与基线 12.1 节 delegated 段必须逐行相等。
-pub const DELEGATED: [(&str, &str); 1] = [(
+pub const DELEGATED: [(&str, &str); 2] = [
+    (
     "foundation-no-business/necessity",
     "不由本工具判定。承接方：评审举证，加 foundation-no-business/no-internal-dep、\
      foundation-frozen-items、foundation-marker-shape、foundation-module-registry、\
      foundation-no-single-owner 五条替身",
-)];
+    ),
+    (
+        // 裁定 F-05：本条只在源码字面量里取 <schema>.<object>，读不出运行期连接取的角色。
+        "db-pg-one-schema-per-file/analyst-ro-connection",
+        "不由本工具判定。承接方：阶段 11 的 reporting-dataset-signature-matched 启动自检，加评审举证",
+    ),
+];
 
 pub struct Report {
     pub violations: Vec<Violation>,

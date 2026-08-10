@@ -32,8 +32,8 @@
 1. Outbox 写入与消费：业务状态、审计事件与 Outbox 条目在同一数据库事务写入；job-worker 按法人轮转取件、投递、退避重试、转死信；消费端由 `platform_msg.inbox_consumptions` 保证幂等；投递统计与积压指标可读。
 2. 幂等键（3a 段）：`platform_msg.idempotency_keys` 表与阶段 2 定义的 `ep_foundation::port::db::IdempotencyStore` 端口实现，`try_begin(tx, scope, request_hash)` 返回 `IdempotencyOutcome::FirstCall`、`Replay { status, body }` 或 `PayloadMismatch`，`finish(tx, scope, response_status, response_body)` 写回首次结果；重复请求回放首次结果并回带 `Idempotent-Replay: true`。请求头的存在性与 UUIDv7 合法性由阶段 1 的 `IdempotencyKeyHeaderGuard` 校验并返回 `PLATFORM.IDEMPOTENCY.KEY_REQUIRED`，本阶段不重复校验、不重复登记该码。
 3. 单据编号与档案编码：按共享技术基线第 11.1 节的格式生成，在业务事务内取号，回滚即退号，位数溢出自动扩展。
-4. 审计事件哈希链与分段签名：按法人与自然日分段的 SHA-256 哈希链、每 5 分钟或每 1000 条的 ECDSA P-256 段根签名、签名后立即写入独立的审计证据存储路径、链验证工具与验证报告。
-5. 文件引用与本地文件存储：附件对象与版本模型、分片上传与断点续传、类型识别与恶意内容检查、按法人密钥域与密级子域的信封加密落盘、只写入不覆盖不删除的存储适配、附件恢复点水位的只读输入视图、`DisposalPort` 端口定义与处置受理路由（本阶段至阶段 13 之间一律直接拒绝并开一条降级窗口）。
+4. 审计事件哈希链与分段签名：按法人与自然日分段的 SHA-256 哈希链、每 5 分钟或每 1000 条的 ECDSA P-256 段根签名、签名后立即写入独立的审计证据存储路径、链验证工具与验证报告。段根签名经 `ep_foundation::port::kms::KmsBackend` 的 `sign` 执行，私钥不出载体，`ep-platform-audit` 不依赖 `ep-adapter-kms`。
+5. 文件引用与本地文件存储：附件对象与版本模型、分片上传与断点续传、类型识别与恶意内容检查、按法人密钥域与密级子域的信封加密落盘（加解密经 `ep_foundation::port::kms::KmsBackend` 的 `wrap` 与 `unwrap` 执行）、只写入不覆盖不删除的存储适配、附件恢复点水位的只读输入视图、`DisposalPort` 端口定义与处置受理路由（本阶段至阶段 13 之间一律直接拒绝并开一条降级窗口）。
 6. 站内通知：通知实体、模板、未读计数、标记已读、按法人与接收人的列表查询；站内通知在业务事务内同步写入，不依赖任何异步链路。
 7. 移动推送出口：推送设备登记、推送载荷组装与脱敏、经 integration-gateway 的出网投递、送达状态记录；推送不可用时只剩站内通知，业务提醒不中断。
 8. 持久化工作流引擎：流程定义版本、实例、步骤、人工任务、定时器、SLA、补偿、运行约束、版本迁移与模拟；补偿失败进入人工任务队列并告警。同时交付 `ep_platform_flow::port::RuleEvaluator` 与 `ep_platform_flow::port::WasmComputePort` 两个端口定义，其实现类型 `AstRuleEvaluator` 与 `PluginHostWasmCompute` 按裁定 B-05 由阶段 13b 交付；两者是裁定通则第三条列明的三项例外中的两项，本阶段至阶段 13b 之间不注入任何实现，能力缺位按降级窗口承载，见第 3.4.8 节。
@@ -84,7 +84,7 @@
 | ep-testkit | 测试 | 改动 | 测试 |
 | ep-datagen | 测试 | 改动 | 测试 |
 
-`ep-adapter-kms` 由阶段 2 交付，本阶段只消费其接口，不改动其公开签名。若阶段 2 尚未交付签名接口，本阶段用其接口的桩实现开发，但退出条件必须在真实实现上判定。
+`ep-adapter-kms` 由阶段 2 交付，本阶段不依赖该 crate，只依赖阶段 2 在 `ep_foundation::port::kms` 内补齐的 `KmsBackend` 端口，两个载体实现的实例在 `apps/core-server/src/wiring/` 与 `apps/job-worker/src/wiring/` 两个目录内注入。按裁定 F-04，阶段顺序 1 → 2 → 3a 已定，端口与两个载体实现在本阶段开工前均已存在，本条不留任何桩路径，退出条件一律在真实载体实现上判定。
 
 #### 3.2.2 各 crate 的内容边界
 
@@ -101,7 +101,7 @@
 
 `ep-platform-audit`：`AuditRecorder` 端口、段模型与链追加算法、锚定任务、链验证器、证据文件的写入与读取端口。
 
-`ep-platform-file`：附件对象与版本聚合、上传会话状态机、扫描端口 `ContentInspector`、存储端口 `ObjectStore`、密钥引用组装。正文的字节读写全部经 `ep-adapter-file`。处置端口 `DisposalPort` 与其两个 DTO 按裁定 A-22 定义在 `crates/platform/file/src/port/disposal.rs`，本阶段只给 trait 与 DTO，不给任何实现、两个 wiring 目录内不出现注入行，实现与注入行由阶段 14 同批落地；`DisposalPort` 是裁定通则第三条列明的三项例外之一，按例外档处理而不是整条推迟，本阶段注册处置受理路由，本阶段至阶段 13 之间的物理删除请求直接拒绝并同时开一条降级窗口，见第 3.4.7 节。
+`ep-platform-file`：附件对象与版本聚合、上传会话状态机、扫描端口 `ContentInspector`、存储端口 `ObjectStore`、密钥引用组装。信封加解密的调用点在本 crate，经 `ep_foundation::port::kms::KmsBackend` 的 `wrap` 与 `unwrap` 执行；正文的字节读写全部经 `ep-adapter-file`，该 adapter 不接触密钥材料，也不依赖 `ep-adapter-kms`。处置端口 `DisposalPort` 与其两个 DTO 按裁定 A-22 定义在 `crates/platform/file/src/port/disposal.rs`，本阶段只给 trait 与 DTO，不给任何实现、两个 wiring 目录内不出现注入行，实现与注入行由阶段 14 同批落地；`DisposalPort` 是裁定通则第三条列明的三项例外之一，按例外档处理而不是整条推迟，本阶段注册处置受理路由，本阶段至阶段 13 之间的物理删除请求直接拒绝并同时开一条降级窗口，见第 3.4.7 节。
 
 `ep-platform-notify`：通知聚合、模板渲染、接收人解析端口、推送载荷组装与脱敏、送达状态。
 
@@ -111,15 +111,15 @@
 
 `ep-platform-license`（3b 段）：模块注册与安装态状态机、许可凭证的解析与有效期判定、功能开关求值，对外只暴露 `ModuleLicenseQuery`。不含任何模块的业务语义。
 
-`ep-platform-release`：3a 段只含 `port::config_item` 一个模块，即 `ConfigItemApplier` trait、`ItemKind`、`ConfigPackageItem` 与 `ConfigItemApplierRegistry`，除 `ep-foundation` 外不依赖任何 crate；3b 段追加配置包与发布单聚合、六态状态机、签名与验签、发布与回退编排。
+`ep-platform-release`：3a 段只含 `port::config_item` 一个模块，即 `ConfigItemApplier` trait、`ItemKind`、`ConfigPackageItem` 与 `ConfigItemApplierRegistry`，除 `ep-foundation` 外不依赖任何 crate；3b 段追加配置包与发布单聚合、六态状态机、签名与验签、发布与回退编排。本 crate 的工作区内依赖在 3b 段止于 `ep-foundation`、`ep-platform-audit` 与 `ep-platform-outbox` 三项，阶段 13b 不再新增，见第 3.2.3 节。
 
 `ep-adapter-search`（3b 段）：内置检索索引的按法人分区读写，实现 `ep_foundation::port::search` 的两个 trait。只依赖 `ep-foundation`，不依赖任何 `ep-platform-*`，索引根目录与分区路径见第 3.4.10 节。
 
 #### 3.2.3 依赖方向核对
 
-本阶段全部新增 crate 均为 `ep-platform-*` 与 `ep-adapter-*`，依赖只指向 `ep-foundation` 与其他 `ep-platform-*`，不依赖任何 `ep-domain-*` 与 `ep-app-*`，符合基线第 1.3 节。`ep-adapter-file` 只依赖 `ep-foundation` 与 `ep-platform-file` 中的 `ObjectStore` 端口 trait，不依赖任何其他 adapter。装配全部发生在 `apps/core-server/src/wiring.rs`、`apps/job-worker/src/wiring.rs`、`apps/integration-gateway/src/wiring.rs` 三处。
+本阶段全部新增 crate 均为 `ep-platform-*` 与 `ep-adapter-*`，依赖只指向 `ep-foundation` 与其他 `ep-platform-*`，不依赖任何 `ep-domain-*` 与 `ep-app-*`，符合基线第 1.3 节。`ep-adapter-file` 只依赖 `ep-foundation` 与 `ep-platform-file` 中的 `ObjectStore` 端口 trait，不依赖任何其他 adapter。装配全部发生在 `apps/core-server/src/wiring.rs`、`apps/job-worker/src/wiring.rs`、`apps/integration-gateway/src/wiring.rs` 三处。消费 KMS 能力的 `ep-platform-audit`、`ep-platform-file`、`ep-platform-notify` 与 `ep-platform-release` 四个 crate 一律只依赖 `ep_foundation::port::kms`，不依赖 `ep-adapter-kms`，载体实例在 `apps/core-server/src/wiring/` 与 `apps/job-worker/src/wiring/` 两个目录内注入；本段「依赖只指向 `ep-foundation` 与其他 `ep-platform-*`」因此成立，按裁定 F-04。
 
-platform 内部的依赖边为：`ep-platform-outbox → ep-foundation`；`ep-platform-audit → ep-foundation`；`ep-platform-file → ep-foundation`；`ep-platform-sequence → ep-foundation`；`ep-platform-license → ep-foundation`；`ep-platform-release → ep-foundation`（3a 段），3b 段追加 `ep-platform-audit`、`ep-platform-outbox`；`ep-platform-notify → ep-foundation, ep-platform-release`；`ep-platform-flow → ep-foundation, ep-platform-outbox, ep-platform-audit, ep-platform-release`。无环，因为 `ep-platform-release` 不反向依赖 `ep-platform-flow` 与 `ep-platform-notify`，两个 applier 落在实现方 crate 内。`ep-adapter-search` 只依赖 `ep-foundation`。CI 的 `cargo metadata` 自检脚本增加本阶段八个 platform crate 与两个 adapter crate 的断言。
+platform 内部的依赖边为：`ep-platform-outbox → ep-foundation`；`ep-platform-audit → ep-foundation`；`ep-platform-file → ep-foundation`；`ep-platform-sequence → ep-foundation`；`ep-platform-license → ep-foundation`；`ep-platform-release → ep-foundation`（3a 段），3b 段追加 `ep-platform-audit`、`ep-platform-outbox`；`ep-platform-notify → ep-foundation, ep-platform-release`；`ep-platform-flow → ep-foundation, ep-platform-outbox, ep-platform-audit, ep-platform-release`。无环，因为 `ep-platform-release` 不反向依赖任何 `ConfigItemApplier` 属主 crate：3b 段的 `ep-platform-flow` 与 `ep-platform-notify`、阶段 4 的 `ep-platform-authz`、阶段 11 的 `ep-app-reporting`、阶段 13b 的 `ep-platform-meta` 一律在外，`ItemKind` 的十五个 applier 全部落在实现方 crate 内。该方向对全卷生效，任何阶段不得为 `ep-platform-release` 新增指向属主 crate 的依赖边；跨 crate 的执行编排一律落在 `apps/*`，不落 `ep-platform-release`。`ep-adapter-search` 只依赖 `ep-foundation`。本阶段新增的八个 platform crate 与两个 adapter crate 一并纳入 `xtask archcheck` 的层位判定与 `platform-acyclic`、`platform-no-adapter` 两条规则，不另立按 crate 逐项比对期望依赖清单的自检脚本；本节的依赖枚举是本阶段结束时的快照，后续阶段可在基线第 1.3 节允许项内增边，见基线第 1.3 节末段。
 
 #### 3.2.4 进程职责增量
 
@@ -939,7 +939,7 @@ select ... from platform_msg.outbox_events
 链路四步。其一，core-server 写入通知的同一事务内，若该接收人存在活跃 `push_registrations` 且 `notify.push_enabled` 为真，写一条 `platform.notification.push_requested.v1` 到 Outbox 并插入 `notification_deliveries` 的 `MOBILE_PUSH` 行为 `PENDING`。其二，job-worker 消费该事件，组装推送载荷：默认只含事项类型与关联单据编号，不含任何业务字段，由 `notify.push_body_includes_business_fields` 控制，默认关闭，对应 PRD 附录乙 U-K-05 且默认取最保守值。其三，job-worker 调用 integration-gateway 的 `POST http://127.0.0.1:8082/internal/v1/push/dispatch`，超时 5 秒。其四，integration-gateway 执行出网投递，带超时、退避与熔断，把结果回写到 `notification_deliveries`。
 
 连续失败达到阈值的 `push_registrations` 行置 `is_active = false`，理由是失效令牌会持续消耗出网重试预算。
-令牌明文的唯一出现位置是第二步的载荷组装：job-worker 按 `token_key_ref` 经阶段 2 的 `KmsBackend::unwrap` 解封该法人密钥域下的字段级密钥后解密 `token_enc`，明文只在进程内存中存活到本次投递结束，不落盘、不写运行日志、不进错误消息（由 `Redacted<T>` 与 `SecretString` 拦截），也不进入任何审计事件、Outbox 信封与推送载荷字段。该路径不经阶段 4 的 `FieldProjector`，不做字段权限与密级判定，理由是它不向任何主体返回该列：第 3.5.1 节两个推送登记端点只写不读，本阶段没有任何端点返回 `token_enc`、`token_key_ref` 与 `token_bidx` 三列中的任何一列。阶段 4 第 4.7 节所述的唯一解密位点是就字段投影而言的，本条不经投影，也不新增第二套解封实现，解封入口仍只有 `KmsBackend`。
+令牌明文的唯一出现位置是第二步的载荷组装：job-worker 按 `token_key_ref` 经 `ep_foundation::port::kms::KmsBackend::unwrap`（实例由 job-worker 的 wiring 目录注入，`ep-platform-notify` 不依赖 `ep-adapter-kms`）解封该法人密钥域下的字段级密钥后解密 `token_enc`，明文只在进程内存中存活到本次投递结束，不落盘、不写运行日志、不进错误消息（由 `Redacted<T>` 与 `SecretString` 拦截），也不进入任何审计事件、Outbox 信封与推送载荷字段。该路径不经阶段 4 的 `FieldProjector`，不做字段权限与密级判定，理由是它不向任何主体返回该列：第 3.5.1 节两个推送登记端点只写不读，本阶段没有任何端点返回 `token_enc`、`token_key_ref` 与 `token_bidx` 三列中的任何一列。阶段 4 第 4.7 节所述的唯一解密位点是就字段投影而言的，本条不经投影，也不新增第二套解封实现，解封入口仍只有 `KmsBackend`。
 
 推送出口的进程归属是本阶段对共享技术基线的一处实质偏离，见第 3.12 节偏离项一。
 
@@ -1063,7 +1063,7 @@ SLA：以 `kind = 'SLA'` 的定时器表达，触发时不推进实例，只写 
 
 运行约束：`max_instance_duration_days`、`max_steps_per_instance`、`max_parallel_branches` 三项超限即置 `MANUAL_INTERVENTION` 并写 `LIMIT_EXCEEDED` 人工任务，对应规格第 9.1 章“单实例最长运行期、最大步骤数、最大并行分支和实例保留期由配置约束，超限进入人工处理”。
 
-守卫条件表达式：本阶段只交付最小求值器，支持字段引用（`vars.x`、`instance.state`）、比较（六种）、逻辑（与或非）、集合成员、空判定，以及一个不超过 12 个函数的白名单（长度、上取整、日期加减等）。表达式无副作用、无循环、求值步数上限 1000，超限返回 `VALIDATION`。该求值器只服务于流程守卫条件，不是 `RuleEvaluator` 的实现。完整的声明式规则引擎与受限 WASM 计算不在本阶段范围，本阶段只保证接口位点存在：`ep_platform_flow::port::RuleEvaluator` 与 `ep_platform_flow::port::WasmComputePort` 两个 trait 定义在 `ep-platform-flow`，按裁定 B-05，其实现类型分别为 `AstRuleEvaluator`（位于 `crates/platform/meta/src/rule/`，装配进 core-server）与 `PluginHostWasmCompute`（位于 `crates/adapter/wasm/`，装配进 plugin-host），两者均由阶段 13b 交付。两者与 `DisposalPort` 同属裁定通则第三条列明的三项例外，一律按例外档处理：本阶段至阶段 13b 之间两个 wiring 目录下的全部文件中都不出现这两个端口的注入行，`NoopRuleEvaluator` 与 `NoopWasmComputePort` 两个空实现不再存在；流程守卫命中这两项能力时经阶段 2 的 `DegradationLedger` 开一条 `kind` 取 `PORT_NOT_IMPLEMENTED`、`subject` 分别取 `RuleEvaluator` 与 `WasmComputePort` 的降级窗口，界面与健康端点显式呈现该能力未交付，并返回可重试错误或直接拒绝，不静默按成功路径放行，阶段 13b 注入实现后关窗。端点 `POST /api/v1/platform/rule-evaluations/actions/evaluate` 属阶段 13b，本阶段不建第二条求值路径。
+守卫条件表达式：本阶段只交付最小求值器，支持字段引用（`vars.x`、`instance.state`）、比较（六种）、逻辑（与或非）、集合成员、空判定，以及一个不超过 12 个函数的白名单（长度、上取整、日期加减等）。表达式无副作用、无循环、求值步数上限 1000，超限返回 `VALIDATION`。该求值器只服务于流程守卫条件，不是 `RuleEvaluator` 的实现。完整的声明式规则引擎与受限 WASM 计算不在本阶段范围，本阶段只保证接口位点存在：`ep_platform_flow::port::RuleEvaluator` 与 `ep_platform_flow::port::WasmComputePort` 两个 trait 定义在 `ep-platform-flow`，按裁定 B-05，其实现类型分别为 `AstRuleEvaluator`（位于 `crates/platform/meta/src/rule/`，装配进 core-server）与 `PluginHostWasmCompute`（跨进程实现，位于 `crates/adapter/ipc/`，装配进 core-server 与 job-worker；plugin-host 侧的进程内执行实现为 `WasmtimeComponentCompute`，位于 `crates/adapter/wasm/`，两个 adapter crate 互不依赖，见裁定 H-02），两者均由阶段 13b 交付。两者与 `DisposalPort` 同属裁定通则第三条列明的三项例外，一律按例外档处理：本阶段至阶段 13b 之间两个 wiring 目录下的全部文件中都不出现这两个端口的注入行，`NoopRuleEvaluator` 与 `NoopWasmComputePort` 两个空实现不再存在；流程守卫命中这两项能力时经阶段 2 的 `DegradationLedger` 开一条 `kind` 取 `PORT_NOT_IMPLEMENTED`、`subject` 分别取 `RuleEvaluator` 与 `WasmComputePort` 的降级窗口，界面与健康端点显式呈现该能力未交付，并返回可重试错误或直接拒绝，不静默按成功路径放行，阶段 13b 注入实现后关窗。端点 `POST /api/v1/platform/rule-evaluations/actions/evaluate` 属阶段 13b，本阶段不建第二条求值路径。
 
 #### 3.4.9 错误分类与重试
 
@@ -1173,7 +1173,7 @@ pub trait ConfigItemApplier: Send + Sync {
 
 3b 段的六态发布状态机按裁定 A-27 以 PRD 第 10.4.1 节的十一态为唯一出处，本阶段实现其中六态：Draft 到 PendingApproval（提交审批，守卫为内容项数在 1 至 2000 之间且每项 `item_hash` 与其 `after_spec` 的规范化 SHA-256 一致）、PendingApproval 到 Approved（审批通过，守卫为审批人不等于提交人）、PendingApproval 到 Rejected（审批驳回，记名并写审计）、Approved 到 Released（签名并执行发布单）、Released 到 RolledBack（回退发布单）。差异审查由 `GET /api/v1/platform/config-packages/{id}/diff` 端点承载，不单列为状态。非法迁移返回 `BUSINESS_CONFLICT` 与 `PLATFORM.CONFIG_PACKAGE.*` 的对应码，不静默忽略。其余五态 PendingAutotest、TestFailed、TestPassed、SignedPendingRelease、Superseded 由阶段 13b 补齐，扩展只放宽 `ck_config_packages_status`，不改写任何既有行。
 
-签名与验签：签名算法固定为 ECDSA P-256，密钥经 `ep-adapter-kms` 取用；`item_hash` 为该项 `after_spec` 的 JSON 规范化序列化（键按字典序、无空白、UTF-8）后的 SHA-256 十六进制小写，与阶段 13 计划第 4.7 节一致；导入时逐项重算 `item_hash` 并比对，任一不符整包置拒绝。
+签名与验签：签名算法固定为 ECDSA P-256，签名与验签经 `ep_foundation::port::kms::KmsBackend` 的 `sign` 与 `verify` 执行，私钥由载体持有且不出载体，`ep-platform-release` 不依赖 `ep-adapter-kms`；`item_hash` 为该项 `after_spec` 的 JSON 规范化序列化（键按字典序、无空白、UTF-8）后的 SHA-256 十六进制小写，与阶段 13 计划第 4.7 节一致；导入时逐项重算 `item_hash` 并比对，任一不符整包置拒绝。
 
 发布执行：在一个 `READ COMMITTED` 事务内按 `sort_no` 升序对每个内容项调用 `validate` 与 `apply`，同一事务内把发布单置 `SUCCEEDED`、配置包置 `RELEASED`，写 Outbox 事件 `platform.config_release.released.v1`，最后写审计事件，次序按判定二。回退按 `sort_no` 逆序调用 `revert`，以 `before_spec` 恢复，同样单事务且同样以审计收尾。任一 applier 的 `requires_derived_store_rebuild` 为真时，本阶段只把该判定结果写入事件载荷，派生存储重建的传播段由阶段 13b 实现。
 
@@ -1546,7 +1546,7 @@ E2E-6 配置发布最小通道（3b 段）：创建含一个 `FLOW_DEFINITION` �
 26. 本阶段全部 `/api/v1/` 路由，即 `/api/v1/platform/` 各段与第 3.5.2 节三个 `/api/v1/portal/` 端点，其能力域码与动作类别已按裁定 A-20 与第 3.5 节的取值规则以 `(CapabilityDomain, ActionClass)` 元组形态声明在路由注册处，取值取自 `ep_foundation::CapabilityDomain` 与 `ep_foundation::ActionClass`，`crates/platform/flow/src/capability.rs` 中不存在按用例命名的成对常量；`POST /internal/v1/push/dispatch` 按基线第 12 节不参与判定、不声明元组，`xtask configdoc` 通过。
 27. `DisposalPort` 的 trait 与两个 DTO 已定义在 `crates/platform/file/src/port/disposal.rs`，`RuleEvaluator` 与 `WasmComputePort` 两个 trait 已定义在 `ep-platform-flow`，三者在 `apps/core-server/src/wiring/` 与 `apps/job-worker/src/wiring/` 两个目录下的全部文件中都不出现注入行；阶段 1 随 xtask 交付的 archcheck 规则 `unwired-absent` 在这两个目录上零命中，其前缀集合为 `Noop`、`Stub`、`Fake`、`Dummy` 四类，负样例由阶段 1 提供，本阶段只调用不重复定义；处置受理路由已注册，本阶段至阶段 13 之间的物理删除请求以 `PLATFORM.DISPOSAL.NOT_DELIVERED` 拒绝并开一条 `subject` 取 `DisposalPort` 的 `PORT_NOT_IMPLEMENTED` 降级窗口，`RuleEvaluator` 与 `WasmComputePort` 的能力缺位各开一条 `subject` 取该端口名的同类窗口，三条窗口可同时打开；三者的实现与注入行分别由阶段 13b 与阶段 14 交付并在注入后关窗。
 28. 附件的幂等收敛任务在四个崩溃点上收敛，且不产生任何对账差异事项、不实现 `ReconCheck`、不依赖 `ep-platform-recon`。
-29. 3a 段闸门：`platform_msg.idempotency_keys` 与 `IdempotencyStore` 实现、`crates/platform/release/src/port/config_item.rs` 端口与注册表两项已完成并通过各自单元测试，且该段不引入对 `ep-platform-identity` 与 `ep-platform-authz` 的任何依赖，`cargo metadata` 自检通过。
+29. 3a 段闸门：`platform_msg.idempotency_keys` 与 `IdempotencyStore` 实现、`crates/platform/release/src/port/config_item.rs` 端口与注册表两项已完成并通过各自单元测试；3a 段排在阶段 4 之前，`ep-platform-identity` 与 `ep-platform-authz` 两个 crate 此时尚未建立，故这两项所在 crate 的 `Cargo.toml` 中不存在指向它们的依赖项，本条按其 `Cargo.toml` 直读判定，不另立按 crate 逐项比对期望依赖清单的 `cargo metadata` 自检脚本。
 30. 按裁定 B-02，`platform_core.append_only_registry` 中存在 `platform_audit.audit_events`、`platform_msg.outbox_events` 与 `platform_msg.dead_letters` 三行登记，`mode` 与 `mutable_columns` 按第 3.3.7 节的取值表逐项一致，三张表上的 `assert_append_only` 与 `assert_immutable_columns` 触发器已按登记挂接，`xtask sqlcheck` 执行 `db/checks/append_only_consistency.sql` 返回零行。
 31. 按裁定 A-28，第 34 号迁移执行后 `platform_core.sensitive_field_registry` 中存在 `platform_msg.push_registrations` 的 `token` 一行，`is_field_encrypted` 为真、`blind_index` 为 `EXACT`、`blind_index_column` 为 `token_bidx`、`mask_style` 为 `FULL`、`normalization` 为 `NONE`，物理表上存在 `token_enc bytea` 且不存在同名明文列 `token`，阶段 2 的 `db/checks/11` 返回零行。
 32. 3b-1 批闸门：判定四列出的六个 T0 切片在一次连贯执行中成立，即一次取号、一次审计追加与段行链接、一次 Outbox 写入与消费、一条同事务写入的站内通知、一个单审批节点流程实例从创建经人工任务完成到结束、一次经最小发布通道把该流程定义发布到 `platform_flow.process_definitions`，六项在同一测试进程内按上述次序跑通并留下可按实例查询的完整审计轨迹；该闸门不判定附件、检索、推送、定时器、补偿、许可、死信、混沌与任何性能度量项，也不要求 `ep-datagen` 的基准数据集。
@@ -1707,7 +1707,7 @@ U-A-01 与 U-A-02 已由共享技术基线第 11.1 节取值，本阶段直接�
 
 依赖一，工程基线（阶段 1）：Cargo workspace 骨架、`rust-toolchain.toml`；`ep-foundation` 的 `Id`、`Money`、`Clock`、`IdGen`、`Rng`、`SecurityLevel`、`AppError`、`ErrorCode`、`DomainEvent` 信封，按裁定 A-03 冻结的 19 字段 `SecurityContext` 与两个构造函数，按裁定 A-01 冻结的 `port::tx` 三件套 `Tx`、`SnapshotCtx`、`UnitOfWork`（两个方法 `transact` 与 `snapshot_transact`）与 `id::marker` 的 22 个标记类型，按裁定 A-02 冻结的 `SYSTEM_PRINCIPAL_ID` 与 `SYSTEM_DEVICE_ID`，按裁定 A-05 冻结的 `ModuleCode`，按裁定 A-20 冻结的 `CapabilityDomain` 与 `ActionClass`，以及 `port::search` 的空模块文件；按裁定 C-24 由阶段 1 登记的七个平台错误码；按裁定 C-07 的 `IdempotencyKeyHeaderGuard`；按裁定 C-05 的 `tests/rls_matrix` CI 目标与八个断言函数；按裁定 C-23 注册的两个数据库连接池指标；`ep-adapter-db-pg` 的连接池、会话变量注入与归还清除钩子，单一全局 refinery Runner 的骨架与 `db/migrations/` 下二十四个空目录，CI 的依赖方向自检与 SQL 静态检查，`ep-testkit` 与 `ep-datagen` 骨架。缺失则本阶段无法开工，无临时替代。
 
-依赖二，密钥与密码（阶段 2）：`ep-adapter-kms` 的信封加密（AES-256-GCM 数据密钥的派生与解封）与签名验签（ECDSA P-256），每法人数据加密密钥域与密级子域的建立，以及按裁定 B-04 由阶段 2 提供的盲索引派生函数 `derive_blind_key` 与 `BlindIndex`，本阶段的 `push_registrations.token_bidx` 取其派生值，不自建第二套哈希。缺失时以内存桩实现开发，但第 3.9 节退出条件的第 9、10、13 项必须在真实实现上判定。
+依赖二，密钥与密码（阶段 2）：端口 `ep_foundation::port::kms` 的 `KmsBackend`，含信封加密的 `wrap` 与 `unwrap`（AES-256-GCM 数据密钥的派生与解封）、ECDSA P-256 的 `sign` 与 `verify`，以及按裁定 B-04 的盲索引派生函数 `derive_blind_key` 与 `BlindIndex`；该端口由阶段 2 在阶段 1 已建的空文件内补齐，`BuiltinKmsBackend` 与 `HsmKmsBackend` 两个载体实现同由阶段 2 在 `ep-adapter-kms` 交付，每法人数据加密密钥域与密级子域的建立同属阶段 2。本阶段的 `push_registrations.token_bidx` 取 `derive_blind_key` 的派生值，不自建第二套哈希；本阶段只依赖该端口，不依赖 `ep-adapter-kms`，按裁定 F-04。阶段 2 排在本阶段之前，本条不留任何桩路径，第 3.9 节退出条件的第 9、10、13 项一律在真实载体实现上判定。
 
 依赖三，法人与组织（阶段 2）：`ep-platform-tenancy::LegalEntityDirectory::list_active`（供后台按法人轮转）与其返回的 `LegalEntityRef`，编号格式的法人段取该结构的 `entity_no`（2 位数字）。缺失时以固定两法人的测试夹具替代，退出条件不受影响，但编号格式的法人段无法在真实数据上验收。
 

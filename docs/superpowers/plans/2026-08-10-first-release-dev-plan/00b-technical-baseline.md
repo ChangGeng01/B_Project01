@@ -40,7 +40,7 @@ crate 命名前缀统一为 `ep-`，crate 目录名不带前缀，`Cargo.toml` �
 
 | crate | 一句话职责 |
 |---|---|
-| ep-foundation | 稳定通用类型：Id、Money、Quantity、UnitPrice、Rate、AccountingPeriodRef、SecurityContext、SecurityLevel、AppError、ErrorCode、DomainEvent 信封、Clock 与 IdGen 端口；另含 `port::tx` 的 Tx、SnapshotCtx、UnitOfWork、TxId、IsolationKind，`id::marker` 的 22 个跨模块引用标记类型，`principal` 的 SYSTEM_PRINCIPAL_ID 与 SYSTEM_DEVICE_ID，模块码枚举 ModuleCode，`capability` 的 CapabilityDomain 与 ActionClass，以及 `port::search`、`port::doc` 与 `port::db` 三个端口模块。上述类型的签名与取值见第 1.4 节。 |
+| ep-foundation | 稳定通用类型：Id、Money、Quantity、UnitPrice、Rate、AccountingPeriodRef、SecurityContext、SecurityLevel、AppError、ErrorCode、DomainEvent 信封、Clock 与 IdGen 端口；另含 `port::tx` 的 Tx、SnapshotCtx、UnitOfWork、TxId、IsolationKind，`id::marker` 的 22 个跨模块引用标记类型，`principal` 的 SYSTEM_PRINCIPAL_ID 与 SYSTEM_DEVICE_ID，模块码枚举 ModuleCode，`capability` 的 CapabilityDomain 与 ActionClass，以及 `port::search`、`port::doc`、`port::db` 与 `port::kms` 四个端口模块。上述类型的签名与取值见第 1.4 节。 |
 | ep-platform-tenancy | 集团、法人、组织、部门、岗位，以及安全上下文的建立与法人授权集合校验。 |
 | ep-platform-identity | 本地账号目录、口令与 MFA、会话、设备登记、高风险操作的重新认证凭证。 |
 | ep-platform-authz | RBAC 与 ABAC 判定、字段级与密级过滤、职责分离、审批授权判定。 |
@@ -55,7 +55,7 @@ crate 命名前缀统一为 `ep-`，crate 目录名不带前缀，`Cargo.toml` �
 | ep-platform-file | 附件对象元数据、版本、上传流水线状态机、正文引用。 |
 | ep-platform-recon | 内部对账与强制不变量校验的语句集、分批与快照口径、差异事项模型。 |
 | ep-platform-obs | 日志字段约定、指标注册表、追踪上下文、运维中心台账模型。 |
-| ep-platform-runtime | 进程生命周期状态机、分层配置加载、第 7.3 节的 `SelfCheckRegistry`、健康与就绪端点，以及以 trait 表达的服务器骨架。具体 HTTP 与 IPC 传输实现分别留在对应的 ep-adapter-*，由 apps 在 `apps/<proc>/src/wiring/` 目录下注入，本 crate 不依赖任何 ep-adapter-*。 |
+| ep-platform-runtime | 进程生命周期状态机、分层配置加载、第 7.3 节的 `SelfCheckRegistry`、健康与就绪端点，以及以 trait 表达的服务器骨架。HTTP 服务端骨架直接构建在第三方库上，工作区内既无也不新增 HTTP 系 ep-adapter-*；IPC 的具体传输实现留在 ep-adapter-ipc。两者一律由 apps 在 `apps/<proc>/src/wiring/` 目录下注入，本 crate 不依赖任何 ep-adapter-*。 |
 
 本表是平台底座 crate 的现状记录，不是冻结清单。archcheck 不再对 crate 清单逐项比对，阶段 1 退出条件第 2 条中的该项断言撤销；crate 的增删走普通提交，只受第 1.3 节依赖方向七条禁止项约束，该七条仍由 archcheck 逐条断言并配负样例。其中第六条的机检面为 foundation-no-business（依赖边一侧，即 foundation 不依赖工作区内任何 crate）、foundation-frozen-items、foundation-module-registry、foundation-no-single-owner 四条规则，各配负样例；其必要性一条按第 12 节通则第六条降为评审判据并已登记入第 12.1 节，不计入本句的逐条断言。
 
@@ -87,7 +87,7 @@ crate 命名前缀统一为 `ep-`，crate 目录名不带前缀，`Cargo.toml` �
 |---|---|
 | ep-adapter-db-pg | 首版唯一交付并认证的 PostgreSQL 16 实现，含 RLS 会话变量注入与清除、流复制以外的全部 SQL。`PgTx`、`PgSnapshot`、`PgUnitOfWork`、`PgPoolFactory`、`PgMigrationWindowGuard` 与 `PgReadOnlyTx` 的声明与实现，`PoolKind`、`SessionContext`、`RetryPolicy`、`ConnectionBudget` 四个连接模型类型的定义与取值，`ScopePredicateRenderer`，以及公共能力基线到 PostgreSQL 类型与索引 DDL 的映射。 |
 | ep-adapter-file | 本机文件存储实现，只提供写入新对象与读取，不提供覆盖与原地删除接口。 |
-| ep-adapter-kms | 内置 KMS 与客户 HSM 两种载体的统一接口，含信封加密与字段级密钥。 |
+| ep-adapter-kms | 内置 KMS 与客户 HSM 两种载体的实现，含信封加密与字段级密钥；端口 trait `KmsBackend` 与其调用词汇定义在 `ep_foundation::port::kms`，不在本 crate。 |
 | ep-adapter-queue | 内置轻量队列，构建在 Outbox 表之上，不引入外部消息中间件。 |
 | ep-adapter-search | 内置 Rust 全文检索索引的写入与查询，按法人分区。 |
 | ep-adapter-doc | Excel 导入导出、文档模板套用、PDF 渲染与批注、像素级打印排版。 |
@@ -115,9 +115,11 @@ crate 命名前缀统一为 `ep-`，crate 目录名不带前缀，`Cargo.toml` �
 - 禁止 ep-platform-* 依赖任何 domain 或 application。
 - 禁止 adapter 之间互相依赖，共用逻辑下沉到 ep-foundation。
 - 禁止 ep-foundation 承载业务概念。准入判据两条。必要性：被两个及以上 `ep-contract-*` 引用，或被 `ep-platform-*` 引用——该条为评审判据，不由任何工具判定，理由、举证格式与登记见第 12 节通则第六条与第 12.1 节。稳定性：不得承载任何会随业务政策变化的取值集合或规则方法，只允许类型身份与量纲原语——该条一半机检一半评审，机检面为 `xtask archcheck` 的 foundation-frozen-items，即冻结项的名字与项数不得随业务政策增删，其余属评审面。`crates/foundation/src/id/marker.rs` 是本条的唯一受限例外：其中的零大小标记类型无字段、无方法、无 trait 实现，只承载类型身份，供 `Id<T>` 在契约层表达跨模块引用；按裁定 A-01 冻结清单 22 项、任何阶段不得增删，不适用上述两条准入判据，其项数、名字与形态由 `xtask archcheck` 的 foundation-frozen-items 按名逐项断言，改名与增删同样报错。本条落在 archcheck 上的机检面为 foundation-no-business（依赖边一侧，即 foundation 不依赖工作区内任何 crate）、foundation-frozen-items、foundation-module-registry、foundation-no-single-owner 四条规则，必要性一条的举证格式与登记见第 12 节通则第六条与第 12.1 节。跨模块共享的业务形状不进 foundation，定义在拥有它的模块的 `ep-contract-*` 里作为 DTO，由可依赖任意模块契约的 `ep-app-*` 消费。
-- 禁止跨模块直接读写业务表，adapter-db-pg 中的仓储实现按 schema 分文件，一个仓储只访问自己模块的 schema。
+- 禁止跨模块直接读写业务表。跨模块取数只有两条通道，此外一律禁止。通道一，经被调方 `ep-contract-<m>` 中的端口 trait 取数，实现落在被调方的 `ep-app-<m>`，由 apps 在 `apps/core-server/src/wiring/` 与 `apps/job-worker/src/wiring/` 目录下注入；通道二，经被调方登记的受治理只读视图取数，视图名一律 `v_` 前缀，常规报表与经营看板一侧的取数连接取第 3.1 节的 `ep_analyst_ro` 只读角色。`ep-adapter-db-pg` 中的仓储实现按 schema 分文件，一个仓储只访问自己模块的 schema。本条的机检面为 `xtask archcheck` 的 db-pg-one-schema-per-file 一条规则并配负样例：按第 3.1 节登记的 24 个 schema 名逐名判定，不用前缀启发式，只在双引号字面量区间内取 `<schema>.<object>`，文件内出现自身 schema 之外的非 `v_` 对象即违反；`crates/adapter/db-pg/src` 下不落在任何 schema 目录内的文件，出现任何登记 schema 的对象同样违反。通道二中取数连接角色这一维不在该规则的判定面内——它判的是源码里的对象引用，判不出运行期连接取的是哪个角色；该维按第 12 节通则第六条降为评审判据并登记入第 12.1 节 delegated 段，承接方为阶段 11 的 reporting-dataset-signature-matched 启动自检加评审举证。
 
-依赖方向由 CI 强制：`cargo deny` 检查许可与重复依赖，另在 CI 中运行一段基于 `cargo metadata` 的自检脚本，把上述禁止项表达为断言，违反即构建失败。第六条的必要性一条不在 `cargo metadata` 的依赖边判定面内——它数的是 foundation 模块被几个 crate 引用，属源码级判定；该条按第 12 节通则第六条降为评审判据并登记入第 12.1 节，其机检承接方为本节第六条点名的四条规则。
+依赖方向由 CI 强制：`cargo deny` 检查许可与重复依赖，另在 CI 中运行一段基于 `cargo metadata` 的自检脚本，把上述禁止项表达为断言，违反即构建失败。本节允许项第二条「ep-platform-* 只可依赖 ep-foundation 与其他 ep-platform-*，且 platform 内部不得成环」的机检面为 `xtask archcheck` 的 platform-acyclic 与 platform-no-adapter 两条规则，各配负样例：前者判 platform 内部的依赖成环，后者判任一 ep-platform-* 依赖任一 ep-adapter-*。这两条落在允许项一侧，不并入本节禁止项七条，禁止项仍为七条、一字不改。第六条的必要性一条不在 `cargo metadata` 的依赖边判定面内——它数的是 foundation 模块被几个 crate 引用，属源码级判定；该条按第 12 节通则第六条降为评审判据并登记入第 12.1 节，其机检承接方为本节第六条点名的四条规则。
+
+各阶段计划中的 crate 依赖枚举一律是该阶段结束时的快照，后续阶段可在本节允许项内增边，只需在该阶段的 crate 改动表写出增量并在提交说明中给出使用位，不回改先前阶段的枚举。据此，「按 crate 逐项比对期望依赖清单」这一形态整体撤销，其承接方是 `xtask archcheck` 的层位判定；「按 `cargo metadata` 断言某进程不链接某 crate」这一形态保留，被测输入是 `cargo metadata` 的输出，提供方为阶段 1，判据可判定。凡在 `cargo metadata` 之外另需调用图分析的断言，本基线不认其为已可判定：阶段 10 计划中 `finance.cash_ledger_entries` 只被四个用例的仓储写入一项，其调用图一侧的判据由阶段 10 同批给出，给不出即按第 12 节通则第六条的三档处置之一登记。
 
 ### 1.4 ep-foundation 冻结的跨阶段共享类型
 
@@ -162,7 +164,7 @@ pub trait UnitOfWork: Send + Sync + 'static {
 }
 ```
 
-配套纪律四条。跨 crate 取具体句柄的唯一写法是 `tx.as_any_mut().downcast_mut::<PgTx>()`，该 downcast 只允许出现在 `crates/adapter/db-pg/` 内，由 `xtask archcheck` 断言其他目录不出现 `downcast_mut::<PgTx>`。UnitOfWork 不带池参数，一个实例在装配时绑定一个池，与第 10.3 节示例的两参数形态一致。application crate 对 UnitOfWork 取泛型参数 `U: UnitOfWork` 而不是 trait 对象，理由是该 trait 含泛型方法不满足对象安全。实现 `Tx`、`SnapshotCtx`、`UnitOfWork` 三个 trait 的具体类型，其声明位与实现位一律同处一个 crate，不得分离；`PgUnitOfWork` 与 `PgTx` 一律声明并实现在 ep-adapter-db-pg。工作区内不存在名为 ep-adapter-db 的 crate。
+配套纪律四条。跨 crate 取具体句柄的唯一写法是 `tx.as_any_mut().downcast_mut::<PgTx>()`，该 downcast 只允许出现在 `crates/adapter/db-pg/` 内，由 `xtask archcheck` 断言其他目录不出现 `downcast_mut::<PgTx>`。UnitOfWork 不带池参数，一个实例在装配时绑定一个池，与第 10.3 节示例的两参数形态一致。application crate 对 UnitOfWork 取泛型参数 `U: UnitOfWork` 而不是 trait 对象，理由是该 trait 含泛型方法不满足对象安全。实现 `ep_foundation::port::*` 各模块中任一 trait 的具体类型，其声明位与实现位一律同处一个 crate，不得分离；`PgUnitOfWork` 与 `PgTx` 一律声明并实现在 ep-adapter-db-pg，`BuiltinKmsBackend` 与 `HsmKmsBackend` 一律声明并实现在 ep-adapter-kms。工作区内不存在名为 ep-adapter-db 的 crate。
 
 跨模块引用的标记类型位于 `crates/foundation/src/id/marker.rs`，清单固定 22 项，任何阶段不得增删，由 `xtask archcheck` 的 foundation-frozen-items 规则按名逐项断言，其无字段、无方法、无 trait 实现的形态同由该规则断言；本清单不适用第 1.3 节的两条准入判据，新增标记类型必须先改本节并走基线修订。清单如下：LegalEntity、UserAccount、Session、Department、Position、Project、Customer、Supplier、Material、Product、Warehouse、Contract、ContractLine、SalesOrder、SalesOrderLine、DeliveryConfirmation、DeliveryConfirmationLine、PurchaseOrder、GoodsReceiptLine、PurchaseInvoice、PurchaseInvoiceLine、AccountingPeriod。
 
@@ -222,7 +224,7 @@ pub enum ActionClass { Read, Write, Submit, Approve, Export }
 
 `CapabilityDomain` 的序列化取值逐一为阶段 13 计划第 4.4 节表中的 18 个能力域码字符串，顺序与该表序号一致。`ActionClass` 的五项与该节判定算法的 ViewOnly 分支配套，ViewOnly 只放行 Read。各阶段为每个用例声明常量的纪律见第 12 节。
 
-三个端口模块的位置与补齐时点固定。`crates/foundation/src/port/db.rs` 由阶段 1 建空文件，阶段 2 按 C-07 与 B-03 补齐 `IdempotencyStore`、`IdempotencyScope`、`IdempotencyOutcome` 与 `MigrationWindowGuard`，并补齐规格第 7.4 章公共能力基线的字段类型与索引种类的能力描述，阶段 11 补齐只读事务端口 `ReadOnlyTx`；实现一律落在 ep-adapter-db-pg，本模块不声明任何 `Pg` 前缀的具体类型。`crates/foundation/src/port/search.rs` 由阶段 1 建空文件，阶段 3b 补齐 SearchDocument、SearchQuery、SearchHit 与 SearchIndexPort、SearchQueryPort，实现落在 ep-adapter-search，索引按法人分区，写入一律经 job-worker 消费 Outbox 事件触发，不在业务事务内调用。`crates/foundation/src/port/doc.rs` 由阶段 1 建空文件，阶段 5 补齐 SheetSpec、ColumnSpec、CellValue、PrintLayout 与 SpreadsheetPort、DocTemplatePort、PdfRenderPort，实现落在 ep-adapter-doc，其后各阶段只在这三个 trait 上增量，不新增渲染接口。
+四个端口模块的位置与补齐时点固定。`crates/foundation/src/port/db.rs` 由阶段 1 建空文件，阶段 2 按 C-07 与 B-03 补齐 `IdempotencyStore`、`IdempotencyScope`、`IdempotencyOutcome` 与 `MigrationWindowGuard`，并补齐规格第 7.4 章公共能力基线的字段类型与索引种类的能力描述，阶段 11 补齐只读事务端口 `ReadOnlyTx`；实现一律落在 ep-adapter-db-pg，本模块不声明任何 `Pg` 前缀的具体类型。`crates/foundation/src/port/search.rs` 由阶段 1 建空文件，阶段 3b 补齐 SearchDocument、SearchQuery、SearchHit 与 SearchIndexPort、SearchQueryPort，实现落在 ep-adapter-search，索引按法人分区，写入一律经 job-worker 消费 Outbox 事件触发，不在业务事务内调用。`crates/foundation/src/port/doc.rs` 由阶段 1 建空文件，阶段 5 补齐 SheetSpec、ColumnSpec、CellValue、PrintLayout 与 SpreadsheetPort、DocTemplatePort、PdfRenderPort，实现落在 ep-adapter-doc，其后各阶段只在这三个 trait 上增量，不新增渲染接口。`crates/foundation/src/port/kms.rs` 由阶段 1 建空文件，阶段 2 补齐 `KmsBackend` 的六个方法与八个调用词汇类型，端口面合计九项；实现一律落在 ep-adapter-kms，本模块不声明任何载体类型，也不声明任何 `Builtin` 或 `Hsm` 前缀的具体类型。`derive_blind_key` 的返回宽度不随本节冻结，只冻结其三个参数的形态，取值由阶段 2 与阶段 5、10 同批定，见阶段 2 计划第 4.4 节与第 11 节假设三。
 
 ## 2. 进程清单
 
@@ -779,6 +781,7 @@ delegated 段登记已裁定不由工具执行的判据，属永久登记，每�
 | 判据名 | 所在文件与小节 | 理由 | 承接方 | 重新生效或删除条件 |
 |---|---|---|---|---|
 | foundation-no-business/necessity | 00b-technical-baseline.md 第 1.3 节禁止项第六条 | 判据数的是跨 crate 源码引用计数，而 `ep-contract-*` 与 `ep-platform-*` 在骨架期恒为零，工具无引用可数 | 不由本工具判定。承接方：评审举证，加 foundation-no-business/no-internal-dep、foundation-frozen-items、foundation-marker-shape、foundation-module-registry、foundation-no-single-owner 五条替身 | 永久降级，不因阶段推进而恢复；删除本行须先撤销裁定 F-03 |
+| db-pg-one-schema-per-file/analyst-ro-connection | 00b-technical-baseline.md 第 1.3 节禁止项第七条 | 判据要断言的是运行期取数连接取哪个数据库角色，而 db-pg-one-schema-per-file 只在源码的双引号字面量里取 `<schema>.<object>`，任何静态规则都读不出运行期连接的角色 | 不由本工具判定。承接方：阶段 11 的 reporting-dataset-signature-matched 启动自检，加评审举证 | 永久降级，不因阶段推进而恢复；删除本行须先撤销裁定 F-05 |
 
 undecidable 段登记当前无法执行的判据，属临时登记。本段当前为空，一行也没有。新增一行必须同时给出重新生效或删除条件，且该条件的触发谓词必须由 `xtask archcheck` 自身可观测，不得写成阶段号。本段的条目数由一条 CI 断言保证只减不增并配负样例，并由阶段 14 的发布门禁项 RG-NO-UNDECIDABLE 在发布制品源码树上断言归零；该纪律与阶段 1 计划第 13 节假设二对 Pending 自检项的只减不增与最后一个阶段归零是同一形态，不另立第二套。
 

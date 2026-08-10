@@ -1095,7 +1095,7 @@ U-A-12 三问的临时取值与切换代价如下，截止点按总览 R12 的 M
 
 最终归属阶段：端口归阶段 3b，实现归阶段 13b。
 
-确切标识符：`ep_platform_flow::port::WasmComputePort` 与 `ep_platform_flow::port::RuleEvaluator`，实现类型名固定为 `PluginHostWasmCompute`（位于 `crates/adapter/wasm/`，装配进 plugin-host）与 `AstRuleEvaluator`（位于 `crates/platform/meta/src/rule/`，装配进 core-server）。端点 `POST /api/v1/platform/rule-evaluations/actions/evaluate` 只调用 `AstRuleEvaluator`，不新建求值路径。
+确切标识符：`ep_platform_flow::port::WasmComputePort` 与 `ep_platform_flow::port::RuleEvaluator`。按 F-05 第 4 节 H-02，`WasmComputePort` 按进程边有两个实现类型：`WasmtimeComponentCompute` 位于 `crates/adapter/wasm/`，装配进 plugin-host，直接驱动 wasmtime Component 宿主；`PluginHostWasmCompute` 位于 `crates/adapter/ipc/`，装配进 core-server 与 job-worker，只经 plugin 通道的请求与响应类型把调用代理给 plugin-host，本身不链接 wasmtime。`RuleEvaluator` 的实现类型名固定为 `AstRuleEvaluator`（位于 `crates/platform/meta/src/rule/`，装配进 core-server）。端点 `POST /api/v1/platform/rule-evaluations/actions/evaluate` 只调用 `AstRuleEvaluator`，不新建求值路径。
 
 回写：阶段 13 计划第 4.5 节明确这两个实现类型名与其对应端口；阶段 3 计划把两个端口列入交付物清单并注明实现方为阶段 13b。
 
@@ -1125,7 +1125,7 @@ U-A-12 三问的临时取值与切换代价如下，截止点按总览 R12 的 M
 
 最终归属阶段：视图归阶段 10，子账侧实现归阶段 8 与阶段 7。
 
-确切标识符：`ep_contract_finance::ReconciliationItemQuery` 由阶段 10 定义；子账侧的两个实现类型名固定为 `InventorySubledgerBalanceQuery`（阶段 8，`ep-app-inventory`，返回该法人该期间的存货金额账合计）与 `GrniSubledgerBalanceQuery`（阶段 7，`ep-app-procure`，返回已收货未收票暂估合计）。两者均实现 `ep_contract_finance::SubledgerBalanceProvider::balance(snapshot: &dyn SnapshotCtx, legal_entity_id, accounting_period_id) -> Result<Money, AppError>`，该 trait 由阶段 10 定义，阶段 8 与阶段 7 在其阶段之前无法实现，因此按反向依赖由阶段 10 在交付时补齐两个实现的接线，实现体本身由阶段 8 与阶段 7 各自以本模块的查询函数形式先行交付并在阶段 10 包装。跨阶段的唯一取数入口是 `ep_contract_finance::ReconciliationItemQuery`，按法人与会计期间返回十项勾稽的子账侧合计，结构为 `ReconciliationItemView`；`SubledgerBalanceProvider` 只是阶段 10 内部组装该结果的手段，阶段 9b 的关账前强制校验与其 `ReconCheck` 一律调用 `ReconciliationItemQuery`，不直接调用 `SubledgerBalanceProvider`。十项中的存货与已收货未收票两项子账侧取自阶段 8 与阶段 7 的查询函数，其余八项取自阶段 10 自有表，不经该 trait。`ep-app-ledger` 为此在依赖方向自检清单中新增一条对 `ep-contract-finance` 的依赖，只用于 9b 段，符合基线第 1.3 节；`ep-platform-recon` 不依赖任何模块的 ep-contract-*，阶段 10 契约表中把该执行器列为使用方的措辞收窄为“由 ep-platform-recon 的执行器驱动阶段 9b 实现的 ReconCheck，不由其直接依赖”。
+确切标识符（本段按 G-01 改写，原措辞作废）：跨阶段的唯一取数入口仍是 `ep_contract_finance::ReconciliationItemQuery`，由阶段 10 定义，按法人与会计期间返回十项勾稽的子账侧合计，结构为 `ReconciliationItemView`，阶段 9b 的关账前强制校验与其 `ReconCheck` 一律调用它。十项中的存货与已收货未收票两项，其子账侧各经被调方自己的 contract 端口取得，不再经任何 finance 侧 trait：`ep_contract_inventory::StockValueSubledgerBalancePort`（阶段 8 定义，落 `crates/contract/inventory/src/port/subledger_balance.rs`）与 `ep_contract_procure::GrniSubledgerBalancePort`（阶段 7 定义，落 `crates/contract/procure/src/port/subledger_balance.rs`），两者签名逐字相同：`async fn balance(&self, snapshot: &dyn SnapshotCtx, legal_entity_id: Id<LegalEntity>, accounting_period_id: Id<AccountingPeriod>) -> Result<Money, AppError>`。实现类型名与语义不变：`InventorySubledgerBalanceQuery`（阶段 8，落 `crates/application/inventory/src/projection/subledger_balance.rs`，返回该法人该期间的存货金额账合计）实现 `StockValueSubledgerBalancePort`；`GrniSubledgerBalanceQuery`（阶段 7，落 `crates/application/procure/src/projection/subledger_balance.rs`，返回已收货未收票暂估合计）实现 `GrniSubledgerBalancePort`。两处均为 trait 外来、类型本地，`impl` 与类型同 crate，孤儿规则成立。`ep_contract_finance::SubledgerBalanceProvider` 撤销，该名全卷作废；“按反向依赖由阶段 10 在交付时补齐两个实现的接线”与“实现体以查询函数形式先行交付并在阶段 10 包装”两种说法一并作废——不存在包装，实现方直接实现。装配由阶段 10 的 `ep-app-finance` 承担：它依赖 `ep-contract-inventory` 与 `ep-contract-procure`，以 `Arc<dyn StockValueSubledgerBalancePort>` 与 `Arc<dyn GrniSubledgerBalancePort>` 两个注入点在 `apps/core-server/src/wiring/` 与 `apps/job-worker/src/wiring/` 两个目录下写入注入行，阶段 8 与阶段 7 不为调用方预留任何占位实现。其余八项取自阶段 10 自有表，不经任何 contract 端口。`ep-app-ledger` 为此在依赖方向自检清单中新增一条对 `ep-contract-finance` 的依赖，只用于 9b 段，符合基线第 1.3 节；`ep-platform-recon` 不依赖任何模块的 ep-contract-*，阶段 10 契约表中把该执行器列为使用方的措辞收窄为“由 ep-platform-recon 的执行器驱动阶段 9b 实现的 ReconCheck，不由其直接依赖”。计数口径：`ep-contract-finance` 的对外 trait 由 11 个减为 10 个，与 `ep-contract-invoice` 合计由 16 个减为 15 个；`ep-contract-inventory` 与 `ep-contract-procure` 各加一个端口。待决项 U-G01-01：GRNI 端口能否只读 procure 自有表算准“已收货未收票暂估合计”尚未定——`10:292` 的暂估回冲金额落在 invoice schema，`07:1150` 的 procure 侧只有订单行 `invoiced_quantity` 回写，取数口径由阶段 7 与阶段 10 在落码前同批给出。
 
 回写：阶段 8 与阶段 7 各在退出条件中增加一条“已提供本模块的子账侧余额查询函数，函数名与返回类型按 B-08 固定”；阶段 10 计划第 1131 行的措辞改为“两个实现由阶段 10 包装阶段 7 与阶段 8 提供的查询函数”。
 
@@ -1600,7 +1600,7 @@ DC 为交付确认单（A-09），PINV 为进项发票（A-10）。CI 校验项�
 
 ## F 类 结构与判据裁定
 
-本节登记本轮新增的两条裁定，编号取 F 类，不计入前文 67 条缺口。按通则第一条，两条的权威落点均在技术基线与各阶段计划正文，本节只作登记，正文取自裁定原件，结论文字未作改写。
+本节登记已裁定的四条，编号取 F 类，不计入前文 67 条缺口。按通则第一条，四条的权威落点均在技术基线与各阶段计划正文，本节只作登记。F-01 与 F-03 的正文取自裁定原件，结论文字未作改写；F-04 与 F-05 由本轮新增，其正文按本轮交叉审查的逐条更正改写后登记，与裁定原件不一致处以本节为准。全卷不存在编号 F-02：早期以 F-02 指称的 adapter 互依一条即 F-01 的第二半（原争点 F2），凡引用 F-02 一律读作 F-01。
 
 ### F-01 事务实现类型的声明位与 db 系适配层的分层（合并裁定 F1 与 F2）
 
@@ -1653,7 +1653,7 @@ F2：ep-adapter-db-pg 依赖 ep-adapter-db 与第 1.3 节禁止项第五条（00
 
 #### 0. 权威位
 
-按 00-overview.md:64 通则第一条，00c 是登记表、不构成权威层。本裁定的权威落点是 00b-technical-baseline.md 第 1.3、1.4、12 节与 01-engineering-baseline.md 第 10 节；00c 只登记结论与标识符。
+按 00-overview.md 第 1.4 节通则第一条，00c 是登记表、不构成权威层。本裁定的权威落点是 00b-technical-baseline.md 第 1.3、1.4、12 节与 01-engineering-baseline.md 第 10 节；00c 只登记结论与标识符。
 
 #### 1. 事实认定（逐条有书证）
 
@@ -1693,10 +1693,201 @@ F2：ep-adapter-db-pg 依赖 ep-adapter-db 与第 1.3 节禁止项第五条（00
 
 **第六段，普查八条按通则归档。** 04:724、03:1525、06:777 三处的自检项计数（十三/十四/十）必须同一批改完，否则会留下三套计数口径；09:798、09:737、10:1219 三处的「跑阶段 11 的自检项」整条推迟到阶段 11，其前半的列签名静态比对可判、保留；01:515、01:506 两条按「整条推迟」或「换判据」二择一，不得留恒真断言。
 
+### F-04 KMS 能力的端口层位与 ep-platform-release 的依赖冻结（合并原 H-03 与 H-01）
+
+#### 0. 权威位
+
+按 00-overview.md 第 1.4 节通则第一条，00c 是登记表、不构成权威层。本裁定的权威落点是 00b-technical-baseline.md 第 1.2、1.3、1.4 节与阶段 1、2、3、4、12、13、14 计划正文；00c 与 00-overview 第 4 节只登记结论与标识符，冲突时正文胜出。
+
+#### 1. 事实认定
+
+其一，四个 ep-platform-\* crate 必须命名 KMS 接口，而该接口定义在一个 adapter 里。消费方逐条有书证：ep-platform-audit（03-platform-kernel.md:35「每 5 分钟或每 1000 条的 ECDSA P-256 段根签名」）、ep-platform-file（03:36 与 03:104）、ep-platform-notify（03:942「经阶段 2 的 `KmsBackend::unwrap` 解封该法人密钥域下的字段级密钥」）、ep-platform-release（03:1176「签名与验签……密钥经 `ep-adapter-kms` 取用」）。trait 定义位见 02-data-foundation.md:410「`ep-adapter-kms` 中：……`KmsBackend` trait（方法 `wrap`、`unwrap`、`derive_blind_key`、`health`）」。基线第 1.3 节允许项「ep-platform-\* 只可依赖 ep-foundation 与其他 ep-platform-\*，且 platform 内部不得成环」加同节「其余一律禁止」，四条边全被禁；而 03:120 自述「本阶段全部新增 crate……依赖只指向 `ep-foundation` 与其他 `ep-platform-*`」与上述四处互斥。
+
+其二，消费面不止 platform 一层，因此落点不能是任何一个 platform crate。04-identity-authz.md:51 把 ep-adapter-kms 列入阶段 4 的改动既有 crate 表，而 04:44 同时断言 identity 与 authz「均不依赖任何 domain、application 与 adapter」；04:811 的 `SensitiveFieldDecryptor` 与 12-service-project-asset.md:355 的消费方在 application 层；14-ops-backup-release.md:38、:67 的消费方是两个 apps，这一侧合法。三侧（platform、application、apps）都能合法依赖的只有 ep-foundation。
+
+其三，成因不止层位判错，还有端口面不完整。02:410 的 `KmsBackend` 只有四个方法，没有签名与验签；而 03:35 与 03:1176 要 ECDSA P-256 签名，13-clients-lowcode.md:569 明写「私钥由内置 KMS 或客户 HSM 持有，两种载体接口相同」。端口既无 `sign`，调用方就只剩把私钥材料取进本进程自签一条路，这既是那条非法依赖边的直接来源，也与 HSM 私钥不可导出的事实矛盾。03:87「若阶段 2 尚未交付签名接口，本阶段用其接口的桩实现开发」证明计划自己认为该接口应当存在。
+
+其四，本条在本裁定落地前不被任何门禁挡下，已实测。在工作区副本上给 `crates/platform/release/Cargo.toml` 加一行 `ep-adapter-kms.workspace = true`，`cargo run -p ep-xtask -- archcheck` 时 16 条规则全部通过、退出码 0。原因是 deps.rs 的 `rule_platform_no_domain_or_app` 只把 `Layer::Domain` 与 `Layer::Application` 记为违规，`Layer::Adapter` 落进 `_ => None`，即该条允许项此前只有「platform 内部不成环」这一半被机检。
+
+其五，工作区内不存在 `ep-platform-kms`，而 14:67 以该名开头写了一整行改动 crate。`crates/platform/` 下十五个目录为 audit、authz、file、flow、identity、license、meta、notify、obs、outbox、recon、release、runtime、sequence、tenancy，无 kms。
+
+其六（原 H-01），ep-platform-meta 与 ep-platform-release 互为依赖，构成 Cargo 包级循环。`ConfigItemApplier` trait 与 `ConfigItemApplierRegistry` 定义在 ep-platform-release，阶段 13 计划把六个 CUSTOM\_ 与 UI\_LAYOUT 类 applier 实现放进 ep-platform-meta，实现外部 trait 即强制边 meta → release；而 13-clients-lowcode.md:60 的依赖列又写死 release → ep-platform-meta。两条边合起来 cargo 直接报 cyclic package dependency，工作区无法解析。03:122 逐字「无环，因为 `ep-platform-release` 不反向依赖 `ep-platform-flow` 与 `ep-platform-notify`」正是阶段 3 自己确立的反例纪律，阶段 13 把这条反向边加了回去。
+
+#### 2. 裁定
+
+**第一段，端口下沉，走允许项自身给出的救济手段。** KMS 能力的端口 trait 与其调用词汇下沉 `ep-foundation` 新增的 `port::kms` 模块（`crates/foundation/src/port/kms.rs`），与既有的 `port::tx`、`port::db`、`port::search`、`port::doc` 并列，形制照抄 F-01 对 `port::db` 的处置。落入本模块的只有端口面九项：`KmsBackend` trait、`CipherText`、`KeyDomainId`、`BlindIndex`、`Aad`、`KeyRef`、`Signature`、`CipherEnvelope`、`KeyPurpose`。阶段 1 只建空文件写模块注释，内容由阶段 2 补齐，与 `port::db` 同款。基线中两处「三个端口模块」的计数必须一并改为四个：00b-technical-baseline.md:43 的端口模块枚举与 00b:225 的「三个端口模块的位置与补齐时点固定」一句，后者并追加 `port::kms` 的补齐时点（阶段 1 建空文件、阶段 2 补齐六方法与端口面词汇、实现落 ep-adapter-kms、本模块不声明任何载体类型）；阶段 1 计划三处空文件枚举（01-engineering-baseline.md:55、:167、:603）同批由三个改四个，:603 的「八项」改「九项」，退出条件 21 的冻结项清单（01:512）补 `port::kms` 的空模块存在性，否则 frozen.rs 断言四个文件而判据只写三个。
+
+**第二段，端口面补齐 `sign` 与 `verify`，方法由四个增为六个。** 逐字签名固定如下：
+
+```rust
+// crates/foundation/src/port/kms.rs
+#[async_trait::async_trait]
+pub trait KmsBackend: Send + Sync + 'static {
+    async fn wrap(&self, domain: KeyDomainId, purpose: KeyPurpose, aad: &Aad, plaintext: &[u8])
+        -> Result<CipherEnvelope, AppError>;
+    async fn unwrap(&self, domain: KeyDomainId, aad: &Aad, envelope: &CipherEnvelope)
+        -> Result<Vec<u8>, AppError>;
+    // 三参数形态本批冻结；返回宽度本批不冻结，见下
+    async fn derive_blind_key(&self, legal_entity_id: Id<LegalEntity>, column_fqn: &str, plaintext: &[u8])
+        -> Result<BlindIndex, AppError>;
+    async fn sign(&self, key: &KeyRef, payload: &[u8]) -> Result<Signature, AppError>;
+    async fn verify(&self, key: &KeyRef, payload: &[u8], signature: &Signature) -> Result<bool, AppError>;
+    async fn health(&self) -> Result<(), AppError>;
+}
+```
+
+`derive_blind_key` 的三参数形态取自既有逐字原文（02:458、05:220、10:322），本批冻结。**其返回宽度不随本批冻结**：02:412 定 `BlindIndex([u8; 16])`，而 02:456 逐字「确需唯一时改用完整 32 字节」、02:458 逐字「`finance.cash_accounts` 建唯一约束……取完整 32 字节」、02:691 逐字「截断长度按配置取 16 或 32」三处与之互斥。把返回类型写成「任何阶段不得改写」会把这条既有矛盾锁进 ep-foundation，故列为待决项 U-F04-01，由阶段 2 与阶段 5、阶段 10 在落码前同批定，本节与 02:410 的代码块处均须显式标注待决。`verify` 返回 `Result<bool, AppError>`，`false` 表示验签不通过，由调用方按 13:570「任一不通过置 REJECTED 并返回对应错误码」映射到其已登记的错误码，本裁定不新增任何错误码。签名算法在全卷已固定为 ECDSA P-256（03:35、03:1176、13:569），端口不带算法参数。该 trait 无泛型方法，对象安全，装配时以 `Arc<dyn KmsBackend>` 注入，落点为 `apps/core-server/src/wiring/` 与 `apps/job-worker/src/wiring/` 两个目录，阶段 14 的 archive-writer 与 backup-writer 两个 writer 各自在其进程入口注入；全卷不存在第三个 wiring 目录。「密钥经 `ep-adapter-kms` 取用」这一说法在全卷作废：私钥与数据密钥材料一律不出载体，03:87 的「若阶段 2 尚未交付签名接口……桩实现」整句与 03:1710 的「缺失时以内存桩实现开发」一并删除。
+
+**第三段，实现与密钥材料留在 ep-adapter-kms，crate 不撤销。** 两个载体实现类型 `BuiltinKmsBackend` 与 `HsmKmsBackend`（后者在 `hsm` feature 下）一律声明并实现在 ep-adapter-kms；`KeyDomain`（含 `domain_kind` 与阶段 2 第 4.2 节的四态）、`DataKey`、`BlindIndexKey` 三项不进端口，留在 ep-adapter-kms——它们是密钥材料与密钥域状态本身，端口存在的意义正是让这三样不出载体。与 F-01 不同，本 crate 不撤销：它有真实 IO、真实外部系统（HSM）与真实实现，工作区成员仍为 84。同时把 F-01 的通用条款适用面由三个 trait 名扩为端口模块全体：凡实现 `ep_foundation::port::*` 各模块中任一 trait 的具体类型，其声明位与实现位一律同处一个 crate，不得分离。该条款在全卷有三处逐字复述，**必须同批扩面**：00b-technical-baseline.md:165、01-engineering-baseline.md:586、00-overview.md:279，漏改任何一处即留下宽窄两套。扩面已逐个核对五个端口模块的实现方（port::tx → db-pg、port::db → db-pg、port::search → adapter-search、port::doc → adapter-doc、port::kms → adapter-kms），全部满足，不产生任何新违规。
+
+**第四段，把允许项未被机检的那一半补上。** 新增 `xtask archcheck` 规则 `platform-no-adapter`：`Layer::Platform(_)` 的包依赖中出现 `Layer::Adapter(_)` 即违规。它与 `platform-acyclic` 同属允许项的机检面，**不进 `FORBIDDEN_RULES`**——禁止项仍是七条，规则名与顺序一字不改。配一个负样例 `pkg("ep-platform-release", &["ep-adapter-kms"])`，即本缺陷本身。落地后 archcheck 由 16 条增为 17 条，01-engineering-baseline.md:518 的「已判定规则共 14 条」同批改为「共 17 条」并逐项列出；该处此前已漏记 `foundation-marker-shape` 与 `undecidable-registry-matched` 两条（工具实测本已打印 16 条），属既有漂移，一并修。
+
+**第五段，02:54 的 `crypto` 顶层模块作废，三项并入 `port::kms`。** 02:54 原文「只增三项：`crypto::CipherText`、`crypto::KeyDomainId`、`crypto::BlindIndex`」要求在 ep-foundation 新开第八个顶层模块，而 F-03 落地的 `foundation-module-registry` 把顶层模块冻结为七项（capability、error、id、module、port、principal、security），阶段 2 一落地即变红。三者本就是本端口的调用词汇，一并落 `port::kms`，并在 `crates/foundation/src/lib.rs` 按既有 `pub use` 惯例再导出，使 02:458 与 05:220 逐字写的 `foundation::BlindIndex` 继续成立。顶层模块数仍为七，登记表不动。
+
+**第六段（原 H-01），ep-platform-release 的依赖冻结与 13b 编排归位。** 三条：其一，ep-platform-release 一律不反向依赖任何 `ConfigItemApplier` 属主 crate，03:122 的无环论证由点名 ep-platform-flow 与 ep-platform-notify 两个，推广到全部十五个 applier 属主（含 ep-platform-authz、ep-platform-meta、ep-app-reporting），并写明跨 crate 的执行编排一律落 `apps/*`。其二，03-platform-kernel.md:114 的 ep-platform-release 段句末追加「本 crate 的工作区内依赖在 3b 段止于 ep-foundation、ep-platform-audit、ep-platform-outbox 三项，阶段 13b 不再新增」；13-clients-lowcode.md:60 的依赖列去掉 `ep-platform-meta` 冻结为三项，职责列删「自动测试编排、DDL 段编排」，改为「自动测试结论的记录与守卫判定」，并补一句「本 crate 一律不反向依赖任何 `ConfigItemApplier` 属主 crate」。其三，阶段 13 退出条件 18 追加断言：**本阶段结束时** ep-platform-release 的工作区内直接依赖恰为三项，`platform-acyclic` 与 `platform-no-adapter` 全绿；该断言按 F-05 通则甲-2 只约束本阶段结束时点，不封禁后续阶段在允许项内增边。本段成立的前提是 `KmsBackend` 已按第一段下沉 foundation（否则 release 还要连 ep-adapter-kms，「恰为三项」当场为假），二者**必须同批提交**。
+
+**第七段，允许项与禁止项一字不改，不新增受限例外、白名单或登记表行。** 第 12.1 节 delegated 与 undecidable 两段在本裁定内一行不加（F-05 另加一行，见下），archcheck 三态输出不变。必要性判据按 F-03 属评审判据，本项举证为：`port::kms` 被 ep-platform-audit、ep-platform-file、ep-platform-notify、ep-platform-release 四个 `ep-platform-*` 引用（03:35、03:36 与 03:104、03:942、03:1176），满足 00b:117「或被 `ep-platform-*` 引用」。另更正一处沿袭错值：00-overview.md:279 的 F-01 登记行把第 1.3 节允许项写成「五条」，实测 00b:102 至 :108 为**七条** bullet（禁止项 00b:112 至 :118 才是七条），同批改为七条。
+
+#### 3. 裁定理由要点
+
+落点候选四个，逐个核对后取端口下沉。（a）留在 ep-adapter-kms 即现状：四条 platform → adapter 边全违反允许项，且一旦某个 adapter 需要 KMS（如信封加密落在 ep-adapter-file）就撞禁止项第五条，与 F-01 的第二半同构。（b）新建 crate ep-platform-kms：能编译能过门禁，但工作区成员由 84 回升到 85，四个消费方分处四个 platform crate 会新增四条 platform → platform 边并直接逼近本裁定第六段刚拆掉的成环面，且它承载的东西无一是平台能力——没有表、没有用例、没有状态机，只有一个 trait 与八个数据类型，正是 F-01 判 ep-adapter-db「不是 adapter」时用的同一把尺子。（c）开例外：成因（端口停在 adapter crate 里）原封保留且已复发六处，F-01 已把这条路的账算过——本项目唯一一处既有受限例外的围栏已裂成两套互斥措辞。（d）端口下沉 ep-foundation：这是允许项自身给出的救济手段，把被依赖物挪进允许集合不是绕过规则而是执行规则，与 F-01 对 `port::db` 的处置逐字同形，且裁定后一条依赖边都不新增——非法的边不是被允许了，是根本不再产生。取（d）。
+
+必须一并补 `sign` 与 `verify`：不补，release 与 audit 要做 ECDSA 签名就只能取私钥自签，被裁掉的依赖边会从后门原样长回来，13:569「私钥由内置 KMS 或客户 HSM 持有」在密码学上也不允许导出。必须一并加 `platform-no-adapter`：不加则按 F-03 通则第六条只剩「往 12.1 节 delegated 段永久加一行」这一档，那是净减；加规则是三档里唯一不产生永久降级、且能让缺陷当场变红的一档，成本是 deps.rs 内一个十余行函数加一个负样例，判定式复用 graph.rs 已有的层位判定，不引入新概念。**须如实说明：该规则在 F-01 落地后的判定面只覆盖原 H-03 一条**——原 H-04 的 `ep_adapter_db::port::IdempotencyStore` 已由 F-01 的端口下沉修掉（01:577 现文逐字只写 `IdempotencyStore`，无 `ep_adapter_db::` 前缀），附录丙 H-04 行的原措辞已过期，不得再据以宣称本规则「一次覆盖两条」。顺带更正 F-01 裁定理由第三段中的一句事实错误：「kms 在自己 crate 内」——它当时被当作健康样例列举，本裁定证明它是第二个坏掉的。
+
+#### 4. 本裁定不含、须另行补裁的两项
+
+其一，阶段 13b 的 8 个自动测试 suite 的执行落点。把 RLS\_MATRIX、ROLE\_PREVIEW、SOD\_CHECK、FLOW\_SEMANTICS、REPORT\_PERMISSION 判给属主 crate，会使阶段 13b 改动三个未登记的 crate（13:66 逐字「本阶段不新增 platform crate……不新增业务模块 crate」，13:947 的覆盖率行只点名三个 crate），且计划里没有一处写明 authz/flow/reporting 已有可供 suite 调用的公开入口；13:439 的守卫又要求「8 个 suite 的 outcome 全为 PASSED 或 SKIPPED，且 SKIPPED 仅允许出现在该包不含对应 item\_kind 时」，release 侧因此必须持一份 suite 名与 item\_kind 的映射，其落点尚未登记，且「无段一的包该守卫恒为真」这一分支未被交代。其二，自动测试从 core-server 受理到 job-worker 执行的异步派发载体，全卷无登记的事件或巡检，而 13:21 与阶段 13 的对应退出条件把事件类型冻结为 10 个，须指名载体并说明是否触动该冻结。两项均须另行裁定，本裁定不越过它们冻结任何签名，也不据「读 `platform_meta.ddl_plans` 即强制 crate 边」立论——该论证与 release 只读 `config_autotest_runs` 的定位互斥，已删；停机窗口判定按 B-03 已在 job-worker，结论回传即可，不必二次判定。
+
+### F-05 非阻塞批：依赖枚举口径、禁止项第七条判定面与原 H-02、H-04 至 H-09
+
+#### 0. 权威位
+
+按 00-overview.md 第 1.4 节通则第一条，00c 是登记表、不构成权威层。本裁定的权威落点是 00b-technical-baseline.md 第 1.2、1.3、12 节与阶段 1、3、5、7、8、9、11、12、13、14 计划正文。
+
+#### 1. 共同成因
+
+成因甲（原 H-04、H-08、H-09）：某个 crate 的落点或依赖被一处写成封闭枚举，被另一处的增量推翻，而全卷同时声称有一套「CI 按期望依赖清单逐 crate 比对」的门禁在守。实测该门禁在工作区里不存在：`xtask/src/archcheck/` 里没有任何一条规则读期望依赖清单，`cargo metadata` 的唯一消费者是 `xtask/src/graph.rs` 的层位图构建，判定一律按层位。成因乙（原 H-05、H-06）：禁止项第七条从未在基线上给出判定面，阶段 11 单边给了一套（D-11-01「只约束基表」），阶段 11 自己又越出这套；两条必须同批裁定，先定判定面 H-05 才有依据。成因丙（原 H-02、H-07）：跨进程通道的类型与实现无处安放时被就近塞进 ep-adapter-wasm 或 ep-foundation，而正解已写在计划自己的另一处。
+
+#### 2. 通则甲　依赖枚举的效力口径
+
+甲-1（复述基线 00b:113，不新增）：需要命名某模块具体类型或 DTO 的代码，落在拥有该类型的 crate 内；模块间同步调用只能通过 ep-contract-B 中的 trait，实现在 apps 装配时注入。「不属于任何模块」不构成把类型放进 `ep-foundation` 的理由——禁止项第六条的必要性判据是准入的唯一入口，按 F-03 它已降为评审判据，降级只改判定主体，不改判据取值。须注意 00b:113 本身不指定 trait 归属方是调用方还是被调方，该问题由 G-01 按模块归属判据另行裁定。
+
+甲-2：各阶段计划中「ep-X 依赖 A、B、C」「只依赖 ep-foundation」一类枚举，一律解释为**该阶段结束时的快照**，不具跨阶段封闭效力。后续阶段可在基线第 1.3 节允许项内为既有 crate 增边，只需在该后续阶段的 crate 改动表里写出增量并在提交说明中给出使用位，不回改先前阶段的枚举。
+
+甲-3（收窄后的撤销，与裁定原件不同，以本节为准）：撤销的只有「CI 的 `cargo metadata` 断言脚本**按 crate 逐项比对期望依赖清单**」这一形态，承接方是 `xtask archcheck` 已实现、已配负样例的七条禁止项加 `platform-acyclic` 与 `platform-no-adapter`，属 F-03 通则第六条三档处置中的第二档「换一个被测输入已存在的可判定替身」，不需要在第 12.1 节登记。**保留**「按 `cargo metadata` 断言某进程不链接某 crate」这一形态：它的被测输入就是 `cargo metadata` 的输出，提供方阶段 1 已存在，是可判定的具体谓词，一刀切撤销会制造两条无承接方的判据，正是 F-03 通则第六条要抓的形态。据此，02-data-foundation.md:60（portal-gateway 与 plugin-host 不链接 `ep-adapter-db-pg`，规格第 7.7 章两进程常驻连接数为零的编译期保证）与 10-ar-ap-invoice.md:1158（`finance.cash_ledger_entries` 只被四个用例的仓储写入）两处**不改**；其中 10:1158 依赖调用图分析的那一半在工作区内无任何工具承接，登记为待决项 U-F05-01，由阶段 10 在交付时给出判据或按通则第六条降为评审判据，本裁定在 00b:120 处标注一句「调用图一侧的判据由阶段 10 同批给出」。按上述收窄改写的落点为 03-platform-kernel.md:122、03:1549、07-procurement-portal.md:40、09-ledger-period.md:90、11-cost-metrics-reporting.md:112 与 11:825，其中 11:825 是裁定原件点名却漏改的一处。
+
+#### 3. 通则乙　禁止项第七条的判定面回写基线
+
+禁止项第七条改写为两条通道加一个机检面，D-11-01 的单边界定随之作废：
+
+- 通道一（运行期读写路径的唯一通道）：跨模块取数经拥有方 `ep-contract-*` 的 trait，实现由拥有方的 `ep-app-*` 提供并在 apps 装配注入。
+- 通道二（分析与报表路径的唯一通道）：拥有方在其自身 schema 内发布、并在 reporting 数据集注册表登记的 `v_` 受治理视图，只经 `ep_analyst_ro` 只读连接读取。
+- 机检面（按 `xtask archcheck` 实际可判范围逐字写，不得写成工具判不出的形态）：规则 `db-pg-one-schema-per-file` 按基线第 3 节登记的 24 个 schema 名判定，只在双引号字面量区间内取词，自身 schema 由文件路径归属确定，判据为「文件内出现自身 schema 之外的非 `v_` 对象即违反」。规则名与规则条数不变。
+
+承接方与阶段按 F-03 通则第六条写明：`v_` 前缀这一半由阶段 1 的 `xtask archcheck` 判定，被测输入是 db-pg 源码，阶段 1 已存在；「该视图确已登记且列签名一致」这一半由阶段 11 的启动自检项 `reporting-dataset-signature-matched` 判定，被测输入是数据集注册表与来源视图，届时提供方已存在，不构成不可判定项。**通道二「只经 `ep_analyst_ro` 只读连接」这一半在源码上不可观测，无机检承接方**，按通则第六条第三档降为评审判据，在基线第 12.1 节 delegated 段登记一行，承接方写「阶段 11 的 `reporting-dataset-signature-matched` 启动自检加评审举证」。这是本轮唯一一条新增登记行，undecidable 段仍为空。与之配套，11-cost-metrics-reporting.md:186 逐字「三个视图 GRANT SELECT 给 ep_analyst_ro 与 ep_app_rw」**必须同批**改为只授予 `ep_analyst_ro`，否则通道二的角色约束在阶段 11 当场落空，两句同时有效且互斥。
+
+为什么不把 D-11-01 收紧回逐条经 contract trait 往返：11:22 给的理由（150 万条分录基准集、常用报表 P95 10 秒）是硬约束，且要改 13 个数据集与整条取数路径。为什么不把第七条整体放宽到只约束基表：那正是原 H-05 得以成立的口子，不走 `ep_analyst_ro`、不走视图的 rw 路径也会被放行。
+
+#### 4. 逐条裁定
+
+**H-02（blocking）——结论采纳（两个实现按进程边切开），穷举白名单撤销，理由第二条重写。** `WasmComputePort` 的实现按进程边一分为二：`WasmtimeComponentCompute` 落 `crates/adapter/wasm/`，归属进程收为 plugin-host，直接驱动 wasmtime Component 宿主；`PluginHostWasmCompute` 迁入 `crates/adapter/ipc/`，装配进 core-server 与 job-worker，只经 plugin 通道的请求与响应类型代理调用。依赖口径按下列一段写，**裁定原件第二段的穷举白名单整段撤销**：
+
+> ep-adapter-wasm 与 ep-adapter-ipc 一律不依赖任何其他 `ep-adapter-*`；其余依赖按基线第 1.3 节允许项第六条，即可依赖 ep-foundation、ep-contract-\*，以及 domain 与 platform 中的端口 trait。ep-adapter-ipc 依赖 ep-platform-runtime 以实现基线第 1.2 节 ep-platform-runtime 一行所定的 IPC 服务端接口，依赖 ep-platform-flow 以实现 `WasmComputePort`；ep-adapter-wasm 依赖 ep-platform-flow 与 wasmtime。
+
+撤销白名单的理由：00b-technical-baseline.md:58 逐字「……以及以 trait 表达的服务器骨架。具体 HTTP 与 IPC 传输实现分别留在对应的 ep-adapter-\*，由 apps 在 `apps/<proc>/src/wiring/` 目录下注入，本 crate 不依赖任何 ep-adapter-\*」与 01-engineering-baseline.md:583 同款口径，要求 ep-adapter-ipc `impl` ep-platform-runtime 的 IPC 服务端 trait，孤儿规则使该 impl 只能落在 ep-adapter-ipc 内，故其 `[dependencies]` 必含 ep-platform-runtime——与白名单不可同时成立；且白名单会把 H-07 的七种报文类型落点掐死。**理由第二条重写**（不再宣称「被逼出来的唯一合法宿主」）：落 ep-adapter-ipc 是既有形态（00b:58 与 01:583 已把「传输实现留 adapter、apps 注入」写死）的直接沿用；把跨进程代理放 ep-platform-flow 需为 runtime 新增一个 IPC **客户端** trait（全卷未定义），代价更大，故不取。内文两处更正：裁定原件写的 `F-02` 一律读作 `F-01`（00c 只有 F-01 与 F-03）；`forbidden-std-io` 不是规则名，source.rs 复用的是 `domain-contract-no-io`。同批须做的两件事：13-clients-lowcode.md:947 的 85% 行覆盖率名单补入 `ep-adapter-ipc`（`PluginHostWasmCompute` 迁入后不得静默降门槛）；核 01-engineering-baseline.md:52 的 ep-adapter-ipc 装配进程列（现无 job-worker，而本条要求注入 job-worker 的 wiring 目录），若属阶段 1 时点口径则加限定语。本文件第 1092 行起的 B-05 确切标识符段同批改写。
+
+**H-04（minor）——采纳，只改措辞，不动依赖边。** 依赖方向部分已由 F-01 的端口下沉修掉（01:577、01:330 现文已为 `ep_foundation::port::db::IdempotencyStore`，磁盘上 `crates/adapter/` 下无 db 目录）。残留的是 00b:58 承诺「具体 HTTP 与 IPC 传输实现分别留在对应的 ep-adapter-\*」，而第 1.2 节适配层清单九行没有任何 HTTP adapter，01:583 又把 HTTP 服务器与中间件栈骨架放进 runtime。裁定：**不新增 HTTP 系 adapter**，改 00b:58 与 01:583 使两处口径一致——HTTP 骨架直接构建在第三方 HTTP 库上（第三方库不是工作区 crate，不落在禁止项判定面内），IPC 的具体传输实现留在 `ep-adapter-ipc`，runtime 仍不依赖任何 `ep-adapter-*`。本文件附录丙 H-04 段的「第 1.2 节适配层清单十个 crate」一并改为九个。新增 HTTP adapter 的路线否掉：它只会被 apps 与 runtime 依赖，而 runtime 依赖它即构成 platform → adapter（与 F-04 同形），为一个措辞多造一个 crate 加一条违规边，不划算。
+
+**H-05（major）——采纳处置，成因段重写。** 先纠正裁定原件的成因描述：11-cost-metrics-reporting.md:369 逐字「| inventory\_stock\_value\_entries | inventory.v\_stock\_value\_entries | 8 | ENTRY |」，即 11:628 引的是**已登记数据集名**，其来源本就是 `v_` 视图，「跨读 inventory schema 基表」这一成因**不成立**。真正的残余违反只在连接角色一维：11:630 逐字「三项由阶段 9a 的 ReconExecutor 调度，在 job-worker 自身连接池上执行，不使用只读分析池」——它走的不是通道二要求的 `ep_analyst_ro`。处置仍按通道一：`COSTING_INVENTORY_COGS_VS_STOCK_VALUE` 的实现方仍是 ep-app-costing（校验项数、`category`、`blocks_period_close` 均不变），但存货侧金额改经被调方的 contract 端口取得。端口命名与 G-01 同族：`ep_contract_inventory::StockValueOutboundPort`，落 `crates/contract/inventory/src/port/stock_value_outbound.rs`；实现类型 `InventoryStockValueOutboundQuery`，落 `crates/application/inventory/src/projection/stock_value_outbound.rs`；签名照抄同族形状 `(snapshot: &dyn SnapshotCtx, legal_entity_id, accounting_period_id) -> Result<Money, AppError>`，只是返回该期间出库方向的金额合计。trait 与实现由阶段 11 同批交付，在 `apps/job-worker/src/wiring/` 目录下注入，不改阶段 8 的交付物与退出条件；`ep-app-costing` 的依赖枚举补入 `ep-contract-inventory`（六个契约增为七个），落在允许项内。否掉的两条替代路线：(a) 继续走通道二直接读 `inventory.v_stock_value_entries`——现文正是这么做的，问题在于它跑在 job-worker 自身连接池而非 `ep_analyst_ro`；要让它合法就得给 rw 角色开受治理视图授权，而 11:186 现文「三个视图 GRANT SELECT 给 ep_analyst_ro 与 ep_app_rw」恰好就是这个口子，保留它等于让任何 app 都能用视图绕过 contract trait，是把一处局部问题换成一条全局口子（11:377 是数据集目录行、不是授权句，授权句在 11:380 与 11:186，裁定原件引 11:377 立论有误，一并更正）；(b) 把校验项移给 ep-app-inventory——它就得反过来读 costing schema，问题只是换了个方向。
+
+**H-06（major）——采纳，基线回写，D-11-01 由「偏离」降为「已回写的新增决定」。** 按通则乙改写 00b:118，并把 11:22 的 D-11-01 行改写为「本阶段的分析取数按基线第 1.3 节禁止项第七条通道二执行，判定面已同批回写基线，本行不再是对基线的偏离」。**保留编号 D-11-01 不重排**：00c:439、00c:1104、11:135、11:448 四处引用它表达「分析 SQL 中不出现来源模块基表名」，该结论在改写后仍成立，删行会牵动四处并使 D-11-02 至 D-11-05 全部重排。此举净减一条例外：第七条从此只有一套取值且落在基线。措辞须与通则乙对 11:186 的同批改动协调，不得留两套授权口径。
+
+**H-07（major）——采纳，删半句，落点取同一文件四行之上已经给出的那个。** 14-ops-backup-release.md:68 的改动 crate 表原文已写「| ep-adapter-ipc | 全部 | 新增本阶段七种报文类型 |」，与 14:73「放在 ep-foundation 的 ipc 模块下」互斥，且与阶段 13 对同一 crate 的处置一致（13:62「新增 plugin 通道的请求与响应类型」）。裁定：七种报文类型定义在 `ep-adapter-ipc`，`ep-foundation` 不新增 `ipc` 模块；14:73 删去该半句，改为写明约束——这些报文类型**不得被任何 `ep-platform-*` 命名**（否则构成 platform → adapter），core-server 侧对上报内容的审计落库在 `apps/core-server/src/wiring/` 处转换为 platform 类型。**须补一句**：ep-platform-runtime 侧的 IPC 服务端 trait 以泛型或字节切片表达，不命名这七种报文类型。该约束此前无机检承接方（`rule_platform_no_domain_or_app` 把 Adapter 落进 `_ => None`），F-04 的 `platform-no-adapter` 落地后有检，两条因此同向。依据其余两点不变：按甲-1 与禁止项第六条，这批类型的引用方只有 `ep-adapter-ipc` 与三个 apps，一个 `ep-contract-*` 都没有，也没有任何 `ep-platform-*`，必要性判据取值恒为假；落 ep-foundation 的顶层 `pub mod ipc` 会当场撞冻结的七项模块登记表，改塞 `port::ipc` 则与 00b:225 所定端口模块的位置与补齐时点固定（按 F-04 已改为四个且逐一点名）互斥，两条路都不通。
+
+**H-08（minor）——采纳，补依赖，并按甲-2 给该枚举加限定语。** 08-inventory-costing.md:51 的「逐条自查」清单缺 `ep-contract-ledger`。缺陷成立：08:447 按裁定 A-06 固定阶段 8 实现两个 `ReconCheck`，其中一个 `category()` 取 `SUBLEDGER_VS_LEDGER`，其总账侧只能经 `ep_contract_ledger::TotalAccountBalanceProvider` 取得；改读 ledger schema 即落进第七条。编译成立已核实：**09-ledger-period.md:16 逐字「9a 段交付：……`AccountingPeriodResolver`、`PostingPort` 与 `TotalAccountBalanceProvider` 三个对外契约……」**，而 9a 在固定链上排在阶段 8 之前（08:54 逐字链「1 → 2 → 3a → 4 → 3b-1 → T0 → 5 → 9a → 8 → 6 → 7 → 10 → 11 → 9b → 14」），09:20 说的是四类**校验项**在 9b 实现，不是 trait 定义。裁定：08:51 补入 `ep-contract-ledger`，注明用途为 `TotalAccountBalanceProvider` 并注明「本阶段结束时的快照」。附带核实两点：ep-app-inventory 并不调用 `ep_contract_ledger::PostingPort::post`（08:12、08:571 明写调用方是采购、销售、发票模块），因此这条依赖的唯一理由是总账侧余额提供者；08:472「不在本模块内形成第二处存货科目余额取数口径」不被违反，因为余额来自 ledger 拥有的 trait 而不是本模块的第二处查询。09:90 末句关于「期望依赖清单」的表述按甲-3 改写。
+
+**H-09（minor）——采纳，改的是投影函数的落点，不是 ep-adapter-search 的依赖集。** 03:116 与 03:122 的「`ep-adapter-search` 只依赖 `ep-foundation`」保留不动；改 05-master-data.md:79 与 12-service-project-asset.md:70：四类档案与价目表、五类服务与项目对象的 `SearchDocument` 投影函数落在拥有该 DTO 的模块的 `ep-app-*`（ep-app-mdm、ep-app-cpq、ep-app-service、ep-app-project），由 job-worker 的索引消费者调用后经 `SearchIndexPort` 写入。依据是甲-1，且这正是阶段 3 与总览已经写好的口径：03:58「本阶段不交付任何业务对象的检索文档投影函数，投影由各业务阶段按 `SearchDocument` 结构提供」、00-overview.md:189「各阶段只产出 SearchDocument，不自建写入路径」。否掉的替代路线是给 ep-adapter-search 加四条 contract 依赖：该边虽落在允许项内，但会让一个通用检索适配器随业务模块数线性扇入，且与两个阶段既有口径同时冲突。
+
+#### 5. I-05、I-06、I-07 复核
+
+三条均已在上一批清除，本裁定不含它们。I-05（06-contract-sales.md:777）已改为十项中的九项全部通过、`offsite-sink-requirements` 按阶段 1 计划整条推迟到阶段 14 并返回 `NOT_APPLICABLE`；其句末「按通则第六条取换判据一档」与 01-engineering-baseline.md:216 的「该项整条推迟」两套标签不一致，建议改为「自检项整条推迟，本条退出条件按通则第六条第二档换可判定替身」一句消歧，**是否必改标注为不确定**，不列为必改项。I-06（01:515）已改为「这一比对整条推迟到阶段 3a……本阶段只判该节存在」。I-07（01:506）已改为负样例一律以手写 SBOM 夹具构造、不因两包缺席而把断言留成恒真。
+
+#### 6. 新增与净减
+
+新增门禁规则 0 条（`platform-no-adapter` 计在 F-04 名下）、新增受限例外 0 条、新增白名单 0 条、新增错误码 0 个、新增 crate 0 个。**新增登记表行 1 行**：第 12.1 节 delegated 段的通道二角色约束一行，见通则乙；undecidable 段仍为空，阶段 1 archcheck 的通过态退出码仍为 0，不触发 RG-NO-UNDECIDABLE。净减两项：机制 −1（撤销「按 crate 逐项比对期望依赖清单」这一形态，收窄后只撤这一半，保留可判定的进程链接断言）；例外 −1（D-11-01 对第七条的单边界定作废）。新增的施工物属既有通道的常规用法，不计为机制：`ep_contract_inventory::StockValueOutboundPort` 一条 contract 端口，`ep-app-costing → ep-contract-inventory` 与 `ep-app-inventory → ep-contract-ledger` 两条落在允许项内的依赖边，`source.rs` 的 `schema_refs` 与 `one_schema_per_file` 一处判定实现改写（规则名与条数不变）。
+
+## G 类 落位裁定
+
+本节登记本轮新增的一条 G 类裁定，编号沿用附录丙的缺陷编号 G-01，不计入前文 67 条缺口。附录丙 G 类的其余五条（G-02 至 G-06）已由 F-01 一并处置，不在本节重复。按通则第一条，本裁定的权威落点在技术基线与阶段 7、8、9、10 计划正文，本节只作登记；其对 B-08 的修订以本文件 B-08 条目的确切标识符段为准。
+
+### G-01 子账余额提供者的端口落位（修订裁定 B-08 的「确切标识符」段）
+
+#### 争点
+
+裁定 B-08 把 `SubledgerBalanceProvider` 定义在 `ep-contract-finance`（阶段 10 新增），把两个实现类型钉在 `ep-app-inventory`（阶段 8）与 `ep-app-procure`（阶段 7），又把两个 `impl` 判给阶段 10。trait 与类型对阶段 10 的任何 crate 双双是外部类型，`impl SubledgerBalanceProvider for InventorySubledgerBalanceQuery` 触发 E0117；而唯一可编译的落点（实现类型自己的 app crate）被计划自己排除，理由是阶段 8 与阶段 7 排在阶段 10 之前、届时 trait 尚不存在（08-inventory-costing.md:449「本阶段不依赖 ep-contract-finance」）。
+
+#### 成因（本段按本轮复核重写，裁定原件的成因描述作废）
+
+不是层位判错，也不是判据写错对象——七条禁止项一条也没被违反过，现行 17 条规则里没有孤儿规则面，`xtask archcheck` 对本条完全无感。也**不是**「端口停在了调用方的 contract crate」：A-13 与 A-15 的探针与登记表在全卷通行地由调用方持 trait，00b:113 逐字「模块间同步调用只能通过 ep-contract-B 中的 trait，实现在 apps 装配时注入」也不指定 B 必然是被调方，据此立论会与全卷既有形态互斥。
+
+真正的成因是**端口的宿主 crate 的诞生阶段晚于实现方阶段**：`ep-contract-finance` 由阶段 10 新增，而两个实现方在阶段 8 与阶段 7。这一步之后全部困难都是派生的——实现方在其阶段无法实现，B-08 只好搬 `impl` 而不是搬 trait；搬到哪儿都不合法，因为孤儿规则要求 trait 与类型至少一头是本地的，阶段 10 两头皆外。
+
+这一步同时撞穿三条已生效的约束，三条都写在计划自己身上：其一，本表通则第三条「跨模块同步调用的被调方必须与调用方同批交付。被调方阶段晚于调用方阶段的……」——按模块归属唯一判据，「该法人该期间的存货金额账合计」属 inventory、「已收货未收票暂估合计」属 procure，本条真实的被调方（8、7）本来就早于调用方（10），通则第三条根本不需要启用，是端口错位人为制造了一个「被调方在后」的假象；其二，08-inventory-costing.md:54 原文「本阶段在跨模块调用中一律是被调方在先的一侧……调用方阶段 6、阶段 7、阶段 10 各自接线并在其自身阶段完成该调用的验收」，B-08 让阶段 8 变成了阶段 10 的实现方，与这句自述互斥；其三，08:441 把该项与另外三项并列为「全部由其他阶段定义、本阶段实现」，而另外三项的定义方是阶段 5、阶段 5、阶段 9a，全部早于阶段 8，只有这一项的定义方在后——异常就摆在同一段里。
+
+#### 结论
+
+一、**撤销 `ep_contract_finance::SubledgerBalanceProvider`。** 该名全卷作废，任何阶段不得引用。计数按统一口径写：`ep-contract-finance` 的对外 trait 由 **11 个减为 10 个**，与 `ep-contract-invoice` 合计由 **16 个减为 15 个**；10-ar-ap-invoice.md:960 逐字「16 个 trait，定义在两个 contract crate 中」与 10:106 的合计口径须同批改到位，不得两处口径互斥。
+
+二、**把端口移到被调方自己的 contract crate，一模块一个，与该模块既有端口同处一个 `port/` 目录。** 两个新端口，签名逐字如下，与被撤销的 `SubledgerBalanceProvider::balance` 语义与返回类型一致，只补齐 `&self` 与入参类型：
+
+```rust
+// crates/contract/inventory/src/port/subledger_balance.rs   阶段 8 定义
+#[async_trait::async_trait]
+pub trait StockValueSubledgerBalancePort: Send + Sync {
+    async fn balance(&self, snapshot: &dyn SnapshotCtx,
+                     legal_entity_id: Id<LegalEntity>,
+                     accounting_period_id: Id<AccountingPeriod>) -> Result<Money, AppError>;
+}
+
+// crates/contract/procure/src/port/subledger_balance.rs     阶段 7 定义
+#[async_trait::async_trait]
+pub trait GrniSubledgerBalancePort: Send + Sync {
+    async fn balance(&self, snapshot: &dyn SnapshotCtx,
+                     legal_entity_id: Id<LegalEntity>,
+                     accounting_period_id: Id<AccountingPeriod>) -> Result<Money, AppError>;
+}
+```
+
+`SnapshotCtx`、`Id`、`LegalEntity`、`AccountingPeriod`、`Money`、`AppError` 六者全部取自 `ep-foundation`（`AccountingPeriod` 与 `LegalEntity` 在 00b:167 的 22 项标记清单内），两个 contract crate 仍只依赖 ep-foundation，禁止项第三条不受影响。加上【本轮 F-05 H-05】落在同一目录的 `StockValueOutboundPort`，`ep-contract-inventory` 的对外 trait 由 5 个增为 7 个，`ep-contract-procure` 由 5 个增为 6 个；00-overview.md:101、08:20、08:501 与 08:503 四处计数须一次改到位，不得分两批。
+
+三、**实现类型名与位置不变，`impl` 与类型同 crate。** `InventorySubledgerBalanceQuery` 位于 `crates/application/inventory/src/projection/subledger_balance.rs`，由阶段 8 实现 `ep_contract_inventory::StockValueSubledgerBalancePort`；`GrniSubledgerBalanceQuery` 位于 `crates/application/procure/src/projection/subledger_balance.rs`（本裁定补钉该位置，原计划只给名字未给位置），由阶段 7 实现 `ep_contract_procure::GrniSubledgerBalancePort`。两处 trait 均为外部、类型为本地，孤儿规则成立。「以查询函数形式先行交付、由阶段 10 包装」这一说法在全卷作废——不存在包装，实现方直接实现；08:439 的小节标题「本阶段实现的外部 trait 与查询函数」同批删去「与查询函数」，10:1273 的「子账侧包装阶段 7 提供的查询函数」一并改写。
+
+四、**装配与消费。** 阶段 10 的 `ep-app-finance` 依赖 `ep-contract-inventory` 与 `ep-contract-procure`（允许项明写 `ep-app-<m>` 可依赖任意 `ep-contract-*`），以 `Arc<dyn StockValueSubledgerBalancePort>` 与 `Arc<dyn GrniSubledgerBalancePort>` 两个注入点组装 `ReconciliationItemQuery` 十项中的两项，注入行由阶段 10 写入 `apps/core-server/src/wiring/` 与 `apps/job-worker/src/wiring/` 两个目录——这与 08:54「调用方……各自接线并在其自身阶段完成该调用的验收」一致，阶段 8 与阶段 7 不为调用方预留任何占位实现。B-08 其余结论全部保留：跨阶段唯一取数入口仍是 `ep_contract_finance::ReconciliationItemQuery`，阶段 9b 的关账前强制校验与其 `ReconCheck` 一律调用它，十项中的其余八项仍取自阶段 10 自有表。10-ar-ap-invoice.md:147 的排他句「跨模块只由 `ep-app-invoice` 依赖 `ep-contract-finance`，反向不成立」必须同批改写，不能只在句末追加；08-inventory-costing.md:53 的「procure、sales、invoice 三个模块的 application crate 依赖 ep-contract-inventory」须补 `finance`，裁定后它是第四个。
+
+五、**不新增任何机制。** 不新增受限例外、不新增门禁规则、不新增白名单、不新增登记段，`xtask archcheck` 零改动，允许项七条与禁止项七条一字不改，`FORBIDDEN_RULES` 七项不变。裁定后涉及四条边：`ep-app-finance → ep-contract-inventory`、`ep-app-finance → ep-contract-procure`、`ep-app-inventory → ep-contract-inventory`、`ep-app-procure → ep-contract-procure`，其中 **`ep-app-finance → ep-contract-procure` 先于本裁定已存在**（10:994 逐字「付款申请单已付金额回写经 `ep-contract-procure` 写端口」），本裁定实际新增的只有三条，四条全部落在允许项内，`app-no-peer-app` 与 `domain-contract-no-io` 均不触发，platform 无关。
+
+#### 裁定理由
+
+缺陷的可修面只有三个：搬 impl、搬类型、搬 trait。搬 impl 是 B-08 已经走过的路，全工作区没有合法落点（放 ep-adapter-db-pg 也不行，允许项明写 adapter 不得依赖 application，两个类型不可命名）。搬类型（把两个实现类型挪进 ep-contract-finance 或阶段 10 的 app crate）等于把 inventory 与 procure 的取数逻辑搬进 finance，直接违反禁止项第七条，与 F-05 正在裁的 H-05 是同一个错。只剩搬 trait；trait 搬到哪里由「谁是被调方」决定，而被调方由本表通则第二条的模块归属唯一判据决定，判下来就是 inventory 与 procure。
+
+**替代方案一：把 `ep-contract-finance` 的诞生提前到阶段 7 之前，让阶段 8 与阶段 7 直接实现原 trait。**（本段理由按本轮复核重写。）该方案确实正面对上了成因——宿主 crate 诞生太晚——技术上也可行、能编译。否掉的理由是另外三条：其一，它造出一个「归属阶段与创建阶段不同」的 crate，是全卷唯一一例，等于新增一条隐性机制；其二，它要求阶段 7 与阶段 8 冻结一个 finance 语义的签名，而 finance 的对账口径要到阶段 10 才成形，签名冻早了必然回改；其三，它保留了「被调方实现调用方的 trait」这一倒置形态，与 08:54 的自述、与本表通则第三条的方向感继续互斥。相形之下，把端口移到被调方 crate 后，宿主诞生阶段（8、7）天然早于调用方（10），这条时序矛盾自动消失，不需要为一个 crate 单独安排诞生时点。
+
+**替代方案二（最强的竞争者）：只建一个 trait，放进 `ep-contract-ledger`。** 阶段 9a 早于 8、7、10，一个 trait 就能覆盖两个实现方，而且它与 `TotalAccountBalanceProvider` 恰好是子账侧与总账侧的对称一对，比本裁定少一个 trait。否掉的理由是一句硬话：09-ledger-period.md:458 结尾原文「本阶段不定义总账侧接口之外的任何东西。」——把子账侧端口塞进 ep-contract-ledger 需要先破这句围栏，即为一条边开一处例外；本项目的教训恰在于此，A-01 标记类型那处例外的围栏已经裂成两套互斥措辞。用「少一个 trait」换「多一处被破的围栏」不划算。须诚实说明：裁定原件另举的附带成本「该方案要求 ep-app-inventory 新增对 ep-contract-ledger 的依赖、需连改 08:51 的自查清单」**已不再成立**——F-05 的 H-08 已按另一理由（`TotalAccountBalanceProvider`）为 08:51 补入该依赖，故本方案的否决理由以 09:458 的围栏一条为准；同时 09:90 所依据的「CI 按期望依赖清单比对」形态已由 F-05 通则甲-3 撤销，不再构成任何一侧的论据。
+
+**替代方案三：把 trait 下沉 ep-foundation。** 直接被禁止项第六条挡下——子账余额是业务概念，00b:117 明写跨模块共享的业务形状不进 foundation、定义在拥有它的模块的 `ep-contract-*` 里；且 F-03 之后必要性一条已降为评审判据，再往 foundation 塞东西正是 F-05 的 H-07 判掉的形态。不考虑。
+
+**为什么多出一个 trait 是可接受的代价。** 净变化是 −1（finance）+2（inventory、procure）= +1 个 trait，换掉的是：一条不可编译的 impl 安排、一处「反向依赖」的特设措辞、一处与 08:54 自述的互斥、一处与通则第三条方向感的互斥。两个 trait 结构完全对称、签名逐字相同、各自与本模块既有端口同处一个 `port/` 目录。代价只在可扩展性口径上轻微下降：新增第三个子账来源时，要在该来源模块的 contract 里加一个同形端口，而不是「追加一个实现」（10:1308 需按此改写）——这是诚实的，新来源本来就是一个新模块的新被调方。
+
+**与 F-01、F-03、F-04 的相容度。** 不冲突，也不援引它们没开的例外。本条的两个端口不在 F-01 通用条款按 trait 名限定的三个之内；F-04 已把该条款扩面到 `ep_foundation::port::*` 全体，本条的两个端口不在 `ep-foundation` 内，因此仍不受其覆盖。F-03 只动禁止项第六条与第 12 节，本条不碰第六条、不新增 delegated 或 undecidable 登记行，`undecidable-registry-matched` 的逐行比对不受影响。
+
+#### 待决项
+
+U-G01-01：GRNI 端口能否只读 procure 自有表算准「已收货未收票暂估合计」。10:292 的暂估回冲金额落在 invoice schema，而 07:1150 的 procure 侧只有订单行 `invoiced_quantity` 回写。取数口径由阶段 7 与阶段 10 在落码前同批给出，本裁定不越过它冻结实现方的取数路径。
+
 ## 附录丙　阶段 1 实测引出的同类缺陷登记
 
 本附录登记裁定 F-01 与 F-03 落地过程中，由三次同类缺陷普查查出的 22 条。
-三条已裁定的（F-01 的 PgTx 声明位、F-02 的 adapter 互依、F-03 的必要性判据）不重复登记。
+三条已裁定的（F-01 的 PgTx 声明位、F-01 的 adapter 互依、F-03 的必要性判据）不重复登记；全卷不存在编号 F-02，此处原写的 F-02 即 F-01 的第二半。
 
 **本附录只登记，不构成裁定。** 每条都带 文件：行号 与逐字原文，可直接进入下一轮裁定。
 登记而不修的理由：修这 22 条是另一轮工程，其中多条（如 G-01 的子账余额提供者、
@@ -1704,21 +1895,21 @@ H-01 的 platform 成环）改动面与 F-01 相当，混进本批会使本批�
 
 | 编号 | 类别 | 严重度 | 落点 | 缺陷 |
 |---|---|---|---|---|
-| G-01 | 孤儿规则类 | blocking | `10-ar-ap-invoice.md:519` | B-08 子账余额提供者：trait 在 ep-contract-finance、类型在 ep-app-inventory/ep-app-procure、impl 被要求落在阶段 10 的 crate — 与 F1 同类且无任何合法落点 |
+| G-01 | 孤儿规则类 | blocking | `10-ar-ap-invoice.md:519` | B-08 子账余额提供者：trait 在 ep-contract-finance、类型在 ep-app-inventory/ep-app-procure、impl 被要求落在阶段 10 的 crate — 与 F1 同类且无任何合法落点。**已裁定**，归属本文件「G 类 落位裁定」的 G-01：撤销 `ep_contract_finance::SubledgerBalanceProvider`，两个端口分别落 ep-contract-inventory 与 ep-contract-procure |
 | G-02 | 孤儿规则类 | blocking | `01-engineering-baseline.md:56` | F1 原句在阶段 1 计划复述：PgUnitOfWork/PgTx 声明位在 ep-adapter-db、实现体落在 ep-adapter-db-pg |
 | G-03 | 孤儿规则类 | blocking | `02-data-foundation.md:407` | F1 原句在阶段 2 计划正文复述：同一声明位/实现位分离 |
 | G-04 | 孤儿规则类 | blocking | `02-data-foundation.md:51` | F1 原句在阶段 2 crate 职责表复述：ep-adapter-db 承载「实现声明位」 |
 | G-05 | 孤儿规则类 | blocking | `00c-gap-ruling.md:122` | F1 原句在裁定册 A-01 的「提供方要做什么」复述，且与同一裁定的结论句自相矛盾 |
 | G-06 | 孤儿规则类 | blocking | `00-overview.md:238` | C-03 的另一种措辞同样规定三 crate 分离：ep-foundation 定义、ep-adapter-db 提供实现骨架、ep-adapter-db-pg 提供实现 |
-| H-01 | 依赖方向类 | blocking | `13-clients-lowcode.md:60` | ep-platform-meta 与 ep-platform-release 互为依赖，构成 Cargo 硬性循环，且触发 archcheck 的 platform-acyclic |
-| H-02 | 依赖方向类 | blocking | `13-clients-lowcode.md:61` | ep-adapter-wasm 依赖 ep-adapter-ipc，与禁止项第五条互斥（与 F2 同构） |
-| H-03 | 依赖方向类 | blocking | `03-platform-kernel.md:1177` | ep-platform-release 与 ep-platform-audit 直接取用 ep-adapter-kms，platform 反向依赖 adapter，与裁定 B-03 已作废的形态相同 |
-| H-04 | 依赖方向类 | major | `01-engineering-baseline.md:577` | ep-platform-runtime 的 HTTP 中间件栈留 `ep_adapter_db::port::IdempotencyStore` 注入点，platform 反向依赖 adapter |
-| H-05 | 依赖方向类 | major | `11-cost-metrics-reporting.md:623` | COSTING_INVENTORY_COGS_VS_STOCK_VALUE 由 ep-app-costing 实现却跨读 inventory schema，直接违反禁止项第七条 |
-| H-06 | 依赖方向类 | major | `11-cost-metrics-reporting.md:22` | D-11-01 单方面把禁止项第七条重新界定为「只约束基表」，属阶段计划改写基线取值 |
-| H-07 | 依赖方向类 | major | `14-ops-backup-release.md:73` | 归档与备份的 IPC 报文类型放进 ep-foundation，按禁止项第六条的必要性判据恒不可准入 |
-| H-08 | 依赖方向类 | minor | `08-inventory-costing.md:51` | ep-app-inventory 的依赖清单遗漏 ep-contract-ledger，而同阶段的过账端口与子账总账勾稽都要用它 |
-| H-09 | 依赖方向类 | minor | `03-platform-kernel.md:117` | ep-adapter-search 被阶段 3 声明「只依赖 ep-foundation」，却被阶段 5 与阶段 12 要求承载各模块档案的投影函数 |
+| H-01 | 依赖方向类 | blocking | `13-clients-lowcode.md:60` | ep-platform-meta 与 ep-platform-release 互为依赖，构成 Cargo 硬性循环，且触发 archcheck 的 platform-acyclic。**已裁定**，归属 F-04 第 2 节第六段：release 依赖冻结为三项、13b 编排归位 apps；8 个 suite 的执行落点与异步派发载体两项另行补裁 |
+| H-02 | 依赖方向类 | blocking | `13-clients-lowcode.md:61` | ep-adapter-wasm 依赖 ep-adapter-ipc，与禁止项第五条互斥（与 F2 同构）。**已裁定**，归属 F-05 第 4 节 H-02：两个实现按进程边切开，`PluginHostWasmCompute` 迁入 ep-adapter-ipc，穷举白名单撤销 |
+| H-03 | 依赖方向类 | blocking | `03-platform-kernel.md:1177` | ep-platform-release 与 ep-platform-audit 直接取用 ep-adapter-kms，platform 反向依赖 adapter，与裁定 B-03 已作废的形态相同。**已裁定**，即 F-04：端口下沉 `ep_foundation::port::kms`，新增机检规则 `platform-no-adapter` |
+| H-04 | 依赖方向类 | major | `01-engineering-baseline.md:577` | 原登记措辞「HTTP 中间件栈留 `ep_adapter_db::port::IdempotencyStore` 注入点」**已过期**：该依赖边已由 F-01 的端口下沉修掉，01:577 现文逐字只写 `IdempotencyStore`，完整路径为 `ep_foundation::port::db::IdempotencyStore`。**已裁定**，归属 F-05 第 4 节 H-04：残留的只是 00b:58 与 01:583 的 HTTP 口径不一，只改措辞、不新增 HTTP 系 adapter |
+| H-05 | 依赖方向类 | major | `11-cost-metrics-reporting.md:623` | COSTING_INVENTORY_COGS_VS_STOCK_VALUE 由 ep-app-costing 实现却跨读 inventory schema，直接违反禁止项第七条。**已裁定**，归属 F-05 第 4 节 H-05；成因经复核更正为连接角色一维（11:369 证明现文取的已是 `inventory.v_stock_value_entries`，11:630 证明它跑在 job-worker 自身连接池），处置仍为改经 `ep_contract_inventory::StockValueOutboundPort` |
+| H-06 | 依赖方向类 | major | `11-cost-metrics-reporting.md:22` | D-11-01 单方面把禁止项第七条重新界定为「只约束基表」，属阶段计划改写基线取值。**已裁定**，归属 F-05 第 4 节 H-06 与通则乙：判定面回写基线，D-11-01 由偏离降为已回写决定、编号不重排 |
+| H-07 | 依赖方向类 | major | `14-ops-backup-release.md:73` | 归档与备份的 IPC 报文类型放进 ep-foundation，按禁止项第六条的必要性判据恒不可准入。**已裁定**，归属 F-05 第 4 节 H-07：七种报文类型落 ep-adapter-ipc，且不得被任何 `ep-platform-*` 命名 |
+| H-08 | 依赖方向类 | minor | `08-inventory-costing.md:51` | ep-app-inventory 的依赖清单遗漏 ep-contract-ledger，而同阶段的过账端口与子账总账勾稽都要用它。**已裁定**，归属 F-05 第 4 节 H-08：08:51 补入该依赖并注明为本阶段结束时的快照（09:16 逐字确认 `TotalAccountBalanceProvider` 属 9a 段交付，早于阶段 8） |
+| H-09 | 依赖方向类 | minor | `03-platform-kernel.md:117` | ep-adapter-search 被阶段 3 声明「只依赖 ep-foundation」，却被阶段 5 与阶段 12 要求承载各模块档案的投影函数。**已裁定**，归属 F-05 第 4 节 H-09：投影函数落各模块 `ep-app-*`，03:116 与 03:122 的依赖集不动 |
 | I-01 | 判据不可判定类 | blocking | `04-identity-authz.md:724` | 阶段 4 退出条件 2：--check 要求「十三个命名项全部通过」，其中三项分别由阶段 3b 与阶段 14 交付 |
 | I-02 | 判据不可判定类 | blocking | `03-platform-kernel.md:1525` | 阶段 3 退出条件 4：--check 十四项「全部通过」且对 DEGRADED 非零退出，但其中 offsite-sink-requirements 由阶段 14 交付 |
 | I-03 | 判据不可判定类 | blocking | `09-ledger-period.md:798` | 阶段 9a 退出条件 E-17：判据是「可由阶段 11 的 reporting-dataset-signature-matched 自检项校验通过」，该自检项由阶段 11 交付 |
@@ -1795,7 +1986,7 @@ crate 职责表这一格把「对 ep_foundation 三个 trait 的实现」的声�
 
 > HTTP 中间件栈只留 `IdempotencyStore` 一个注入点，按 C-07 其端口定义归阶段 2、存储与重放实现归阶段 3a，本阶段的 `IdempotencyKeyHeaderGuard` 只校验请求头，不需要任何桩。
 
-该 HTTP 中间件栈的落点由同一文件第 583 行写死在 ep-platform-runtime：「该 crate 只承载进程生命周期状态机、分层配置加载、`SelfCheckRegistry`、健康与就绪端点、HTTP 服务器与中间件栈骨架，以及以 trait 表达的 IPC 服务端接口……因此本 crate 只依赖 foundation 与其他 platform」。而 `IdempotencyStore` 的完整路径是 `ep_adapter_db::port::IdempotencyStore`（同文件第 331 行原文：「第二段是端口定义，`ep_adapter_db::port::IdempotencyStore` 及其 `try_begin` 与 `finish` 两个方法」；02-data-foundation.md:409 复述同一落点）。在 Rust 中，要在中间件栈里留一个以该 trait 为类型的注入点（字段、泛型约束或 `Arc<dyn IdempotencyStore>`），ep-platform-runtime 必须把 ep-adapter-db 列为依赖，第 583 行「只依赖 foundation 与其他 platform」当场不成立，也违反基线第 1.3 节允许项第二条加「其余一律禁止」。这是裁定 B-03 判过的同一条口子，只是那次落在 ep-platform-release、这次落在 ep-platform-runtime，没有对应裁定收口。附带一处同源矛盾：基线第 1.2 节（00b-technical-baseline.md:58）说 ep-platform-runtime 只放「以 trait 表达的服务器骨架。具体 HTTP 与 IPC 传输实现分别留在对应的 ep-adapter-*」，但第 1.2 节适配层清单十个 crate 里没有任何 HTTP adapter，而第 583 行又把「HTTP 服务器与中间件栈骨架」直接放进 runtime，两处口径不一。
+该 HTTP 中间件栈的落点由同一文件第 583 行写死在 ep-platform-runtime：「该 crate 只承载进程生命周期状态机、分层配置加载、`SelfCheckRegistry`、健康与就绪端点、HTTP 服务器与中间件栈骨架，以及以 trait 表达的 IPC 服务端接口……因此本 crate 只依赖 foundation 与其他 platform」。而 `IdempotencyStore` 的完整路径是 `ep_adapter_db::port::IdempotencyStore`（同文件第 331 行原文：「第二段是端口定义，`ep_adapter_db::port::IdempotencyStore` 及其 `try_begin` 与 `finish` 两个方法」；02-data-foundation.md:409 复述同一落点）。在 Rust 中，要在中间件栈里留一个以该 trait 为类型的注入点（字段、泛型约束或 `Arc<dyn IdempotencyStore>`），ep-platform-runtime 必须把 ep-adapter-db 列为依赖，第 583 行「只依赖 foundation 与其他 platform」当场不成立，也违反基线第 1.3 节允许项第二条加「其余一律禁止」。这是裁定 B-03 判过的同一条口子，只是那次落在 ep-platform-release、这次落在 ep-platform-runtime，没有对应裁定收口。附带一处同源矛盾：基线第 1.2 节（00b-technical-baseline.md:58）说 ep-platform-runtime 只放「以 trait 表达的服务器骨架。具体 HTTP 与 IPC 传输实现分别留在对应的 ep-adapter-*」，但第 1.2 节适配层清单九个 crate（F-01 撤销 ep-adapter-db 后的实数）里没有任何 HTTP adapter，而第 583 行又把「HTTP 服务器与中间件栈骨架」直接放进 runtime，两处口径不一。
 
 **H-05**（major，置信度 high）　`11-cost-metrics-reporting.md:623`
 
@@ -1873,4 +2064,41 @@ crate 职责表这一格把「对 ep_foundation 三个 trait 的实现」的声�
 > 14. SBOM 生成成功，`cargo deny` 与依赖漏洞扫描零严重与高危，许可证清单通过；`xtask sbom` 另含一个断言 SBOM 中不出现 `ep-bench` 与 `ep-release-gate` 两个包名的负样例，与阶段 14 的发布门禁项 `RG-TOOLS-EXCLUDED` 同名同判据。
 
 断言的被测形态是「工作区里存在这两个包且它们泄漏进了 SBOM」，而这两个包在阶段 1 根本不存在：14-ops-backup-release.md:41-42 把 ep-bench 与 ep-release-gate 列为阶段 14 的第 10、11 项交付物，:57-58 给出其落点 tools/bench/ 与 tools/release-gate/ 并注明「不进入发布制品与 SBOM」；阶段 1 的 crate 清单（01-engineering-baseline.md:41-55）不含这两项。正向断言在阶段 1 恒真而无信息量；退出条件另要求的负样例按定义必须构建失败，可它需要把这两个包真正拉进 SBOM 才能触发，阶段 1 无从构造。不确定之处：若允许用手写的 SBOM 夹具而非真实工作区成员来充当负样例，则该负样例可造，本条降为「正向断言恒真、无判定力」而非完全不可执行 —— 计划正文未说明允许哪一种，我按字面执行判定。
+
+## 附录丁　本轮未裁定、须另行处置的事项
+
+本附录登记裁定 F-04 与 F-05 落地过程中确认、但本轮**刻意不裁**的事项。
+不裁的理由分两类：一类是现有文本自身有矛盾，裁定不得越过该矛盾冻结签名；
+另一类是本轮清单未点名，按「只报不动」纪律留待下一轮。
+
+### 丁一　现有文本自身矛盾，落码前须由相关阶段同批定（3 条）
+
+| 编号 | 事项 | 矛盾所在 | 须由谁定 |
+|---|---|---|---|
+| D-01 | `derive_blind_key` 的返回宽度 | 阶段 2 第 4.4 节定 `BlindIndex([u8; 16])`；同文件第 11 节假设三与 `finance.cash_accounts` 要求完整 32 字节；配置键 `EP__CRYPTO__BLIND_INDEX__BYTES` 写「按配置取 16 或 32」。三者不可同时成立 | 阶段 2 与阶段 5、10 同批 |
+| D-02 | 阶段 13b 八个自动测试 suite 的执行落点 | 把 RLS_MATRIX 等五个 suite 判给属主 crate，会使阶段 13b 改动三个未在其第 2.1 节登记的 crate，且覆盖率行只点名三个 crate。计划中无一处写明 authz、flow、reporting 已有可供 suite 调用的公开入口 | 阶段 13b |
+| D-03 | 自动测试从 core-server 受理到 job-worker 执行的派发载体 | 全卷无登记的事件或巡检承载该交接，而阶段 13 把事件类型冻结为十个。指名载体即可能触动该冻结 | 阶段 13b |
+
+### 丁二　本轮清单未点名，留待下一轮（5 条）
+
+| 编号 | 事项 | 落点 | 性质 |
+|---|---|---|---|
+| D-04 | A-06 的注册方与校验项计数有两套 | `09-ledger-period.md` 第 2 节写「阶段 7、8、9b、10、11 五个，校验项合计十六个」；`00-overview.md` 的 A-06 行与 R14 段写「阶段 7、8、9b、11 四个……共十五个」 | 既有互斥，与 H-08 同域但本轮裁定未触及 |
+| D-05 | `04-identity-authz.md` 第 2 节仍用单文件 `wiring.rs` 措辞 | 同文件开头已写两个 wiring 目录，`xtask` 的 `WIRING_DIRS` 也是两个目录，同一文件内两套并存 | 措辞不统一 |
+| D-06 | `03-platform-kernel.md` 有六处只写「KMS」不写 crate 名 | 第 879、967、1317、1455、1465、1529 行 | 与 F-04 不互斥，但落点不明确 |
+| D-07 | 阶段 7 的对外 trait 无「五个」数词，而他文件可能有该计数的复述 | `07-procurement-portal.md` 第 3 节 | 计数口径可能单边落空 |
+| D-08 | `12-service-project-asset.md` 的 job-worker 职责列写「检索索引传播事件的发布方」 | 与投影函数迁至 `ep-app-*` 不冲突，但落码时须确认索引消费者调用的是 `ep-app-service` 与 `ep-app-project` 的投影函数 | 落码期核对项 |
+
+### 丁三　本轮撤销的一条越权编辑
+
+回写期间，阶段 11 的编辑方与技术基线的编辑方对同一处冲突各做了一半且方向相反：
+基线一方把通则第七条通道二的角色约束收为「常规报表与经营看板一侧」并登记入第 12.1 节；
+阶段 11 一方则把三个 costing 视图的 `GRANT SELECT` 由 `ep_analyst_ro` 与 `ep_app_rw`
+收窄为只给 `ep_analyst_ro`。合成裁定明写「二者只能留一个」。
+
+取基线一方，撤销阶段 11 的收窄。理由是后者并未消解真正的冲突——
+第 186 行的三个视图属 costing，而第 630 行的 `ReconExecutor` 读的是
+`inventory.v_stock_value_entries` 且跑在 job-worker 自身连接池上，
+收窄 costing 视图的授权对该情形毫无作用；而撤销一个既有 `GRANT` 是运行期权限变更，
+若「无用例读这三个视图」的判断有误，故障在编译期没有任何信号。
 

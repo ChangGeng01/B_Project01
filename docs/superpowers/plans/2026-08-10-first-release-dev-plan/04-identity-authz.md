@@ -41,14 +41,14 @@
 
 ep-platform-identity 承载本地账号目录、凭据、多因子、设备登记、会话与令牌、重新认证挑战、账号锁定、受控应急本地账号。ep-platform-authz 承载 RBAC 与 ABAC 判定、记录级范围编译、字段级与密级过滤、职责分离、审批授权判定、审批链定义、高风险操作请求。
 
-依赖方向：ep-platform-identity 依赖 ep-foundation 与 ep-platform-authz；ep-platform-authz 依赖 ep-foundation、ep-platform-tenancy 与 ep-platform-release，最后一项只用其 A-19 的 ConfigItemApplier 端口，该端口由阶段 3a 交付且不带表与用例，不构成环。两者均不依赖任何 domain、application 与 adapter，符合基线第 1.3 节。identity 依赖 authz 而不是反向，理由是安全上下文的装配需要读取授权集合，而授权判定不需要知道凭据与会话如何产生；这条方向一旦反过来就会成环。
+依赖方向：ep-platform-identity 依赖 ep-foundation 与 ep-platform-authz；ep-platform-authz 依赖 ep-foundation、ep-platform-tenancy 与 ep-platform-release，最后一项只用其 A-19 的 ConfigItemApplier 端口，该端口由阶段 3a 交付且不带表与用例，不构成环。两者均不依赖任何 domain、application 与 adapter，符合基线第 1.3 节；按裁定 F-04，对 KMS 能力的使用只经 `ep_foundation::port::kms::KmsBackend`，载体实例由 apps 在 apps/core-server/src/wiring/ 与 apps/job-worker/src/wiring/ 两个目录下注入，本阶段不新增任何指向 ep-adapter-kms 的依赖边。identity 依赖 authz 而不是反向，理由是安全上下文的装配需要读取授权集合，而授权判定不需要知道凭据与会话如何产生；这条方向一旦反过来就会成环。
 
 #### 2.2 改动的既有 crate
 
 | crate | 改动内容 |
 |---|---|
 | ep-adapter-db-pg | 新增 identity/ 与 authz/ 两个仓储实现目录，一个仓储只访问自己 schema；新增 RLS 策略模板生成器对本阶段 13 张带法人列表的调用 |
-| ep-adapter-kms | 使用其信封加密接口封装 TOTP 种子与 X.509 信任锚引用，不改其接口 |
+| ep-adapter-kms | 本阶段零改动，列出只为交代 KMS 能力的取用位：按裁定 F-04，TOTP 种子与 X.509 信任锚引用的封装经 `ep_foundation::port::kms::KmsBackend` 的 `wrap` 与 `unwrap` 执行，载体实例由 apps/core-server/src/wiring/ 与 apps/job-worker/src/wiring/ 两个目录下的装配注入，ep-platform-identity 与 ep-platform-authz 均不依赖本 crate |
 | apps/core-server | 新增两层中间件（认证层、安全上下文与法人校验层）、新增本阶段全部路由、wiring.rs 中装配 identity 与 authz 的具体实现 |
 | apps/job-worker | 新增两个后台任务：过期会话与过期挑战清理、应急账号到期失效与轮换。授权快照重载不进 job-worker，见第 2.3 节 |
 | apps/portal-gateway | 不新增数据库连接，只新增把门户 Cookie 换为核心服务会话令牌的转发逻辑，其呈现层由门户阶段承担 |
@@ -808,7 +808,7 @@ checksum 与配置行重算值是否一致不进阻断判据。不一致时进�
 3. 策略模拟与影响分析。POST /api/v1/platform/authz-decisions/actions/evaluate 已具备对任意主体求值的能力，模拟只需在其上加一层“以候选配置版本求值”的入参，判定内核不变。
 4. 仓库维度（U-B-10）。若安全负责人决定新增仓库维度，落点是 object_scope_bindings 增加一列 warehouse_col 与 user_scope_grants 的 scope_kind 增加一个取值，但规格第 12.2 章的七个维度必须先修订，PRD 层不得自行增加维度。
 5. 破窗授权流程。受控应急本地账号的 allowed_action_set 是一个 text[] 加 CHECK，通用破窗恢复时可放宽该 CHECK，但规格第 12.1 章明确首版不含通用破窗，因此本阶段不预留 API。
-6. 字段级加密的覆盖面。解密位点本身不是预留项：按 A-28 首版已有实际加密字段，口径与字段投影路径上的唯一解密位点见第 4.7 节，SensitiveFieldDecryptor 的实现基于阶段 2 交付的 ep-adapter-kms，本阶段不自建第二套解封路径。预留的是覆盖面，U-A-12 决策把开户银行或其他字段改为字段级加密时，只增加登记行与物理列，本阶段的投影器与判定流水线不改；盲索引与受控投影按规格第 7.8 章由其所属阶段建设。
+6. 字段级加密的覆盖面。解密位点本身不是预留项：按 A-28 首版已有实际加密字段，口径与字段投影路径上的唯一解密位点见第 4.7 节，SensitiveFieldDecryptor 的实现基于阶段 2 在 `ep_foundation::port::kms` 定义的 `KmsBackend`，载体实现留在 ep-adapter-kms，实例由 apps/core-server/src/wiring/ 与 apps/job-worker/src/wiring/ 两个目录下的装配注入，本阶段不自建第二套解封路径。预留的是覆盖面，U-A-12 决策把开户银行或其他字段改为字段级加密时，只增加登记行与物理列，本阶段的投影器与判定流水线不改；盲索引与受控投影按规格第 7.8 章由其所属阶段建设。
 7. 移动端“把任务发送到桌面端继续”（U-K-08）。high_risk_requests 的 CLIENT_NOT_ALLOWED 错误响应中预留 advice 字段承载跳转说明，产品决策后只改文案不改逻辑。
 
 ---
