@@ -181,8 +181,9 @@ archive-writer 与 backup-writer 在本阶段不改动，本阶段只为其提�
 | 32 | `V202611020960__platform_msg_create_ops_views.sql` | platform_msg | 3b |
 | 33 | `V202611020970__platform_msg_backfill_append_only_registry.sql` | platform_msg | 3b |
 | 34 | `V202611020975__platform_msg_backfill_sensitive_field_registry.sql` | platform_msg | 3b |
+| 35 | `V202611020980__platform_core_backfill_unpoliced_table_registry.sql` | platform_core | 3b |
 
-第 9 至 14 号在 `platform_flow` 内的顺序保证被引用方先建，第 6 至 8 号在 `platform_meta` 内同理保证 `config_packages` 早于 `config_package_items` 与 `config_release_orders`；跨 schema 不建外键，故 `platform_flow` 早于 `platform_audit` 与 `platform_msg` 不构成引用问题。第 31 与 32 两个视图文件跨 schema 取数，按裁定通则第五条放在其主要创建对象所属 schema 的目录：第 31 号的视图建在 `platform_file`，取数涉及 `platform_audit`，放在 `db/migrations/platform_file/`；第 32 号的视图建在 `platform_msg`，取数涉及 `platform_flow` 与 `platform_audit`，放在 `db/migrations/platform_msg/`。两者的版本号都晚于其取数所涉全部对象的建表迁移。第 33 与 34 号是本阶段仅有的两个数据回填文件：第 33 号按裁定 B-02 向 `platform_core.append_only_registry` 登记三张仅追加表并挂接触发器，所涉 schema 为 `platform_core`、`platform_audit` 与 `platform_msg`；第 34 号按裁定 A-28 向 `platform_core.sensitive_field_registry` 登记 `platform_msg.push_registrations` 的 `token` 一行，所涉 schema 为 `platform_core` 与 `platform_msg`。两者的主要创建对象都在 `platform_msg`，按裁定通则第五条放在 `db/migrations/platform_msg/`，版本号都晚于所涉 `platform_core` 与 `platform_audit` 对象的建表迁移；第 33 号的登记行取值与挂接次序见第 3.3.7 节，第 34 号的逐列取值见表 19 之后一段。第 1 号属 3a 段，号段排在阶段 4 的 `V202610…` 之前；第 2 至 34 号属 3b 段，号段排在其后；两个号段互不重叠，也不与阶段 2 已占用的 `V20260901…` 号段冲突。
+第 9 至 14 号在 `platform_flow` 内的顺序保证被引用方先建，第 6 至 8 号在 `platform_meta` 内同理保证 `config_packages` 早于 `config_package_items` 与 `config_release_orders`；跨 schema 不建外键，故 `platform_flow` 早于 `platform_audit` 与 `platform_msg` 不构成引用问题。第 31 与 32 两个视图文件跨 schema 取数，按裁定通则第五条放在其主要创建对象所属 schema 的目录：第 31 号的视图建在 `platform_file`，取数涉及 `platform_audit`，放在 `db/migrations/platform_file/`；第 32 号的视图建在 `platform_msg`，取数涉及 `platform_flow` 与 `platform_audit`，放在 `db/migrations/platform_msg/`。两者的版本号都晚于其取数所涉全部对象的建表迁移。第 33、34 与 35 号是本阶段仅有的三个数据回填文件：第 33 号按裁定 B-02 向 `platform_core.append_only_registry` 登记三张仅追加表并挂接触发器，所涉 schema 为 `platform_core`、`platform_audit` 与 `platform_msg`；第 34 号按裁定 A-28 向 `platform_core.sensitive_field_registry` 登记 `platform_msg.push_registrations` 的 `token` 一行，所涉 schema 为 `platform_core` 与 `platform_msg`。这两个文件的主要创建对象都在 `platform_msg`，按裁定通则第五条放在 `db/migrations/platform_msg/`，版本号都晚于所涉 `platform_core` 与 `platform_audit` 对象的建表迁移；第 33 号的登记行取值与挂接次序见第 3.3.7 节，第 34 号的逐列取值见表 19 之后一段。第 35 号按基线第 3.8 节的正向登记制，向阶段 2 交付的 `platform_core.unpoliced_table_registry` 写入本阶段六张不带法人列的表各一行，即 `platform_core` 的 `module_registrations`、`license_grants`、`feature_flags` 与 `platform_meta` 的 `config_packages`、`config_package_items`、`config_release_orders`；`schema_name`、`table_name`、`admission_basis`、`isolation_entry` 与 `matrix_case_id` 五列按阶段 2 冻结的列集填写，`admission_basis` 六行一律取 `SAME_FOR_ALL_ENTITIES`，`isolation_entry` 逐表写明该表法人可见性所落的应用层入口，`matrix_case_id` 取第 3.8.2 节对六张部署级表所设可见性断言用例的标识。该文件的主要创建对象是 `platform_core.unpoliced_table_registry` 的登记行，按裁定通则第五条放在 `db/migrations/platform_core/`，版本号晚于本阶段全部建表迁移，故列在最后；其 `-- rollback:` 段按 `schema_name` 与 `table_name` 两列删除本阶段登记的六行。第 1 号属 3a 段，号段排在阶段 4 的 `V202610…` 之前；第 2 至 35 号属 3b 段，号段排在其后；两个号段互不重叠，也不与阶段 2 已占用的 `V20260901…` 号段冲突。
 
 #### 3.3.2 公共列的适用口径
 
@@ -192,7 +193,7 @@ archive-writer 与 backup-writer 在本阶段不改动，本阶段只为其提�
 - 参与派生存储与密级过滤的表带这两列：`notifications`、`attachment_objects`、`attachment_versions`、`process_instances`、`process_tasks`。
 - 仅追加表不带 `row_version`、`updated_at`、`updated_by`：`audit_events`、`outbox_events`、`dead_letters`、`process_steps`、`process_compensations`、`inbox_consumptions`、`scan_results`、`upload_parts`。其中 `outbox_events` 与 `dead_letters` 的状态列是投递控制列，其信封与载荷仅追加，见第 3.12.2 节澄清二。
 - 上述仅追加表中，只有 `process_compensations` 带 `reverses_id`，指向被补偿的 `process_steps.id`。其余七张不设该列，理由与请求基线第 4 节做的修订见第 3.12.2 节澄清二。
-- 部署级表不带 `legal_entity_id` 与 `data_scope_tags`：`platform_core.module_registrations`、`platform_core.license_grants`、`platform_core.feature_flags`、`platform_meta.config_packages`、`platform_meta.config_package_items`、`platform_meta.config_release_orders`。前三张按裁定 A-05 属全局配置字典类，三列全不带；后三张按阶段 13 计划第 3.2.10 至 3.2.12 节带 `security_level`，不带另两列。六张表都不建行级安全策略。
+- 部署级表不带 `legal_entity_id` 与 `data_scope_tags`：`platform_core.module_registrations`、`platform_core.license_grants`、`platform_core.feature_flags`、`platform_meta.config_packages`、`platform_meta.config_package_items`、`platform_meta.config_release_orders`。前三张按裁定 A-05 三列全不带；后三张按阶段 13 计划第 3.2.10 至 3.2.12 节带 `security_level`，不带另两列。六张表都不建行级安全策略，并按基线第 3.8 节的正向登记制在 `platform_core.unpoliced_table_registry` 中逐表登记一行，六行的 `admission_basis` 一律取 `SAME_FOR_ALL_ENTITIES`，即行在本部署内对全部法人取值相同；基线第 3.8 节原列的“不带 `legal_entity_id` 的表只有四类”这条封闭枚举与其中的全局配置字典一类已由阶段 2 撤销并由该登记表取代，本阶段不再据其归类。六行登记由第 35 号迁移写入，见第 3.3.1 节。
 
 #### 3.3.3 索引命名的长度规则
 
@@ -1516,9 +1517,9 @@ E2E-6 配置发布最小通道（3b 段）：创建含一个 `FLOW_DEFINITION` �
 
 ### 3.9 退出条件
 
-下列 32 项全部达成才算本阶段完成，每项都可由 CI 产物或测试报告客观判定。第 29 项是 3a 段的独立闸门，必须在阶段 4 开工前达成；第 32 项是 3b-1 批的独立闸门，必须在 T0 开跑前达成；其余各项在 3b 段结束时判定。
+下列 33 项全部达成才算本阶段完成，每项都可由 CI 产物或测试报告客观判定。第 29 项是 3a 段的独立闸门，必须在阶段 4 开工前达成；第 32 项是 3b-1 批的独立闸门，必须在 T0 开跑前达成；其余各项在 3b 段结束时判定。
 
-1. 34 个迁移文件在空库上按文件版本号全序执行成功，每个文件的 `-- rollback:` 段可执行或已注明只能用备份回退；3a 段的第 1 号与 3b 段的第 2 至 34 号在含阶段 4 迁移的合并环境上按版本号单调应用成功。
+1. 35 个迁移文件在空库上按文件版本号全序执行成功，每个文件的 `-- rollback:` 段可执行或已注明只能用备份回退；3a 段的第 1 号与 3b 段的第 2 至 35 号在含阶段 4 迁移的合并环境上按版本号单调应用成功。
 2. 30 张新表中，24 张带 `legal_entity_id` 的表全部 `ENABLE` 且 `FORCE` 行级安全，策略按统一模板生成，`tests/rls_matrix` 的本阶段部分八类全通过；六张部署级表按裁定 A-05 与 A-27 不带 `legal_entity_id`、不建策略，且已断言其可见性不随 `app.legal_entity_id` 变化。
 3. 运行期账号 `ep_app_rw` 在本阶段表上无 DDL、无策略管理权限，`--check` 的 `rls-enabled-and-forced` 与 `runtime-role-privileges-bounded` 两项通过。
 4. `--check` 的十三个命名项（基线第 7.3 节现行十项中除 `offsite-sink-requirements` 外的九项，加本阶段四项 `audit-evidence-store-writable`、`audit-signing-key-usable`、`attachment-store-ready`、`event-catalog-consistent`）在部署环境上全部通过并输出结构化报告，报告逐项给出 `Blocking` 或 `Degrading` 级别；`--check` 对 FAILED 与 DEGRADED 一律非零退出，`event-catalog-consistent` 在注入不一致时不阻止进程启动而是写出一条降级窗口。`offsite-sink-requirements` 按基线第 12 节通则第六条单列：该项在阶段 1 已整条推迟，其被测输入即落点判定与 `DegradationLedger` 登记均不在本阶段交付，因此本阶段不注册该项、不为其输出通过结论，也不计入上述十三项；重新计入的触发谓词是该项已出现在 `SelfCheckRegistry` 的注册清单中，由判定工具自身观测，不以阶段号翻牌。
@@ -1549,7 +1550,7 @@ E2E-6 配置发布最小通道（3b 段）：创建含一个 `FLOW_DEFINITION` �
 29. 3a 段闸门：`platform_msg.idempotency_keys` 与 `IdempotencyStore` 实现、`crates/platform/release/src/port/config_item.rs` 端口与注册表两项已完成并通过各自单元测试；3a 段排在阶段 4 之前，`ep-platform-identity` 与 `ep-platform-authz` 两个 crate 此时尚未建立，故这两项所在 crate 的 `Cargo.toml` 中不存在指向它们的依赖项，本条按其 `Cargo.toml` 直读判定，不另立按 crate 逐项比对期望依赖清单的 `cargo metadata` 自检脚本。
 30. 按裁定 B-02，`platform_core.append_only_registry` 中存在 `platform_audit.audit_events`、`platform_msg.outbox_events` 与 `platform_msg.dead_letters` 三行登记，`mode` 与 `mutable_columns` 按第 3.3.7 节的取值表逐项一致，三张表上的 `assert_append_only` 与 `assert_immutable_columns` 触发器已按登记挂接，`xtask sqlcheck` 执行 `db/checks/append_only_consistency.sql` 返回零行。
 31. 按裁定 A-28，第 34 号迁移执行后 `platform_core.sensitive_field_registry` 中存在 `platform_msg.push_registrations` 的 `token` 一行，`is_field_encrypted` 为真、`blind_index` 为 `EXACT`、`blind_index_column` 为 `token_bidx`、`mask_style` 为 `FULL`、`normalization` 为 `NONE`，物理表上存在 `token_enc bytea` 且不存在同名明文列 `token`，阶段 2 的 `db/checks/11` 返回零行。
-32. 3b-1 批闸门：判定四列出的六个 T0 切片在一次连贯执行中成立，即一次取号、一次审计追加与段行链接、一次 Outbox 写入与消费、一条同事务写入的站内通知、一个单审批节点流程实例从创建经人工任务完成到结束、一次经最小发布通道把该流程定义发布到 `platform_flow.process_definitions`，六项在同一测试进程内按上述次序跑通并留下可按实例查询的完整审计轨迹；该闸门不判定附件、检索、推送、定时器、补偿、许可、死信、混沌与任何性能度量项，也不要求 `ep-datagen` 的基准数据集。
+32. 3b-1 批闸门：判定四列出的六个 T0 切片在一次连贯执行中成立，即一次取号、一次审计追加与段行链接、一次 Outbox 写入与消费、一条同事务写入的站内通知、一个单审批节点流程实例从创建经人工任务完成到结束、一次经最小发布通道把该流程定义发布到 `platform_flow.process_definitions`，六项在同一测试进程内按上述次序跑通并留下可按实例查询的完整审计轨迹；该闸门不判定附件、检索、推送、定时器、补偿、许可、死信、混沌与任何性能度量项，也不要求 `ep-datagen` 的基准数据集。33. 按基线第 3.8 节的正向登记制，第 35 号迁移执行后 `platform_core.unpoliced_table_registry` 中本阶段六张不带法人列的部署级表各有一行登记，六行的 `admission_basis` 均为 `SAME_FOR_ALL_ENTITIES`，`isolation_entry` 与 `matrix_case_id` 两列非空且 `matrix_case_id` 可在 `tests/rls_matrix` 中命中第 3.8.2 节所设的对应用例，`db/checks` 的第十三项（`db/checks/13_unpoliced_registry.sql`，由 `xtask sqlcheck` 执行）返回零行。
 
 ---
 

@@ -136,7 +136,7 @@ ep-platform-identity 承载本地账号目录、凭据、多因子、设备登�
 
 表 3-10 platform_authz.permission_items（不带法人列，按第 12.2 节登记）：code text pk（形如 sales.sales_order）、module_code text not null（15 个模块码或 platform）、function_point text not null、allowed_actions text[] not null（子集取自 VIEW、CREATE、UPDATE、SUBMIT、APPROVE、EXPORT 六个动作）、object_type text not null、description text、created_*、updated_*、row_version。索引 pk_permission_items、ix_permission_items_module_code。六个动作照抄 PRD 第 10.2.2 节“至少含查看、新建、修改、提交、审批、导出”，本阶段取值为恰好这六个，不多不少。另有约束 ck_permission_items_forbidden_codes，拒绝写入以 platform.legal_entity_isolation 与 platform.direct_db_access 两个前缀开头的 code，即关闭或修改法人隔离机制与事务业务库直连两类权限项写不进这张表；该约束替代原先的同名启动自检项，见第 7 节。
 
-表 3-11 platform_authz.object_scope_bindings（全局字典）：object_type text pk、schema_name text not null、table_name text not null、owner_user_col text null、owning_dept_col text null、project_col text null、customer_col text null、security_level_col text not null default 'security_level'、created_*、updated_*、row_version。这张表是记录级判定的落点：各业务模块在其阶段的 wiring 中登记自己对象的范围锚列，本阶段只登记 platform 自身的三个对象类型（platform.user_accounts、platform.roles、platform.high_risk_requests）并提供登记接口，业务对象的登记在其所属阶段完成。没有登记的对象类型在记录级判定阶段一律拒绝，不默认放行。
+表 3-11 platform_authz.object_scope_bindings（不带法人列，按第 12.2 节登记）：object_type text pk、schema_name text not null、table_name text not null、owner_user_col text null、owning_dept_col text null、project_col text null、customer_col text null、security_level_col text not null default 'security_level'、created_*、updated_*、row_version。这张表是记录级判定的落点：各业务模块在其阶段的 wiring 中登记自己对象的范围锚列，本阶段只登记 platform 自身的三个对象类型（platform.user_accounts、platform.roles、platform.high_risk_requests）并提供登记接口，业务对象的登记在其所属阶段完成。没有登记的对象类型在记录级判定阶段一律拒绝，不默认放行。
 
 表 3-12 platform_authz.roles（档案类）：id、legal_entity_id、code、name、duty_class text null（SYSTEM、DATA、SECURITY、AUDIT、KEY、CONFIG，业务角色为空）、is_portal_role boolean not null default false、lifecycle_state text not null（DRAFT、PENDING_RELEASE、EFFECTIVE、SUPERSEDED、RETIRED）、retired_at timestamptz null、is_active、deactivated_at、公共列。索引 pk、ux_roles_legal_entity_id_code、ix_roles_legal_entity_id_created_at。角色一律按法人建立，不做跨法人的全局角色，理由是全局角色会立刻在这张表上制造一处需要绕过行级策略的读路径，而基线第 3.8 节不允许任何绕过。2 个法人下的复制成本可接受。
 
@@ -178,7 +178,7 @@ create policy rls_user_legal_entity_grants_le on platform_authz.user_legal_entit
   with check (legal_entity_id = nullif(current_setting('app.legal_entity_id', true), '')::uuid);
 ```
 
-其余 12 张同构，只换表名。platform_core 的 9 张身份主体表与 platform_authz 的 2 张全局字典表不建策略。
+其余 12 张同构，只换表名。platform_core 的 9 张身份主体表与 platform_authz 的 permission_items、object_scope_bindings 两张不建策略；这 11 张按基线第 3.8 节的正向登记制在 platform_core.unpoliced_table_registry 中逐表登记一行，admission_basis 前 9 张取 ISOLATION_OR_DEPLOYMENT_METADATA、后 2 张取 SAME_FOR_ALL_ENTITIES，登记行由第 3.5 节第 29 号回填迁移一次写入。
 
 #### 3.5 迁移编号与顺序
 

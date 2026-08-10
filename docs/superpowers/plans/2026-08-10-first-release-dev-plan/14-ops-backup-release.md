@@ -21,7 +21,7 @@ T0 贯通线。阶段 3b-1 结束后、阶段 5 全量开工之前插入一条�
 
 空实现的硬规则。原裁定通则第三条那套 Noop 空实现加 TODO 加验收顺延的通用机制整体删除，改为一条硬规则：跨模块同步调用的被调方必须与调用方同批交付；做不到就把该用例整条推迟到被调方所在批次；两者都不可行时才用降级窗口把缺席表达成台账事实。三者之外不允许任何形态的替身，也不允许任何返回零值、空集合、固定业务分支或恒定成功的实现。本阶段没有向后续阶段留下的注入点。DisposalPort 是通则第三条例外清单三项之一，例外档的落法就是降级窗口加直接拒绝，不走整条推迟：处置受理路由由阶段 3b 注册，阶段 3b 至阶段 13 之间 apps/core-server/src/wiring/ 与 apps/job-worker/src/wiring/ 两个目录内不出现该端口的任何替身也不出现任何注入行，物理删除请求一律以 PLATFORM.DISPOSAL.NOT_DELIVERED 直接拒绝，category 取 BUSINESS_CONFLICT，HTTP 409，不可重试，同时开一条 kind 取 PORT_NOT_IMPLEMENTED 且 subject 取 DisposalPort 的降级窗口，界面与健康端点显式呈现该能力未交付，指标 ep_degradation_windows_open 自动计数；本阶段是该端口的唯一实现方，注入 OpsDisposalService 后关闭该窗口。该规则由第 8.7 节的发布门禁项 RG-UNWIRED-ABSENT 强制，其判据提供方是阶段 1 随 xtask 交付并配负样例的 archcheck 规则 unwired-absent，断言对象是上述两个目录下的全部文件；原先那句由 xtask 门禁统计空实现数量在十一个子命令中无落点，一并删除。
 
-启动自检的口径。启动自检不再充当数据一致性闸门。自检项按 severity 分 Blocking 与 Degrading 两档，判读运行期可变业务数据行的项一律不进 Blocking 档，闸门移到部署与升级前置的 --check。本阶段实现的 offsite-sink-requirements 全部子判定一律为 Degrading，任一不满足只按降级状态启动并持续告警、记录暴露窗口，不阻止任何进程投入运行，逐项口径见第 7 节末。archive-writer 与 backup-writer 只持 REPLICATION 属性连接、不持运行期应用账号，对全部 SQL 类自检项一律标 NotApplicable，基线第 7.3 节十三项为全部进程共有这一句随之作废并回写基线。
+启动自检的口径。启动自检不再充当数据一致性闸门。自检项按 severity 分 Blocking 与 Degrading 两档，判读运行期可变业务数据行的项一律不进 Blocking 档，闸门移到部署与升级前置的 --check。本阶段实现的 offsite-sink-requirements 除第八个子判定外一律为 Degrading，任一不满足只按降级状态启动并持续告警、记录暴露窗口，不阻止任何进程投入运行；第八个子判定即规格第 7.7 章两个专用角色的三项遏制手段，其 severity 为 Blocking，部署期任一项未落实时该角色不得启用、archive-writer 与 backup-writer 不得投入运行，该项判读的是部署期配置与角色属性而非运行期可变业务数据行，不违反上句的分档规则。逐项口径见第 7 节末。archive-writer 与 backup-writer 只持 REPLICATION 属性连接、不持运行期应用账号，对全部 SQL 类自检项一律标 NotApplicable，基线第 7.3 节十三项为全部进程共有这一句随之作废并回写基线。
 
 ---
 
@@ -205,8 +205,9 @@ ep_ops_ro 授予上述五个视图的 SELECT，不授予任何基表。ep_app_rw
 18. V202611031035__platform_ops_views.sql
 19. V202611031040__platform_ops_grants_ops_ro.sql
 20. V202611031045__backfill_platform_ops_singletons.sql，插入 archive_channel 与 backup_runner_slot 两行常量。
+21. V202611031050__platform_core_backfill_unpoliced_table_registry.sql，落在 db/migrations/platform_core/ 目录下，其主要创建对象是 platform_core.unpoliced_table_registry 的登记行，按裁定通则第五条随主要创建对象所属 schema 归目录，版本号晚于本阶段全部建表迁移，故列在最后。按基线第 3.8 节的正向登记制，向阶段 2 交付的该登记表写入本阶段新建的 16 张 platform_ops 表各一行，五列体例照抄阶段 4 第 29 号迁移，即 schema_name、table_name、admission_basis、isolation_entry 与 matrix_case_id。16 行的 admission_basis 一律取 ISOLATION_OR_DEPLOYMENT_METADATA，依据是第 0 节偏离二已自证的准入判据，即这些表记录的是部署自身的元数据而非任一法人的业务数据；isolation_entry 一律取第 5 节运维中心只读 API 按运维管理员、安全管理员与审计管理员三类角色的 ABAC 判定；matrix_case_id 取该入口在 tests/rls_matrix 中的用例标识。第 3.1 节表 3 的 degradation_windows 由阶段 2 建表并已含在阶段 2 登记的八行内，本文件不重复写入，以免触发 ux_unpoliced_table_registry_schema_table 两列唯一冲突。
 
-每个文件头部带 -- rollback: 段。第 7 号与第 9 号两个单行表的回退为 DROP TABLE；第 3 号回退为把 kind 的 CHECK 取值收回阶段 2 的三个、删除本阶段追加的两条 CHECK 与三个索引，不删表、不改名任何取值；第 20 号回退为按常量 id 置 archive_channel.state 与 backup_runner_slot.current_backup_set_id 为初值，不删除行。除第 3 号外全部为新增表与新增索引，第 3 号为约束、取值扩展与索引的在线增补，均属基线第 3.9 节的在线变更范围，索引一律 CREATE INDEX CONCURRENTLY，迁移会话固定 lock_timeout 5s 与 statement_timeout 30min。
+每个文件头部带 -- rollback: 段。第 7 号与第 9 号两个单行表的回退为 DROP TABLE；第 3 号回退为把 kind 的 CHECK 取值收回阶段 2 的三个、删除本阶段追加的两条 CHECK 与三个索引，不删表、不改名任何取值；第 20 号回退为按常量 id 置 archive_channel.state 与 backup_runner_slot.current_backup_set_id 为初值，不删除行；第 21 号回退为按 schema_name 与 table_name 两列删除本阶段登记的 16 行，不触及阶段 2 登记的八行。除第 3 号、第 20 号与第 21 号外全部为新增表与新增索引，第 3 号为约束、取值扩展与索引的在线增补，第 20 号与第 21 号为常量行与登记行的数据回填，均属基线第 3.9 节的在线变更范围，索引一律 CREATE INDEX CONCURRENTLY，迁移会话固定 lock_timeout 5s 与 statement_timeout 30min。
 
 ---
 
@@ -448,7 +449,7 @@ PLATFORM.DEGRADATION_WINDOW.NOT_SUPPRESSIBLE、PLATFORM.DEGRADATION_WINDOW.ALREA
 | EP__KEY_RECOVERY__VERIFICATION_INTERVAL_DAYS | u32 | 183 | 热生效 | 每 6 个月核验 |
 | EP__KEY_RECOVERY__SHARD_PICKUP_SLA_HOURS | u32 | 无，必填 | 热生效 | 未填即不得宣称 4 小时 RTO |
 
-启动自检的本阶段落地。基线第 7.3 节的 offsite-sink-requirements 项即服务器之外落点的三项最低要求判定，由本阶段实现，细化为八个子判定，不新增自检项，自检项一律按注册名标识、不用序号：落点在线可写、平台可自动写入、写入失败可被平台检测；介质类型判定结论存在；部署级备份加密密钥可解引用；落点访问控制核对结论已写入部署记录；密钥恢复材料的分片取件时限已约定；规格第 7.7 章两个专用角色的三项遏制手段已落实，其中 pg_hba 只允许这两个角色从本机连接一条并入该项同批断言。八个子判定的 severity 一律为 Degrading，任一不满足都按降级状态启动并持续告警、开对应暴露窗口，连续归档与每日全量备份照常执行。第八项不再决定这两个角色是否启用，也不再决定两个写出进程是否投入运行；理由是单机私有化形态下确定性的耐久性损失重于一个自认拦不住本机特权主体的保密控制，用一处配置漏项换来这台机器长期没有备份是不可接受的交换。该结论回写规格第 7.7 章与第 21.21 章，删去其中缺一不得启用该角色与两个写出进程随之不得投入运行两句。--check 模式执行本进程适用的全部已注册自检项并按注册顺序输出结构化报告后退出，任一项为 FAILED 或 DEGRADED 均以非零码退出，用于部署验收与升级前置校验；archive-writer 与 backup-writer 只持 REPLICATION 属性连接，对全部 SQL 类自检项标 NotApplicable。
+启动自检的本阶段落地。基线第 7.3 节的 offsite-sink-requirements 项即服务器之外落点的三项最低要求判定，由本阶段实现，细化为八个子判定，不新增自检项，自检项一律按注册名标识、不用序号：落点在线可写、平台可自动写入、写入失败可被平台检测；介质类型判定结论存在；部署级备份加密密钥可解引用；落点访问控制核对结论已写入部署记录；密钥恢复材料的分片取件时限已约定；规格第 7.7 章两个专用角色的三项遏制手段已落实，其中 pg_hba 只允许这两个角色从本机连接一条并入该项同批断言。前七个子判定的 severity 为 Degrading，任一不满足都按降级状态启动并持续告警、开对应暴露窗口，连续归档与每日全量备份照常执行。第八项的 severity 为 Blocking，按规格第 7.7 章原文执行：三项遏制手段缺一不得启用这两个专用角色，两个写出进程随之不得投入运行，该状态按第 15.3 章持续告警并记录暴露窗口，条目的 kind 取 WRITER_NOT_IN_SERVICE，其 basis 载明未落实的是三项中的哪一项与缺失起始时间，v_rpo_status 的两行按写出进程未在运行这一客观事实取 WriterNotInService 依据展示。唯一的运行期例外是该章第三项自身已写明的那一支：这两个角色已启用之后，第 4.8 节的比对连续两个周期未产生比对结论的，只按第 15.3 章告警并记录暴露窗口，两个写出进程照常运行，连续归档与每日全量备份不因此停止。本阶段不修改规格第 7.7 章与第 21.21 章的任何一句，也不把部署期未落实放宽为降级启动；若要改为降级启动，须先经产品负责人与安全负责人批准修订该两章、并同批修订技术基线第 0 节把该章列为最高优先级的条款，再由本阶段承接，在此之前本阶段按规格取值。--check 模式执行本进程适用的全部已注册自检项并按注册顺序输出结构化报告后退出，任一项为 FAILED 或 DEGRADED 均以非零码退出，用于部署验收与升级前置校验；archive-writer 与 backup-writer 只持 REPLICATION 属性连接，对全部 SQL 类自检项标 NotApplicable。
 
 ---
 
@@ -492,7 +493,7 @@ PLATFORM.DEGRADATION_WINDOW.NOT_SUPPRESSIBLE、PLATFORM.DEGRADATION_WINDOW.ALREA
 9. 未知复制会话检出：制造一个不在归档槽白名单内的复制槽与一条角色不属于两个写出进程的复制会话，验证在下一次保留量采样内告警并写审计，且该检出未使用任何独立连接、独立表与独立配置键。
 10. 部署级备份加密：落点上全部写出对象为密文，无恢复材料时无法读出任何业务数据，含未被字段级加密的明文业务表内容；以写出组件系统账户之外的身份读取落点被拒绝并告警。该项直接对应规格第 17.2 章数据保护控制与销毁证明测试的落点判据与第 22 章第 8 条。
 11. 两个专用角色的越权测试：无法读取任何业务表、无法执行任何 DDL、无法从服务器之外建立连接、无法经界面与 API 借用。该项属发布门禁与第 7.3 章数据库认证套件必测项，并入 tests/rls_matrix 目标执行，断言经阶段 2 按 C-05 提供的 assert_replication_role_containment，本阶段不重复实现同名断言函数。
-12. 三项遏制手段任一缺失时按降级状态启动并持续告警、开对应暴露窗口，验证两个写出进程照常投入运行、连续归档与每日全量备份不停止，且该缺失不改变任一角色的启用状态。
+12. 部署期三项遏制手段任一未落实时，验证这两个专用角色不被启用、archive-writer 与 backup-writer 不投入运行、--check 以非零码退出，并开一条 kind 取 WRITER_NOT_IN_SERVICE 的暴露窗口，其 basis 载明未落实的是三项中的哪一项与缺失起始时间；补齐该项后验证角色启用、两个写出进程投入运行、该窗口闭合。另验一次规格第三项的运行期例外：这两个角色已启用之后，第 4.8 节的比对连续两个周期未产生比对结论时只告警并记录暴露窗口，两个写出进程照常运行，连续归档与每日全量备份不停止。
 13. 时间点恢复：把库恢复到指定 R，验证数据一致。
 14. core-server 不可用期间写出继续、上报进 spool、恢复后补写不重不漏。
 15. 混沌与故障注入六类：依赖服务超时、连接池与内存资源耗尽、消息积压、系统时钟漂移、磁盘写满、进程崩溃后重启恢复；预期行为为核心交易按第 15.1 章返回可重试或明确失败、不产生数据不一致、故障移除后 5 分钟内自愈；进程崩溃场景另验证重启后未完成任务自动恢复、已确认事务零丢失。
@@ -550,12 +551,12 @@ ep-release-gate 逐项判定，判定结论进入发布证据包，任一为否�
 全部为可客观判定项。
 
 1. archive-writer、backup-writer、ops-agent 三个进程在 BC-1 基线组合上以 --check 通过本进程适用的全部已注册自检项，两个写出进程对 SQL 类自检项一律标 NotApplicable，报告中无 FAILED 也无 DEGRADED；并在生产配置下连续运行不少于 7 个自然日，期间三类写出周期无一次超过 15 分钟。
-2. 第 3 节的 17 张表（其中 degradation_windows 由阶段 2 建立，本阶段只做取值、约束与索引扩展）、5 个视图与 20 个迁移文件全部落库，每个迁移带 rollback 段，platform_core.schema_history 与二进制期望版本一致。
+2. 第 3 节的 17 张表（其中 degradation_windows 由阶段 2 建立，本阶段只做取值、约束与索引扩展）、5 个视图与 21 个迁移文件全部落库，每个迁移带 rollback 段，platform_core.schema_history 与二进制期望版本一致。
 3. 归档通道状态机的八条迁移在集成测试中逐条通过，落点可写与不可写两支各完整走通一次，暂停态在落点恢复后自动转入重建且无需人工发起。
 4. 台账十八类 kind 的开闭各至少一条实证记录；OFFSITE_SINK_NOT_CONFIGURED 这一类不可关闭告警在管理员尝试关闭时被拒并写审计；其余类含 WRITER_NOT_IN_SERVICE 的抑制与静音记名记时写入审计；同一 kind 下 subject 不同的两条窗口可同时活动且各自独立开闭。
 5. v_rpo_status 在七种依据下各输出一次正确取值，且在任一降级、未达成或承诺不成立状态下均未输出 900。
 6. 落点上的全部写出对象为密文；无恢复材料时无法从副本读出任何业务数据，含未被字段级加密的明文业务表内容；以写出组件系统账户之外的身份读取落点被拒绝并告警；落点访问控制核对结论与实测证据已写入部署记录。
-7. 两个专用角色的越权测试在 tests/rls_matrix 目标内全部通过，断言取阶段 2 提供的 assert_replication_role_containment，本阶段无同名函数的第二份实现；三项遏制手段任一缺失时按降级状态启动并持续告警，两个写出进程照常投入运行，连续归档与每日全量备份不停止，交付说明中已按第 21.21 章披露这三项遏制都不阻止本机特权主体这条路径。
+7. 两个专用角色的越权测试在 tests/rls_matrix 目标内全部通过，断言取阶段 2 提供的 assert_replication_role_containment，本阶段无同名函数的第二份实现；部署期三项遏制手段任一未落实时这两个专用角色不被启用、两个写出进程不投入运行、--check 以非零码退出，且有一条载明缺失项的 WRITER_NOT_IN_SERVICE 窗口，补齐后角色启用、两个写出进程投入运行、该窗口闭合，开闭两端各有一条实证记录；仅该章第三项在角色已启用之后的运行期连续两个周期未产生比对结论时按告警与暴露窗口处理，两个写出进程照常运行、连续归档与每日全量备份不停止；交付说明中已按第 21.21 章披露这三项遏制都不阻止本机特权主体这条路径。
 8. 未知复制槽与未知复制会话的检出随保留量采样周期持续执行；注入的一个白名单外复制槽与一条非写出进程复制会话均在下一次采样内被检出并写审计；本阶段未为此建立任何独立连接、独立表、独立指标与独立配置键，只读分析池的交互式并发已恢复为 10。
 9. 附录 A.6 整机失效恢复与密钥恢复材料隔离恢复两类演练各执行两次且两次均达标，四份演练报告齐备，其中附件元数据与正文的逐条比对结论、未通过条目清单与该校验实际耗时单独留证，恢复模式的不变量校验分批取值已冻结。
 10. 附录 A.1 至 A.4 的完整基线测试执行一次，第 8.5 节八项必判项全部成立，全部必记项已记入认证报告，服务器规格随该报告冻结；cgroup 只保留三类调优取值且不进认证冻结范围，硬件变更只改这三个数字，不重跑配额认证。
@@ -570,6 +571,7 @@ ep-release-gate 逐项判定，判定结论进入发布证据包，任一为否�
 19. 本阶段未注册任何新指标，docs/metrics-catalog.md 中无本阶段新增条目；ep_degradation_windows_open 由阶段 2 注册并填充，本阶段只扩展其 kind 取值；ep_db_pool_connections 与 ep_db_statement_duration_seconds 由阶段 1 注册，本阶段未重复登记；原裁定 C-22 的 ep_replication_crosscheck_age_seconds 已撤销，阶段 2 与本阶段均不登记。
 20. platform_ops.degradation_windows 的 kind 取值已由阶段 2 的 3 个扩展至 18 个，两条 CHECK 与三个索引已追加，本阶段未对阶段 2 已交付的任何取值改名、也未增删该表的任何列；阶段 2 交付的 subject 列、ux_degradation_windows_kind_scope_closed 与 ck_degradation_windows_open_order 未被本阶段改写。
 21. 本阶段全部 /api/v1/ 路由的能力域码与动作类别常量已按 A-20 声明在 crates/platform/obs/src/capability.rs，能力域一律取 foundation::CapabilityDomain::PlatformAdminLowcodeOps，动作类别取 foundation::ActionClass，xtask configdoc 通过。
+22. 本阶段新建的 16 张 platform_ops 表在 platform_core.unpoliced_table_registry 中各有一行登记，schema_name、table_name、admission_basis、isolation_entry 与 matrix_case_id 五列取值齐备，且 db/checks 的第十三项返回零行；阶段 2 登记的八行未被本阶段改写，degradation_windows 在该表中不产生第二行。
 
 ---
 
@@ -577,7 +579,7 @@ ep-release-gate 逐项判定，判定结论进入发布证据包，任一为否�
 
 规格条目。
 - 第 7.5 章：应用级不可变四项中的每份备份自动校验、至少一份备份落在服务器之外；审计证据存储与文件使用独立路径与独立保留策略；另承接一句诚实披露，即单机同机部署下备份、报表与对账在极端情况下仍可能影响交易时延，平台不提供隔离保证，该句进交付说明。
-- 第 7.7 章：两个写出进程的连接与复制槽枚举（按 pg_receivewal 与 pg_basebackup 形态重取为稳态一条连接一个槽、备份窗口内不超过三条连接两个槽）、本机 WAL 暂存上限、四类上报路径、未知复制槽与未知复制会话的检出、三项角色侧遏制手段、越权测试项；三项遏制手段的落实与否不再决定角色是否启用，也不再决定两个写出进程是否投入运行，该章相应两句由本阶段回写删除。
+- 第 7.7 章：两个写出进程的连接与复制槽枚举（按 pg_receivewal 与 pg_basebackup 形态重取为稳态一条连接一个槽、备份窗口内不超过三条连接两个槽）、本机 WAL 暂存上限、四类上报路径、未知复制槽与未知复制会话的检出、三项角色侧遏制手段、越权测试项；三项角色侧遏制手段按该章原文落地，部署期缺一不得启用该角色、两个写出进程随之不得投入运行，仅该章第三项自身写明的运行期例外保留，即角色已启用之后比对连续两个周期未产生比对结论时照常运行并持续告警；本阶段不回写删除该章任何一句。
 - 第 7.8 章与第 12.3 章：部署级备份加密密钥为实例级、不属任一法人密钥域、载体只有内置 KMS 与客户自有硬件密码机；密钥恢复材料的分片、双人控制与每 6 个月核验。
 - 第 12.5 章：审计证据存储向落点的写出周期不超过 15 分钟并自动校验；最近一次成功锚定时间在运维中心可见且超期告警。
 - 第 13.1 章：恢复模式的资源档位；文件存储正文读写按发起进程计费。cgroup 由九行三列冻结配额表降为三类调优取值，即每个 unit 一个 memory.max、backup-writer 一个 io.max 硬上限、archive-writer 与数据库的 io.weight 高于 backup-writer，CPU 一列整列删除，取值写进部署骨架并由部署校验脚本断言一次，不做每进程启动自检；八级让路顺序全文、配额事件台账、保底份额被击穿的两条件判定与 cgroup-quota-matched 自检项一并删除，规格第 21.19 章的风险条目随之作废，其诚实披露折叠进第 7.5 章。

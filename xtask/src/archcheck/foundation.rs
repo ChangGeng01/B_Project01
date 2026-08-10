@@ -9,12 +9,34 @@ use std::path::{Path, PathBuf};
 
 use super::deps::Violation;
 
-/// ep-foundation 的顶层模块登记表，出处为技术基线第 1.4 节。
+/// 顶层模块登记表的权威落点：技术基线第 1.4 节的三列表格。
 ///
-/// 新增顶层模块必须先改本表，这正是本规则要制造的摩擦：准入判据既然不由
-/// 工具判，就由「改工具才能加模块」把动作暴露到评审面上。
+/// 本规则读该表做逐行比对，与 `undecidable-registry-matched` 和
+/// `rule-roster-matched` 同族——三条都真读 md，而不是只比对工具自身的常量。
+/// 早先的实现只比对下面这个常量却声称权威在基线，等于两个都在工具里、
+/// 文档改了工具不知道。
+const REGISTRY_DOC: &str =
+    "docs/superpowers/plans/2026-08-10-first-release-dev-plan/00b-technical-baseline.md";
+const REGISTRY_MARKER: &str = "本表即 `xtask archcheck` 的 foundation-module-registry 规则的比对对";
+
+/// 读不到基线表时的兜底清单。命中兜底即报违反，不静默通过。
 const REGISTERED_MODULES: [&str; 7] =
     ["capability", "error", "id", "module", "port", "principal", "security"];
+
+/// 从基线第 1.4 节的登记表读顶层模块名。表体第一列即模块名。
+fn registered_from_doc(root: &Path) -> Option<Vec<String>> {
+    let text = fs::read_to_string(root.join(REGISTRY_DOC)).ok()?;
+    let after = text.split_once(REGISTRY_MARKER)?.1;
+    let table = after.split("\n\n").find(|b| b.trim_start().starts_with('|'))?;
+    let names: Vec<String> = table
+        .lines()
+        .map(str::trim)
+        .filter(|l| l.starts_with('|') && l.ends_with('|'))
+        .map(|l| l.trim_matches('|').split('|').next().unwrap_or("").trim().to_string())
+        .filter(|c| !c.is_empty() && c != "顶层模块" && !c.starts_with("---"))
+        .collect();
+    (!names.is_empty()).then_some(names)
+}
 
 /// 唯一例外面。标记类型按第 1.3 节准入，其名字必然带模块码词元。
 const SINGLE_OWNER_EXEMPT: &str = "crates/foundation/src/id/marker.rs";
@@ -37,10 +59,22 @@ pub fn module_registry(root: &Path) -> Vec<Violation> {
         .map(str::to_string)
         .collect();
     actual.sort();
-    let mut want: Vec<String> = REGISTERED_MODULES.iter().map(|s| s.to_string()).collect();
+    let from_doc = registered_from_doc(root);
+    let mut want: Vec<String> = from_doc
+        .clone()
+        .unwrap_or_else(|| REGISTERED_MODULES.iter().map(|s| s.to_string()).collect());
     want.sort();
+    let mut found = Vec::new();
+    if from_doc.is_none() {
+        found.push(violation(
+            RULE,
+            REGISTRY_DOC,
+            "读不到基线第 1.4 节的顶层模块登记表，本次比对退回工具内的兜底清单；\
+             读不到即未覆盖，不是通过",
+        ));
+    }
     if actual == want {
-        return Vec::new();
+        return found;
     }
     let extra: Vec<&String> = actual.iter().filter(|m| !want.contains(m)).collect();
     let missing: Vec<&String> = want.iter().filter(|m| !actual.contains(m)).collect();
@@ -51,8 +85,9 @@ pub fn module_registry(root: &Path) -> Vec<Violation> {
     if !missing.is_empty() {
         detail.push_str(&format!("缺少 {:?}；", missing));
     }
-    detail.push_str("新增顶层模块须先改基线第 1.4 节与本规则的登记表。");
-    vec![violation(RULE, "crates/foundation/src/lib.rs", detail)]
+    detail.push_str("新增顶层模块须先改基线第 1.4 节的登记表。");
+    found.push(violation(RULE, "crates/foundation/src/lib.rs", detail));
+    found
 }
 
 /// 替身四：foundation 内的声明不得带任何模块码词元。
@@ -209,6 +244,21 @@ mod rule_negative_samples {
         let src = root.join("crates/foundation/src");
         let _ = fs::remove_dir_all(&root);
         fs::create_dir_all(src.join("id")).expect("建夹具目录");
+        // 夹具须带基线第 1.4 节的登记表：本规则读它做比对，缺表即报「读不到」。
+        let doc = root.join(REGISTRY_DOC);
+        fs::create_dir_all(doc.parent().expect("有父目录")).expect("建基线目录");
+        fs::write(
+            &doc,
+            format!(
+                "{REGISTRY_MARKER}象。\n\n| 顶层模块 | 落点 | 冻结内容 |\n|---|---|---|\n{}\n",
+                REGISTERED_MODULES
+                    .iter()
+                    .map(|m| format!("| {m} | x | y |"))
+                    .collect::<Vec<_>>()
+                    .join("\n")
+            ),
+        )
+        .expect("写基线夹具");
         fs::write(src.join("lib.rs"), lib).expect("写 lib.rs");
         fs::write(
             src.join("module.rs"),
@@ -241,6 +291,16 @@ mod rule_negative_samples {
             module_registry(&missing)[0].detail.contains("缺少"),
             "少一个模块同样违反，登记表是逐行相等而不是子集"
         );
+
+        // 基线表读不到时必须报，不得退回兜底清单后静默判通过。
+        let src = ok.join("crates/foundation/src");
+        let noname = std::env::temp_dir().join("ep-archcheck-reg-nodoc");
+        let _ = fs::remove_dir_all(&noname);
+        fs::create_dir_all(noname.join("crates/foundation/src/id")).expect("建目录");
+        fs::write(noname.join("crates/foundation/src/lib.rs"), SEVEN).expect("写 lib.rs");
+        fs::write(src.join("id/marker.rs"), "pub struct SalesOrder;\n").expect("回写夹具");
+        let v = module_registry(&noname);
+        assert!(v.iter().any(|x| x.detail.contains("读不到基线")), "读不到即未覆盖，不是通过");
     }
 
     /// 负样例：在已有模块内塞带模块码词元的业务形状。

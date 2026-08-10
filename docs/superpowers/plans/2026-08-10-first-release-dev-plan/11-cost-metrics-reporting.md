@@ -9,7 +9,7 @@
 
 贡献项四条。其一，costing.revenue_entries 一张表与 costing.v_revenue_entries_dataset 一个视图。其二，第 4.2 节收入捕获在 ep-app-ledger 过账用例内的调用点，只接一种收入来源，其触发事件与账务规则一律以规格第 5.2 章事件-分录表为准，本阶段不判定。其三，第 5.2 节 GET /api/v1/reporting/operating-metrics 只出收入一张卡，不出成本、利润、交付三张卡，不出三侧未分摊差异，meta 只留 as_of。其四，clients/desktop/src/modules/reporting 下承载该卡的一个桌面端页面。
 
-T0 期间提前执行的迁移为第 3.3 节 db/migrations/costing/ 的四条与 db/migrations/reporting/ 的第 1、2、11、12 号四条，表、三个视图与数据集目录一次建齐，成本侧两表在 T0 期间为空表、costing.v_margin_dataset 因此只出 entry_side 为 REVENUE 的行、外部数据集目录行为未发布状态；本阶段核对这八条已生效，不重复执行，第 3.3 节其余迁移仍在本阶段执行。
+T0 期间提前执行的迁移为第 3.3 节 db/migrations/costing/ 的四条、db/migrations/reporting/ 的第 1、2、11、12 号四条与 db/migrations/platform_core/ 的未受策略表登记回填一条，表、三个视图与数据集目录一次建齐，成本侧两表在 T0 期间为空表、costing.v_margin_dataset 因此只出 entry_side 为 REVENUE 的行、外部数据集目录行为未发布状态；登记回填一条必须与 reporting 第 1、2 号同期执行，否则 reporting.datasets 与 reporting.dataset_fields 两张不带法人列的表在 T0 期间即缺登记行，db/checks 第十三项返回非零行而 T0 的迁移整批不通过；本阶段核对这九条已生效，不重复执行，第 3.3 节其余迁移仍在本阶段执行。
 
 T0 的通过判据只有一条：收入卡上该法人该会计期间的取值与该期间收入科目的贷方净发生额差额为零。取数用 ep-datagen 最小样本，不要求规格附录 A.3 的 scale 数据集，不要求任何分支覆盖，不要求移动端，不要求性能通过线。
 
@@ -21,7 +21,7 @@ T0 的通过判据只有一条：收入卡上该法人该会计期间的取值�
 |---|---|---|---|
 | D-11-01 | 本条为已回写决定，不是相对基线的偏离，编号保留 D-11-01 不重排。reporting 的分析取数经 ep_analyst_ro 直接读取来源模块在其自身 schema 内发布的 v_ 受治理数据集视图，不逐条经 contract trait 往返。本条不再单边界定基线第 1.3 节禁止项第七条的适用面：按裁定 F-05，该条已在基线内改写为通道一与通道二两条通道，通道一是跨模块取数经被调方 ep-contract-* 中的 trait 往返，通道二是只读分析取数经 ep_analyst_ro 读已登记的 v_ 受治理数据集视图；取值的唯一出处在基线，本行只写通道二在本阶段的落地口径 | 规格第 5.5 章与第 16 章要求分析与经营报表在同一实例的独立只读角色上以聚合执行；在会计分录 150 万条的基准数据集上逐行往返无法满足附录 A.1 常用报表 P95 在 10 秒内 | 只读、只经 ep_analyst_ro、只经已登记数据集视图、SQL 中不得出现来源模块基表名、不得出现任何写语句。不得出现来源模块基表名一条的机检面为 xtask archcheck 的 db-pg-one-schema-per-file，判据是仓储文件内出现自身 schema 之外的非 v_ 对象即违反，另由数据集注册表在运行期约束取数入口；只经 ep_analyst_ro 一条无机检承接方，按基线第 12.1 节 delegated 段登记，承接方为本阶段的启动自检项 reporting-dataset-signature-matched 加评审。本阶段唯一不落在通道二内的跨模块取数是第 6.6 节第三个对账校验项，它在 job-worker 自身连接池上执行，已按通道一改经 contract trait |
 | D-11-02 | 分析查询使用单个只读 REPEATABLE READ 事务。基线第 8.4 节只为内部对账与关账前校验规定该级别 | PRD 第 8.2.3 与第 8.3.2 节要求各维度合计加未分摊差异等于总额可由用户在结果表上直接验算。汇总行、未分摊差异行与总计行若分处不同快照，并发写入会使该恒等式在结果页上不成立 | 只影响 costing 与 reporting 的只读查询路径，不改变任何业务事务的隔离级别 |
-| D-11-03 | reporting.datasets 与 reporting.dataset_fields 不带 legal_entity_id，按基线第 3.8 节的全局配置字典归类，不建行级策略 | 两表是随版本发布的内置数据集目录，不承载业务数据，对全部法人取值相同。加法人列会产生两份完全相同的目录与两套目录不一致的可能 | 两表禁止承载业务数据，禁止出现指向具体业务记录的列，由本阶段越权测试目标逐列核对 |
+| D-11-03 | reporting.datasets 与 reporting.dataset_fields 不带 legal_entity_id，不建行级策略；按基线第 3.8 节的正向登记制在 platform_core.unpoliced_table_registry 逐表登记一行，admission_basis 两行均取 SAME_FOR_ALL_ENTITIES，登记行由第 3.3 节 db/migrations/platform_core/ 的 V202611031120__platform_core_backfill_unpoliced_table_registry.sql 一次写入。基线第 3.8 节原写的不带 legal_entity_id 的表只有四类这条封闭枚举与其中的全局配置字典一类已一并撤销，本条不再以该类名归类 | 两表是随版本发布的内置数据集目录，其行在本部署内对全部法人取值相同，SAME_FOR_ALL_ENTITIES 这一准入判据成立且可机械核对。加法人列会产生两份完全相同的目录与两套目录不一致的可能 | 两表禁止承载业务数据，禁止出现指向具体业务记录的列，由本阶段越权测试目标逐列核对；两行登记的隔离承接入口与 rls_matrix 用例标识见第 3.3 节回填迁移，缺登记行即 db/checks 第十三项返回非零行而迁移不通过 |
 | D-11-04 | 启动自检新增命名项 reporting-dataset-signature-matched，severity 取 Degrading：已登记数据集的来源视图存在，且其列名与类型签名与 reporting.dataset_fields 一致；不一致不阻断启动，改为关闭该数据集及其依赖的报表对象的运行期入口，经阶段 2 交付的 ep_platform_obs::DegradationLedger 开降级窗口并按规格第 15.3 章告警。自检项按基线第 7.3 节注册进 SelfCheckRegistry，用注册名标识，不用序号称呼 | 来源视图缺失或列签名漂移会使已发布报表在运行期取数失败。PRD 第 8.6 节要求该场景不返回可能错位的结果，关闭入口即满足该要求；而以退出码 78 拒绝启动会把一个报表入口不可用放大为八进程集体停机，这台服务器没有备节点，且此时可行的修复动作恰恰被拒绝启动本身阻断 | core-server 与 job-worker 执行；--check 模式一并执行且 DEGRADED 与 FAILED 同样以非零退出，闸门落在部署与升级前置，不落在进程启动；来源视图尚未发布的目录行与列签名漂移共用这一条降级口径，不另设放行条款与解除时点 |
 | D-11-05 | 新增 5 个指标、36 个错误码、3 个领域事件、13 个配置键，清单见第 3.6、第 5.6、第 6.5、第 7 节 | 基线第 12 节要求先登记再实现 | 阶段结束时回写基线第 5.5、第 6.1、第 7.1、第 9.2 节 |
 
@@ -189,7 +189,7 @@ ep-domain-costing 只依赖 ep-foundation 与 ep-contract-costing。ep-app-costi
 
 ##### reporting.datasets
 
-全局配置字典，不带 legal_entity_id、security_level、data_scope_tags，不建行级策略，按 D-11-03 登记。
+不带 legal_entity_id、security_level、data_scope_tags，不建行级策略。按基线第 3.8 节的正向登记制在 platform_core.unpoliced_table_registry 登记一行，admission_basis 取 SAME_FOR_ALL_ENTITIES，登记行由第 3.3 节 db/migrations/platform_core/ 的 V202611031120__platform_core_backfill_unpoliced_table_registry.sql 写入，准入判据与隔离承接入口见 D-11-03。
 
 | 列名 | 类型 | 可空 | 说明 |
 |---|---|---|---|
@@ -206,7 +206,7 @@ ep-domain-costing 只依赖 ep-foundation 与 ep-contract-costing。ep-app-costi
 
 ##### reporting.dataset_fields
 
-全局配置字典，同上豁免。
+不带 legal_entity_id、security_level、data_scope_tags，不建行级策略，同上。同样按基线第 3.8 节的正向登记制在 platform_core.unpoliced_table_registry 登记一行，admission_basis 取 SAME_FOR_ALL_ENTITIES，与 reporting.datasets 一行同由第 3.3 节 V202611031120 号回填迁移一次写入。
 
 | 列名 | 类型 | 可空 | 说明 |
 |---|---|---|---|
@@ -338,8 +338,13 @@ db/migrations/reporting/
 12. V202611031055__backfill_reporting_seed_dataset_fields.sql
 13. V202611031060__reporting_backfill_migrate_aging_buckets_from_finance.sql
 14. V202611031065__reporting_drop_finance_aging_bucket_definitions.sql
+db/migrations/platform_core/ 再追加一个回填文件，其主要创建对象是 platform_core.unpoliced_table_registry 的登记行，按裁定通则第五条放在该目录下，版本号晚于本阶段全部建表迁移，故列在最后：
 
-每个建表文件包含表、约束、索引与行级策略，不含任何数据写入；两个 seed backfill 文件只写数据集目录与字段目录，不写任何带法人的数据。全部文件头注释给出 rollback 段：建表类给出 DROP TABLE 逆向；两个 seed backfill 给出按 code 删除的逆向。带法人的预置对象即默认管理驾驶舱与默认账龄分档不在迁移中播种，由 job-worker 的幂等任务按法人补齐，理由是迁移执行时法人集合未知，且基线第 3.9 节要求迁移可离线执行、不得调用应用代码。第 13 号与第 14 号两个迁移按裁定 C-08 与通则第五条都放在 db/migrations/reporting/：第 13 号把阶段 10 临时建立的 finance.aging_bucket_definitions 的分档数据迁入 reporting.aging_bucket_profiles 与 reporting.aging_bucket_lines，第 14 号删除该临时表，两者均由本阶段提供。两者同属 reporting 这一个 Runner，按版本号先迁后删自然成立，不设标记行守卫，也不设任何跨 Runner 的顺序断言。跨 schema 的 DROP 由 ep_migrator 执行，该角色已具备全部 ep_mod_* 成员资格。第 14 号的 rollback 段只给出重建空表的逆向，不恢复数据。
+1. V202611031120__platform_core_backfill_unpoliced_table_registry.sql（按基线第 3.8 节的正向登记制，向阶段 2 交付的 platform_core.unpoliced_table_registry 写入本阶段 reporting.datasets 与 reporting.dataset_fields 两张不带法人列的表各一行，schema_name、table_name、admission_basis、isolation_entry 与 matrix_case_id 五列按阶段 2 冻结的列集填写；admission_basis 两行均取 SAME_FOR_ALL_ENTITIES，判据是两表的行随版本发布、在本部署内对全部法人取值相同；isolation_entry 两行写第 5.3 节的 GET /api/v1/reporting/datasets 与 GET /api/v1/reporting/datasets/{code}/fields 两个目录查询端点，两者不返回任何与法人相关的行，其可见性由字段级密级与权限裁剪承担，不随 app.legal_entity_id 变化；matrix_case_id 取第 8.4 节 tests/rls_matrix 中这两个入口的承接用例标识）
+
+本阶段其余 9 张新表均带 legal_entity_id，按第 3 节开头引用的基线第 3.8 节模板建策略并强制行级安全，不进本登记。本回填文件的版本号 V202611031120 晚于本阶段 costing 与 reporting 两个目录的全部迁移且全局唯一，由 xtask sqlcheck 的版本号断言核对。
+
+每个建表文件包含表、约束、索引与行级策略，不含任何数据写入；两个 seed backfill 文件只写数据集目录与字段目录，不写任何带法人的数据。全部文件头注释给出 rollback 段：建表类给出 DROP TABLE 逆向；两个 seed backfill 给出按 code 删除的逆向；未受策略表登记的回填文件给出按 schema_name 与 table_name 两列删除本阶段登记的 2 行的逆向。带法人的预置对象即默认管理驾驶舱与默认账龄分档不在迁移中播种，由 job-worker 的幂等任务按法人补齐，理由是迁移执行时法人集合未知，且基线第 3.9 节要求迁移可离线执行、不得调用应用代码。第 13 号与第 14 号两个迁移按裁定 C-08 与通则第五条都放在 db/migrations/reporting/：第 13 号把阶段 10 临时建立的 finance.aging_bucket_definitions 的分档数据迁入 reporting.aging_bucket_profiles 与 reporting.aging_bucket_lines，第 14 号删除该临时表，两者均由本阶段提供。两者同属 reporting 这一个 Runner，按版本号先迁后删自然成立，不设标记行守卫，也不设任何跨 Runner 的顺序断言。跨 schema 的 DROP 由 ep_migrator 执行，该角色已具备全部 ep_mod_* 成员资格。第 14 号的 rollback 段只给出重建空表的逆向，不恢复数据。
 
 #### 3.4 默认账龄分档取值
 
@@ -704,7 +709,7 @@ core-server 在一个事务内取号、插入 render_tasks 行（status 为 QUEU
 
 #### 8.4 越权与隔离测试
 
-tests/rls_matrix 扩展：对 costing.cost_entries、costing.revenue_entries 与 reporting 的七张带法人表，覆盖读取、写入、更新、删除、聚合、排序、报表投影与错误信息泄漏八类，另加两个复制角色与内部对账系统安全上下文的五个入口。
+tests/rls_matrix 扩展：对 costing.cost_entries、costing.revenue_entries 与 reporting 的七张带法人表，覆盖读取、写入、更新、删除、聚合、排序、报表投影与错误信息泄漏八类，另加两个复制角色与内部对账系统安全上下文的五个入口。另对 reporting.datasets 与 reporting.dataset_fields 两张不带法人列的表各设一个承接入口用例，被测入口为第 5.3 节的两个目录查询端点，判据与其余表相同，并逐表断言其返回内容不随 app.legal_entity_id 变化，取值一变即失格、必须补法人列；两个用例的标识即第 3.3 节回填迁移写入的 matrix_case_id，与登记行一一对应，构成发布门禁项 RG-RLS-MATRIX-GREEN 判据中属本阶段的那一段。
 
 tests/analytics_isolation 新增测试目标，承担规格第 17.2 章派生存储越权与删除传播测试中的同实例只读角色部分：以跨法人与跨密级的安全上下文对全部已登记数据集发起检索、排序与分面计数，断言不返回无权数据，且排序位次与聚合值不间接暴露无权数据；断言来源记录更正后，报表结果在同一事务快照上一致。首版不做小计数抑制，该点在交付说明中明写。
 
@@ -741,8 +746,8 @@ tests/analytics_isolation 新增测试目标，承担规格第 17.2 章派生存
 
 全部条目可由自动化用例或可复核证据判定。
 
-1. 11 张新表、3 个视图、18 条迁移（4 条在 db/migrations/costing/，14 条在 db/migrations/reporting/）全部在空库与含基准数据集的库上执行通过，其中 costing 四条与 reporting 第 1、2、11、12 号四条已在贯通线 T0 期间执行，本阶段核对其已生效且不重复执行；每条迁移的 rollback 段在影子库上验证可执行；迁移会话锁持有不超过 5 秒、执行不超过 30 分钟。
-2. 全部带法人的新表已 ENABLE 且 FORCE 行级安全，运行期账号不具备 BYPASSRLS 与 SUPERUSER；tests/rls_matrix 的 costing 与 reporting 扩展八类全绿。
+1. 11 张新表、3 个视图、19 条迁移（4 条在 db/migrations/costing/，14 条在 db/migrations/reporting/，1 条在 db/migrations/platform_core/）全部在空库与含基准数据集的库上执行通过，其中 costing 四条、reporting 第 1、2、11、12 号四条与 platform_core 的登记回填一条已在贯通线 T0 期间执行，本阶段核对其已生效且不重复执行；本阶段 reporting.datasets 与 reporting.dataset_fields 两张不带法人列的表在 platform_core.unpoliced_table_registry 中各有一行登记且 db/checks 的第十三项返回零行；每条迁移的 rollback 段在影子库上验证可执行；迁移会话锁持有不超过 5 秒、执行不超过 30 分钟。
+2. 全部带法人的新表已 ENABLE 且 FORCE 行级安全，运行期账号不具备 BYPASSRLS 与 SUPERUSER；tests/rls_matrix 的 costing 与 reporting 扩展八类全绿；reporting.datasets 与 reporting.dataset_fields 两张不带法人列的表的承接入口用例各一条通过，其用例标识与 platform_core.unpoliced_table_registry 中本阶段两行的 matrix_case_id 逐行对应。
 3. 六个事件类型的成本与收入捕获与凭证同事务写入，重复投递 3 次只产生一条条目，过账回滚不留残条目。
 4. 三个 ReconCheck 实现并经 ReconRegistry::register 注册成功，注入差额后差异事项在 platform_core.recon_discrepancies 生成且可追溯、关账被拦截，清零后关账通过；每日校验与关账前强制校验两条路径各验证一次。
 5. 成本归集查询在五个主维度上各维度合计加未分摊差异等于总额，由属性测试与端到端用例双重断言；未分摊差异以独立对象返回，不出现在 rows 数组中。

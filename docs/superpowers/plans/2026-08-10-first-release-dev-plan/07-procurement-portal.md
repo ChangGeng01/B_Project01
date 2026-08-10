@@ -911,7 +911,7 @@ portal-gateway 在每个请求上做四件事：会话校验（结果按第 7 �
 16. 门户返回字段白名单：对五项能力的响应做全字段快照（insta），任何新增字段导致快照失败，防止字段泄漏被静默引入。
 17. 门户订单确认与改期的完整协商回合，含本方接受与本方拒绝两条路径与订单进入收货流程后拒绝门户操作。
 18. 门户送货通知从提交、被部分引用、被全部引用到不可作废的全链路。
-19. 门户发票上传的重复号码拒绝、退回后重传、受理后置终态三条路径。
+19. 门户发票上传的重复号码拒绝、退回后重传、受理后置终态三条路径；第三条路径在本阶段只断言 `ACCEPTED` 终态下的门户查询裁剪与状态取值，其终态由集成测试直接写入 `portal.supplier_invoice_uploads` 构造，受理回写本身随 E2E-T-03 的被受理一路在阶段 10 交付，本阶段不写受理入口，也不注入任何替身。
 20. 门户对账查询的取数与内部应付台账同源：该场景随三个门户对账端点与 `SupplierStatementQuery` 在阶段 10 同批执行；本阶段执行的是门户对账查询在采购订单与收货两组字段上的取数与裁剪。
 21. portal-gateway 的会话、限流与转发：限流触发返回 429 并记入运维中心，未登记设备与非门户客户端取值被拒。
 22. 幂等：本阶段全部写端点各执行一次重复提交，断言返回首次结果并带 `Idempotent-Replay: true`；键相同而载荷不同时返回 409。
@@ -940,7 +940,7 @@ portal-gateway 在每个请求上做四件事：会话校验（结果按第 7 �
 - E2E-P-12 供应商准入到停用的全生命周期：档案生效审批置为已准入，暂停后禁止新建订单但已下达订单可继续收货与付款，终止后门户绑定同步停用。
 - E2E-T-01 门户采购订单与交期确认闭环。
 - E2E-T-02 门户送货通知闭环，含被收货引用与作废两条路径。
-- E2E-T-03 门户发票上传闭环，含被受理与被退回两条路径。
+- E2E-T-03 门户发票上传闭环：本阶段执行上传与被退回两条路径，被受理一路整条推迟到阶段 10，即 `UPLOADED → ACCEPTED` 的回写与 `accepted_purchase_invoice_id` 的落值随承接该回写的端口在阶段 10 同批交付；本阶段按本文件对未交付端口的既有纪律不注册受理入口，也不注入任何替身。
 - E2E-T-04 门户收付款对账查询闭环：本阶段覆盖采购订单与收货两组字段的查询与裁剪，与内部台账同源的判定随三个对账端点在阶段 10 补齐。
 
 E2E-T-01 至 E2E-T-04 逐条对应规格第 19 章阶段 3 门户条目的四项闭环用例。
@@ -1008,7 +1008,7 @@ E2E-T-01 至 E2E-T-04 逐条对应规格第 19 章阶段 3 门户条目的四项
 3. `tests/rls_matrix` 的十类断言在本阶段三十张表上全部通过，含门户跨供应商与跨授权法人两类。
 4. 第 5 节列出的端点中，除第 5.7 小节标注随阶段 10 交付的三个对账端点外全部可用，逐个端点的封套、分页、排序白名单、过滤算子、幂等语义与错误码与基线一致，由一组契约测试逐端点断言。
 5. 第 8.2 小节的二十二个集成场景中本阶段执行二十个并全部通过，第 12 项与第 20 项随阶段 10 的对应端口同批执行，两项在第 25 条列名。
-6. 第 8.3 小节的十六个 E2E 用例全部通过，其中 E2E-T-01 至 E2E-T-04 对应规格第 19 章阶段 3 门户条目的四项闭环用例。
+6. 第 8.3 小节的十六个 E2E 用例全部通过，其中 E2E-T-01 至 E2E-T-04 对应规格第 19 章阶段 3 门户条目的四项闭环用例；E2E-T-03 在本阶段只执行上传与被退回两条路径，其被受理一路随阶段 10 的受理回写同批执行，该路径在第 25 条列名。
 7. 第 8.1 小节的四组领域属性测试各运行不少于 1000 个用例且无反例。
 8. 第 6.7 小节的六个并发场景中本阶段执行五个并全部通过，第 4 项随付款申请的 `INVOICE_PAYMENT` 分支在阶段 10 执行；`procure.goods_receipt.posted.v1` 的重复投递 3 次业务效果、外发事件与审计记录各只产生一次。
 9. 第 8.6 小节的六个 `ReconCheck` 已在 `ep-app-procure` 实现并在 `apps/job-worker/src/wiring/` 目录下经 `ReconRegistry::register` 注册，注入任一差额后对账差异事项生成且关账请求被拒绝，差额清零后关账可通过。
@@ -1027,7 +1027,7 @@ E2E-T-01 至 E2E-T-04 逐条对应规格第 19 章阶段 3 门户条目的四项
 22. 已在 `crates/contract/procure/src/port/subledger_balance.rs` 定义 `GrniSubledgerBalancePort`（`Send + Sync`，带 `#[async_trait::async_trait]`），方法为 `async fn balance(&self, snapshot: &dyn SnapshotCtx, legal_entity_id: Id<LegalEntity>, accounting_period_id: Id<AccountingPeriod>) -> Result<Money, AppError>`，返回该法人该会计期间的已收货未收票暂估合计；实现类型 `GrniSubledgerBalanceQuery` 位于 `crates/application/procure/src/projection/subledger_balance.rs`，`impl` 与类型同 crate。本阶段不写任何注入行，注入由阶段 10 在 `apps/core-server/src/wiring/` 与 `apps/job-worker/src/wiring/` 两个目录写入（裁定 G-01；`ep_contract_finance::SubledgerBalanceProvider` 一名全卷作废，本阶段不引用）。
 23. `PurchaseReturnLinkPort::link_drop_ship_return` 已实现并在两个 wiring 目录首次接线，阶段 6 在本阶段之前未注入任何替身，直运退货勾稽端到端通过。
 24. 八个单据类型码 PR、PO、GR、RJ、PRT、PAYR、DN、SIU 已登记入 `docs/data-dictionary.md` 的单据类型码一节与 `ep-platform-sequence` 的常量表，`xtask configdoc --check-doc-type-codes` 通过。
-25. 两个 wiring 目录下的全部文件中不出现任何以 `Noop` 前缀命名的注入行，也不出现 `ReceiptInvoiceMatchQueryPort`、`PurchaseCreditNotePort`、`PayableLedgerQuery` 与 `SupplierStatementQuery` 四个端口的调用点。本阶段推迟到阶段 10 的四项在此逐条列名：采购退货的发票已登记分支与红字发票登记（第 4.4 小节）、付款申请的 `INVOICE_PAYMENT` 分支与占用写入路径（第 4.5 小节）、三个门户对账端点 `/portal/v1/reconciliation/purchase-invoices` 与 `/payments` 与 `/payable-balance`（第 5.7 小节）、集成场景第 12 项与第 20 项。四项的实现与验收在阶段 10 同批执行，本阶段不为其登记任何顺延验收。
+25. 两个 wiring 目录下的全部文件中不出现任何以 `Noop` 前缀命名的注入行，也不出现 `ReceiptInvoiceMatchQueryPort`、`PurchaseCreditNotePort`、`PayableLedgerQuery` 与 `SupplierStatementQuery` 四个端口的调用点。本阶段推迟到阶段 10 的五项在此逐条列名：采购退货的发票已登记分支与红字发票登记（第 4.4 小节）、付款申请的 `INVOICE_PAYMENT` 分支与占用写入路径（第 4.5 小节）、三个门户对账端点 `/portal/v1/reconciliation/purchase-invoices` 与 `/payments` 与 `/payable-balance`（第 5.7 小节）、集成场景第 12 项与第 20 项、E2E-T-03 的被受理一路即发票上传 `UPLOADED → ACCEPTED` 的回写与 `accepted_purchase_invoice_id` 的落值（第 4.2.7 小节与第 8.3 小节）。五项的实现与验收在阶段 10 同批执行，本阶段不为其登记任何顺延验收；承接该受理回写的端口的确切类型名与所属 crate 由阶段 7 与阶段 10 在落码前同批裁定，本阶段不预设该名，也不为此留任何占位。
 26. `platform_core.append_only_registry` 中存在 `procure.goods_receipt_line_costings` 一行，其 `mode` 为 `APPEND_ONLY`、`mutable_columns` 为空数组，仅追加触发器已按该行挂接，`xtask sqlcheck` 执行 `db/checks/append_only_consistency.sql` 返回零行。
 27. 严重与高危缺陷全部关闭，中危缺陷已登记并给出规避方案与责任人。
 

@@ -30,7 +30,7 @@
 /tools/<name>/                  工具 crate，tools/ep-migrate 随制品交付，tools/bench 与 tools/release-gate 按 B-11 排除出制品
 ```
 
-非 workspace 成员的仓库顶层目录固定如下：`/db/bootstrap/` 数据库引导脚本，`/db/checks/` SQL 断言脚本，`/scripts/` 运维与校验脚本，`/deploy/` 单机编排文件与 systemd slice drop-in 及 `quotas.generated.toml` 的生成落点，`/clients/desktop/` 与 `/clients/mobile/` 四端客户端源码。以上两段合起来即全部顶层目录，新增顶层目录必须先改本节。
+非 workspace 成员的仓库顶层目录固定如下：`/db/bootstrap/` 数据库引导脚本，`/db/checks/` SQL 断言脚本，`/scripts/` 运维与校验脚本，`/deploy/` 单机编排文件与 systemd slice drop-in，`/clients/desktop/` 与 `/clients/mobile/` 四端客户端源码。以上两段合起来即全部顶层目录，新增顶层目录必须先改本节。
 
 crate 命名前缀统一为 `ep-`，crate 目录名不带前缀，`Cargo.toml` 中的 `name` 带前缀。二进制 crate 不带前缀，名字与进程名、systemd 单元名、cgroup slice 名一一对应。edition 固定 2021。禁止 nightly，禁止在成员 crate 中写版本号，成员一律 `dep.workspace = true`。
 
@@ -114,7 +114,7 @@ crate 命名前缀统一为 `ep-`，crate 目录名不带前缀，`Cargo.toml` �
 - 禁止 ep-domain-* 与 ep-contract-* 依赖任何 adapter、sqlx、reqwest、tokio 的 IO 模块、std 的文件与网络 API。
 - 禁止 ep-platform-* 依赖任何 domain 或 application。
 - 禁止 adapter 之间互相依赖，共用逻辑下沉到 ep-foundation。
-- 禁止 ep-foundation 承载业务概念。准入判据两条。必要性：被两个及以上 `ep-contract-*` 引用，或被 `ep-platform-*` 引用——该条为评审判据，不由任何工具判定，理由、举证格式与登记见第 12 节通则第六条与第 12.1 节。稳定性：不得承载任何会随业务政策变化的取值集合或规则方法，只允许类型身份与量纲原语——该条一半机检一半评审，机检面为 `xtask archcheck` 的 foundation-frozen-items，即冻结项的名字与项数不得随业务政策增删，其余属评审面。`crates/foundation/src/id/marker.rs` 是本条的唯一受限例外：其中的零大小标记类型无字段、无方法、无 trait 实现，只承载类型身份，供 `Id<T>` 在契约层表达跨模块引用；按裁定 A-01 冻结清单 22 项、任何阶段不得增删，不适用上述两条准入判据，其项数、名字与形态由 `xtask archcheck` 的 foundation-frozen-items 按名逐项断言，改名与增删同样报错。本条落在 archcheck 上的机检面为 foundation-no-business（依赖边一侧，即 foundation 不依赖工作区内任何 crate）、foundation-frozen-items、foundation-marker-shape、foundation-module-registry、foundation-no-single-owner 五条规则，必要性一条的举证格式与登记见第 12 节通则第六条与第 12.1 节。跨模块共享的业务形状不进 foundation，定义在拥有它的模块的 `ep-contract-*` 里作为 DTO，由可依赖任意模块契约的 `ep-app-*` 消费。
+- 禁止 ep-foundation 承载业务概念。准入判据两条。必要性：被两个及以上 `ep-contract-*` 引用，或被 `ep-platform-*` 引用——该条为评审判据，不由任何工具判定，理由、举证格式与登记见第 12 节通则第六条与第 12.1 节。稳定性：不得承载任何会随业务政策变化的取值集合或规则方法，只允许类型身份与量纲原语——该条一半机检一半评审，机检面为 `xtask archcheck` 的 foundation-frozen-items，即冻结项的名字与项数不得随业务政策增删，其余属评审面。`crates/foundation/src/id/marker.rs` 是本条的唯一受限例外：其中的零大小标记类型无字段、无方法、无 trait 实现，只承载类型身份，供 `Id<T>` 在契约层表达跨模块引用；按裁定 A-01 冻结清单 22 项、任何阶段不得增删，不适用上述两条准入判据，其项数与名字由 `xtask archcheck` 的 foundation-frozen-items 按名逐项断言，改名与增删同样报错；上述无字段、无方法、无 trait 实现的形态由 foundation-marker-shape 断言。本条落在 archcheck 上的机检面为 foundation-no-business（依赖边一侧，即 foundation 不依赖工作区内任何 crate）、foundation-frozen-items、foundation-marker-shape、foundation-module-registry、foundation-no-single-owner 五条规则，必要性一条的举证格式与登记见第 12 节通则第六条与第 12.1 节。跨模块共享的业务形状不进 foundation，定义在拥有它的模块的 `ep-contract-*` 里作为 DTO，由可依赖任意模块契约的 `ep-app-*` 消费。
 - 禁止跨模块直接读写业务表。跨模块取数只有两条通道，此外一律禁止。通道一，经被调方 `ep-contract-<m>` 中的端口 trait 取数，实现落在被调方的 `ep-app-<m>`，由 apps 在 `apps/core-server/src/wiring/` 与 `apps/job-worker/src/wiring/` 目录下注入；通道二，经被调方登记的受治理只读视图取数，视图名一律 `v_` 前缀，常规报表与经营看板一侧的取数连接取第 3.1 节的 `ep_analyst_ro` 只读角色。`ep-adapter-db-pg` 中的仓储实现按 schema 分文件，一个仓储只访问自己模块的 schema。本条的机检面为 `xtask archcheck` 的 db-pg-one-schema-per-file 一条规则并配负样例：按第 3.1 节登记的 24 个 schema 名逐名判定，不用前缀启发式，只在双引号字面量区间内取 `<schema>.<object>`，文件内出现自身 schema 之外的非 `v_` 对象即违反；`crates/adapter/db-pg/src` 下不落在任何 schema 目录内的文件，出现任何登记 schema 的对象同样违反。通道二中取数连接角色这一维不在该规则的判定面内——它判的是源码里的对象引用，判不出运行期连接取的是哪个角色；该维按第 12 节通则第六条降为评审判据并登记入第 12.1 节 delegated 段，承接方为阶段 11 的 reporting-dataset-signature-matched 启动自检加评审举证。
 
 依赖方向由 CI 强制：`cargo deny` 检查许可与重复依赖，另在 CI 中运行一段基于 `cargo metadata` 的自检脚本，把上述禁止项表达为断言，违反即构建失败。本节允许项第二条「ep-platform-* 只可依赖 ep-foundation 与其他 ep-platform-*，且 platform 内部不得成环」的机检面为 `xtask archcheck` 的 platform-acyclic 与 platform-no-adapter 两条规则，各配负样例：前者判 platform 内部的依赖成环，后者判任一 ep-platform-* 依赖任一 ep-adapter-*。这两条落在允许项一侧，不并入本节禁止项七条，禁止项仍为七条、一字不改。第六条的必要性一条不在 `cargo metadata` 的依赖边判定面内——它数的是 foundation 模块被几个 crate 引用，属源码级判定；该条按第 12 节通则第六条降为评审判据并登记入第 12.1 节，其机检承接方为本节第六条点名的五条规则。
@@ -124,6 +124,18 @@ crate 命名前缀统一为 `ep-`，crate 目录名不带前缀，`Cargo.toml` �
 ### 1.4 ep-foundation 冻结的跨阶段共享类型
 
 本节各项由阶段 1 一次性冻结，签名与取值全阶段唯一。各阶段直接引用，不得改动签名、不得在阶段内另立同名类型、不得给出第二套取值。
+
+ep-foundation 的顶层模块固定为下表七项。本表即 `xtask archcheck` 的 foundation-module-registry 规则的比对对象，与 `crates/foundation/src/lib.rs` 中的 `pub mod` 声明逐行相等，多一个少一个都判违反；新增或删除顶层模块必须先改本表并走基线修订，不得只改代码。模块内部的文件划分不在本表的判定面内。
+
+| 顶层模块 | 落点 | 本节在该模块下冻结的内容 |
+|---|---|---|
+| capability | `crates/foundation/src/capability.rs` | `CapabilityDomain` 18 项与 `ActionClass` 5 项。 |
+| error | `crates/foundation/src/error.rs` | `AppError` 与 `ErrorCode`；`AppError` 的字段构成见第 10.2 节，错误码与分类取值见第 5.5 节。 |
+| id | `crates/foundation/src/id/` 下 `mod.rs` 与 `marker.rs` | `Id<T>`，以及冻结 22 项的跨模块引用标记类型。 |
+| module | `crates/foundation/src/module.rs` | `ModuleCode`，取值与第 1.2 节的 15 个模块码一一对应。 |
+| port | `crates/foundation/src/port/` 下 `tx.rs` 与 `db.rs`、`doc.rs`、`kms.rs`、`search.rs` | 事务与快照抽象，以及四个端口空模块及其补齐时点。 |
+| principal | `crates/foundation/src/principal.rs` | `SYSTEM_PRINCIPAL_ID` 与 `SYSTEM_DEVICE_ID`。 |
+| security | `crates/foundation/src/security/` 下 `context.rs` 与 `level.rs` | `SecurityContext` 的 19 项字段、七个非通用字段类型与三个配套枚举，以及 `SecurityLevel`，其取值见第 4 节公共列 `security_level`。 |
 
 事务与快照抽象位于 `crates/foundation/src/port/tx.rs`。契约层的跨模块方法签名一律写 `&mut dyn Tx`。
 
@@ -164,9 +176,9 @@ pub trait UnitOfWork: Send + Sync + 'static {
 }
 ```
 
-配套纪律四条。跨 crate 取具体句柄的唯一写法是 `tx.as_any_mut().downcast_mut::<PgTx>()`，该 downcast 只允许出现在 `crates/adapter/db-pg/` 内，由 `xtask archcheck` 断言其他目录不出现 `downcast_mut::<PgTx>`。UnitOfWork 不带池参数，一个实例在装配时绑定一个池，与第 10.3 节示例的两参数形态一致。application crate 对 UnitOfWork 取泛型参数 `U: UnitOfWork` 而不是 trait 对象，理由是该 trait 含泛型方法不满足对象安全。实现 `ep_foundation::port::*` 各模块中任一 trait 的具体类型，其声明位与实现位一律同处一个 crate，不得分离；`PgUnitOfWork` 与 `PgTx` 一律声明并实现在 ep-adapter-db-pg，`BuiltinKmsBackend` 与 `HsmKmsBackend` 一律声明并实现在 ep-adapter-kms。工作区内不存在名为 ep-adapter-db 的 crate。
+配套纪律四条。跨 crate 取具体句柄的唯一写法是 `tx.as_any_mut().downcast_mut::<PgTx>()`，该 downcast 只允许出现在 `crates/adapter/db-pg/` 内，由 `xtask archcheck` 的 downcast-pgtx-confined 规则在 `crates`、`apps`、`testkit`、`datagen`、`tools` 五个目录下逐文件扫描，断言这五个目录中 `crates/adapter/db-pg/` 之外的任何文件不出现 `downcast_mut::<PgTx>`；`xtask/` 自身因承载该规则的检索式常量而排除在扫描面外，仓库顶层的散落文件同样不在扫描面内，新增扫描目录须先改本节。UnitOfWork 不带池参数，一个实例在装配时绑定一个池，与第 10.3 节示例的两参数形态一致。application crate 对 UnitOfWork 取泛型参数 `U: UnitOfWork` 而不是 trait 对象，理由是该 trait 含泛型方法不满足对象安全。实现 `ep_foundation::port::*` 各模块中任一 trait 的具体类型，其声明位与实现位一律同处一个 crate，不得分离；`PgUnitOfWork` 与 `PgTx` 一律声明并实现在 ep-adapter-db-pg，`BuiltinKmsBackend` 与 `HsmKmsBackend` 一律声明并实现在 ep-adapter-kms。工作区内不存在名为 ep-adapter-db 的 crate。
 
-跨模块引用的标记类型位于 `crates/foundation/src/id/marker.rs`，清单固定 22 项，任何阶段不得增删，由 `xtask archcheck` 的 foundation-frozen-items 规则按名逐项断言，其无字段、无方法、无 trait 实现的形态同由该规则断言；本清单不适用第 1.3 节的两条准入判据，新增标记类型必须先改本节并走基线修订。清单如下：LegalEntity、UserAccount、Session、Department、Position、Project、Customer、Supplier、Material、Product、Warehouse、Contract、ContractLine、SalesOrder、SalesOrderLine、DeliveryConfirmation、DeliveryConfirmationLine、PurchaseOrder、GoodsReceiptLine、PurchaseInvoice、PurchaseInvoiceLine、AccountingPeriod。
+跨模块引用的标记类型位于 `crates/foundation/src/id/marker.rs`，清单固定 22 项，任何阶段不得增删，由 `xtask archcheck` 的 foundation-frozen-items 规则按名逐项断言，其无字段、无方法、无 trait 实现的形态由 foundation-marker-shape 规则断言；本清单不适用第 1.3 节的两条准入判据，新增标记类型必须先改本节并走基线修订。清单如下：LegalEntity、UserAccount、Session、Department、Position、Project、Customer、Supplier、Material、Product、Warehouse、Contract、ContractLine、SalesOrder、SalesOrderLine、DeliveryConfirmation、DeliveryConfirmationLine、PurchaseOrder、GoodsReceiptLine、PurchaseInvoice、PurchaseInvoiceLine、AccountingPeriod。
 
 系统主体常量位于 `crates/foundation/src/principal.rs`。
 

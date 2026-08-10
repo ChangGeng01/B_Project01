@@ -140,7 +140,7 @@
 
 本阶段号段整体早于全部业务模块号段。理由是 15 个业务 schema 由本阶段第 25 至 39 号迁移建立，任一业务模块的建表迁移都引用其所属 schema，其版本号必须晚于本阶段对应的建 schema 迁移；本阶段自身不引用任何由后续阶段建立的对象，因此本阶段号段内部只需保持严格递增。各业务阶段的号段据此整体排在本阶段号段之后，且不得与本阶段号段重号，由 `xtask sqlcheck` 的版本号全局唯一且严格递增断言拦截。
 
-合计 39 个迁移文件。本阶段不向 `platform_core.sensitive_field_registry` 预置任何行，阶段 5 按 A-28 以 `db/migrations/mdm/` 下的 backfill 迁移插入 `mdm.customer_invoice_profiles` 与 `mdm.supplier_payment_profiles` 两表的 `bank_name` 与 `bank_account_no` 共四行，其中 `bank_account_no` 两行的 `is_field_encrypted` 取真；`platform_core.append_only_registry` 的登记行按 B-02 合计十四行，由阶段 3b、阶段 7、阶段 8、阶段 9a 与阶段 10 各自在本模块迁移中插入，本阶段只建登记表与一致性检查脚本。`platform_core.unpoliced_table_registry` 的登记行由建表阶段随建表迁移插入，本阶段插入本阶段八张未受策略表的八行，其余由阶段 3b、阶段 4、阶段 11、阶段 13 与阶段 14 各自补齐，缺行即 `db/checks/13` 返回非零行而迁移不通过。
+合计 39 个迁移文件。本阶段不向 `platform_core.sensitive_field_registry` 预置任何行，阶段 5 按 A-28 以 `db/migrations/mdm/` 下的 backfill 迁移插入 `mdm.customer_invoice_profiles` 与 `mdm.supplier_payment_profiles` 两表的 `bank_name` 与 `bank_account_no` 共四行，其中 `bank_account_no` 两行的 `is_field_encrypted` 取真；`platform_core.append_only_registry` 的登记行按 B-02 合计十四行，由阶段 3b、阶段 7、阶段 8、阶段 9a 与阶段 10 各自在本模块迁移中插入，本阶段只建登记表与一致性检查脚本。`platform_core.unpoliced_table_registry` 的登记行由建表阶段随建表迁移插入，本阶段插入本阶段八张未受策略表的八行，其余由阶段 3b、阶段 4、阶段 9a、阶段 11、阶段 13 与阶段 14 各自补齐，缺行即 `db/checks/13` 返回非零行而迁移不通过。
 
 #### 3.5 本阶段自有表逐表定义
 

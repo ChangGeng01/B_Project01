@@ -108,7 +108,7 @@ job-worker 承载：期间自动建立定时任务、ep-platform-recon 的分批
 | 9 | V202611030940__ledger_create_close_serialization_slots.sql | 建 ledger.close_serialization_slots |
 | 10 | V202611030945__ledger_create_period_close_requests.sql | 建 ledger.period_close_requests |
 | 11 | V202611030950__ledger_create_year_end_closings.sql | 建 ledger.year_end_closings |
-| 12 | V202611030955__ledger_create_posting_trigger_event_types.sql | 建 ledger.posting_trigger_event_types |
+| 12 | V202611030955__ledger_create_posting_trigger_event_types.sql | 建 ledger.posting_trigger_event_types，并在同一文件内按基线第 3.8 节的正向登记制向 platform_core.unpoliced_table_registry 插入本表一行，五列体例照抄阶段 4 第 29 号迁移，admission_basis 取 SAME_FOR_ALL_ENTITIES，隔离承接入口填第 9.3.12 节的 ledger.v_pending_posting_backlog。该行随本文件一并落地而不另起回填迁移，理由是本文件在 T0 段即执行，登记行缺失时 db/checks 第十三项在 T0 的空库上就返回非零行 |
 | 13 | V202611031000__ledger_create_ledger_views.sql | 建 ledger.v_account_period_balances 与 ledger.v_pending_posting_backlog |
 | 14 | V202611031005__ledger_backfill_posting_trigger_event_types.sql | 一次写全 ledger.posting_trigger_event_types 的 13 行，每行只填 event_type，清单见第 9.3.11 节；本文件由 xtask configdoc 从 docs/event-catalog.md 的 produces_voucher 列生成，CI 比对生成结果与仓库中的本文件是否逐字一致，不一致即构建失败；业务阶段不再追加任何回填迁移 |
 | 15 | V202611031010__ledger_create_dataset_views.sql | 按 A-18 重建 ledger.v_account_period_balances 使其输出 legal_entity_id、security_level、data_scope_tags 三列，并 GRANT SELECT ON ledger.v_account_period_balances TO ep_analyst_ro |
@@ -118,7 +118,7 @@ job-worker 承载：期间自动建立定时任务、ep-platform-recon 的分批
 
 上表第 9、10、11 号三个文件属 9b 段，其余十三个属 9a 段。两段之间隔着阶段 8 至 11，因此 9b 段三个文件的编号按其执行日期取，排在这些阶段的迁移之后，ledger 目录内的相对次序仍按上表。第 2 号表上的 closed_by_close_request_id 外键随第 10 号文件在 9b 段补建，该列在 9a 段保持可空且无外键。
 
-对账框架的三张表按 A-06 建在 platform_core schema，迁移文件放在 db/migrations/platform_core/，slug 依次为 platform_core_create_recon_check_definitions、platform_core_create_recon_runs、platform_core_create_recon_discrepancies，三者同属 9a 段。列按 A-06 的定义：recon_check_definitions 不带法人列，其准入判据是行集合与法人无关，行由制品决定并在本部署内对全部法人取值相同，隔离承接入口是对账执行器按法人逐轮遍历，该表按正向登记制登记到 platform_core.unpoliced_table_registry，不建行级策略，本计划不再使用全局配置字典这一类名；该表不含 statement_sha256 与 signed_statement_ref 两列，理由见第 9.4.7 节；recon_runs 与 recon_discrepancies 带 legal_entity_id 并按基线第 3.8 节模板建策略；recon_runs 为仅追加表，recon_discrepancies 为可更新表并带 row_version；recon_discrepancies.recon_run_id 为同 schema 真实外键，两表的 accounting_period_id 为跨 schema 逻辑引用不建外键，理由是基线第 3.3 节的模块规则本身禁止跨 schema 外键，与目录归属无关。
+对账框架的三张表按 A-06 建在 platform_core schema，迁移文件放在 db/migrations/platform_core/，slug 依次为 platform_core_create_recon_check_definitions、platform_core_create_recon_runs、platform_core_create_recon_discrepancies，三者同属 9a 段。列按 A-06 的定义：recon_check_definitions 不带法人列，其准入判据是行集合与法人无关，行由制品决定并在本部署内对全部法人取值相同，隔离承接入口是对账执行器按法人逐轮遍历，该表按正向登记制登记到 platform_core.unpoliced_table_registry，不建行级策略，本计划不再使用全局配置字典这一类名；该登记行由 platform_core_create_recon_check_definitions 迁移在同一文件内插入，五列体例照抄阶段 4 第 29 号迁移，admission_basis 取 SAME_FOR_ALL_ENTITIES，隔离承接入口填本句前述的对账执行器按法人逐轮遍历；该表不含 statement_sha256 与 signed_statement_ref 两列，理由见第 9.4.7 节；recon_runs 与 recon_discrepancies 带 legal_entity_id 并按基线第 3.8 节模板建策略；recon_runs 为仅追加表，recon_discrepancies 为可更新表并带 row_version；recon_discrepancies.recon_run_id 为同 schema 真实外键，两表的 accounting_period_id 为跨 schema 逻辑引用不建外键，理由是基线第 3.3 节的模块规则本身禁止跨 schema 外键，与目录归属无关。
 
 本阶段的跨模块逻辑引用不建 CROSS_MODULE_LINK 校验项，依据为裁定 A-06 与总览 R14，这是首版的已知边界。ledger.vouchers 的 source_document_type 与 source_document_id 由过账入口在同一事务内与来源单据行一并写入，其存在性不依赖写入时查证；release_package_id 与 approval_ref 两类平台侧逻辑引用分别由配置发布入口与审批入口保证。9b 段自带并注册的四个校验项按第 9.4.7 节无一取 CROSS_MODULE_LINK。
 
@@ -288,7 +288,7 @@ RLS：按基线第 3.8 节模板生成 rls_accounts_le。以下各带法人列�
 
 #### 9.3.11 ledger.posting_trigger_event_types
 
-本表不带 legal_entity_id。准入判据是其行集合与法人无关：它只登记本版本会产生凭证的事件类型名，取值由制品决定，在本部署内对全部法人相同。隔离承接入口是第 9.3.12 节的 ledger.v_pending_posting_backlog，该视图的取数一律受调用方的 app.legal_entity_id 约束。本表按正向登记制登记到 platform_core.unpoliced_table_registry，不建行级策略。
+本表不带 legal_entity_id。准入判据是其行集合与法人无关：它只登记本版本会产生凭证的事件类型名，取值由制品决定，在本部署内对全部法人相同。隔离承接入口是第 9.3.12 节的 ledger.v_pending_posting_backlog，该视图的取数一律受调用方的 app.legal_entity_id 约束。本表按正向登记制登记到 platform_core.unpoliced_table_registry，不建行级策略；该登记行由第 12 号建表迁移在同一文件内插入，五列体例照抄阶段 4 第 29 号迁移，admission_basis 取 SAME_FOR_ALL_ENTITIES，隔离承接入口即上句所述的 ledger.v_pending_posting_backlog。
 
 列：id uuid 主键、event_type text 非空唯一、created_at、created_by。原有的 ledger_event_kind 与 registered_by_module 两列删除，理由是来源类型已由 JOURNAL_MAP 的键唯一确定，本表只需承载会产生凭证的事件类型集合，供第 9.3.12 节的视图连接。
 
@@ -766,7 +766,7 @@ EXPLAIN 证据：过账路径的期间解析、余额 upsert、凭证与分录�
 
 E-1 四个新增 crate 在 cargo build --workspace 与 cargo clippy --workspace -- -D warnings 下无告警通过；CI 的依赖方向自检脚本对 ledger 的六条断言（清单以第 9.2 节依赖方向自检段为准，阶段 11 追加 ep-contract-costing 后由该阶段同步更新）与对 ep-platform-recon 的一条断言全部通过；单文件不超过 800 行、单函数不超过 50 行、嵌套不超过 4 层的检查通过。
 
-E-2 db/migrations/ledger/ 的 16 个迁移与 db/migrations/platform_core/ 的 3 个对账迁移在空库上离线执行成功，且在含 36 个期间基准数据集的库上重放成功；每个文件的 -- rollback: 段存在；在线变更边界内的操作实测锁持有不超过 5 秒。
+E-2 db/migrations/ledger/ 的 16 个迁移与 db/migrations/platform_core/ 的 3 个对账迁移在空库上离线执行成功，且在含 36 个期间基准数据集的库上重放成功；本阶段两张不带法人列的表 ledger.posting_trigger_event_types 与 platform_core.recon_check_definitions 在 platform_core.unpoliced_table_registry 中各有一行登记，且 db/checks 的第十三项返回零行；每个文件的 -- rollback: 段存在；在线变更边界内的操作实测锁持有不超过 5 秒。
 
 E-3 ledger schema 的 8 张带法人列的表与 platform_core 下 recon 的 2 张带法人列的表全部 ENABLE 且 FORCE 行级安全，策略名与模板一致；启动自检的 rls-enabled-and-forced 项在含本阶段表的库上通过。
 

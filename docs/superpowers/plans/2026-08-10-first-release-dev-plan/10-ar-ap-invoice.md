@@ -816,6 +816,7 @@ OPEN 到 PARTIALLY_SETTLED 到 SETTLED，三条结清路径任一条都推进该
 4. 开票数量超过累计收货数量的部分按 `is_overbilling` 标记，并在 `finance.overbilling_entries` 生成挂账，后续走第 4.6 节的三条结清路径。
 5. 会计期间在事务最前由 `AccountingPeriodResolver::resolve` 一次解析，凭证与全部子账条目共用该结果。
 6. 事件 `invoice.purchase_invoice.registered.v1` 写入 Outbox，payload 见第 5.8 节。
+7. 若本次登记的来源是供应商门户上传的发票，即 `portal.supplier_invoice_uploads` 中一条 `status` 为 `UPLOADED` 的记录，则在同一事务内补一步回写：把该上传记录的 `status` 迁到 `ACCEPTED`，并把 `accepted_purchase_invoice_id` 回写为本次生成的 `invoice.purchase_invoices.id`，对应阶段 7 第 3.3.5 节的列定义与第 4.2.7 节的 `UPLOADED → ACCEPTED` 一路。本阶段不直接写 portal schema 的任何表，该回写一律经一个写端口完成，端口与 `ep-contract-procure` 既有的 `PaymentRequestWritebackPort` 同构：写端口由被写方模块的 contract crate 定义 trait、由被写方模块的 app crate 实现，调用方只依赖 contract，本阶段由 `ep-app-invoice` 在 `register_purchase_invoice` 的事务内调用，依赖方向为 app 到 contract，落在基线第 1.3 节允许项内，承接方同为 `xtask archcheck` 的层位判定。端口调用失败即整笔登记回滚，不存在采购发票已落库而上传记录仍为 `UPLOADED` 的中间态。补一个写端口，其确切类型名与所属 crate 由阶段 7 与阶段 10 在落码前同批定，本文不预先命名；本次登记与上传记录的对应关系按该端口的入参形态在同批裁定中一并确定，本文不预设请求体新增字段，第 5.2 节的端点请求列相应不变。来源不是门户上传的采购发票登记不触发本步，端口不被调用。`UPLOADED → RETURNED` 一路由哪个端点承载同属尚未裁定项，与本步写端口的类型名和 crate 归属由阶段 7 与阶段 10 在落码前同批定，本文不代为指定。
 
 进项红字发票由阶段 7 的采购退货用例经 `ep_contract_invoice::PurchaseCreditNotePort::register_credit_note(tx, ctx, cmd: RegisterPurchaseCreditNote)` 触发，在调用方事务内执行，返回 `PurchaseCreditNoteView`；`is_for_overbilling_settlement` 为真时同时结清对应挂账，即第 4.6 节的路径二。收货与发票的匹配状态经 `ep_contract_invoice::ReceiptInvoiceMatchQueryPort` 的 `match_state` 与 `match_states` 两个方法对外提供，返回 `ReceiptInvoiceMatchState`。两个 trait 与四个 DTO 按裁定 A-11 由本阶段在 `ep-contract-invoice` 定义、在 `ep-app-invoice` 实现；按第 0.5 节采购退货的采购发票已登记分支整条推迟到本阶段，阶段 7 不建该调用点也不注入任何替身，两个 wiring 目录中的注入行由本阶段首次写入。
 
@@ -996,7 +997,7 @@ OPEN 到 PARTIALLY_SETTLED 到 SETTLED，三条结清路径任一条都推进该
 | register_cash_document_reversal | 冲正单；全部反向核销行；台账条目回增；预收预付反向条目；资金腿反向明细；原单据置 REVERSED；凭证；审计；Outbox | 通知 |
 | settle_overbilling_by_write_off | 结清记录；挂账更新；凭证；审计；Outbox | 通知 |
 | match_overbilling_on_receipt | 结清记录；挂账更新；凭证附加腿。本用例由收货用例在其事务内调用，不自开事务 | |
-| register_purchase_invoice | 采购发票头表与行表；三单匹配结果；经 `InventoryVariancePort::split_variance` 得到的暂估回冲与价差金额回写行表；`register_payable_on_purchase_invoice` 的应付条目与预付自动核销；超量开票挂账；凭证；审计；Outbox | 附件正文读写；站内通知 |
+| register_purchase_invoice | 采购发票头表与行表；三单匹配结果；经 `InventoryVariancePort::split_variance` 得到的暂估回冲与价差金额回写行表；`register_payable_on_purchase_invoice` 的应付条目与预付自动核销；超量开票挂账；来源为门户上传时经门户侧写端口把 `portal.supplier_invoice_uploads` 迁到 `ACCEPTED` 并回写 `accepted_purchase_invoice_id`，见第 4.11 节第 7 步；凭证；审计；Outbox | 附件正文读写；站内通知 |
 | register_payable_on_purchase_invoice | 应付条目；预付自动核销；超量开票挂账。本用例由本阶段的 register_purchase_invoice 用例在其事务内调用，不自开事务 | |
 | register_purchase_credit_note | 采购发票红字行；原采购发票 `reversed_by_id` 回写；应付条目冲回；超量开票路径二结清。本用例由阶段 7 的采购退货用例经 `PurchaseCreditNotePort` 在其事务内调用，不自开事务 | |
 | record_unbilled_ar_on_delivery | `finance.unbilled_ar_entries` DEBIT 行。由阶段 6 的 confirm_delivery 用例经 `UnbilledArPort::record_on_delivery` 在其事务内调用，不自开事务 | |
@@ -1229,6 +1230,7 @@ OPEN 到 PARTIALLY_SETTLED 到 SETTLED，三条结清路径任一条都推进该
 30. `platform_core.sensitive_field_registry` 中存在 `finance.cash_accounts.bank_account_no` 一行，`is_field_encrypted` 为真，`security_level` 为 30，`blind_index_column` 为 `bank_account_no_bidx`；`db/checks/11` 返回零行，即物理表上存在 `bank_account_no_enc bytea` 且不存在同名明文列 `bank_account_no`，见裁定 A-28。
 31. 第 0.2 节登记的规格回写项已完成，即规格第 5.2 章事件-分录表的开票事件与采购发票事件两行的分支与附加规则列已补入自动核销预收账款与预付账款的分录腿，本阶段的附加腿按回写后的分录执行；回写未完成即为本阶段的阻塞前置，不得以假设取值放行。
 32. 第 0.0 节列出的五项 T0 最小切片在 T0 判定时已经跑通并保持可回归，即最小销项发票、最小应收条目、一笔到款与一次全额核销、一个资金账户建档、税率字典建表与种子及 `TaxRateOptionQuery` 五项在 `ep-datagen` 最小样本上通过且应收一项勾稽差额为零，销项发票的 `tax_rate` 取自 `TaxRateOptionQuery::default_rate`；本阶段的全部其余交付物在该骨架上加厚，`testkit/scenarios/stage10_ar_ap_closed_loop.rs` 复用 T0 的开票与到款两段步骤函数，全卷不存在第二条首次贯通路径。
+33. 门户发票上传记录的 `UPLOADED → ACCEPTED` 一路在本阶段一次真实通过：以一条阶段 7 交付的 `UPLOADED` 上传记录为输入执行 `register_purchase_invoice`，登记成功后该记录 `status` 为 `ACCEPTED` 且 `accepted_purchase_invoice_id` 等于本次采购发票的 `id`；回写与采购发票落库在同一事务内，注入登记失败后该记录仍为 `UPLOADED` 且无孤立的采购发票行。该回写经第 4.11 节第 7 步的写端口完成，本阶段代码内不出现对 portal schema 任何表的直接写入，判定方式为本阶段新增与修改的代码内不出现 `portal.` 前缀表名的写语句。阶段 7 推迟到本阶段的 E2E-T-03 受理路径随本条一并判定。
 
 ---
 

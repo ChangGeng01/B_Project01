@@ -104,7 +104,7 @@ T0 不要求本阶段的下列各项，它们一律排在阶段 11 之后：移�
 
 表分两类。
 
-- 部署级配置表：按基线第 3.8 节的第四类“全局配置字典”处理，不带 `legal_entity_id`，不带 `data_scope_tags`，不建行级策略。其可见性由对象级权限判定，不承载任何业务数据。这一归类是本阶段的显式判断，理由是低代码配置在本部署内跨两个法人共用，为其编造一个法人列会制造第二套隔离口径，与基线第 4 节反对 `tenant_id` 的理由同构。
+- 部署级配置表：不带 `legal_entity_id`，不带 `data_scope_tags`，不建行级策略；按基线第 3.8 节的正向登记制逐表在 `platform_core.unpoliced_table_registry` 登记一行，`admission_basis` 取 `SAME_FOR_ALL_ENTITIES`，即该表的行在本部署内对全部法人取值相同，`isolation_entry` 与 `matrix_case_id` 两列由第 3.4 节第 14 号迁移填写，未登记的表由 `db/checks` 第十三项判为违规而建不出来。其可见性由对象级权限判定。这一判断是本阶段的显式判断，理由是低代码配置在本部署内跨两个法人共用，为其编造一个法人列会制造第二套隔离口径，与基线第 4 节反对 `tenant_id` 的理由同构。
 - 法人级运行台账表：带 `legal_entity_id`，按基线第 3.8 节模板建行级策略，列全。
 
 全部表带基线第 4 节公共列，顺序按基线；仅追加表按基线不带 `row_version`、`updated_at`、`updated_by`，改带 `reverses_id`。枚举一律 `text` 加 CHECK。时间列 `timestamptz`，日期列 `date`。主键 `uuid`，应用侧 UUIDv7。
@@ -382,6 +382,9 @@ create unique index ux_<code>_legal_entity_id_doc_no on ext.<code> (legal_entity
 | 11 | V202704060950__platform_meta_extensions.sql | extensions、extension_capability_grants |
 | 12 | V202704060955__platform_meta_extension_invocations.sql | extension_invocations 含 RLS |
 | 13 | V202704061000__platform_meta_client_bootstrap_dispatches.sql | client_bootstrap_dispatches 含 RLS |
+| 14 | V202704061005__platform_core_backfill_unpoliced_table_registry.sql | 按基线第 3.8 节的正向登记制，向阶段 2 交付的 `platform_core.unpoliced_table_registry` 写入本阶段新建的 17 张不带法人列的表各一行 |
+
+第 14 号是回填文件，其主要创建对象是 `platform_core.unpoliced_table_registry` 的登记行，按裁定通则第五条落在 `db/migrations/platform_core/` 目录下，版本号晚于本阶段全部建表迁移，故列在最后；slug 以 `backfill_` 开头，回退说明为按 `schema_name` 与 `table_name` 两列删除本阶段登记的 17 行。五列体例照抄阶段 4 第 29 号迁移，即 schema、table、准入判据、隔离承接入口与 `rls_matrix` 用例标识五列按阶段 2 冻结的列集填写，准入判据一列 17 行一律取 `SAME_FOR_ALL_ENTITIES`，取值名以阶段 2 冻结的枚举为准。`config_packages`、`config_package_items` 与 `config_release_orders` 三张由阶段 3b 建表，其登记行按同一正向登记制随阶段 3b 的建表迁移插入，本阶段不重复登记，以免撞 `ux_unpoliced_table_registry_schema_table` 的两列唯一约束。本阶段新建的另两张表 `extension_invocations` 与 `client_bootstrap_dispatches` 带 `legal_entity_id` 并已建行级策略，不进本登记。
 
 每个文件头部带 `-- rollback:` 段。本阶段不再追加任何 `ext` schema 级授权迁移：`ext` schema 本身、其属主角色以及对 `ep_app_rw` 与 `ep_analyst_ro` 的 USAGE 与表默认权限由阶段 2 按裁定 C-01 随二十四个 schema 一次建立，`ep_migrator` 在阶段 2 已被授予全部 `ep_mod_*` 角色成员资格，因而在 `ext` 下具备 DDL 权限；自定义对象表的数据读写授权由第 4.3 节的 DDL 计划在 `create policy` 之后逐表发出，不经默认权限，理由见第 4.3 节边界条件。
 
@@ -587,7 +590,7 @@ pub trait ConfigItemApplier: Send + Sync {
 | 燃料耗尽、内存超限、执行超时 | FUEL_EXHAUSTED、MEMORY_LIMIT、TIMEOUT | INFRASTRUCTURE | PLATFORM.EXTENSION.RESOURCE_LIMIT_EXCEEDED |
 | WASM trap | TRAP | INFRASTRUCTURE | PLATFORM.EXTENSION.RESOURCE_LIMIT_EXCEEDED |
 | plugin-host 不可达或 IPC 失败 | HOST_ERROR | INFRASTRUCTURE | PLATFORM.EXTENSION.HOST_UNAVAILABLE |
-| cgroup 突发上限触发限流 | THROTTLED | INFRASTRUCTURE | PLATFORM.EXTENSION.HOST_UNAVAILABLE |
+| 并发实例数达到 `EP__PLUGIN__MAX_INSTANCES` 而调用被限流 | THROTTLED | INFRASTRUCTURE | PLATFORM.EXTENSION.HOST_UNAVAILABLE |
 
 8. 自动停用：同一扩展同一入口连续失败达到 `EP__PLUGIN__AUTO_DISABLE_FAILURE_THRESHOLD`（默认 3）次时，把 `extensions.status` 置 DISABLED、`disabled_reason` 置具体原因，写审计并按 PRD 第 10.5.2 节通知，照抄规格第 9.3 章“插件崩溃、超时或越权调用只影响该子进程，宿主记录事件并按策略停用该插件”。成功一次即把 `consecutive_failures` 归零。
 9. 事务边界约束：插件调用一律发生在写事务之外。规则求值在开启事务之前完成，把求值结果作为命令输入带入事务，落实基线第 10.3 节“事务内禁止外部调用与长时计算”。
@@ -993,7 +996,7 @@ pub trait ConfigItemApplier: Send + Sync {
 21. 模块许可的停用与再启用验收通过：按裁定 A-05，`ep-platform-license` 本体与其三张表由阶段 3b 交付，本阶段只保留一条验收，即某模块置 INSTALLED_DISABLED 后其定时任务停止、对外事件停发，再启用后两者恢复，执行记录见集成测试 26。
 22. 本阶段全部 `/api/v1/` 路由，即 `/api/v1/platform/` 与 `/api/v1/ext/` 两段，其能力域码与动作类别常量已按裁定 A-20 声明：第 5.3 节配置包与发布单两段落 `crates/platform/release/src/capability.rs`，其余各段与 `/api/v1/ext/` 的五个路由形状落 `crates/platform/meta/src/capability.rs`，能力域一律取 `CapabilityDomain::PlatformAdminLowcodeOps`，`xtask configdoc` 通过；自定义单据对象的 `doc_type_code` 与 `docs/data-dictionary.md` 单据类型码一节的全量表无重复，`xtask configdoc --check-doc-type-codes` 通过。
 23. 含 DDL 段的发布在未打开迁移窗口时被经装配注入的 `ep_foundation::port::db::MigrationWindowGuard` 实例的 `assert_open` 拒绝并返回 409 与 `PLATFORM.DB.MIGRATION_WINDOW_CLOSED`，留有一次拒绝与一次放行的执行记录；`ep_platform_flow::port::RuleEvaluator` 与 `WasmComputePort` 的实现类型 `AstRuleEvaluator` 与 `PluginHostWasmCompute` 已在 `apps/core-server/src/wiring/` 与 `apps/job-worker/src/wiring/` 两个目录注册，plugin-host 侧注册 `WasmtimeComponentCompute`，规则求值端点只经 `AstRuleEvaluator`。
-24. 本阶段向 T0 贡献的桌面壳最小切片按第 1.5 节的五项逐项交付，并在 T0 演练中完成一次判据走查：T0 的那一条合同在 Windows 桌面端建单，并在同一端看到 T0 的那张收入报表；该切片之外的本阶段交付物不参与 T0，也不因 T0 提前交付。
+24. 本阶段向 T0 贡献的桌面壳最小切片按第 1.5 节的五项逐项交付，并在 T0 演练中完成一次判据走查：T0 的那一条合同在 Windows 桌面端建单，并在同一端看到 T0 的那张收入报表；该切片之外的本阶段交付物不参与 T0，也不因 T0 提前交付。25. 本阶段新建的 17 张不带法人列的表在 `platform_core.unpoliced_table_registry` 中各有一行登记，`admission_basis` 均取 `SAME_FOR_ALL_ENTITIES`，且本阶段全部迁移执行完毕后 `db/checks` 第十三项返回零行；`config_packages`、`config_package_items` 与 `config_release_orders` 三张的登记行由阶段 3b 随其建表迁移承担，不在本条判定范围内。
 
 ---
 
@@ -1016,8 +1019,8 @@ pub trait ConfigItemApplier: Send + Sync {
 | 9.2 配置发布 | 开发测试与生产隔离；配置进入 Git 经差异审查、自动测试、审批与签名；验证失败阻止生产发布 |
 | 9.3 模块与插件 | 签名 WASM Component；SDK 以 Rust 为主；插件默认无网络、文件、密钥与业务数据权限；必须声明能力、对象、字段与资源限额；权限经审批后最小授予；不能直连核心数据库也不能读取明文机密；扩展运行时三种形态；桌面端原生插件的九项安全边界 |
 | 12.4 DLP 与隐私 | 桌面端与移动端的强制控制；关闭原生插件或设备不合规时的降级为门户端口径与只读预览禁止下载；降级事件与范围记入审计 |
-| 13.1 正式拓扑 | plugin-host 与核心同机，按第 9.3 章承载服务端签名 WASM 组件；插件运行时 5% 的 CPU、内存与磁盘 IO 份额与突发上限外壳；插件运行时整体触及突发上限时限流其调用 |
-| 15.3 运维中心 | 本阶段 9 个指标进入运维中心；配额触发限流事件记入运维中心 |
+| 13.1 正式拓扑 | plugin-host 与核心同机，按第 9.3 章承载服务端签名 WASM 组件；原列的插件运行时 5% 份额与突发上限外壳一项按总览第 6.3 节 R10 删除，cgroup 侧只保留 plugin-host slice 的 `MemoryMax` 一项，插件运行时的过载处置改由第 4.8 节的燃料上限、内存上限、实例数上限与执行时限承担 |
+| 15.3 运维中心 | 本阶段 9 个指标进入运维中心；插件调用被限流与被资源上限中止的事件记入运维中心，原列的配额触发限流一项随配额事件台账按总览第 6.3 节 R10 删除 |
 | 17.2 自动化测试 | 四端端到端测试；数据库适配认证的自定义对象测试项与在线变更实测；派生存储越权与传播测试；模块生命周期测试 |
 | 17.3 强制不变量 | 权限不能跨法人、字段或密级越权；审计链可验证 |
 | 18 升级、版本与生命周期 | 客户端支持分批发布与强制安全更新 |
@@ -1059,7 +1062,7 @@ pub trait ConfigItemApplier: Send + Sync {
 | Tauri 2 移动端成熟度不足，附录 C.2 门槛在本阶段复测未通过 | 四端等价验收不成立 | 阶段 1 已完成 PoC 判定并冻结 Rust 核心接口语义；本阶段的 UI 层与 Rust 核心之间只有 Tauri IPC 一层桥 | 按规格第 6.1 章切换 Flutter UI，返工范围限于 IPC 桥改 FFI 桥、移动端生命周期与后台任务适配、推送、深链、平台插件与外设适配层；Rust 核心九个 crate 不动 |
 | `create index concurrently` 在基准数据集上超过 30 分钟 | 新增索引失去在线变更能力，触及规格第 7.4 章的在线能力底线 | 影响分析的性能项在计划阶段外推并给出预警；单次计划语句数上限 200 | 该操作登记入停机窗口操作清单；若新增索引整体无法达到底线，按规格第 7.4 章交付说明必须明确降级为停机窗口变更，不得以在线 DDL 能力通过认证 |
 | DDL 与元数据无法同事务导致的中间态 | 出现 ACTIVE 元数据而物理表缺失，或物理表存在而未开启行级安全 | 两阶段写入加启动自检项 `custom-object-ddl-consistent`；集成测试 6 专测该场景 | 进程照常启动，把相关对象置 DDL_FAILED 并隔离其全部入口，开一个 kind 取 `CUSTOM_OBJECT_DDL_INCONSISTENT` 的降级窗口并给出具体对象清单，由修复用例补建策略后关窗 |
-| 插件执行占用同机资源影响交易时延 | 规格第 16 章 3 秒通过线受损 | plugin-host 独立 cgroup 与 5% 份额与三倍突发上限封顶；交易路径调用时限 2000 毫秒；调用在事务外 | 触及突发上限即限流其调用并记入运维中心；连续限流按规格第 15.3 章经 `ep_platform_obs::DegradationLedger` 的 `open` 与 `close` 登记降级窗口，降级类别取阶段 14 冻结的十八类之一，见裁定 A-26 |
+| 插件执行占用同机资源影响交易时延 | 规格第 16 章 3 秒通过线受损 | plugin-host 独立 slice 只带基线第 2 节所定的 `MemoryMax` 一项，不设 CPU 与 IO 份额，也不设突发上限；单次调用按第 4.8 节设燃料上限、内存上限与实例数上限；交易路径调用时限 2000 毫秒；调用在事务外 | 并发实例数达到 `EP__PLUGIN__MAX_INSTANCES` 时限流其调用并记入运维中心；连续限流按规格第 15.3 章经 `ep_platform_obs::DegradationLedger` 的 `open` 与 `close` 登记降级窗口，降级类别取阶段 14 冻结的十八类之一，见裁定 A-26 |
 | WASM 宿主自身的漏洞成为越权入口 | 对应规格第 21.7 章风险 | 宿主导入函数只有四个且无网络、文件、密钥与数据库；能力清单与最小权限授予；输入按字段权限裁剪后才进入 IPC；plugin-host 数据库连接数为 0 | 按规格第 3.3 章在本实例内停用该扩展，停用决定、影响范围与恢复条件记入审计 |
 | 桌面端原生插件的子进程成为越权入口 | 对应规格第 21.7 章风险 | 子进程不共享客户端进程内存、不接收本地缓存密钥与会话令牌；传入报文按字段权限裁剪；签名主体、版本与哈希三项核对不通过即不加载 | 按规格第 3.3 章在本实例内停用该插件，停用决定、影响范围与恢复条件记入审计 |
 | 白标维护矩阵膨胀 | 对应规格第 21.8 章风险 | 单一核心加配置化品牌；客户不维护长期核心代码分支；构建、签名、灰度全流水线化；可复现构建使制品哈希可核对 | 品牌配置项清单冻结在 `brand_profiles` 的列集内，新增可配置项必须先改该表并回写 U-K-07 决策 |
@@ -1101,7 +1104,7 @@ pub trait ConfigItemApplier: Send + Sync {
 2. 非常驻工具目录。基线第 2 节的八个进程是常驻进程清单。本阶段新增 `/tools/` 目录承载 `epcfg`、`epbrand`、`epplug` 三个一次性命令行工具，不属于进程清单，不占用系统账户与 cgroup。
 3. 客户端本地加密缓存库选型。取 SQLCipher，经 rusqlite 的 bundled-sqlcipher 特性引入。理由是附录 C.2 要求本地加密数据库随机读写吞吐不低于 20 MB/s、10 万行查询 P95 不超过 1 秒，纯 Rust 的嵌入式库在加密路径上尚无同等实测证据。该选型只作用于客户端，不触及基线第 3 节的服务端数据库约定。
 4. 服务端 WASM 宿主选型。取 wasmtime 与 wasmtime-wasi，主版本在 workspace 根 `[workspace.dependencies]` 中锁定为 26 系列，只启用 Component Model，不启用任何 WASI 网络与文件能力。
-5. 部署级配置表的归类。本阶段涉及的 20 张部署级表按基线第 3.8 节第四段归入“全局配置字典”类，不带 `legal_entity_id` 与 `data_scope_tags`，不建行级策略，其余公共列齐备。其中 17 张由本阶段建立，`config_packages`、`config_package_items` 与 `config_release_orders` 三张由阶段 3b 按裁定 A-27 建立并沿用同一归类。理由见第 3.1 节。
+5. 部署级配置表的登记。本阶段涉及的 20 张部署级表不带 `legal_entity_id` 与 `data_scope_tags`，不建行级策略，其余公共列齐备，按基线第 3.8 节的正向登记制逐表在 `platform_core.unpoliced_table_registry` 登记一行，`admission_basis` 一律取 `SAME_FOR_ALL_ENTITIES`。其中 17 张由本阶段建立，其登记行由第 3.4 节第 14 号迁移 `V202704061005__platform_core_backfill_unpoliced_table_registry.sql` 一次写入；`config_packages`、`config_package_items` 与 `config_release_orders` 三张由阶段 3b 按裁定 A-27 建立，其登记行按同一正向登记制随阶段 3b 的建表迁移插入，本阶段不重复登记。理由见第 3.1 节。
 6. 唯一约束中的空值替代取值。`custom_fields.owner_key` 与 `ui_layouts.role_key` 在语义为空时取 `'-'`，与基线第 11.4 节空批次标识的理由同构：该列是唯一索引的组成键，NULL 在唯一约束中的语义会使重复定义得以并存。
 7. 编辑锁的物理删除。基线第 3.6 节允许物理删除的表只有两类，本阶段追加第三类：`platform_meta.config_edit_locks` 的过期行由 job-worker 按 `expires_at` 清理。理由是它是短生命周期协作锁，不承载任何业务事实。
 8. 平台侧 API 路径段取 `platform`，自定义对象数据端点路径段取 `ext`。两者都不新增模块码，`ext` 与 schema 名一致。
