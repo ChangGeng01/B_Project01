@@ -61,6 +61,14 @@ fn run_archcheck() -> ExitCode {
         println!("  {:<28} {}", rule, if hits == 0 { "通过".into() } else { format!("{hits} 处违反") });
     }
 
+    if !archcheck::DELEGATED.is_empty() {
+        println!("\n已裁定不由本工具判定的判据（裁定 F-03，基线第 12.1 节 delegated 段）：");
+        for (rule, taker) in archcheck::DELEGATED {
+            println!("  {rule}");
+            println!("      {taker}");
+        }
+    }
+
     for (rule, why) in &report.undecidable {
         println!("  {rule:<28} 不可判定");
         println!("      {why}");

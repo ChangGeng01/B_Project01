@@ -215,34 +215,6 @@ fn schema_refs(line: &str) -> Vec<String> {
     out
 }
 
-/// 禁止项第六条的必要性判据：foundation 的每个公开模块被两个及以上
-/// `ep-contract-*` 引用，或被 `ep-platform-*` 引用。
-///
-/// 返回 `Err` 表示本判据当前不可判定，而不是通过。
-pub fn foundation_necessity(ws: &Workspace, root: &Path) -> Result<Vec<Violation>, String> {
-    let consumers: Vec<&crate::graph::Package> = ws
-        .packages
-        .iter()
-        .filter(|p| matches!(p.layer, Layer::Contract(_) | Layer::Platform(_)))
-        .collect();
-    let with_code = consumers
-        .iter()
-        .filter(|p| {
-            rust_files(&root.join(&p.dir))
-                .iter()
-                .any(|f| fs::read_to_string(f).is_ok_and(|t| code_lines(&t).count() > 0))
-        })
-        .count();
-    if with_code == 0 {
-        return Err(format!(
-            "必要性判据不可判定：{} 个 ep-contract-* 与 ep-platform-* 全为骨架，无任何引用可数。\
-             判据在骨架期恒为「零引用」，若按判据执行将把 foundation 的全部模块判为不必要。",
-            consumers.len()
-        ));
-    }
-    Ok(Vec::new())
-}
-
 #[cfg(test)]
 mod negative_samples {
     use super::*;

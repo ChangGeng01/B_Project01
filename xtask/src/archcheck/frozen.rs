@@ -47,7 +47,11 @@ pub fn check(root: &Path) -> Vec<Violation> {
     }
 
     // 两个端口模块必须存在，且阶段 1 内不得有任何条目。
-    for (rel, owner) in [("port/search.rs", "阶段 3b"), ("port/doc.rs", "阶段 5")] {
+    for (rel, owner) in [
+        ("port/search.rs", "阶段 3b"),
+        ("port/doc.rs", "阶段 5"),
+        ("port/db.rs", "阶段 2 与阶段 11"),
+    ] {
         let path = base.join(rel);
         match fs::read_to_string(&path) {
             Err(_) => found.push(violation(rel, "空端口模块文件不存在")),
@@ -68,6 +72,44 @@ pub fn check(root: &Path) -> Vec<Violation> {
     }
 
     found.extend(check_marker_shape(&base.join("id/marker.rs")));
+    found.extend(check_marker_names(&base.join("id/marker.rs")));
+    found
+}
+
+/// 按裁定 F-03 第三段，`id::marker` 为冻结清单制：22 项按名逐项断言。
+///
+/// 只数数量挡不住改名——把 SalesOrder 改成 Foo 仍是 22 个、静默通过。
+/// 清单出处为技术基线第 1.4 节与裁定 A-01，两处逐字一致。
+const MARKER_NAMES: [&str; 22] = [
+    "LegalEntity", "UserAccount", "Session", "Department", "Position", "Project",
+    "Customer", "Supplier", "Material", "Product", "Warehouse", "Contract",
+    "ContractLine", "SalesOrder", "SalesOrderLine", "DeliveryConfirmation",
+    "DeliveryConfirmationLine", "PurchaseOrder", "GoodsReceiptLine",
+    "PurchaseInvoice", "PurchaseInvoiceLine", "AccountingPeriod",
+];
+
+fn check_marker_names(path: &Path) -> Vec<Violation> {
+    let Ok(text) = fs::read_to_string(path) else { return Vec::new() };
+    let actual: Vec<&str> = text
+        .lines()
+        .map(str::trim)
+        .filter(|l| is_unit_struct(l))
+        .filter_map(|l| l.trim_start_matches("pub struct ").strip_suffix(';'))
+        .collect();
+    let mut found = Vec::new();
+    for want in MARKER_NAMES {
+        if !actual.contains(&want) {
+            found.push(violation("id/marker.rs", format!("冻结清单缺少标记类型 {want}")));
+        }
+    }
+    for got in &actual {
+        if !MARKER_NAMES.contains(got) {
+            found.push(violation(
+                "id/marker.rs",
+                format!("出现清单外的标记类型 {got}；本清单冻结 22 项，任何阶段不得增删"),
+            ));
+        }
+    }
     found
 }
 

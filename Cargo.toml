@@ -92,7 +92,6 @@ ep-app-ledger = { path = "crates/application/ledger" }
 ep-app-invoice = { path = "crates/application/invoice" }
 ep-app-portal = { path = "crates/application/portal" }
 ep-app-reporting = { path = "crates/application/reporting" }
-ep-adapter-db = { path = "crates/adapter/db" }
 ep-adapter-db-pg = { path = "crates/adapter/db-pg" }
 ep-adapter-file = { path = "crates/adapter/file" }
 ep-adapter-kms = { path = "crates/adapter/kms" }

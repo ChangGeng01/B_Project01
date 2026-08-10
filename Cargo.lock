@@ -96,13 +96,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "ep-adapter-db"
-version = "0.1.0"
-dependencies = [
- "ep-foundation",
-]
-
-[[package]]
 name = "ep-adapter-db-pg"
 version = "0.1.0"
 dependencies = [

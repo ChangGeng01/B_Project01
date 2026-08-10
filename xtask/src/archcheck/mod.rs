@@ -1,28 +1,44 @@
 //! `xtask archcheck` — 结构门禁。
 //!
-//! 断言面分两类：依赖图可判定的落在 [`deps`]，需要读源码的落在 [`source`]。
+//! 断言面分三类：依赖图可判定的落在 [`deps`]，需要读源码的落在 [`source`]，
+//! ep-foundation 的冻结项与准入替身落在 [`frozen`] 与 [`foundation`]。
+//!
 //! 退出条件 3 的七条禁止项由 [`deps::FORBIDDEN_RULES`] 点名，
 //! 退出条件 26 的 `unwired-absent` 单列，不并入那七条。
+//!
+//! 三态输出（裁定 F-03 第五段）：机检面全绿为 0，登记表比对不符或有违反为 1，
+//! 仍存在真正不可判定项为 3。三条路径退出码互不相同，任何一条不能被读成另一条。
 
 pub mod deps;
+pub mod foundation;
 pub mod frozen;
 pub mod source;
 
 use std::path::Path;
 
-use deps::Violation;
 use crate::graph::{self, Workspace};
+use deps::Violation;
+
+/// 已裁定不由本工具执行的判据。永久登记，必须点名承接方。
+///
+/// 出处：裁定 F-03 第二段与技术基线第 12.1 节 delegated 段。
+/// 本表与基线 12.1 节 delegated 段必须逐行相等。
+pub const DELEGATED: [(&str, &str); 1] = [(
+    "foundation-no-business/necessity",
+    "不由本工具判定。承接方：评审举证，加 foundation-no-internal-dep、\
+     foundation-frozen-items、foundation-module-registry、foundation-no-single-owner 四条替身",
+)];
 
 pub struct Report {
     pub violations: Vec<Violation>,
     /// 已判定的规则名。
     pub checked: Vec<&'static str>,
-    /// 当前不可判定的规则，附不可判定的理由。不计入通过。
+    /// 当前无法执行的判据，附不可判定的理由。临时登记，条数只减不增。
     pub undecidable: Vec<(&'static str, String)>,
 }
 
-/// 退出码。不可判定与违反分开，避免「判据写不出来」被读成「代码违规」，
-/// 也避免它被读成通过。
+/// 退出码。三者互不相同：判据写不出来、代码违规、判据被降为评审，
+/// 是三件不同的事，不得互相冒充。
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum Outcome {
     Clean,
@@ -56,12 +72,8 @@ pub fn evaluate(ws: &Workspace) -> Report {
     violations.extend(source::forbidden_std_io(ws, root));
     violations.extend(source::one_schema_per_file(root));
     violations.extend(frozen::check(root));
-
-    let mut undecidable = Vec::new();
-    match source::foundation_necessity(ws, root) {
-        Ok(v) => violations.extend(v),
-        Err(why) => undecidable.push(("foundation-no-business/necessity", why)),
-    }
+    violations.extend(foundation::module_registry(root));
+    violations.extend(foundation::no_single_owner(root));
 
     let mut checked: Vec<&'static str> = deps::FORBIDDEN_RULES.to_vec();
     checked.extend([
@@ -70,6 +82,11 @@ pub fn evaluate(ws: &Workspace) -> Report {
         "unwired-absent",
         "downcast-pgtx-confined",
         "foundation-frozen-items",
+        "foundation-module-registry",
+        "foundation-no-single-owner",
     ]);
-    Report { violations, checked, undecidable }
+
+    // 裁定 F-03 后本工具不再声称判定必要性，因此没有任何不可判定项。
+    // 该表保留是为了让「未来新增的不可判定判据」有唯一且诚实的落点。
+    Report { violations, checked, undecidable: Vec::new() }
 }
