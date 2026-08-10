@@ -16,7 +16,7 @@
 3. job-worker 进程内新增四类消费者与一个定时任务：合同生效派生采购需求的 Outbox 消费者、采购退货生成供应商质量记录的消费者、采购与门户单据的检索索引与门户投影刷新消费者（产出 `foundation::port::search::SearchDocument` 并经 `SearchIndexPort` 写入）、采购与门户单据的站内通知投递消费者，以及库存不足触发采购需求的扫描定时任务（默认关闭，理由见第 11.2 小节）。
 4. `procure` 与 `portal` 两个 schema 的全部表、约束、索引与行级安全策略，经 refinery 迁移可离线执行并可按迁移文件头的回退说明回退。
 5. 六个新增 crate：`ep-contract-procure`、`ep-domain-procure`、`ep-app-procure`、`ep-contract-portal`、`ep-domain-portal`、`ep-app-portal`。
-6. `ep-testkit` 中新增的采购与门户构造器，以及两个记录型桩（`RecordingStockPostingPort` 记录 `ep_contract_inventory::InventoryPostingPort` 的调用，`RecordingLedgerPostingPort` 记录 `ep_contract_ledger::PostingPort` 的调用），用于契约测试的入参断言与故障注入。库存与总账的真实实现分别在阶段 8 与阶段 9a 已合入，两个记录型桩只出现在测试装配，发布装配一律注入真实实现。发票与财务两个模块的四个端口在本阶段之后交付，本阶段一律不注入替身，四个调用点在本阶段的代码中不存在：`ReceiptInvoiceMatchQueryPort` 与 `PurchaseCreditNotePort` 所支撑的采购退货发票已登记分支按第 4.4 小节整条推迟到阶段 10；`PayableLedgerQuery` 所支撑的付款申请 `INVOICE_PAYMENT` 分支按第 4.5 小节整条推迟到阶段 10；`SupplierStatementQuery` 所支撑的三个门户对账端点按第 5.7 小节随该端口在阶段 10 同批交付。两个 wiring.rs 中不出现任何以 `Noop` 前缀命名的注入行。
+6. `ep-testkit` 中新增的采购与门户构造器，以及两个记录型桩（`RecordingStockPostingPort` 记录 `ep_contract_inventory::InventoryPostingPort` 的调用，`RecordingLedgerPostingPort` 记录 `ep_contract_ledger::PostingPort` 的调用），用于契约测试的入参断言与故障注入。库存与总账的真实实现分别在阶段 8 与阶段 9a 已合入，两个记录型桩只出现在测试装配，发布装配一律注入真实实现。发票与财务两个模块的四个端口在本阶段之后交付，本阶段一律不注入替身，四个调用点在本阶段的代码中不存在：`ReceiptInvoiceMatchQueryPort` 与 `PurchaseCreditNotePort` 所支撑的采购退货发票已登记分支按第 4.4 小节整条推迟到阶段 10；`PayableLedgerQuery` 所支撑的付款申请 `INVOICE_PAYMENT` 分支按第 4.5 小节整条推迟到阶段 10；`SupplierStatementQuery` 所支撑的三个门户对账端点按第 5.7 小节随该端口在阶段 10 同批交付。两个 wiring 目录下的全部文件中不出现任何以 `Noop` 前缀命名的注入行。
 7. `ep-datagen` 中新增的采购侧基准数据生成器，产出附录 A.3 规模中的采购订单行 10 万条与其对应的收货、退货与付款申请分布。
 8. 一份可执行的端到端用例集合，覆盖规格第 8 章闭环第 4 步、第 5 步收货腿、第 10 步的申请与审批腿、第 11 步的采购退货腿，以及规格第 19 章阶段 3 门户条目要求的采购订单与交期确认、送货通知、发票上传、收付款对账查询四项闭环用例。
 9. 三份登记文档的增量：`docs/event-catalog.md` 新增 14 个事件类型，`docs/error-codes.md` 新增 35 个 PROCURE 与 PORTAL 段错误码，其中含第 4.4 小节推迟窗口的硬阻断码 `PROCURE.PURCHASE_RETURN.INVOICE_STAGE_PENDING`（平台段错误码由阶段 1 登记，本阶段只引用），`docs/data-dictionary.md` 新增 30 张表并在单据类型码一节补齐本阶段的八个类型码。
@@ -37,7 +37,7 @@
 | ep-domain-portal | crates/domain/portal | 门户账号绑定、送货通知、发票上传记录三类聚合；能力白名单与供应商数据范围两组不变量 | ep-foundation、ep-contract-portal |
 | ep-app-portal | crates/application/portal | 门户五项能力的受控用例、投影组装与脱敏裁剪、门户操作审计写入 | ep-foundation、ep-platform-*、ep-domain-portal、ep-contract-* |
 
-依赖方向逐条自检：`ep-domain-procure` 不依赖 `ep-contract-inventory` 与 `ep-contract-ledger`，跨模块调用一律经 `ep-app-procure`；`ep-app-portal` 不依赖 `ep-app-procure`，门户对采购单据的读写经 `ep-contract-procure` 的 trait，实现在 `apps/core-server/src/wiring.rs` 注入。这两条是本阶段最容易被违反的两条，由阶段 1 交付的 `xtask archcheck` 按层位断言：前者落禁止项第一条 `domain-no-cross-module`，后者落禁止项第二条 `app-no-peer-app`，被测输入是 `cargo metadata --no-deps` 建出的层位图；本阶段不另立按 crate 逐项比对期望依赖清单的自检脚本（裁定 F-05 通则甲-3）。
+依赖方向逐条自检：`ep-domain-procure` 不依赖 `ep-contract-inventory` 与 `ep-contract-ledger`，跨模块调用一律经 `ep-app-procure`；`ep-app-portal` 不依赖 `ep-app-procure`，门户对采购单据的读写经 `ep-contract-procure` 的 trait，实现在 `apps/core-server/src/wiring/` 目录下注入。这两条是本阶段最容易被违反的两条，由阶段 1 交付的 `xtask archcheck` 按层位断言：前者落禁止项第一条 `domain-no-cross-module`，后者落禁止项第二条 `app-no-peer-app`，被测输入是 `cargo metadata --no-deps` 建出的层位图；本阶段不另立按 crate 逐项比对期望依赖清单的自检脚本（裁定 F-05 通则甲-3）。
 
 #### 2.2 改动的既有 crate
 
@@ -955,7 +955,7 @@ E2E-T-01 至 E2E-T-04 逐条对应规格第 19 章阶段 3 门户条目的四项
 
 #### 8.6 对账与不变量校验
 
-本阶段在 `ep-app-procure` 实现六个 `ep_platform_recon::ReconCheck`，并按裁定 A-06 全部在 `apps/job-worker/src/wiring.rs` 中经 `ReconRegistry::register` 注册，由 ep-platform-recon 的执行器按法人逐轮遍历、在其提供的快照上分批执行，差额非零即生成对账差异事项并按规格第 10.2 章拦截关账。裁定 A-06 固定的五个注册方十六个校验项中，本阶段承担六个。六个 check 的 `code()` 取值即下表编号，`blocks_period_close()` 一律为真，`category()` 一律取 `ReconCategory::Invariant`，落库文本为 `INVARIANT`：本阶段的六条判据全部是金额与数量守恒判据，跨模块逻辑引用的存在性不在对账框架内核对，见第 3.1 小节。
+本阶段在 `ep-app-procure` 实现六个 `ep_platform_recon::ReconCheck`，并按裁定 A-06 全部在 `apps/job-worker/src/wiring/` 目录下经 `ReconRegistry::register` 注册，由 ep-platform-recon 的执行器按法人逐轮遍历、在其提供的快照上分批执行，差额非零即生成对账差异事项并按规格第 10.2 章拦截关账。裁定 A-06 固定的四个注册方十五个校验项中，本阶段承担六个。六个 check 的 `code()` 取值即下表编号，`blocks_period_close()` 一律为真，`category()` 一律取 `ReconCategory::Invariant`，落库文本为 `INVARIANT`：本阶段的六条判据全部是金额与数量守恒判据，跨模块逻辑引用的存在性不在对账框架内核对，见第 3.1 小节。
 
 | 编号 | 判据 |
 |---|---|
@@ -1011,10 +1011,10 @@ E2E-T-01 至 E2E-T-04 逐条对应规格第 19 章阶段 3 门户条目的四项
 6. 第 8.3 小节的十六个 E2E 用例全部通过，其中 E2E-T-01 至 E2E-T-04 对应规格第 19 章阶段 3 门户条目的四项闭环用例。
 7. 第 8.1 小节的四组领域属性测试各运行不少于 1000 个用例且无反例。
 8. 第 6.7 小节的六个并发场景中本阶段执行五个并全部通过，第 4 项随付款申请的 `INVOICE_PAYMENT` 分支在阶段 10 执行；`procure.goods_receipt.posted.v1` 的重复投递 3 次业务效果、外发事件与审计记录各只产生一次。
-9. 第 8.6 小节的六个 `ReconCheck` 已在 `ep-app-procure` 实现并在 `apps/job-worker/src/wiring.rs` 经 `ReconRegistry::register` 注册，注入任一差额后对账差异事项生成且关账请求被拒绝，差额清零后关账可通过。
+9. 第 8.6 小节的六个 `ReconCheck` 已在 `ep-app-procure` 实现并在 `apps/job-worker/src/wiring/` 目录下经 `ReconRegistry::register` 注册，注入任一差额后对账差异事项生成且关账请求被拒绝，差额清零后关账可通过。
 10. 第 8.4 小节的四项数据保护控制测试通过，其中导出审批以「无导出入口」判定并已取得安全负责人的书面确认。
 11. 第 8.8 小节的覆盖率门槛全部达标，`cargo llvm-cov --fail-under-lines` 在 CI 上通过。
-12. 依赖方向自检脚本通过：`ep-domain-procure` 与 `ep-domain-portal` 不出现 sqlx、reqwest、tokio 的 IO 模块、`std::fs`、`std::net`、`SystemTime::now`、`rand` 六类符号；`ep-app-procure` 与 `ep-app-portal` 之间无相互依赖；除 `apps/*/src/wiring.rs` 外无 `use ep_adapter_db_pg::` 出现。
+12. 依赖方向自检脚本通过：`ep-domain-procure` 与 `ep-domain-portal` 不出现 sqlx、reqwest、tokio 的 IO 模块、`std::fs`、`std::net`、`SystemTime::now`、`rand` 六类符号；`ep-app-procure` 与 `ep-app-portal` 之间无相互依赖；除 `apps/*/src/wiring/` 目录外无 `use ep_adapter_db_pg::` 出现。
 13. 文件规模纪律通过：本阶段新增文件无一超过 800 行，函数无一超过 50 行，嵌套深度无一超过 4 层。
 14. `docs/event-catalog.md` 已登记本阶段 14 个事件类型，`docs/error-codes.md` 已登记 35 个 PROCURE 与 PORTAL 段错误码且与 `ep-foundation::error::codes` 常量表一致（平台段错误码由阶段 1 登记，本阶段不重复登记），`docs/data-dictionary.md` 已登记 30 张表，三处由 CI 校验一致。
 15. 附录 A.1 清单内本阶段的八个度量端点在附录 A.3 基准数据集上给出 `EXPLAIN` 证据，无顺序扫描。
@@ -1023,11 +1023,11 @@ E2E-T-01 至 E2E-T-04 逐条对应规格第 19 章阶段 3 门户条目的四项
 18. 第 7.2 小节的八个业务参数已通过配置发布通道发布一次，改值不需要重启进程与改表结构。
 19. 本模块在规格第 6.2 章能力矩阵中取值为完整或简化的能力域，其四端界面已实现并通过 Playwright 与 tauri-driver 的桌面用例、XCUITest 与 Espresso 的移动用例；取值为 VIEW_ONLY 的能力域只实现只读视图；取值为 NOT_APPLICABLE 的不实现入口。供应商门户站点以浏览器承载，其用例由 Playwright 驱动。
 20. 本阶段全部路由的能力域码与动作类别常量已在 `crates/contract/procure/src/capability.rs` 与 `crates/contract/portal/src/capability.rs` 声明，`xtask configdoc` 通过。
-21. `ProcureReferenceCounter` 与 `ProcureTradeHistoryProvider` 已实现并在两个 wiring.rs 注册到 `MasterReferenceCounterRegistry` 与 `TradeHistoryProviderRegistry`，覆盖未终态采购需求、采购订单、收货、采购退货、付款申请与采购订单行、收货行的历史成交。
+21. `ProcureReferenceCounter` 与 `ProcureTradeHistoryProvider` 已实现并在两个 wiring 目录注册到 `MasterReferenceCounterRegistry` 与 `TradeHistoryProviderRegistry`，覆盖未终态采购需求、采购订单、收货、采购退货、付款申请与采购订单行、收货行的历史成交。
 22. 已在 `crates/contract/procure/src/port/subledger_balance.rs` 定义 `GrniSubledgerBalancePort`（`Send + Sync`，带 `#[async_trait::async_trait]`），方法为 `async fn balance(&self, snapshot: &dyn SnapshotCtx, legal_entity_id: Id<LegalEntity>, accounting_period_id: Id<AccountingPeriod>) -> Result<Money, AppError>`，返回该法人该会计期间的已收货未收票暂估合计；实现类型 `GrniSubledgerBalanceQuery` 位于 `crates/application/procure/src/projection/subledger_balance.rs`，`impl` 与类型同 crate。本阶段不写任何注入行，注入由阶段 10 在 `apps/core-server/src/wiring/` 与 `apps/job-worker/src/wiring/` 两个目录写入（裁定 G-01；`ep_contract_finance::SubledgerBalanceProvider` 一名全卷作废，本阶段不引用）。
-23. `PurchaseReturnLinkPort::link_drop_ship_return` 已实现并在两个 wiring.rs 首次接线，阶段 6 在本阶段之前未注入任何替身，直运退货勾稽端到端通过。
+23. `PurchaseReturnLinkPort::link_drop_ship_return` 已实现并在两个 wiring 目录首次接线，阶段 6 在本阶段之前未注入任何替身，直运退货勾稽端到端通过。
 24. 八个单据类型码 PR、PO、GR、RJ、PRT、PAYR、DN、SIU 已登记入 `docs/data-dictionary.md` 的单据类型码一节与 `ep-platform-sequence` 的常量表，`xtask configdoc --check-doc-type-codes` 通过。
-25. 两个 wiring.rs 中不出现任何以 `Noop` 前缀命名的注入行，也不出现 `ReceiptInvoiceMatchQueryPort`、`PurchaseCreditNotePort`、`PayableLedgerQuery` 与 `SupplierStatementQuery` 四个端口的调用点。本阶段推迟到阶段 10 的四项在此逐条列名：采购退货的发票已登记分支与红字发票登记（第 4.4 小节）、付款申请的 `INVOICE_PAYMENT` 分支与占用写入路径（第 4.5 小节）、三个门户对账端点 `/portal/v1/reconciliation/purchase-invoices` 与 `/payments` 与 `/payable-balance`（第 5.7 小节）、集成场景第 12 项与第 20 项。四项的实现与验收在阶段 10 同批执行，本阶段不为其登记任何顺延验收。
+25. 两个 wiring 目录下的全部文件中不出现任何以 `Noop` 前缀命名的注入行，也不出现 `ReceiptInvoiceMatchQueryPort`、`PurchaseCreditNotePort`、`PayableLedgerQuery` 与 `SupplierStatementQuery` 四个端口的调用点。本阶段推迟到阶段 10 的四项在此逐条列名：采购退货的发票已登记分支与红字发票登记（第 4.4 小节）、付款申请的 `INVOICE_PAYMENT` 分支与占用写入路径（第 4.5 小节）、三个门户对账端点 `/portal/v1/reconciliation/purchase-invoices` 与 `/payments` 与 `/payable-balance`（第 5.7 小节）、集成场景第 12 项与第 20 项。四项的实现与验收在阶段 10 同批执行，本阶段不为其登记任何顺延验收。
 26. `platform_core.append_only_registry` 中存在 `procure.goods_receipt_line_costings` 一行，其 `mode` 为 `APPEND_ONLY`、`mutable_columns` 为空数组，仅追加触发器已按该行挂接，`xtask sqlcheck` 执行 `db/checks/append_only_consistency.sql` 返回零行。
 27. 严重与高危缺陷全部关闭，中危缺陷已登记并给出规避方案与责任人。
 

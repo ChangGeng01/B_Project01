@@ -79,8 +79,8 @@ T0 不要求分支覆盖，不要求供应商、物料、价目表、取价、�
 | ep-adapter-search | 本阶段不改动本 crate，本行只登记检索文档投影函数的落点：四类档案与价目表的 ep_foundation::port::search::SearchDocument 投影函数落在 ep-app-mdm 与 ep-app-cpq，路径各为 crates/application/mdm/src/projection/search_document.rs 与 crates/application/cpq/src/projection/search_document.rs，由 job-worker 的索引消费者调用后经 ep_foundation::port::search::SearchIndexPort 写入；索引正文只含编码、名称、简称、规格型号、类别与备注，不含开票要素与银行信息。落点依据是裁定 F-05 通则甲-1，以及 03-platform-kernel.md 第 3.1 节第 18 项「本阶段不交付任何业务对象的检索文档投影函数，投影由各业务阶段按 SearchDocument 结构提供」与 00-overview.md 第 4.1 节 A-07 行「各阶段只产出 SearchDocument，不自建写入路径」；本 crate 保持只依赖 ep-foundation，本阶段不为它新增任何依赖边 |
 | ep-testkit | 新增 CustomerBuilder、SupplierBuilder、MaterialBuilder、ProductBuilder、PriceListBuilder、ChangeRequestBuilder 六个构造器与探针桩；探针桩只出现在测试装配中，不进入 apps/core-server/src/wiring/ 与 apps/job-worker/src/wiring/ 两个目录 |
 | ep-datagen | 新增主数据分片，按规格附录 A.3 取值产出 |
-| apps/core-server | 在 wiring.rs 中装配本阶段的仓储、端口实现与路由 |
-| apps/job-worker | 在 wiring.rs 中注册本阶段的五类后台任务与两类事件消费者 |
+| apps/core-server | 在 apps/core-server/src/wiring/ 目录下装配本阶段的仓储、端口实现与路由 |
+| apps/job-worker | 在 apps/job-worker/src/wiring/ 目录下注册本阶段的五类后台任务与两类事件消费者 |
 
 #### 2.3 进程归属
 
@@ -770,7 +770,7 @@ ep-contract-crm 定义 Customer360SectionProvider trait，含 section_key、sect
 4. 第 8.1 至 8.4 节列出的全部用例通过，无长期跳过项。
 5. 覆盖率达到第 8.6 节的四档门槛，CI 门禁通过。
 6. 第 8.5 节的四个度量项在基准数据集与 20 并发负载下 P95 达标，取价子段的观察值已记录，五条 EXPLAIN 证据已归档且不含 Seq Scan。
-7. 依赖方向自检脚本通过：ep-domain-mdm 与 ep-domain-cpq 中不出现 sqlx、reqwest、tokio 的 IO 模块、std::fs、std::net、SystemTime::now、rand 任一符号；ep-app-* 的用例函数中不出现 reqwest 与文件写入符号；除 wiring.rs 外任何地方不出现 use ep_adapter_db_pg。
+7. 依赖方向自检脚本通过：ep-domain-mdm 与 ep-domain-cpq 中不出现 sqlx、reqwest、tokio 的 IO 模块、std::fs、std::net、SystemTime::now、rand 任一符号；ep-app-* 的用例函数中不出现 reqwest 与文件写入符号；除 apps/<proc>/src/wiring/ 目录外任何地方不出现 use ep_adapter_db_pg。
 8. 文件规模纪律通过：本阶段新增文件无一超过 800 行，函数无一超过 50 行，嵌套无一超过 4 层。
 9. docs/event-catalog.md 中本阶段的 24 个事件全部登记且与代码常量一致；docs/error-codes.md 中本阶段的错误码全部登记且与 ep-foundation 的 error::codes 一致，CI 一致性校验通过，无重复码；PLATFORM 段的七个平台错误码按裁定 C-24 由阶段 1 登记，本阶段只引用不重复登记。
 10. docs/data-dictionary/mdm.md 与 docs/data-dictionary/cpq.md 与实际表结构逐列一致，由 CI 从数据库元数据比对生成校验。

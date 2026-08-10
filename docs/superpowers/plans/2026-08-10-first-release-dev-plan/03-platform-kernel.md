@@ -117,7 +117,7 @@
 
 #### 3.2.3 依赖方向核对
 
-本阶段全部新增 crate 均为 `ep-platform-*` 与 `ep-adapter-*`，依赖只指向 `ep-foundation` 与其他 `ep-platform-*`，不依赖任何 `ep-domain-*` 与 `ep-app-*`，符合基线第 1.3 节。`ep-adapter-file` 只依赖 `ep-foundation` 与 `ep-platform-file` 中的 `ObjectStore` 端口 trait，不依赖任何其他 adapter。装配全部发生在 `apps/core-server/src/wiring.rs`、`apps/job-worker/src/wiring.rs`、`apps/integration-gateway/src/wiring.rs` 三处。消费 KMS 能力的 `ep-platform-audit`、`ep-platform-file`、`ep-platform-notify` 与 `ep-platform-release` 四个 crate 一律只依赖 `ep_foundation::port::kms`，不依赖 `ep-adapter-kms`，载体实例在 `apps/core-server/src/wiring/` 与 `apps/job-worker/src/wiring/` 两个目录内注入；本段「依赖只指向 `ep-foundation` 与其他 `ep-platform-*`」因此成立，按裁定 F-04。
+本阶段全部新增 crate 均为 `ep-platform-*` 与 `ep-adapter-*`，依赖只指向 `ep-foundation` 与其他 `ep-platform-*`，不依赖任何 `ep-domain-*` 与 `ep-app-*`，符合基线第 1.3 节。`ep-adapter-file` 只依赖 `ep-foundation` 与 `ep-platform-file` 中的 `ObjectStore` 端口 trait，不依赖任何其他 adapter。装配全部发生在 `apps/core-server/src/wiring/`、`apps/job-worker/src/wiring/`、`apps/integration-gateway/src/wiring/` 三个目录下的全部文件中。消费 KMS 能力的 `ep-platform-audit`、`ep-platform-file`、`ep-platform-notify` 与 `ep-platform-release` 四个 crate 一律只依赖 `ep_foundation::port::kms`，不依赖 `ep-adapter-kms`，载体实例在 `apps/core-server/src/wiring/` 与 `apps/job-worker/src/wiring/` 两个目录内注入；本段「依赖只指向 `ep-foundation` 与其他 `ep-platform-*`」因此成立，按裁定 F-04。
 
 platform 内部的依赖边为：`ep-platform-outbox → ep-foundation`；`ep-platform-audit → ep-foundation`；`ep-platform-file → ep-foundation`；`ep-platform-sequence → ep-foundation`；`ep-platform-license → ep-foundation`；`ep-platform-release → ep-foundation`（3a 段），3b 段追加 `ep-platform-audit`、`ep-platform-outbox`；`ep-platform-notify → ep-foundation, ep-platform-release`；`ep-platform-flow → ep-foundation, ep-platform-outbox, ep-platform-audit, ep-platform-release`。无环，因为 `ep-platform-release` 不反向依赖任何 `ConfigItemApplier` 属主 crate：3b 段的 `ep-platform-flow` 与 `ep-platform-notify`、阶段 4 的 `ep-platform-authz`、阶段 11 的 `ep-app-reporting`、阶段 13b 的 `ep-platform-meta` 一律在外，`ItemKind` 的十五个 applier 全部落在实现方 crate 内。该方向对全卷生效，任何阶段不得为 `ep-platform-release` 新增指向属主 crate 的依赖边；跨 crate 的执行编排一律落在 `apps/*`，不落 `ep-platform-release`。`ep-adapter-search` 只依赖 `ep-foundation`。本阶段新增的八个 platform crate 与两个 adapter crate 一并纳入 `xtask archcheck` 的层位判定与 `platform-acyclic`、`platform-no-adapter` 两条规则，不另立按 crate 逐项比对期望依赖清单的自检脚本；本节的依赖枚举是本阶段结束时的快照，后续阶段可在基线第 1.3 节允许项内增边，见基线第 1.3 节末段。
 
@@ -876,7 +876,7 @@ returning next_value as serial_value, width as effective_width;
 
 锚定触发条件：某段自上次锚定以来经过时间不少于 `anchor_interval_seconds`（默认 300），或未锚定事件条数不少于 `anchor_event_threshold`（默认 1000）。扫描周期 `anchor_scan_interval_seconds` 默认 30 秒，由 job-worker 按法人轮转执行。
 
-锚定分三段，理由是签名要调用 KMS、写证据文件要落盘，两者都不能在持有段锁的事务内做，否则会把业务事务的段锁等待放大到 KMS 与磁盘的延迟上。
+锚定分三段，理由是签名要经 `ep_foundation::port::kms::KmsBackend` 的 `sign` 调用 KMS 载体、写证据文件要落盘，两者都不能在持有段锁的事务内做，否则会把业务事务的段锁等待放大到 KMS 载体与磁盘的延迟上。载体实现在 `ep-adapter-kms`，`ep-platform-audit` 不依赖该 crate，实例由 `apps/core-server/src/wiring/` 与 `apps/job-worker/src/wiring/` 两个目录注入。
 
 阶段 A，短事务。取段行 `FOR UPDATE`，读 `last_seq` 与 `last_hash`。取到锁即说明该段无在途审计写入，因为一切审计写入都要先取该锁。插入 `audit_anchors` 一行，`anchor_seq = last_seq`，`root_hash = last_hash`，`state = 'PENDING_SIGN'`，更新段行的 `last_anchor_seq`。提交。持锁时间为两次单行写。
 
@@ -964,7 +964,7 @@ select ... from platform_msg.outbox_events
 
 正文落盘的三段式，对应判定三。
 
-第一段，事务 A：写 `attachment_versions` 一行，`state = 'PENDING'`，`storage_path` 预先由 `<legal_entity_id>/<security_level>/<yyyy>/<mm>/<version_id>` 确定，`dek_ref` 与 `key_domain_ref` 由 KMS 派生。事务提交。
+第一段，事务 A：写 `attachment_versions` 一行，`state = 'PENDING'`，`storage_path` 预先由 `<legal_entity_id>/<security_level>/<yyyy>/<mm>/<version_id>` 确定，`dek_ref` 与 `key_domain_ref` 由 `ep_foundation::port::kms::KmsBackend` 的载体实现派生，载体实现在 `ep-adapter-kms`，`ep-platform-file` 不依赖该 crate。事务提交。
 
 第二段，事务外：从 staging 流式读取分片，用会话级临时密钥解密，边解密边计算明文 SHA-256，边用该版本的数据密钥以 AES-256-GCM 加密，经 `ep-adapter-file` 的 `published` 命名空间以 `create_new`（`O_CREAT | O_EXCL`）写入目标路径，写完 `fsync`。若目标路径已存在，判为前次崩溃后的重入，跳过写入直接进入第三段。
 

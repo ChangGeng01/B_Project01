@@ -17,7 +17,7 @@
 
 9b 段交付：ledger.close_serialization_slots、ledger.period_close_requests、ledger.year_end_closings 三张表；关账请求状态机、受理与在途写事务等待、快照建立、关账前强制校验的编排与四类校验项的注册；年度损益结转；期间关闭时的下一期间期初固化；黄金业务闭环十四步的整体端到端用例 testkit/scenarios/golden_loop_14_steps.rs；本模块四端界面中关账发起跟进与年结发起的部分。
 
-四类关账前强制校验项在 9b 段实现并向 ReconRegistry 注册，9a 段只交付对账框架本体与调度，不注册本模块的校验项。ReconCheck 的注册方按裁定 A-06 固定为阶段 7、8、9b、10、11 五个，校验项合计十六个，一律在 apps/job-worker/src/wiring.rs 经 ReconRegistry::register 注册，其中 9b 段的四个即本段自带的四类。
+四类关账前强制校验项在 9b 段实现并向 ReconRegistry 注册，9a 段只交付对账框架本体与调度，不注册本模块的校验项。ReconCheck 的注册方按裁定 A-06 固定为阶段 7、8、9b、11 四个，校验项数依次为六、二、四、三共十五个，一律在 apps/job-worker/src/wiring/ 目录下经 ReconRegistry::register 注册，其中 9b 段的四个即本段自带的四类。阶段 10 不注册任何 ReconCheck：其原定的 FIN_CROSS_MODULE_LINK 是纯存在性项，跨 schema 单目标引用改建真实外键后已按 A-06 整条删除；该阶段的十个勾稽项由本段第三个校验项经 ep-contract-finance 的 ReconciliationItemQuery 取子账侧合计，不由阶段 10 自行注册。
 
 #### 9.0.2 本阶段在 T0 贯通线上的最小切片
 
@@ -53,7 +53,7 @@ T0 通过之后，本阶段其余部分一律改为在这条已贯通的骨架�
 八是文档产物：docs/error-codes.md 新增 LEDGER 段共 34 个错误码，比原定的 36 个少两个，一个是两类计量项错误码合并为 LEDGER.POSTING.MEASURE_INVALID，另一个是随过账事件登记表的运行期断言一并删除的 LEDGER.POSTING_TRIGGER_EVENT_TYPE.REGISTRY_MISMATCH；docs/event-catalog.md 新增 ledger 段共 8 个事件；docs/data-dictionary/ledger.md 新增 12 张表的数据字典，docs/data-dictionary/platform_core.md 增补对账三张表的数据字典；docs/adr/ 新增 3 篇本阶段决定的 ADR。
 
 九是测试产物：ep-domain-ledger 与 ep-app-ledger 的单元测试与领域属性测试、crates/application/ledger/tests 下的集成测试、tests/rls_matrix 中新增的 ledger 越权用例、apps/core-server/tests 下的关账与顺延入账端到端用例、9b 段的 testkit/scenarios/golden_loop_14_steps.rs，以及 A.1 度量清单中总账凭证过账与月度科目余额表两项的 EXPLAIN 证据文件。
-十是对账框架本体：ep-platform-recon crate、platform_core.recon_check_definitions 与 platform_core.recon_runs 与 platform_core.recon_discrepancies 三张表、ReconCheck 与 ReconRegistry 与 ReconExecutor 三个契约、job-worker 内的分批执行器与每日对账调度、差异事项 subject_ref 的键集白名单校验。按 A-06 该本体归本阶段 9a 段，注册方为阶段 7、8、9b、10、11 五个，各自在其上实现自己的 ReconCheck，不另起对账框架。
+十是对账框架本体：ep-platform-recon crate、platform_core.recon_check_definitions 与 platform_core.recon_runs 与 platform_core.recon_discrepancies 三张表、ReconCheck 与 ReconRegistry 与 ReconExecutor 三个契约、job-worker 内的分批执行器与每日对账调度、差异事项 subject_ref 的键集白名单校验。按 A-06 该本体归本阶段 9a 段，注册方为阶段 7、8、9b、11 四个，各自在其上实现自己的 ReconCheck，不另起对账框架。
 
 十一是本模块的四端界面：clients/desktop/src/modules/ledger/ 与 clients/mobile/src/modules/ledger/ 两个目录，按 A-23 由本阶段交付，阶段 13 只提供客户端壳、路由注册表与能力矩阵闸。
 
@@ -77,7 +77,7 @@ T0 通过之后，本阶段其余部分一律改为在这条已贯通的骨架�
 
 ep-adapter-db-pg 新增 src/repo/ledger/ 与 src/repo/recon/ 两个目录。前者按表分文件实现 ep-domain-ledger 的仓储端口，只访问 ledger schema；后者实现 ep-platform-recon 的仓储端口，只访问 platform_core 下对账的三张表。两者均不访问其他模块 schema，由 CI 的分层自检断言。
 
-apps/core-server/src/wiring.rs 与 apps/job-worker/src/wiring.rs 新增 ledger 的具体实现注入，含把 ep-app-ledger 的 PostingPort 实现与 AccountingPeriodResolver 实现注入到其他模块的用例构造器。job-worker 的 wiring 另装配 ReconRegistry 与 ReconExecutor，各阶段的 ReconCheck 实现一律在该处经 ReconRegistry::register 注册。除这两个文件外任何地方不得 use ep_adapter_db_pg。
+apps/core-server/src/wiring/ 与 apps/job-worker/src/wiring/ 两个目录下新增 ledger 的具体实现注入，含把 ep-app-ledger 的 PostingPort 实现与 AccountingPeriodResolver 实现注入到其他模块的用例构造器。job-worker 的 wiring 另装配 ReconRegistry 与 ReconExecutor，各阶段的 ReconCheck 实现一律在该处经 ReconRegistry::register 注册。除这两个目录外任何地方不得 use ep_adapter_db_pg。
 
 进程归属逐项如下。
 
@@ -400,7 +400,7 @@ ep-domain-ledger 定义编译期常量映射表 rule::journal_map::JOURNAL_MAP�
 
 不变量：因期间由早到晚顺序关账，且记账日期不得晚于登记时点自然日，顺延目标一律晚于 P0，顺延必然收敛，凭证不因期间归属被拒绝。该不变量作为领域属性测试的断言之一。
 
-顺延的连带范围不再靠纪律保证。resolve 在同一 &mut dyn Tx 内记忆化，第二次调用返回同一个 ResolvedPeriod，一个事务里解析两次得到两个期间这条唯一会分叉的路径因此被消灭，原写的必须使用同一次 resolve 的返回值一句随之删除。ep-contract-ledger 的 AccountingPeriodResolver 仍是这一连带的唯一入口，各子账模块不得自行判定期间；跨模块边界按值传 ResolvedPeriod 的三项，由 xtask archcheck 断言 crates/application/ledger 与 ep-adapter-db-pg 的 ledger 仓储之外，任何模块的仓储写入 accounting_period_id 与 accounting_period_seq 的取值只能来自命令 DTO 的同名字段，不得来自 posting_date、Clock 或本地推导。子账条目的期间是否等于其来源凭证的期间，并入阶段 7、10、11 已有的 CROSS_MODULE_LINK 校验项，把判据由被引用行存在扩为存在且 accounting_period_id 相同，不新增第十七项校验项。
+顺延的连带范围不再靠纪律保证。resolve 在同一 &mut dyn Tx 内记忆化，第二次调用返回同一个 ResolvedPeriod，一个事务里解析两次得到两个期间这条唯一会分叉的路径因此被消灭，原写的必须使用同一次 resolve 的返回值一句随之删除。ep-contract-ledger 的 AccountingPeriodResolver 仍是这一连带的唯一入口，各子账模块不得自行判定期间；跨模块边界按值传 ResolvedPeriod 的三项，由 xtask archcheck 断言 crates/application/ledger 与 ep-adapter-db-pg 的 ledger 仓储之外，任何模块的仓储写入 accounting_period_id 与 accounting_period_seq 的取值只能来自命令 DTO 的同名字段，不得来自 posting_date、Clock 或本地推导。子账条目的期间是否等于其来源凭证的期间，不另立校验项：CROSS_MODULE_LINK 一类已按 A-06 整体撤销，阶段 7 的六项一律取 INVARIANT、阶段 10 不注册任何 ReconCheck，该谓词的显式承接方只有阶段 11 的 COSTING_COST_VS_LEDGER 与 COSTING_REVENUE_VS_LEDGER 两项，已并入其判据；其余子账模块由本段首句所述 resolve 在同一 &mut dyn Tx 内的记忆化在结构上保证，不新增第十六项校验项。
 
 顺延不改变任何取价与借贷，由第 9.4.3 节的映射算法保证：映射只读 source_kind 与 measures，不读期间。
 
@@ -962,7 +962,7 @@ E-23 testkit/scenarios/golden_loop_14_steps.rs 在 ep-datagen 默认 scale 数�
 风险五：关账前强制校验的分批规模、单批时限与单查询资源上限在阶段 14 认证前只有临时取值，客户实际数据量超出基准时可能反复判定为校验未完成而使关账无法通过。控制手段是规格第 10.2 章已给出重取方法，本阶段在配置上把六项做成可热更，并在校验未完成事项中载明触发的具体上限值以便现场重取。
 
 风险六：顺延入账使期间数据不是严格的发生期口径，属规格第 21.20 章已登记的风险。本阶段的控制手段限于两条检索路径与顺延标识，不做追溯重述，界面不使用发生期一类措辞。
-风险七：ep-platform-recon 本体在 9a 段交付，而其最重的使用者关账前强制校验编排在 9b 段，中间隔着阶段 8、6、7、10、11 五个阶段，其中阶段 7、8、10、11 四个陆续注册各自的 ReconCheck，阶段 6 不注册。若本体的分批语义、快照传递与差异事项模型在此期间被各阶段各自变通，9b 段的关账编排会拿到互不一致的实现。控制手段是把 A-06 冻结的三个契约签名写进 CI 的接口快照断言，9a 段交付时即以内置校验项跑通每日调度的一次完整执行，各阶段注册后即刻纳入每日对账并在其退出条件上留证。
+风险七：ep-platform-recon 本体在 9a 段交付，而其最重的使用者关账前强制校验编排在 9b 段，中间隔着阶段 8、6、7、10、11 五个阶段，其中阶段 7、8、11 三个陆续注册各自的 ReconCheck，阶段 6 与阶段 10 不注册。若本体的分批语义、快照传递与差异事项模型在此期间被各阶段各自变通，9b 段的关账编排会拿到互不一致的实现。控制手段是把 A-06 冻结的三个契约签名写进 CI 的接口快照断言，9a 段交付时即以内置校验项跑通每日调度的一次完整执行，各阶段注册后即刻纳入每日对账并在其退出条件上留证。
 
 
 #### 9.13.2 为后续阶段预留的扩展点

@@ -41,7 +41,7 @@
 | D-13 | project.v_projects_dataset 受治理数据集视图，dataset code 为 project_projects，grain 为 DOCUMENT | db/migrations/project/ 下的视图迁移 | 视图已发布并授予 ep_analyst_ro，列签名与 reporting.dataset_fields 的登记一致 |
 | D-14 | service 与 project 两个模块的四端界面 | clients/desktop/src/modules/service/、clients/desktop/src/modules/project/ 与 clients/mobile/src/modules/ 下的同名目录 | 四端 UI 用例全绿 |
 | D-15 | 本阶段全部路由的能力域码与动作类别常量 | crates/contract/service/src/capability.rs 与 crates/contract/project/src/capability.rs | xtask configdoc 通过 |
-| D-16 | ServiceReferenceCounter | crates/application/service/src/probe/master_reference.rs 与两个 wiring.rs 的注册行 | 阶段 5 的档案停用引用计数在 service 模块上有计数 |
+| D-16 | ServiceReferenceCounter | crates/application/service/src/probe/master_reference.rs 与两个 wiring 目录中的注册行 | 阶段 5 的档案停用引用计数在 service 模块上有计数 |
 
 ---
 
@@ -68,8 +68,8 @@ ep-contract-service 对外只暴露 ReturnRepairTraceQuery 一个 trait。按裁
 | ep-app-crm | 新增 usecase/query_customer_360.rs，做区块扇出、超时降级与合并 |
 | ep-adapter-db-pg | 新增 repository/service/ 与 repository/project/ 两个目录，各仓储只访问自己模块的 schema |
 | ep-adapter-search | 本阶段不改动本 crate，原记在本行的检索文档投影职责按裁定 F-05 移出：五类对象的 foundation::port::search::SearchDocument 投影函数落在 ep-app-service 与 ep-app-project，各自置于 src/projection/search_document.rs，object_type 取表全名如 service.equipment_records，由 job-worker 的索引消费者调用后经 SearchIndexPort 写入；ep-adapter-search 本体与该消费者按裁定 A-07 由阶段 3b 交付。落点依据为裁定 F-05 通则甲一与阶段 3 计划第 18 项「本阶段不交付任何业务对象的检索文档投影函数，投影由各业务阶段按 SearchDocument 结构提供」 |
-| apps/core-server/src/wiring.rs | 注册两个模块的仓储与用例，注册三个客户 360 区块提供者，并把 ServiceReferenceCounter 注册进阶段 5 提供的 MasterReferenceCounterRegistry |
-| apps/job-worker/src/wiring.rs | 注册三个 Outbox 消费者 project.contract_derivation、project.requisition_intake 与 service.return_repair_writeback、一个定时器回调，并把 ServiceReferenceCounter 注册进 MasterReferenceCounterRegistry |
+| apps/core-server/src/wiring/ | 注册两个模块的仓储与用例，注册三个客户 360 区块提供者，并把 ServiceReferenceCounter 注册进阶段 5 提供的 MasterReferenceCounterRegistry |
+| apps/job-worker/src/wiring/ | 注册三个 Outbox 消费者 project.contract_derivation、project.requisition_intake 与 service.return_repair_writeback、一个定时器回调，并把 ServiceReferenceCounter 注册进 MasterReferenceCounterRegistry |
 | ep-testkit | 新增 EquipmentRecordBuilder、WorkOrderBuilder、ComplaintBuilder、ProjectBuilder、ProjectTaskBuilder、ContractDerivationPlanFake、SalesReturnPortFake，后两者分别按裁定 A-16 与 A-17 冻结的签名实现；另新增 testkit/scenarios/stage12_service_step12.rs，内含闭环第 12 步的步骤函数与断言，由阶段 9b 的 testkit/scenarios/golden_loop_14_steps.rs 引用 |
 | ep-datagen | 基准数据集追加设备 5000 台、工单 20000 张、投诉 5000 条、项目 200 个、项目任务 4000 条 |
 
@@ -452,7 +452,7 @@ WorkOrder 聚合边界包含其登记行与处理记录，理由是工单完成�
 
 #### 4.9 由项目任务提交采购需求
 
-在一个事务内加载任务 FOR UPDATE，校验任务状态属于 {NOT_STARTED, IN_PROGRESS} 且其项目状态不为 CLOSED，跨模块入口只有 `ep_contract_procure::PurchaseRequisitionIntakePort::intake(tx, ctx, cmd)` 一个，按裁定 C-17 该端口由阶段 7 提供，本阶段不直接写对方表，也不使用 PurchaseRequisitionDerivationPort 一类的旧名。由于该调用是跨模块同步命令且需要建立双向引用，本阶段采用两段式：本事务内只发布 project.project_task.requisition_requested.v1，由 job-worker 的 project.requisition_intake 消费者消费后调用该端口创建采购需求，回写 purchase_requisition_id 与 doc_no。入参 PurchaseRequisitionIntake 按裁定 C-17 填写：source_module 取 ModuleCode::Project，source_doc_id 取 project_id，source_doc_line_id 取 project_task_id，material_id、quantity、required_on 取任务上的申请取值，unique_key 取 `project.project_tasks:<project_task_id>:<本次提交的 Idempotency-Key>`，由 procure 侧据此保证不重复建单。理由是基线第 10.3 节禁止在事务内做跨模块的写编排，且一个用例一个事务。占位行的 purchase_requisition_id 在回写前不可为空这一约束因此改为：占位阶段不写 link 行，改在回写阶段一次性写入，link 表的 purchase_requisition_id 保持非空。任务侧在回写前展示为提交中，取值来源为该任务上未完成的 requisition_requested 事件，由 Outbox 状态查询给出。阶段 7 排在本阶段之前，本阶段开工时 `PurchaseRequisitionIntakePort` 的真实实现已装配，两个 wiring.rs 中不出现任何替身。按取消 Noop 通则后的硬规则，跨模块同步调用的被调方必须与调用方同批到位，否则调用方本轮整条不做该调用，不存在先注入空实现再回头替换这一形态；本阶段既无该情形，也不为任何端口注入空实现。
+在一个事务内加载任务 FOR UPDATE，校验任务状态属于 {NOT_STARTED, IN_PROGRESS} 且其项目状态不为 CLOSED，跨模块入口只有 `ep_contract_procure::PurchaseRequisitionIntakePort::intake(tx, ctx, cmd)` 一个，按裁定 C-17 该端口由阶段 7 提供，本阶段不直接写对方表，也不使用 PurchaseRequisitionDerivationPort 一类的旧名。由于该调用是跨模块同步命令且需要建立双向引用，本阶段采用两段式：本事务内只发布 project.project_task.requisition_requested.v1，由 job-worker 的 project.requisition_intake 消费者消费后调用该端口创建采购需求，回写 purchase_requisition_id 与 doc_no。入参 PurchaseRequisitionIntake 按裁定 C-17 填写：source_module 取 ModuleCode::Project，source_doc_id 取 project_id，source_doc_line_id 取 project_task_id，material_id、quantity、required_on 取任务上的申请取值，unique_key 取 `project.project_tasks:<project_task_id>:<本次提交的 Idempotency-Key>`，由 procure 侧据此保证不重复建单。理由是基线第 10.3 节禁止在事务内做跨模块的写编排，且一个用例一个事务。占位行的 purchase_requisition_id 在回写前不可为空这一约束因此改为：占位阶段不写 link 行，改在回写阶段一次性写入，link 表的 purchase_requisition_id 保持非空。任务侧在回写前展示为提交中，取值来源为该任务上未完成的 requisition_requested 事件，由 Outbox 状态查询给出。阶段 7 排在本阶段之前，本阶段开工时 `PurchaseRequisitionIntakePort` 的真实实现已装配，两个 wiring 目录下的全部文件中不出现任何替身。按取消 Noop 通则后的硬规则，跨模块同步调用的被调方必须与调用方同批到位，否则调用方本轮整条不做该调用，不存在先注入空实现再回头替换这一形态；本阶段既无该情形，也不为任何端口注入空实现。
 
 #### 4.10 客户 360 聚合
 

@@ -543,7 +543,7 @@ pub trait ConfigItemApplier: Send + Sync {
 }
 ```
 
-本阶段在 `ep-platform-meta` 中实现 CUSTOM_OBJECT、CUSTOM_FIELD、CUSTOM_RELATION、CUSTOM_INDEX、CUSTOM_VIEW、UI_LAYOUT 六个 applier。其余九个 applier 的归属按裁定 A-19 写死：FLOW_DEFINITION 的 `FlowDefinitionApplier` 与 NOTIFY_RULE 的 `NotifyRuleApplier` 由阶段 3b 在 `ep-platform-flow` 与 `ep-platform-notify` 实现；AUTHZ_ROLE 的 `AuthzRoleApplier`、AUTHZ_POLICY 的 `AuthzPolicyApplier`、AUTHZ_FIELD_GRANT 的 `AuthzFieldGrantApplier` 由阶段 4 在 `ep-platform-authz` 实现；REPORT_DEFINITION 的 `ReportDefinitionApplier`、METRIC_DEFINITION 的 `MetricDefinitionApplier`、DASHBOARD_DEFINITION 的 `DashboardDefinitionApplier`、PRINT_TEMPLATE 的 `PrintTemplateApplier` 由阶段 11 在 `ep-app-reporting` 实现。全部实现在 `apps/core-server/src/wiring.rs` 与 `apps/job-worker/src/wiring.rs` 注册到阶段 3a 提供的 `ConfigItemApplierRegistry`。本阶段不定义端口，也不定义那些阶段的表与接口。九个 applier 按架构审计 ARCH-03 第二档第 4 条全部保留，理由是阶段 4 的权限配置生效路径、A-28 的字段级授权写入与 PRD 第 10.4.1 节的变更控制都只有这一条落点。
+本阶段在 `ep-platform-meta` 中实现 CUSTOM_OBJECT、CUSTOM_FIELD、CUSTOM_RELATION、CUSTOM_INDEX、CUSTOM_VIEW、UI_LAYOUT 六个 applier。其余九个 applier 的归属按裁定 A-19 写死：FLOW_DEFINITION 的 `FlowDefinitionApplier` 与 NOTIFY_RULE 的 `NotifyRuleApplier` 由阶段 3b 在 `ep-platform-flow` 与 `ep-platform-notify` 实现；AUTHZ_ROLE 的 `AuthzRoleApplier`、AUTHZ_POLICY 的 `AuthzPolicyApplier`、AUTHZ_FIELD_GRANT 的 `AuthzFieldGrantApplier` 由阶段 4 在 `ep-platform-authz` 实现；REPORT_DEFINITION 的 `ReportDefinitionApplier`、METRIC_DEFINITION 的 `MetricDefinitionApplier`、DASHBOARD_DEFINITION 的 `DashboardDefinitionApplier`、PRINT_TEMPLATE 的 `PrintTemplateApplier` 由阶段 11 在 `ep-app-reporting` 实现。全部实现在 `apps/core-server/src/wiring/` 与 `apps/job-worker/src/wiring/` 两个目录下注册到阶段 3a 提供的 `ConfigItemApplierRegistry`。本阶段不定义端口，也不定义那些阶段的表与接口。九个 applier 按架构审计 ARCH-03 第二档第 4 条全部保留，理由是阶段 4 的权限配置生效路径、A-28 的字段级授权写入与 PRD 第 10.4.1 节的变更控制都只有这一条落点。
 
 段二成功后在同一事务内写入：`config_release_orders` 置 SUCCEEDED、`config_packages` 置 RELEASED、上一 RELEASED 包置 SUPERSEDED、审计事件、Outbox 事件 `platform.config_release.released.v1`。
 
@@ -566,7 +566,7 @@ pub trait ConfigItemApplier: Send + Sync {
 
 1. 打包：`manifest.toml` 含包码、名称、版本、`min_platform_version`、内容项清单，每项含 `item_kind`、`item_code`、`change_kind`、`sort_no`、`item_hash`。`item_hash` 为该项 `after_spec` 的 JSON 规范化序列化（键按字典序、无空白、UTF-8）后的 SHA-256 十六进制小写。
 2. `content_hash` 为 `manifest.toml` 字节流的 SHA-256。
-3. 签名：以 `EP__RELEASE__SIGNING_KEY_REF` 指向的私钥对 `content_hash` 做 ECDSA P-256 签名，私钥由内置 KMS 或客户 HSM 持有，两种载体接口相同，照抄规格第 12.3 章。签名操作写审计事件，含密钥引用与版本，不含密钥材料。
+3. 签名：以 `EP__RELEASE__SIGNING_KEY_REF` 指向的私钥对 `content_hash` 做 ECDSA P-256 签名，签名经 `ep_foundation::port::kms::KmsBackend` 的 `sign` 执行，私钥由内置 KMS 或客户 HSM 载体持有且不出载体，两种载体的实现 `BuiltinKmsBackend` 与 `HsmKmsBackend` 均在 `ep-adapter-kms`，共用该端口 trait 故接口相同，照抄规格第 12.3 章。签名操作写审计事件，含密钥引用与版本，不含密钥材料。
 4. 验签：导入时逐项重算 `item_hash` 并比对，重算 `content_hash` 并比对，验证签名，核对 `signer_subject` 在 `EP__RELEASE__TRUSTED_SIGNER_SUBJECTS` 内（厂商签名主体与客户签名主体并列受信，照抄规格第 3.2 章），核对 `min_platform_version` 不高于当前版本。任一不通过置 REJECTED 并返回对应错误码。
 5. 差异算法：两包内容项按 `(item_kind, item_code)` 对齐，逐项比对规范化后的 `after_spec`，输出新增、修改与删除三类，每项给出 before 与 after 的规范化 JSON；同一内容项在两包中完全一致时不进入差异。
 

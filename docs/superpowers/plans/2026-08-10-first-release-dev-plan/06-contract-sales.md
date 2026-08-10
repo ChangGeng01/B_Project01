@@ -53,7 +53,7 @@ T0 通过后本阶段其余部分一律在这条已贯通的骨架上加厚，�
 
 - `ep-app-clm` 依赖 `ep-foundation`、`ep-platform-*`、`ep-domain-clm`、`ep-contract-clm`，以及 `ep-contract-sales`、`ep-contract-procure`、`ep-contract-finance`、`ep-contract-mdm`、`ep-contract-cpq`、`ep-contract-inventory`、`ep-contract-invoice` 七个外部模块契约。`ep-contract-project` 按 C-19 移除，项目任务不再由本模块同步派生；`ep-contract-invoice` 按 C-11 引入，合同行的默认税率经 `TaxRateOptionQuery` 取得。
 - `ep-app-sales` 依赖 `ep-foundation`、`ep-platform-*`、`ep-domain-sales`、`ep-contract-sales`，以及 `ep-contract-clm`、`ep-contract-mdm`、`ep-contract-cpq`、`ep-contract-inventory`、`ep-contract-ledger`、`ep-contract-finance`、`ep-contract-invoice`、`ep-contract-procure` 八个外部模块契约，其中 `ep-contract-inventory` 与 `ep-contract-ledger` 供交付确认的库存腿与凭证腿调用，`ep-contract-procure` 供直运退货的勾稽调用。
-- `ep-app-clm` 与 `ep-app-sales` 之间不存在直接依赖。合同派生销售订单一律经 `ep-contract-sales::SalesOrderDerivationPort`，其实现是 `ep-app-sales` 的用例，在 apps 的 `wiring.rs` 中注入。
+- `ep-app-clm` 与 `ep-app-sales` 之间不存在直接依赖。合同派生销售订单一律经 `ep-contract-sales::SalesOrderDerivationPort`，其实现是 `ep-app-sales` 的用例，在 apps 的 `wiring/` 目录中注入。
 - `ep-adapter-esign` 只依赖 `ep-foundation` 与 `ep-domain-clm::port::SignatureGateway`，不依赖任何 application。
 
 #### 2.3 进程归属
@@ -772,7 +772,7 @@ E2E-6-04、E2E-6-10 的账务侧判据由财务与库存阶段承接，本阶段
 
 下列条目全部达成才算本阶段完成，每条均可客观判定。
 
-1. 第 1 节的十一项交付物全部存在，`cargo build --workspace --release` 与 `cargo clippy --workspace -- -D warnings` 通过；`apps/core-server/src/wiring.rs` 与 `apps/job-worker/src/wiring.rs` 中不出现任何 `Noop`、`Stub`、`Fake`、`Dummy` 前缀的注入行，本阶段不产生任何空实现，该两处按技术基线第 10.4 节的口径指 `apps/core-server/src/wiring/` 与 `apps/job-worker/src/wiring/` 两个目录下的全部文件，判据提供方是阶段 1 随 `xtask` 交付的 archcheck 规则 `unwired-absent`；第 11.5 小节第三批的退出条目与阶段 10 的 finance 端口同批判定，其余条目在第二批结束时判定。
+1. 第 1 节的十一项交付物全部存在，`cargo build --workspace --release` 与 `cargo clippy --workspace -- -D warnings` 通过；`apps/core-server/src/wiring/` 与 `apps/job-worker/src/wiring/` 两个目录下的全部文件中不出现任何 `Noop`、`Stub`、`Fake`、`Dummy` 前缀的注入行，本阶段不产生任何空实现，该口径与技术基线第 10.4 节一致，判据提供方是阶段 1 随 `xtask` 交付的 archcheck 规则 `unwired-absent`；第 11.5 小节第三批的退出条目与阶段 10 的 finance 端口同批判定，其余条目在第二批结束时判定。
 2. 三个迁移目录的全部迁移在空库上按文件版本号全序执行成功，且各文件的回退说明经一次实际回退验证；按裁定通则第五条本阶段不新增任何跨 schema 迁移，`ledger.posting_trigger_event_types` 的两行登记由阶段 9a 的种子迁移写入，本阶段既不回填也不判读该表。
 3. `apps/core-server --check` 与 `apps/job-worker --check` 在基线第 7.3 节十项中的九项上全部通过并输出结构化报告，本阶段不追加任何启动自检项；`offsite-sink-requirements` 一项按阶段 1 计划整条推迟到阶段 14，本阶段返回 `NOT_APPLICABLE` 并在报告中标注承担阶段，不计入本条的通过项，该处置按基线第 12 节通则第六条取换判据一档；本模块的 18 个事件与 `docs/event-catalog.md` 经 `xtask configdoc` 逐字比对通过。
 4. 基线第 1.3 节的依赖方向自检脚本对本阶段新增 crate 全部通过，`ep-domain-clm` 与 `ep-domain-sales` 中无 sqlx、reqwest、文件与网络符号。
@@ -911,7 +911,7 @@ E2E-6-04、E2E-6-10 的账务侧判据由财务与库存阶段承接，本阶段
 
 #### 11.5 跨阶段调用点的接线次序
 
-本阶段与后继阶段之间共五个跨阶段调用点，一律不使用空实现，也不设顺延验收台账。硬规则是跨模块同步调用的被调方必须与调用方同批交付，做不到就把该调用连同其用例整条推迟到被调方所在阶段，两者之外不存在第三种形态；任何返回零值、空集合、固定业务分支或恒定成功的实现在本阶段一律禁止，`apps/core-server/src/wiring.rs` 与 `apps/job-worker/src/wiring.rs` 中不得出现 `Noop`、`Stub`、`Fake`、`Dummy` 前缀的注入行，测试装配中的记录型桩不受此限。下表是本阶段全部跨阶段调用点的唯一出处。
+本阶段与后继阶段之间共五个跨阶段调用点，一律不使用空实现，也不设顺延验收台账。硬规则是跨模块同步调用的被调方必须与调用方同批交付，做不到就把该调用连同其用例整条推迟到被调方所在阶段，两者之外不存在第三种形态；任何返回零值、空集合、固定业务分支或恒定成功的实现在本阶段一律禁止，`apps/core-server/src/wiring/` 与 `apps/job-worker/src/wiring/` 两个目录下的全部文件中不得出现 `Noop`、`Stub`、`Fake`、`Dummy` 前缀的注入行，测试装配中的记录型桩不受此限。下表是本阶段全部跨阶段调用点的唯一出处。
 
 | 跨阶段调用点 | 契约方法 | 处置 | 接线时点与缺席时的数据表征 |
 |---|---|---|---|

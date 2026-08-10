@@ -271,7 +271,7 @@ pub trait ModuleLicenseQuery: Send + Sync {
 
 ### A-06 ep-platform-recon 对账框架本体与执行器
 
-结论：本体归阶段 9a，注册方固定为阶段 7、8、9b、10、11 五个，在其之后或按反向依赖接入。阶段 14 只调用 `ReconExecutor::run`，不注册任何 `ReconCheck`；阶段 13 全文没有跨模块逻辑引用，不实现也不注册 `ReconCheck`，从注册方清单中删除。原裁定所称的六个注册方作废，本条是该清单的唯一出处，其他文件一律引用不复述。总览 R14 不得再设与本条并列的注册义务，阶段 5、6、8、12 的跨模块逻辑引用不进入本清单，其写入时存在性校验由各阶段 application 层经对方模块契约承担。阶段 3b 的附件孤儿收敛任务不算对账，改写措辞，不使用该框架。
+结论：本体归阶段 9a，注册方固定为阶段 7、8、9b、11 四个，在其之后或按反向依赖接入。阶段 10 曾列为第五个注册方，其唯一一项 `FIN_CROSS_MODULE_LINK` 是纯存在性项，跨 schema 单目标引用改建复合真实外键后整条删除，阶段 10 自注册方清单退出。阶段 14 只调用 `ReconExecutor::run`，不注册任何 `ReconCheck`；阶段 13 全文没有跨模块逻辑引用，不实现也不注册 `ReconCheck`，从注册方清单中删除。原裁定所称的六个注册方作废，本条是该清单的唯一出处，其他文件一律引用不复述。总览 R14 不得再设与本条并列的注册义务，阶段 5、6、8、12 的跨模块逻辑引用不进入本清单，其写入时存在性校验由各阶段 application 层经对方模块契约承担。阶段 3b 的附件孤儿收敛任务不算对账，改写措辞，不使用该框架。
 
 最终归属阶段：阶段 9a。
 
@@ -314,7 +314,7 @@ pub struct ReconRunOutcome { pub run_id: Id<ReconRun>, pub status: ReconRunStatu
 
 提供方要做什么：阶段 9a 交付 ep-platform-recon crate、三张表的迁移（放在 `db/migrations/platform_core/`）、job-worker 内的执行器与每日调度、签名语句集校验。写入阶段 9 计划第 9.1 节交付物、第 9.3 节数据库变更与第 9.4 节关账前强制校验。
 
-每个使用方要改什么。阶段 7 计划第 942 行与退出条件第 9 条保留登记语句的措辞，删去“既有的 REPEATABLE READ 快照”一语中的既有二字，改为“由 ep-platform-recon 提供的快照”。阶段 8 计划 D7 与退出条件第 12 条改为实现 `ReconCheck` 并在 wiring 注册。阶段 9 计划第 384 行删去“由 recon 提供”的转述，改为本阶段提供。阶段 11 计划第 60 与 577 行改为实现三个 `ReconCheck`。阶段 10 计划第 120 行的“注册对账取数语句集”改为实现一个 `ReconCheck` 并在 wiring 注册，其 `check_code` 固定为 `FIN_CROSS_MODULE_LINK`、`category` 取 `CROSS_MODULE_LINK`，一次覆盖本模块全部跨模块逻辑引用，不按引用逐条建校验项。阶段 9 计划第 20、44、942 三行的注册方名单一律改为阶段 7、8、9b、10、11，删去其中的阶段 6、13、14 与“均早于 9b”一语，9b 的四个校验项在本阶段内注册。五个注册方的校验项数固定为阶段 7 六个、阶段 8 两个、阶段 9b 四个、阶段 10 一个、阶段 11 三个，合计十六个，全部在 `apps/job-worker/src/wiring.rs` 中经 `ReconRegistry::register` 注册。阶段 13 计划不出现 `ReconCheck`、`ReconRegistry` 与 ep-platform-recon，本条对阶段 13 无落点；阶段 14 计划只保留 `ReconExecutor::run(ReconRunKind::RecoveryAcceptance)` 的调用，不出现注册措辞。阶段 3 计划第 3.0 节判定三与第 3.9 节把附件孤儿收敛改称“job-worker 内的幂等收敛任务”，明确不产生对账差异事项、不依赖 ep-platform-recon。
+每个使用方要改什么。阶段 7 计划第 942 行与退出条件第 9 条保留登记语句的措辞，删去“既有的 REPEATABLE READ 快照”一语中的既有二字，改为“由 ep-platform-recon 提供的快照”。阶段 8 计划 D7 与退出条件第 12 条改为实现 `ReconCheck` 并在 wiring 注册。阶段 9 计划第 384 行删去“由 recon 提供”的转述，改为本阶段提供。阶段 11 计划第 60 与 577 行改为实现三个 `ReconCheck`。阶段 10 计划删去“注册对账取数语句集”与其后一切注册措辞，本阶段不实现也不注册任何 `ReconCheck`：`FIN_CROSS_MODULE_LINK` 与其 `category` 取值 `CROSS_MODULE_LINK` 一并撤销，引用存在性由复合真实外键强制，期间一致由 `AccountingPeriodResolver::resolve` 的同事务记忆化保证。阶段 9 计划第 20、44、942 三行的注册方名单一律改为阶段 7、8、9b、10、11，删去其中的阶段 6、13、14 与“均早于 9b”一语，9b 的四个校验项在本阶段内注册。四个注册方的校验项数固定为阶段 7 六个、阶段 8 两个、阶段 9b 四个、阶段 11 三个，合计十五个，全部经 `ReconRegistry::register` 在 job-worker 的 wiring 中注册。阶段 13 计划不出现 `ReconCheck`、`ReconRegistry` 与 ep-platform-recon，本条对阶段 13 无落点；阶段 14 计划只保留 `ReconExecutor::run(ReconRunKind::RecoveryAcceptance)` 的调用，不出现注册措辞。阶段 3 计划第 3.0 节判定三与第 3.9 节把附件孤儿收敛改称“job-worker 内的幂等收敛任务”，明确不产生对账差异事项、不依赖 ep-platform-recon。
 
 顺序约束：9a 在 8、6、7、10、11、9b、13、14 之前，无倒挂。阶段 7 与阶段 8 在 9a 之后，因此不存在“只登记不执行”的过渡期，总览第 4.1 节 A-06 行末句“阶段 7 与阶段 8 在 9a 之前只登记语句不执行”删除。
 
@@ -522,7 +522,7 @@ pub trait PurchaseCreditNotePort: Send + Sync {
 }
 ```
 
-提供方要做什么：阶段 10 在 ep-contract-invoice 定义两个 trait 与四个 DTO，在 ep-app-invoice 实现，在两个 wiring.rs 注入。写入阶段 10 计划第 7 节模块内契约表，追加两行。
+提供方要做什么：阶段 10 在 ep-contract-invoice 定义两个 trait 与四个 DTO，在 ep-app-invoice 实现，在两个 wiring 目录注入。写入阶段 10 计划第 7 节模块内契约表，追加两行。
 
 每个使用方要改什么。阶段 7 计划第 553 行的调用保持 `ReceiptInvoiceMatchQueryPort::match_state`，签名按上表补全参数。阶段 7 计划第 1096 行的假设 A3 改为“采购退货在采购发票已登记分支下调用 `PurchaseCreditNotePort::register_credit_note`，红字发票由 invoice 模块登记”，并删去“采购侧只提供退货数量、批次、关联收货行与退货日期”之后关于字段表的推测。阶段 7 在 wiring 注入 `NoopPurchaseCreditNotePort` 与 `NoopReceiptInvoiceMatchQueryPort`，阶段 10 替换。
 
@@ -563,7 +563,7 @@ pub trait AvailabilityQueryPort: Send + Sync {
 
 `available` 与 HTTP 端点 A2 `GET /api/v1/inventory/available-quantities` 共用同一投影函数，`reserved_quantity` 按阶段 8 第 11.2 节 U-G-01 的临时取值恒为零。
 
-提供方要做什么：阶段 8 在 ep-contract-inventory 增加该文件，在 ep-app-inventory 实现，在 wiring 注入。写入阶段 8 计划第 1 节 D1 的“四个对外 trait”改为五个，并在第 5 节 API 契约之后新增一小节列出五个 trait 的签名。
+提供方要做什么：阶段 8 在 ep-contract-inventory 增加该文件，在 ep-app-inventory 实现，在 wiring 注入。写入阶段 8 计划第 1 节 D1 的“四个对外 trait”改为五个，并在第 5 节 API 契约之后新增一小节列出五个 trait 的签名。附注（本条裁定之后追加）：此处的“五个”是本条裁定当时 ep-contract-inventory 的对外 trait 数；其后按裁定 G-01 增 StockValueSubledgerBalancePort、按裁定 F-05 增 StockValueOutboundPort，该 crate 现为七个，阶段 8 计划第 1 节 D1 与第 5.1 节已按七个改到位，取值以 08-inventory-costing.md 为准，本段数字不再作为施工指令。
 
 每个使用方要改什么。阶段 6 计划第 359 行保持调用 `AvailabilityQueryPort`，方法名写死为 `available`。阶段 7 计划第 555 行的 `StockAvailabilityQueryPort::on_hand` 改为 `AvailabilityQueryPort::on_hand`。
 
@@ -645,7 +645,7 @@ pub trait PurchaseTradeHistoryProvider: Send + Sync {
 | ProcureTradeHistoryProvider | 7 | ep-app-procure | 采购订单行与收货行 |
 | InvoicePurchaseTradeHistoryProvider | 10 | ep-app-invoice | 进项发票行 |
 
-提供方要做什么：上表各阶段在自己的 ep-app-<module> 下增加 `src/probe/` 目录中的对应文件，并在两个 wiring.rs 注册到阶段 5 提供的注册表 `MasterReferenceCounterRegistry` 与 `TradeHistoryProviderRegistry`。各阶段在自己的第 9 节退出条件中增加一条“本模块的 MasterReferenceCounter 与 TradeHistoryProvider 已实现并注册”。
+提供方要做什么：上表各阶段在自己的 ep-app-<module> 下增加 `src/probe/` 目录中的对应文件，并在两个 wiring 目录注册到阶段 5 提供的注册表 `MasterReferenceCounterRegistry` 与 `TradeHistoryProviderRegistry`。各阶段在自己的第 9 节退出条件中增加一条“本模块的 MasterReferenceCounter 与 TradeHistoryProvider 已实现并注册”。
 
 每个使用方要改什么。阶段 5 计划第 442 与 448 行按上表改写实现方清单，并明确：停用界面展示的计数覆盖模块清单由注册表实时枚举，未注册模块显式列为未覆盖。
 
@@ -1075,7 +1075,7 @@ U-A-12 三问的临时取值与切换代价如下，截止点按总览 R12 的 M
 
 最终归属阶段：阶段 13b。
 
-确切标识符：端口 `ep_foundation::port::db::MigrationWindowGuard`，与 C-07 的 `IdempotencyStore` 同 crate 同模块，唯一方法为 `async fn assert_open(&self, tx: &mut dyn Tx) -> Result<(), AppError>`，由阶段 2 定义；唯一实现类型 `PgMigrationWindowGuard` 位于 `crates/adapter/db-pg/`，同为阶段 2 交付；在 `apps/core-server/src/wiring.rs` 与 `apps/job-worker/src/wiring.rs` 注入。阶段 13b 的在线 DDL 由 job-worker 的 DDL 执行器发起，窗口校验在把控制交给 ep-platform-release 的编排之前由该执行器调用注入实例的 `assert_open(tx)`；`ep-platform-release` 不引用该 trait，也不新增任何 adapter 方向的依赖。原裁定写的 `ep_platform_release::MigrationWindowGuard` 违反基线第 1.3 节“ep-platform-* 只可依赖 ep-foundation 与其他 ep-platform-*”，基线高于本表，该路径作废；阶段 3a 不承担再导出，本条对阶段 3 无落点。未持有窗口时返回 `PLATFORM.DB.MIGRATION_WINDOW_CLOSED`，HTTP 409，category 为 BUSINESS_CONFLICT。
+确切标识符：端口 `ep_foundation::port::db::MigrationWindowGuard`，与 C-07 的 `IdempotencyStore` 同 crate 同模块，唯一方法为 `async fn assert_open(&self, tx: &mut dyn Tx) -> Result<(), AppError>`，由阶段 2 定义；唯一实现类型 `PgMigrationWindowGuard` 位于 `crates/adapter/db-pg/`，同为阶段 2 交付；在 `apps/core-server/src/wiring/` 与 `apps/job-worker/src/wiring/` 两个目录注入。阶段 13b 的在线 DDL 由 job-worker 的 DDL 执行器发起，窗口校验在把控制交给 ep-platform-release 的编排之前由该执行器调用注入实例的 `assert_open(tx)`；`ep-platform-release` 不引用该 trait，也不新增任何 adapter 方向的依赖。原裁定写的 `ep_platform_release::MigrationWindowGuard` 违反基线第 1.3 节“ep-platform-* 只可依赖 ep-foundation 与其他 ep-platform-*”，基线高于本表，该路径作废；阶段 3a 不承担再导出，本条对阶段 3 无落点。未持有窗口时返回 `PLATFORM.DB.MIGRATION_WINDOW_CLOSED`，HTTP 409，category 为 BUSINESS_CONFLICT。
 
 回写：阶段 2 计划第 110 行改为上述端口与实现的落点并删去“由阶段 3a 建立 ep-platform-release crate 时以再导出方式暴露”一句，第 3.3 节把端口与实现列为对外可用组件，退出条件 E-17 改为“端口与 `PgMigrationWindowGuard` 实现均已交付且两个 wiring 已注入”；阶段 13 计划第 4.3 节 DDL 段第一步与第 895、984 三处去掉 `ep_platform_release::` 前缀，改为经装配注入的实例调用；阶段 3 计划一字不改。
 
@@ -1369,7 +1369,7 @@ pub trait ReceivableExposureQuery: Send + Sync {
 
 确切标识符：`ep_contract_inventory::InventoryPostingPort` 的三个方法固定为 `post_inbound(tx, ctx, InboundPosting) -> Result<InboundPostingResult, AppError>`、`post_outbound(tx, ctx, OutboundPosting) -> Result<OutboundPostingResult, AppError>`、`find_movement_by_source(tx, ctx, SourceRef) -> Result<Option<MovementResult>, AppError>`。阶段 7 的 `StockInboundPort`、`StockOutboundPort`、`StockAvailabilityQueryPort` 三个名字作废，第三个由 `AvailabilityQueryPort` 承接（见 A-12）。
 
-回写：阶段 7 计划中三个端口名的全部出现处改写；阶段 8 计划在第 5 节之后新增一小节列出五个 trait 与其完整方法签名。
+回写：阶段 7 计划中三个端口名的全部出现处改写；阶段 8 计划在第 5 节之后新增一小节列出五个 trait 与其完整方法签名。附注（本条裁定之后追加）：此处的“五个”是本条裁定当时 ep-contract-inventory 的对外 trait 数；其后按裁定 G-01 与 F-05 各增一个端口，该 crate 现为七个，该小节即 08-inventory-costing.md 第 5.1 节，现题为“七个对外 trait 的完整签名”。
 
 ### C-19 合同派生项目任务的机制
 
@@ -1561,6 +1561,8 @@ DC 为交付确认单（A-09），PINV 为进项发票（A-10）。CI 校验项�
 改动缺口：A-01、A-06、A-09（不建表）、A-12、A-13、A-15、A-18、A-20、A-21（零行）、A-23、B-02、B-08、B-09、C-12、C-13、C-18。
 
 落点：第 0 节三条硬边界（补一句交付确认单由阶段 6 建立，本阶段只提供库存腿）；第 1 节交付物清单 D1 由四个 trait 改五个、第 31 行删去不交付界面一句；第 3 节追加 append_only_registry backfill 与 dataset view 两个迁移文件，其中 append_only_registry 按 B-02 登记五行且 mode 一律取 APPEND_ONLY、mutable_columns 取空数组；第 115 与 443 行按 A-13 把索引名改为 ix_stock_qty_entries_legal_entity_id_material_id 并删去命名例外说明；第 5 节之后新增一小节列出五个 trait 的完整签名；第 6.1 节事务句柄写实为 `&mut dyn Tx`；第 6.4 节补一句不登记 posting_trigger 行、并写明 stock_value_adjusted 的消费者名；第 9 节退出条件（新增界面、数据集视图、能力域常量、MaterialUsageProbe、ReferenceCounter、GRNI 之外的存货子账查询六条）；第 11.1 节 R2 删去总账未确认一句。
+附注（本轮追加，只针对上行的 trait 计数）：上行两处“五个”——“第 1 节交付物清单 D1 由四个 trait 改五个”与“第 5 节之后新增一小节列出五个 trait 的完整签名”——是该批回写当时 ep-contract-inventory 的对外 trait 数。其后按裁定 G-01 增 StockValueSubledgerBalancePort、按裁定 F-05 增 StockValueOutboundPort，该 crate 现为七个：08-inventory-costing.md:20 的 D1 已写“含七个对外 trait……本阶段结束时的实交付数为六个”，第 5.1 节现题为“七个对外 trait 的完整签名”。上行的两个数字只记该批回写的历史口径，不再作为施工指令，现值一律以 08-inventory-costing.md 为准。
+
 
 ### 09-ledger-period.md
 
@@ -2079,15 +2081,15 @@ crate 职责表这一格把「对 ep_foundation 三个 trait 的实现」的声�
 | D-02 | 阶段 13b 八个自动测试 suite 的执行落点 | 把 RLS_MATRIX 等五个 suite 判给属主 crate，会使阶段 13b 改动三个未在其第 2.1 节登记的 crate，且覆盖率行只点名三个 crate。计划中无一处写明 authz、flow、reporting 已有可供 suite 调用的公开入口 | 阶段 13b |
 | D-03 | 自动测试从 core-server 受理到 job-worker 执行的派发载体 | 全卷无登记的事件或巡检承载该交接，而阶段 13 把事件类型冻结为十个。指名载体即可能触动该冻结 | 阶段 13b |
 
-### 丁二　本轮清单未点名，留待下一轮（5 条）
+### 丁二　本轮清单未点名，留待下一轮（5 条）　**已于其后一轮全部处置**
 
-| 编号 | 事项 | 落点 | 性质 |
-|---|---|---|---|
-| D-04 | A-06 的注册方与校验项计数有两套 | `09-ledger-period.md` 第 2 节写「阶段 7、8、9b、10、11 五个，校验项合计十六个」；`00-overview.md` 的 A-06 行与 R14 段写「阶段 7、8、9b、11 四个……共十五个」 | 既有互斥，与 H-08 同域但本轮裁定未触及 |
-| D-05 | `04-identity-authz.md` 第 2 节仍用单文件 `wiring.rs` 措辞 | 同文件开头已写两个 wiring 目录，`xtask` 的 `WIRING_DIRS` 也是两个目录，同一文件内两套并存 | 措辞不统一 |
-| D-06 | `03-platform-kernel.md` 有六处只写「KMS」不写 crate 名 | 第 879、967、1317、1455、1465、1529 行 | 与 F-04 不互斥，但落点不明确 |
-| D-07 | 阶段 7 的对外 trait 无「五个」数词，而他文件可能有该计数的复述 | `07-procurement-portal.md` 第 3 节 | 计数口径可能单边落空 |
-| D-08 | `12-service-project-asset.md` 的 job-worker 职责列写「检索索引传播事件的发布方」 | 与投影函数迁至 `ep-app-*` 不冲突，但落码时须确认索引消费者调用的是 `ep-app-service` 与 `ep-app-project` 的投影函数 | 落码期核对项 |
+| 编号 | 事项 | 处置 |
+|---|---|---|
+| D-04 | A-06 的注册方与校验项计数有两套 | **原判有误，已裁定并回写。** 逐阶段实测点数为阶段 7 六项、阶段 8 两项、阶段 9b 四项、阶段 11 三项，合计十五，注册方四个。阶段 10 全文只有 `FIN_CROSS_MODULE_LINK` 一项，而该项的 `category` 取值 `CROSS_MODULE_LINK` 已被同一条 A-06 撤销（跨 schema 单目标引用改建复合真实外键），一个 category 不存在的校验项不能计入。决定性证据是本文件 A-06 段自身打架：标识符表把 `recon_check_definitions.category` 的 CHECK 写成两项，同节散文仍要求阶段 10 取第三个值——表已回写、散文漏写，漏写的一侧就是「五个/十六个」。共改八处复述，并顺带修两处连坐事实错误 |
+| D-05 | 单文件 `wiring.rs` 措辞 | **成立，已改，范围远超登记。** 实测八个 apps 的 `src/` 下只有 `wiring/` 目录、不存在任何 `wiring.rs` 文件，故该措辞在全卷都与制品不符，不只是登记点名的一个文件。共改四十余处，并推翻三处此前明写「不逐处改写、按口径声明解释」的豁免条款——既然逐处改写，豁免即失效 |
+| D-06 | 六处只写「KMS」不写 crate 名 | **成立，但登记的范围两头都不准，已按实测处置。** 点名的六处里只有两处属落点性表述；另四处分别讲超时预算、依赖不可用、超时注入与载体中断，指的是「KMS 作为外部依赖这件事」，补 crate 名反而把载体与端口混为一谈，不改。另在登记未点名处补三处落点性表述 |
+| D-07 | 阶段 7 的对外 trait 计数 | **原判有误。** 全卷没有任何一处为 `ep-contract-procure` 写过 trait 计数，只有枚举（实数 6，与 F-05 一致），不存在可漂移的数字；登记写的落点小节也不准。但同形缺陷真实存在，落在 `ep-contract-inventory`：C-18 与 A-12 当时写下的「五个 trait」共四处，已一并改到位 |
+| D-08 | 阶段 12 的 job-worker 职责列 | **确认不冲突，无需改动。** 发布 Outbox 事件与产出 `SearchDocument` 是两件事。保留为落码期核对项：索引消费者须调用 `ep-app-service` 与 `ep-app-project` 的投影函数，而非 `ep-adapter-search` 内的投影 |
 
 ### 丁三　本轮撤销的一条越权编辑
 
@@ -2101,4 +2103,48 @@ crate 职责表这一格把「对 ep_foundation 三个 trait 的实现」的声�
 `inventory.v_stock_value_entries` 且跑在 job-worker 自身连接池上，
 收窄 costing 视图的授权对该情形毫无作用；而撤销一个既有 `GRANT` 是运行期权限变更，
 若「无用例读这三个视图」的判断有误，故障在编译期没有任何信号。
+
+## 附录戊　计数与枚举失配的普查结果
+
+本附录是清理附录丁二时同批做的同类普查的结果。判据：凡文中出现「N 个」「N 条」
+「N 项」并且紧邻处有对应的枚举、表格或清单的，逐处数一遍枚举项数比对；
+同一个量在两个及以上文件里各写一次的，比对取值。扫描面为 18 个计划文件全部。
+
+共查出 12 条。**其中 10 条已在本批改完，2 条留待下一轮**，逐条如下。
+
+### 戊一　已改（10 条）
+
+| 编号 | 落点 | 原值 | 实测值 | 依据 |
+|---|---|---|---|---|
+| 戊-1 | `00-overview.md` 第 2 节阶段 4 行 | 授权十六表 | 十五表 | 阶段 4 第 3.3 节标题写「15 张」，逐表 3-10 至 3-24 实数 15；原第 16 张已按 C-06 移入 platform_core |
+| 戊-2 | 同表阶段 7 行 | procure 十五表、portal 六表 | 二十三表、七表 | 阶段 7 五处自述「三十张表」，23+7=30 |
+| 戊-3 | 同表阶段 10 行 | finance 二十六表 | 二十三表 | 迁移第 1 至 17 号实建 23 张，与该阶段三处「36 张表」互洽 |
+| 戊-4 | 同表阶段 11 行 | reporting 七表 | 九表 | 第 3 节逐表实数 9，与退出条件的「11 张新表」「18 条迁移」互洽 |
+| 戊-5 | 同表阶段 12 行 | service 十表 | 十三表 | 该阶段 D-04 逐字「service schema 的 13 张表」，D-09「18 张带法人表」 |
+| 戊-6 | 同表阶段 14 行 | platform_ops 十九表 | 十七表 | 第 3.1 节逐条为表 1 至表 17；C-22 撤销一张后本处未回改 |
+| 戊-7 | `00-overview.md` F-03 行「最终归属」列 | 四条机检规则 | 五条 | 同一行的「确切标识符」列已写五条，行内自相矛盾；工具实测五条 |
+| 戊-8 | `00b` 第 1.2、1.3、12 节三处 | 四条规则 | 五条 | `foundation-marker-shape` 已由 `foundation-frozen-items` 拆出为独立规则 |
+| 戊-9 | `01` 退出条件 3 | 四条规则合成 | 五条 | 同上 |
+| 戊-10 | `14` 第 1 节 | 八个子命令 | 十一个 | 阶段 1 的 D-08 与退出条件 10 两处逐字「十一个」并逐一枚举 |
+
+配套：本批为 `foundation-module-registry` 与 `foundation-no-single-owner` 两条规则
+补齐了规则级负样例（此前只有辅助函数的单元测试，规则本身没有负样例），
+使「五条替身各配负样例」这句话为真而不只是声称。
+
+### 戊二　留待下一轮（2 条）
+
+| 编号 | 事项 | 为何本轮不裁 |
+|---|---|---|
+| 戊-11 | 阶段 4 的「入口借用测试」项数有三套互斥分解 | 基线第 8.4 节写「五个入口借用测试」指三个被测对象合计五项；阶段 2 拆成「复制角色 5 项 + 系统上下文 5 个入口」共十项；阶段 4 拆成「复制角色两项 + 对账上下文一项 + 只读角色两项」共五项且引入基线未提的两个只读角色。三套的被测对象都不同，不是数字统一问题，须先裁定被测对象是什么 |
+| 戊-12 | A-24 行的「八个勾稽视图」 | 同文件另两处与阶段 10 均写「十项勾稽」。「八个」可能是刻意指其中八项（存货与 GRNI 两项子账侧来自外部端口，与期初通道无关），也可能是十项的旧值。证据不足以定，标注不确定 |
+
+### 戊三　一条成因
+
+12 条里有 6 条落在同一处：`00-overview.md` 第 2 节十四阶段总表的「关键交付物」列。
+该列是一份手抄摘要，抄的是各阶段计划第 1 与第 3 节的表数，而**没有任何机检承接方**。
+各阶段计划自身的计数全部自洽——普查逐一数过阶段 2 至 14 的表数、迁移数、事件数、
+错误码数、指标数，无一处内部失配。失配全部发生在抄写这一步。
+
+按第 12 节通则第六条，这类摘要要么给判据，要么明写它不构成规范来源。
+本轮只改数值，未给该列建判据，登记为下一轮事项。
 

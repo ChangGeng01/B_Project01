@@ -57,7 +57,7 @@ crate 命名前缀统一为 `ep-`，crate 目录名不带前缀，`Cargo.toml` �
 | ep-platform-obs | 日志字段约定、指标注册表、追踪上下文、运维中心台账模型。 |
 | ep-platform-runtime | 进程生命周期状态机、分层配置加载、第 7.3 节的 `SelfCheckRegistry`、健康与就绪端点，以及以 trait 表达的服务器骨架。HTTP 服务端骨架直接构建在第三方库上，工作区内既无也不新增 HTTP 系 ep-adapter-*；IPC 的具体传输实现留在 ep-adapter-ipc。两者一律由 apps 在 `apps/<proc>/src/wiring/` 目录下注入，本 crate 不依赖任何 ep-adapter-*。 |
 
-本表是平台底座 crate 的现状记录，不是冻结清单。archcheck 不再对 crate 清单逐项比对，阶段 1 退出条件第 2 条中的该项断言撤销；crate 的增删走普通提交，只受第 1.3 节依赖方向七条禁止项约束，该七条仍由 archcheck 逐条断言并配负样例。其中第六条的机检面为 foundation-no-business（依赖边一侧，即 foundation 不依赖工作区内任何 crate）、foundation-frozen-items、foundation-module-registry、foundation-no-single-owner 四条规则，各配负样例；其必要性一条按第 12 节通则第六条降为评审判据并已登记入第 12.1 节，不计入本句的逐条断言。
+本表是平台底座 crate 的现状记录，不是冻结清单。archcheck 不再对 crate 清单逐项比对，阶段 1 退出条件第 2 条中的该项断言撤销；crate 的增删走普通提交，只受第 1.3 节依赖方向七条禁止项约束，该七条仍由 archcheck 逐条断言并配负样例。其中第六条的机检面为 foundation-no-business（依赖边一侧，即 foundation 不依赖工作区内任何 crate）、foundation-frozen-items、foundation-marker-shape、foundation-module-registry、foundation-no-single-owner 五条规则，各配负样例；其必要性一条按第 12 节通则第六条降为评审判据并已登记入第 12.1 节，不计入本句的逐条断言。
 
 契约、领域、应用三层按业务模块各一个 crate，模块码固定为下表 15 个，任何阶段不得新增模块码。
 
@@ -114,10 +114,10 @@ crate 命名前缀统一为 `ep-`，crate 目录名不带前缀，`Cargo.toml` �
 - 禁止 ep-domain-* 与 ep-contract-* 依赖任何 adapter、sqlx、reqwest、tokio 的 IO 模块、std 的文件与网络 API。
 - 禁止 ep-platform-* 依赖任何 domain 或 application。
 - 禁止 adapter 之间互相依赖，共用逻辑下沉到 ep-foundation。
-- 禁止 ep-foundation 承载业务概念。准入判据两条。必要性：被两个及以上 `ep-contract-*` 引用，或被 `ep-platform-*` 引用——该条为评审判据，不由任何工具判定，理由、举证格式与登记见第 12 节通则第六条与第 12.1 节。稳定性：不得承载任何会随业务政策变化的取值集合或规则方法，只允许类型身份与量纲原语——该条一半机检一半评审，机检面为 `xtask archcheck` 的 foundation-frozen-items，即冻结项的名字与项数不得随业务政策增删，其余属评审面。`crates/foundation/src/id/marker.rs` 是本条的唯一受限例外：其中的零大小标记类型无字段、无方法、无 trait 实现，只承载类型身份，供 `Id<T>` 在契约层表达跨模块引用；按裁定 A-01 冻结清单 22 项、任何阶段不得增删，不适用上述两条准入判据，其项数、名字与形态由 `xtask archcheck` 的 foundation-frozen-items 按名逐项断言，改名与增删同样报错。本条落在 archcheck 上的机检面为 foundation-no-business（依赖边一侧，即 foundation 不依赖工作区内任何 crate）、foundation-frozen-items、foundation-module-registry、foundation-no-single-owner 四条规则，必要性一条的举证格式与登记见第 12 节通则第六条与第 12.1 节。跨模块共享的业务形状不进 foundation，定义在拥有它的模块的 `ep-contract-*` 里作为 DTO，由可依赖任意模块契约的 `ep-app-*` 消费。
+- 禁止 ep-foundation 承载业务概念。准入判据两条。必要性：被两个及以上 `ep-contract-*` 引用，或被 `ep-platform-*` 引用——该条为评审判据，不由任何工具判定，理由、举证格式与登记见第 12 节通则第六条与第 12.1 节。稳定性：不得承载任何会随业务政策变化的取值集合或规则方法，只允许类型身份与量纲原语——该条一半机检一半评审，机检面为 `xtask archcheck` 的 foundation-frozen-items，即冻结项的名字与项数不得随业务政策增删，其余属评审面。`crates/foundation/src/id/marker.rs` 是本条的唯一受限例外：其中的零大小标记类型无字段、无方法、无 trait 实现，只承载类型身份，供 `Id<T>` 在契约层表达跨模块引用；按裁定 A-01 冻结清单 22 项、任何阶段不得增删，不适用上述两条准入判据，其项数、名字与形态由 `xtask archcheck` 的 foundation-frozen-items 按名逐项断言，改名与增删同样报错。本条落在 archcheck 上的机检面为 foundation-no-business（依赖边一侧，即 foundation 不依赖工作区内任何 crate）、foundation-frozen-items、foundation-marker-shape、foundation-module-registry、foundation-no-single-owner 五条规则，必要性一条的举证格式与登记见第 12 节通则第六条与第 12.1 节。跨模块共享的业务形状不进 foundation，定义在拥有它的模块的 `ep-contract-*` 里作为 DTO，由可依赖任意模块契约的 `ep-app-*` 消费。
 - 禁止跨模块直接读写业务表。跨模块取数只有两条通道，此外一律禁止。通道一，经被调方 `ep-contract-<m>` 中的端口 trait 取数，实现落在被调方的 `ep-app-<m>`，由 apps 在 `apps/core-server/src/wiring/` 与 `apps/job-worker/src/wiring/` 目录下注入；通道二，经被调方登记的受治理只读视图取数，视图名一律 `v_` 前缀，常规报表与经营看板一侧的取数连接取第 3.1 节的 `ep_analyst_ro` 只读角色。`ep-adapter-db-pg` 中的仓储实现按 schema 分文件，一个仓储只访问自己模块的 schema。本条的机检面为 `xtask archcheck` 的 db-pg-one-schema-per-file 一条规则并配负样例：按第 3.1 节登记的 24 个 schema 名逐名判定，不用前缀启发式，只在双引号字面量区间内取 `<schema>.<object>`，文件内出现自身 schema 之外的非 `v_` 对象即违反；`crates/adapter/db-pg/src` 下不落在任何 schema 目录内的文件，出现任何登记 schema 的对象同样违反。通道二中取数连接角色这一维不在该规则的判定面内——它判的是源码里的对象引用，判不出运行期连接取的是哪个角色；该维按第 12 节通则第六条降为评审判据并登记入第 12.1 节 delegated 段，承接方为阶段 11 的 reporting-dataset-signature-matched 启动自检加评审举证。
 
-依赖方向由 CI 强制：`cargo deny` 检查许可与重复依赖，另在 CI 中运行一段基于 `cargo metadata` 的自检脚本，把上述禁止项表达为断言，违反即构建失败。本节允许项第二条「ep-platform-* 只可依赖 ep-foundation 与其他 ep-platform-*，且 platform 内部不得成环」的机检面为 `xtask archcheck` 的 platform-acyclic 与 platform-no-adapter 两条规则，各配负样例：前者判 platform 内部的依赖成环，后者判任一 ep-platform-* 依赖任一 ep-adapter-*。这两条落在允许项一侧，不并入本节禁止项七条，禁止项仍为七条、一字不改。第六条的必要性一条不在 `cargo metadata` 的依赖边判定面内——它数的是 foundation 模块被几个 crate 引用，属源码级判定；该条按第 12 节通则第六条降为评审判据并登记入第 12.1 节，其机检承接方为本节第六条点名的四条规则。
+依赖方向由 CI 强制：`cargo deny` 检查许可与重复依赖，另在 CI 中运行一段基于 `cargo metadata` 的自检脚本，把上述禁止项表达为断言，违反即构建失败。本节允许项第二条「ep-platform-* 只可依赖 ep-foundation 与其他 ep-platform-*，且 platform 内部不得成环」的机检面为 `xtask archcheck` 的 platform-acyclic 与 platform-no-adapter 两条规则，各配负样例：前者判 platform 内部的依赖成环，后者判任一 ep-platform-* 依赖任一 ep-adapter-*。这两条落在允许项一侧，不并入本节禁止项七条，禁止项仍为七条、一字不改。第六条的必要性一条不在 `cargo metadata` 的依赖边判定面内——它数的是 foundation 模块被几个 crate 引用，属源码级判定；该条按第 12 节通则第六条降为评审判据并登记入第 12.1 节，其机检承接方为本节第六条点名的五条规则。
 
 各阶段计划中的 crate 依赖枚举一律是该阶段结束时的快照，后续阶段可在本节允许项内增边，只需在该阶段的 crate 改动表写出增量并在提交说明中给出使用位，不回改先前阶段的枚举。据此，「按 crate 逐项比对期望依赖清单」这一形态整体撤销，其承接方是 `xtask archcheck` 的层位判定；「按 `cargo metadata` 断言某进程不链接某 crate」这一形态保留，被测输入是 `cargo metadata` 的输出，提供方为阶段 1，判据可判定。凡在 `cargo metadata` 之外另需调用图分析的断言，本基线不认其为已可判定：阶段 10 计划中 `finance.cash_ledger_entries` 只被四个用例的仓储写入一项，其调用图一侧的判据由阶段 10 同批给出，给不出即按第 12 节通则第六条的三档处置之一登记。
 
@@ -567,7 +567,7 @@ create policy rls_<table>_le on <schema>.<table>
 ### 7.2 敏感配置的载体
 
 - 数据库口令、备份加密密钥、审计签名私钥、TLS 私钥、电子签章凭据一律不出现在配置文件与环境变量中。配置里只写引用，形如 `secret://db/app_rw#3`，井号后为版本。
-- 引用解析到内置机密库，路径 `/var/lib/ep/secrets/`，权限 0600，属主为对应进程系统账户，内容以内置 KMS 主密钥信封加密；客户使用自有硬件密码机时改由 HSM 解封，两种载体的接口相同，照抄规格第 12.3 章。云 KMS 首版不支持。
+- 引用解析到内置机密库，路径 `/var/lib/ep/secrets/`，权限 0600，属主为对应进程系统账户，内容以内置 KMS 主密钥信封加密；客户使用自有硬件密码机时改由 HSM 载体解封，两种载体的接口相同，即 `ep_foundation::port::kms::KmsBackend`，其 `BuiltinKmsBackend` 与 `HsmKmsBackend` 两个载体实现在 `ep-adapter-kms`，照抄规格第 12.3 章。云 KMS 首版不支持。
 - 内存中一律用 `secrecy::SecretString` 包装，禁止实现 Debug 与 Display，禁止进入日志、错误消息与指标标签。
 - 机密轮换不需要重启：进程监听机密库的版本变更并在下次取用时使用新版本，旧版本保留一个轮换窗口。
 
@@ -718,7 +718,7 @@ let result = uow.transact(ctx, |tx| async move {
 - 一切 IO 表达为 domain/port 中的 trait，实现在 adapter。trait 方法只用 domain 类型与 foundation 类型，不得出现数据库行类型与 HTTP 类型。
 - application 负责四件事且只负责这四件事：授权判定的调用、事务边界、领域调用的编排、审计与 Outbox 的写入。业务规则不得写在 application，查询组装不得写在 domain。
 - adapter 负责映射与协议，不得包含业务分支。凡是 adapter 里出现 `if` 判断业务状态，即为分层错误。
-- 装配只在 `apps/<proc>/src/wiring/` 目录下发生，按模块一个文件，构造具体实现并注入 trait 对象。该目录之外任何地方不得 `use ep_adapter_db_pg::...`，该目录之内不得出现业务分支。`xtask archcheck` 另断言 `apps/core-server/src/wiring/` 与 `apps/job-worker/src/wiring/` 两个目录下的全部文件中不出现任何以 Noop、Stub、Fake、Dummy 为前缀的实现类型或注入行，出现即构建失败。该规则名为 unwired-absent，由阶段 1 随 `xtask` 一并交付，在阶段 1 的 archcheck 规则段与退出条件中各单列一条，不并入依赖方向七条禁止项，并配一个故意违反的负样例，负样例构建必须失败。前缀集合就是这四类，`Unwired` 一名撤销；阶段 14 的发布门禁项 RG-UNWIRED-ABSENT 的扫描面同为发布制品源码树中这两个目录下的全部文件，其判据提供方一列为阶段 1 的该 archcheck 规则。各阶段计划中出现的两个 `wiring.rs` 一律指这两个目录，不逐处改写。
+- 装配只在 `apps/<proc>/src/wiring/` 目录下发生，按模块一个文件，构造具体实现并注入 trait 对象。该目录之外任何地方不得 `use ep_adapter_db_pg::...`，该目录之内不得出现业务分支。`xtask archcheck` 另断言 `apps/core-server/src/wiring/` 与 `apps/job-worker/src/wiring/` 两个目录下的全部文件中不出现任何以 Noop、Stub、Fake、Dummy 为前缀的实现类型或注入行，出现即构建失败。该规则名为 unwired-absent，由阶段 1 随 `xtask` 一并交付，在阶段 1 的 archcheck 规则段与退出条件中各单列一条，不并入依赖方向七条禁止项，并配一个故意违反的负样例，负样例构建必须失败。前缀集合就是这四类，`Unwired` 一名撤销；阶段 14 的发布门禁项 RG-UNWIRED-ABSENT 的扫描面同为发布制品源码树中这两个目录下的全部文件，其判据提供方一列为阶段 1 的该 archcheck 规则。各阶段计划一律按这两个目录书写装配落点，不再出现单文件措辞。
 
 ## 11. 本基线一并定死的若干全局取值
 

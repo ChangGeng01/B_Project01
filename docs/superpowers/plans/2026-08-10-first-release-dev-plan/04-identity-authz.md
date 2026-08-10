@@ -49,7 +49,7 @@ ep-platform-identity 承载本地账号目录、凭据、多因子、设备登�
 |---|---|
 | ep-adapter-db-pg | 新增 identity/ 与 authz/ 两个仓储实现目录，一个仓储只访问自己 schema；新增 RLS 策略模板生成器对本阶段 13 张带法人列表的调用 |
 | ep-adapter-kms | 本阶段零改动，列出只为交代 KMS 能力的取用位：按裁定 F-04，TOTP 种子与 X.509 信任锚引用的封装经 `ep_foundation::port::kms::KmsBackend` 的 `wrap` 与 `unwrap` 执行，载体实例由 apps/core-server/src/wiring/ 与 apps/job-worker/src/wiring/ 两个目录下的装配注入，ep-platform-identity 与 ep-platform-authz 均不依赖本 crate |
-| apps/core-server | 新增两层中间件（认证层、安全上下文与法人校验层）、新增本阶段全部路由、wiring.rs 中装配 identity 与 authz 的具体实现 |
+| apps/core-server | 新增两层中间件（认证层、安全上下文与法人校验层）、新增本阶段全部路由、`apps/core-server/src/wiring/` 目录下的全部文件中装配 identity 与 authz 的具体实现 |
 | apps/job-worker | 新增两个后台任务：过期会话与过期挑战清理、应急账号到期失效与轮换。授权快照重载不进 job-worker，见第 2.3 节 |
 | apps/portal-gateway | 不新增数据库连接，只新增把门户 Cookie 换为核心服务会话令牌的转发逻辑，其呈现层由门户阶段承担 |
 | ep-testkit | 新增 UserFixture、RoleFixture、GrantFixture、ReauthFixture、HighRiskRequestBuilder |

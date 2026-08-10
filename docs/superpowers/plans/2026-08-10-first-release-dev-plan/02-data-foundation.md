@@ -112,7 +112,7 @@
 
 退出码约定固定为 0 成功、2 参数错误、3 迁移窗口未打开、4 校验和不符、5 版本不一致、78 环境自检失败。
 
-按 B-03，迁移窗口的判定另以组件形态对外提供：端口为 `ep_foundation::port::db::MigrationWindowGuard`，与 C-07 的 `IdempotencyStore` 同 crate 同模块，唯一方法为 `async fn assert_open(&self, tx: &mut dyn Tx) -> Result<(), AppError>`，未持有 `OPEN` 窗口时返回 `PLATFORM.DB.MIGRATION_WINDOW_CLOSED`，HTTP 409，分类 BUSINESS_CONFLICT；唯一实现类型为 `PgMigrationWindowGuard`，位于 `crates/adapter/db-pg/`。端口与实现均由本阶段交付，并在 `apps/core-server/src/wiring.rs` 与 `apps/job-worker/src/wiring.rs` 注入。阶段 13b 的在线 DDL 由 job-worker 的 DDL 执行器发起，在把控制交给 ep-platform-release 的编排之前调用注入实例的 `assert_open(tx)`，`ep-platform-release` 不引用该 trait。
+按 B-03，迁移窗口的判定另以组件形态对外提供：端口为 `ep_foundation::port::db::MigrationWindowGuard`，与 C-07 的 `IdempotencyStore` 同 crate 同模块，唯一方法为 `async fn assert_open(&self, tx: &mut dyn Tx) -> Result<(), AppError>`，未持有 `OPEN` 窗口时返回 `PLATFORM.DB.MIGRATION_WINDOW_CLOSED`，HTTP 409，分类 BUSINESS_CONFLICT；唯一实现类型为 `PgMigrationWindowGuard`，位于 `crates/adapter/db-pg/`。端口与实现均由本阶段交付，并在 `apps/core-server/src/wiring/` 与 `apps/job-worker/src/wiring/` 两个目录注入。阶段 13b 的在线 DDL 由 job-worker 的 DDL 执行器发起，在把控制交给 ep-platform-release 的编排之前调用注入实例的 `assert_open(tx)`，`ep-platform-release` 不引用该 trait。
 
 #### 3.4 迁移编号与顺序
 
@@ -463,7 +463,7 @@ DEK 状态机：`ACTIVE` → `RETIRING`（有新版本，旧密文仍可解，�
 | 23 | 12 | 随机 nonce |
 | 35 | n | 密文加 16 字节认证标签 |
 
-AAD 固定为三段拼接：16 字节 `legal_entity_id` 大端、UTF-8 的 `schema.table.column`、16 字节所属行的 `id`。加密步骤：一、按 `(legal_entity_id, purpose = FIELD, effective_level)` 取当前 `ACTIVE` DEK，命中进程内缓存则直接用，否则读 `data_keys` 并经 KMS `unwrap` 解封；二、生成 12 字节随机 nonce，用 `Rng` 端口取随机数，禁止直接用 `rand`；三、AES-256-GCM 加密，AAD 如上；四、拼装信封。
+AAD 固定为三段拼接：16 字节 `legal_entity_id` 大端、UTF-8 的 `schema.table.column`、16 字节所属行的 `id`。加密步骤：一、按 `(legal_entity_id, purpose = FIELD, effective_level)` 取当前 `ACTIVE` DEK，命中进程内缓存则直接用，否则读 `data_keys` 并经 `ep_foundation::port::kms::KmsBackend` 的 `unwrap` 解封，载体实现在 `ep-adapter-kms`；二、生成 12 字节随机 nonce，用 `Rng` 端口取随机数，禁止直接用 `rand`；三、AES-256-GCM 加密，AAD 如上；四、拼装信封。
 
 解密步骤：校验魔数与长度，按 `dek_id` 与版本取 DEK，DEK 为 `DESTROYED` 即返回 `PLATFORM.CRYPTO.DECRYPT_FAILED` 并带 `incident_no`；AAD 由调用方按当前行重新构造，标签校验失败返回 `PLATFORM.CRYPTO.AAD_MISMATCH`。
 
@@ -796,9 +796,9 @@ E-11 第 7.1 节所列五项数据基座启动自检在 `--check` 模式下按�
 E-12 `docs/data-dictionary.md` 含十三张表全部列条目与两处缩写标识符的全称，`docs/error-codes.md` 含本阶段新增的 20 个错误码且与 `ep-foundation::error::codes` 一致（CI 校验），`docs/event-catalog.md` 含 3 个事件，`docs/metrics-catalog.md` 含第 7.2 节四个指标条目，五篇 ADR 已提交。
 E-13 第 12 节的偏离与新增决定已回写共享技术基线，评审记录存档。
 E-14 代码审查与安全审查由独立角色完成，严重与高危发现全部关闭，符合规格第 17.1 章不得由同一执行角色自行批准的要求。
-E-15 组织架构五张表建成并挂接策略与触发器，`LegalEntityDirectory` 与 `DepartmentClosureQuery` 两个 trait 已交付并可被阶段 3、阶段 4 与阶段 5 在 `wiring.rs` 中注入；IT-39 与 IT-40 通过。
+E-15 组织架构五张表建成并挂接策略与触发器，`LegalEntityDirectory` 与 `DepartmentClosureQuery` 两个 trait 已交付并可被阶段 3、阶段 4 与阶段 5 在 `apps/core-server/src/wiring/` 与 `apps/job-worker/src/wiring/` 两个目录中注入；IT-39 与 IT-40 通过。
 E-16 `platform_ops.degradation_windows` 建成并带 `subject` 可空列与 `ux_degradation_windows_kind_scope_closed`、`ck_degradation_windows_open_order` 两条约束，其中前一条建在 `kind`、`subject`、`scope_legal_entity_id`、`scope_accounting_period_id` 与开窗状态五者上，`DegradationLedger` 的 `open`、`close`、`open_count` 三个方法可用，`DegradationKind` 的三个初始取值 `OFFSITE_SINK_NOT_CONFIGURED`、`WRITER_NOT_IN_SERVICE` 与 `PORT_NOT_IMPLEMENTED` 已定义且制品中不出现 `WRITER_ROLE_CONTAINMENT_MISSING` 一名，阶段 1 预留的 `// TODO(stage-2): write degradation ledger` 一行已补上。
-E-17 `ep_foundation::port::db::MigrationWindowGuard` 端口与 `PgMigrationWindowGuard` 实现均已交付，`apps/core-server/src/wiring.rs` 与 `apps/job-worker/src/wiring.rs` 两处已注入，窗口关闭时 `assert_open` 返回 `PLATFORM.DB.MIGRATION_WINDOW_CLOSED`；`tools/ep-migrate` 的五个子命令与六个退出码与第 3.3 节逐项一致，阶段 1 的 `migrate`、`verify`、`manifest` 三个名字在本阶段制品中不存在。
+E-17 `ep_foundation::port::db::MigrationWindowGuard` 端口与 `PgMigrationWindowGuard` 实现均已交付，`apps/core-server/src/wiring/` 与 `apps/job-worker/src/wiring/` 两个目录已注入，窗口关闭时 `assert_open` 返回 `PLATFORM.DB.MIGRATION_WINDOW_CLOSED`；`tools/ep-migrate` 的五个子命令与六个退出码与第 3.3 节逐项一致，阶段 1 的 `migrate`、`verify`、`manifest` 三个名字在本阶段制品中不存在。
 E-18 `docs/metrics-catalog.md` 的唯一性校验通过，第 7.2 节四个指标的注册方与填充方与该文件一致，制品中不出现 `ep_db_retries_total`、`ep_tx_retry_total`、`ep_db_replication_crosscheck_age_seconds` 与 `ep_replication_crosscheck_age_seconds` 四个已作废的名字。
 E-19 `ep_foundation::port::db::IdempotencyStore` 已按 C-07 定义并被内存实现覆盖，`platform_msg.idempotency_keys` 建表与重放判定不在本阶段交付物中，CI 断言本阶段无第二套判等实现。
 E-20 本阶段全部路由的能力域码与动作类别常量已声明，常量位于 `crates/platform/tenancy/src/capability.rs`，`xtask configdoc` 通过。

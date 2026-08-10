@@ -43,8 +43,8 @@
 | ep-domain-inventory | 新增 | core-server、job-worker | 聚合、值对象、计价服务、取价判定、不变量断言、仓储端口 trait |
 | ep-app-inventory | 新增 | core-server、job-worker | 过账用例、查询投影、授权调用、审计与 Outbox 写入、两个 `ReconCheck` 实现、两个 mdm 侧探针实现与子账侧余额端口实现 `InventorySubledgerBalanceQuery` |
 | ep-adapter-db-pg | 改动 | core-server、job-worker | 新增 `repo/inventory/` 目录下 6 个仓储文件与 1 个查询文件 |
-| apps/core-server | 改动 | core-server | `wiring.rs` 注入 inventory 实现，路由注册 10 个端点 |
-| apps/job-worker | 改动 | job-worker | `wiring.rs` 向 `ReconRegistry` 注册 2 个对账检查、向 `MasterReferenceCounterRegistry` 注册 `InventoryReferenceCounter`、注入 `InventoryMaterialUsageProbe`，本阶段不注册任何事件消费者 |
+| apps/core-server | 改动 | core-server | `apps/core-server/src/wiring/` 目录下注入 inventory 实现，路由注册 10 个端点 |
+| apps/job-worker | 改动 | job-worker | `apps/job-worker/src/wiring/` 目录下向 `ReconRegistry` 注册 2 个对账检查、向 `MasterReferenceCounterRegistry` 注册 `InventoryReferenceCounter`、注入 `InventoryMaterialUsageProbe`，本阶段不注册任何事件消费者 |
 | clients/desktop | 改动 | 桌面客户端 | `src/modules/inventory/` 下的库存台账、库存流水、两张报表与扫码校验页面 |
 | clients/mobile | 改动 | 移动客户端 | `src/modules/inventory/` 下的扫码录入与台账查询页面 |
 
@@ -444,7 +444,7 @@ I5，未覆盖上界：`0 ≤ uncovered_quantity ≤ value_balance.quantity`。
 
 二是 `ep_contract_mdm::MasterReferenceCounter`，trait 与注册表 `MasterReferenceCounterRegistry` 由阶段 5 定义（裁定 A-15）。实现类型固定为 `InventoryReferenceCounter`，位于 `crates/application/inventory/src/probe/reference_counter.rs`，`module_code()` 返回 `ModuleCode::Inventory`，`count_open_documents` 在 `MasterObjectKind::Material` 下返回该物料非零结存的仓库物料批次组合数，其余 object_kind 返回 0。本阶段不承担任何 `SalesTradeHistoryProvider` 或 `PurchaseTradeHistoryProvider` 实现。
 
-三是 `ep_platform_recon::ReconCheck`，trait、注册表 `ReconRegistry` 与执行器由阶段 9a 交付（裁定 A-06）。本阶段实现两个检查并在 `apps/job-worker/src/wiring.rs` 经 `ReconRegistry::register` 注册，两个即裁定 A-06 给本阶段固定的校验项数，不多也不少：库存数量守恒，`category()` 取 `INVARIANT`；存货项子账与总账勾稽，`category()` 取 `SUBLEDGER_VS_LEDGER`。两个取值逐字取自裁定 A-06 中 `platform_core.recon_check_definitions.category` 的三项 CHECK 取值，`ReconCategory` 的判别式与该三项一一对应，本阶段不另取名。两者的 `blocks_period_close()` 均返回 true，`run_batch` 的快照入参为 `&dyn SnapshotCtx`，分批规模取第 7 节的 `EP__INVENTORY__RECON__BATCH_SIZE`，差异事项写入 `platform_core.recon_discrepancies`。第 3.1 节与第 4.6 节提到的 R2、R3 两组判据落在这两个实现内，不另起第三个检查。本阶段九张表上的 `source_doc_id`、`source_doc_line_id`、`warehouse_id`、`material_id` 四类跨模块引用不另建 `CROSS_MODULE_LINK` 校验项，依据是裁定 A-06 给本阶段固定的校验项只有上述两个；其中 `warehouse_id` 与 `material_id` 是单目标引用，`source_doc_id` 与 `source_doc_line_id` 是多态来源单据引用，四者的引用存在性一律按基线第 3.3 节的跨 schema 引用规则处理，业务状态与法人一致性由 ep-contract-mdm 与来源模块的契约校验承担，本阶段不在阶段计划内另立口径，也不再以总览 R14 的未覆盖面清单作为依据。
+三是 `ep_platform_recon::ReconCheck`，trait、注册表 `ReconRegistry` 与执行器由阶段 9a 交付（裁定 A-06）。本阶段实现两个检查并在 `apps/job-worker/src/wiring/` 目录下经 `ReconRegistry::register` 注册，两个即裁定 A-06 给本阶段固定的校验项数，不多也不少：库存数量守恒，`category()` 取 `INVARIANT`；存货项子账与总账勾稽，`category()` 取 `SUBLEDGER_VS_LEDGER`。两个取值逐字取自裁定 A-06 中 `platform_core.recon_check_definitions.category` 的两项 CHECK 取值，`ReconCategory` 的判别式与该两项一一对应，本阶段不另取名。两者的 `blocks_period_close()` 均返回 true，`run_batch` 的快照入参为 `&dyn SnapshotCtx`，分批规模取第 7 节的 `EP__INVENTORY__RECON__BATCH_SIZE`，差异事项写入 `platform_core.recon_discrepancies`。第 3.1 节与第 4.6 节提到的 R2、R3 两组判据落在这两个实现内，不另起第三个检查。本阶段九张表上的 `source_doc_id`、`source_doc_line_id`、`warehouse_id`、`material_id` 四类跨模块引用不另建 `CROSS_MODULE_LINK` 校验项，依据是裁定 A-06 给本阶段固定的校验项只有上述两个；其中 `warehouse_id` 与 `material_id` 是单目标引用，`source_doc_id` 与 `source_doc_line_id` 是多态来源单据引用，四者的引用存在性一律按基线第 3.3 节的跨 schema 引用规则处理，业务状态与法人一致性由 ep-contract-mdm 与来源模块的契约校验承担，本阶段不在阶段计划内另立口径，也不再以总览 R14 的未覆盖面清单作为依据。
 
 ### 5. API 契约
 

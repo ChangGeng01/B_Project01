@@ -1,7 +1,7 @@
 //! 禁止项第六条的机检面。
 //!
 //! 按裁定 F-03，必要性一条降为评审判据，不由本工具判定；机检面不留空洞，
-//! 由四条替身接盘。本模块实现其中两条新增替身，另两条见 [`super::deps`] 的
+//! 由五条替身接盘。本模块实现其中两条新增替身，另两条见 [`super::deps`] 的
 //! `foundation-no-business` 与 [`super::frozen`] 的 `foundation-frozen-items`。
 
 use std::fs;
@@ -193,5 +193,70 @@ mod negative_samples {
         let src = "pub struct Foo;\n// pub struct Bar;\npub enum Baz {\npub trait Qux: Send {";
         let got: Vec<String> = declarations(src).into_iter().map(|(_, n)| n).collect();
         assert_eq!(got, ["Foo", "Baz", "Qux"], "注释行不算声明");
+    }
+}
+
+#[cfg(test)]
+mod rule_negative_samples {
+    use super::*;
+    use std::fs;
+
+    /// 造一个最小的 foundation 目录树，供两条规则的规则级负样例使用。
+    ///
+    /// 两条规则都读文件系统，合成图喂不进去，只能造真目录。
+    fn fixture(tag: &str, lib: &str, extra: &[(&str, &str)]) -> PathBuf {
+        let root = std::env::temp_dir().join(format!("ep-archcheck-{tag}"));
+        let src = root.join("crates/foundation/src");
+        let _ = fs::remove_dir_all(&root);
+        fs::create_dir_all(src.join("id")).expect("建夹具目录");
+        fs::write(src.join("lib.rs"), lib).expect("写 lib.rs");
+        fs::write(
+            src.join("module.rs"),
+            "pub enum ModuleCode {\n    Mdm,\n    Sales,\n    Ledger,\n    Invoice,\n}\n",
+        )
+        .expect("写 module.rs");
+        fs::write(src.join("id/marker.rs"), "pub struct SalesOrder;\n").expect("写 marker.rs");
+        for (rel, body) in extra {
+            fs::write(src.join(rel), body).expect("写附加文件");
+        }
+        root
+    }
+
+    const SEVEN: &str = "pub mod capability;\npub mod error;\npub mod id;\npub mod module;\n\
+                         pub mod port;\npub mod principal;\npub mod security;\n";
+
+    /// 负样例：新开一个登记表之外的顶层模块。
+    #[test]
+    fn negative_module_registry() {
+        let ok = fixture("reg-ok", SEVEN, &[]);
+        assert!(module_registry(&ok).is_empty(), "七项登记模块应通过");
+
+        let bad = fixture("reg-bad", &format!("{SEVEN}pub mod bogus;\n"), &[]);
+        let v = module_registry(&bad);
+        assert_eq!(v.len(), 1);
+        assert!(v[0].detail.contains("bogus"), "须点名多出的模块");
+
+        let missing = fixture("reg-missing", "pub mod capability;\n", &[]);
+        assert!(
+            module_registry(&missing)[0].detail.contains("缺少"),
+            "少一个模块同样违反，登记表是逐行相等而不是子集"
+        );
+    }
+
+    /// 负样例：在已有模块内塞带模块码词元的业务形状。
+    #[test]
+    fn negative_no_single_owner() {
+        let ok = fixture("own-ok", SEVEN, &[("error.rs", "pub struct AppError;\n")]);
+        assert!(no_single_owner(&ok).is_empty(), "不含模块码词元的声明应通过");
+
+        let bad = fixture("own-bad", SEVEN, &[("error.rs", "pub struct SalesOrderDto;\n")]);
+        let v = no_single_owner(&bad);
+        assert!(v.iter().any(|x| x.detail.contains("sales")), "须点名命中的模块码词元");
+
+        // marker.rs 是唯一例外面：SalesOrder 在那里合法。
+        assert!(
+            !no_single_owner(&ok).iter().any(|x| x.package.contains("marker.rs")),
+            "标记类型模块不受本规则约束"
+        );
     }
 }
