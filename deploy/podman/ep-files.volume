@@ -1,0 +1,8 @@
+# ep-files：附件正文的本机文件存储，规格第 13.1 章「文件正文保存在该服务器的本地磁盘」。
+# VolumeName= 固定卷名，不取 Quadlet 默认的 systemd- 前缀；Compose 一侧同名 volume 写 name: ep-files，
+# 两套据此落在同一个卷上，等价性核对脚本比对的就是这个名字。需 Podman 5.0 及以上。
+[Volume]
+VolumeName=ep-files
+
+[Install]
+WantedBy=multi-user.target

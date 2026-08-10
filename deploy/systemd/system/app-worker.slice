@@ -1,0 +1,7 @@
+# app-worker.slice：规格第 13.1 章配额表第 3 行「Worker」的 cgroup 承载物，承载进程 job-worker。
+# 本单元不写任何配额取值。四类取值一律只落在 app-worker.slice.d/10-resource-limits.conf 一处，
+# 单元里再写一份就是第二套取值，改一处漏一处时无从判定哪一处为准。
+
+[Unit]
+Description=EP 单机部署：Worker 分片
+Before=slices.target

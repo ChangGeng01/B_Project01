@@ -1,0 +1,8 @@
+# app-portal.slice：规格第 13.1 章配额表第 7 行「公网门户」的 cgroup 承载物，承载进程 portal-gateway。
+# 本单元不写任何配额取值。四类取值一律只落在 app-portal.slice.d/10-resource-limits.conf 一处，
+# 单元里再写一份就是第二套取值，改一处漏一处时无从判定哪一处为准。
+# 该分片单列的理由是门户须以独立进程与独立系统账户运行，与反向代理共用一个 cgroup 会取消该边界。
+
+[Unit]
+Description=EP 单机部署：公网门户分片
+Before=slices.target

@@ -1,0 +1,35 @@
+# CI 流水线登记表。D-07 的 11 个阶段与其逐条命令，制表符分隔，五列。
+#
+# 这张表是流水线的唯一真值：.github/workflows/ci.yml 与 .github/ci/run-pipeline.sh
+# 都只读它，不各自复述一遍命令；docs/ci-pipeline.md 的阶段表与本表由
+# verify-pipeline-commands.sh 逐行比对，多一条或少一条即判不符。
+#
+# 列：阶段号 <TAB> 阶段 id <TAB> 命令类别 <TAB> 命令参数 <TAB> 门禁状态
+#   命令类别 kind ∈ {cargo, xtask, script}
+#     cargo  —— 以 cargo 直接执行，参数即 cargo 的参数
+#     xtask  —— 以 cargo xtask 执行，参数首词元即子命令名
+#     script —— 仓库内的脚本，参数首词元即相对仓库根的路径
+#   门禁状态 status ∈ {delivered, undelivered}
+#     undelivered 表示该门禁本阶段未交付、工具必然以退出码 70 明示未交付。
+#     这一列不是备注：verify-pipeline-commands.sh 会真跑 xtask 子命令核对，
+#     标 undelivered 却不返回 70、或标 delivered 却返回 70，一律判不符。
+#
+# 阶段 7 与阶段 8 的落位由计划 01-engineering-baseline.md 第 11 节（第 17.4 章一行
+# 指名「流水线阶段 7 与 8」）与第 12.1 节 R-03（原文「CI 阶段 8 强制两次构建比对」）
+# 定死，不得挪动。其余九个阶段的划分计划原文未给出，见 docs/ci-pipeline.md 第 2 节。
+#
+1	toolchain-offline	cargo	metadata --locked --offline --format-version 1	delivered
+2	build	cargo	build --workspace --locked --offline --release	delivered
+3	archcheck	xtask	archcheck	delivered
+4	sqlcheck	xtask	sqlcheck	delivered
+5	codecheck	xtask	codecheck	delivered
+6	registry-docs	xtask	errorcodes	delivered
+6	registry-docs	xtask	eventcatalog	delivered
+6	registry-docs	xtask	configdoc	delivered
+7	supply-chain	xtask	sbom	delivered
+7	supply-chain	xtask	sign	delivered
+8	reproducible-build	xtask	reproduce	delivered
+9	test-coverage	cargo	test --workspace --locked --offline	delivered
+9	test-coverage	xtask	coverage	delivered
+10	e2e	xtask	e2e --profile=t0	delivered
+11	deploy-limits	script	scripts/verify-resource-limits.sh	delivered

@@ -1,0 +1,8 @@
+# app-backup.slice：规格第 13.1 章配额表第 9 行「全量备份、附件存量搬运与备份校验」的 cgroup 承载物，承载进程 backup-writer。
+# 本单元不写任何配额取值。四类取值一律只落在 app-backup.slice.d/10-resource-limits.conf 一处，
+# 单元里再写一份就是第二套取值，改一处漏一处时无从判定哪一处为准。
+# 本分片是八行中唯一带磁盘 IO 硬上限的一行，取值同样只在 drop-in 里。
+
+[Unit]
+Description=EP 单机部署：全量备份写出分片
+Before=slices.target

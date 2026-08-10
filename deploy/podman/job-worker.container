@@ -1,0 +1,24 @@
+# job-worker：Outbox 消费、报表与文档渲染、批处理、内部对账，技术基线第 2 节进程表第 2 行。
+[Unit]
+Description=EP 单机部署：job-worker
+Requires=postgres.service
+After=postgres.service
+
+[Container]
+ContainerName=ep-job-worker
+Image=localhost/ep/job-worker:0.1.0
+Network=host
+Volume=/etc/ep:/etc/ep:ro
+Volume=/var/lib/ep/secrets:/var/lib/ep/secrets:ro
+Volume=ep-files.volume:/var/lib/ep/files
+ReadOnly=true
+NoNewPrivileges=true
+DropCapability=ALL
+
+[Service]
+Slice=app-worker.slice
+Restart=always
+TimeoutStopSec=45
+
+[Install]
+WantedBy=multi-user.target

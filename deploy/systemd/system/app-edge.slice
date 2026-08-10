@@ -1,0 +1,8 @@
+# app-edge.slice：规格第 13.1 章配额表第 6 行「反向代理与运维代理」的 cgroup 承载物，承载进程 ops-agent。
+# 本单元不写任何配额取值。四类取值一律只落在 app-edge.slice.d/10-resource-limits.conf 一处，
+# 单元里再写一份就是第二套取值，改一处漏一处时无从判定哪一处为准。
+# 反向代理属规格第 13.1 章该行的另一半，本仓库无其镜像与站点配置来源，编排里没有对应容器，见 ORCHESTRATION.md 的缺口二。
+
+[Unit]
+Description=EP 单机部署：反向代理与运维代理分片
+Before=slices.target

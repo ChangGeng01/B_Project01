@@ -1,0 +1,26 @@
+# core-server：全部领域命令与查询、四端 API 与门户受控能力 API，技术基线第 2 节进程表第 1 行。
+# 交易路径上的附件正文读写由本进程发起，因此 ep-files 在此可写；plugin.sock 由 plugin-host 建，故排在其后。
+[Unit]
+Description=EP 单机部署：core-server
+Requires=postgres.service plugin-host.service
+After=postgres.service plugin-host.service
+
+[Container]
+ContainerName=ep-core-server
+Image=localhost/ep/core-server:0.1.0
+Network=host
+Volume=/etc/ep:/etc/ep:ro
+Volume=/var/lib/ep/secrets:/var/lib/ep/secrets:ro
+Volume=ep-ipc.volume:/run/ep/ipc
+Volume=ep-files.volume:/var/lib/ep/files
+ReadOnly=true
+NoNewPrivileges=true
+DropCapability=ALL
+
+[Service]
+Slice=app-core.slice
+Restart=always
+TimeoutStopSec=45
+
+[Install]
+WantedBy=multi-user.target

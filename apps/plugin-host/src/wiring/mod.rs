@@ -1,6 +1,45 @@
-//! plugin-host 的装配。
+//! plugin-host 的装配。IPC 方法表在这里注入。
 //!
-//! 本目录**不在** `xtask archcheck` 的 unwired-absent 断言面内：
-//! 该规则按阶段 1 退出条件 26 只断言 `apps/core-server/src/wiring/` 与
-//! `apps/job-worker/src/wiring/` 两个目录，见 xtask/src/archcheck/source.rs 的 WIRING_DIRS。
-//! 本目录仍应遵守同一纪律，不出现 Noop、Stub、Fake、Dummy 四类前缀的实现类型或注入行。
+//! 本阶段只有 `system.ping` 与 `system.version` 两个方法，没有 WASM 宿主。
+
+use std::sync::Arc;
+
+use ep_adapter_ipc::{IpcMethod, MethodTable};
+use ep_platform_runtime::http::SystemState;
+use serde_json::{json, Value};
+
+pub const METHODS: [&str; 2] = ["system.ping", "system.version"];
+
+pub struct SystemPing {
+    state: Arc<SystemState>,
+}
+
+#[async_trait::async_trait]
+impl IpcMethod for SystemPing {
+    async fn call(&self, _payload: Value) -> Result<Value, String> {
+        Ok(json!({ "process": self.state.process().name(), "version": self.state.build().version }))
+    }
+}
+
+pub struct SystemVersion {
+    state: Arc<SystemState>,
+}
+
+#[async_trait::async_trait]
+impl IpcMethod for SystemVersion {
+    async fn call(&self, _payload: Value) -> Result<Value, String> {
+        let b = self.state.build();
+        Ok(json!({
+            "process": self.state.process().name(),
+            "version": b.version,
+            "git_commit": b.git_commit,
+            "source_date_epoch": b.source_date_epoch,
+        }))
+    }
+}
+
+pub fn method_table(state: Arc<SystemState>) -> MethodTable {
+    MethodTable::new()
+        .with(METHODS[0], Arc::new(SystemPing { state: state.clone() }))
+        .with(METHODS[1], Arc::new(SystemVersion { state }))
+}

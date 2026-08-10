@@ -1,0 +1,24 @@
+# integration-gateway：首版唯一对外出网进程，只承载电子签章一类出口。
+# 与 core-server 同处 app-core.slice，slice 内不再细分配额；出网 CA 束在 /etc/ep/ca 下，随配置目录一并挂入。
+[Unit]
+Description=EP 单机部署：integration-gateway
+Requires=postgres.service
+After=postgres.service
+
+[Container]
+ContainerName=ep-integration-gateway
+Image=localhost/ep/integration-gateway:0.1.0
+Network=host
+Volume=/etc/ep:/etc/ep:ro
+Volume=/var/lib/ep/secrets:/var/lib/ep/secrets:ro
+ReadOnly=true
+NoNewPrivileges=true
+DropCapability=ALL
+
+[Service]
+Slice=app-core.slice
+Restart=always
+TimeoutStopSec=45
+
+[Install]
+WantedBy=multi-user.target

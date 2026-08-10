@@ -30,6 +30,17 @@ async-trait = "0.1"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 thiserror = "2"
+# 以下八项由交付物 D-02 引入，只允许出现在 platform、adapter 与 apps 三层。
+# domain 与 contract 层依赖 tokio 由 archcheck 的 domain-contract-no-io 拦。
+# HTTP 直接建在 axum/hyper 上：技术基线第 1.3 节写明工作区内既无也不新增 HTTP 系 ep-adapter-*。
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "net", "signal", "time", "io-util", "sync", "fs"] }
+axum = { version = "0.8", default-features = false, features = ["http1", "json", "tokio", "matched-path"] }
+hyper = { version = "1", features = ["client", "http1"] }
+hyper-util = { version = "0.1", features = ["tokio"] }
+http-body-util = "0.1"
+toml = "0.8"
+libc = "0.2"
+sha2 = "0.10"
 
 ep-foundation = { path = "crates/foundation" }
 ep-platform-tenancy = { path = "crates/platform/tenancy" }

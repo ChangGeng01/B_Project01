@@ -1,0 +1,52 @@
+# D-07 流水线的调度文件。
+#
+# 待裁定：ADR-0005 已接受的决定一是「CI 平台取内网自建 Forgejo 加 Woodpecker」，
+# 本文件是 GitHub Actions 形态，与该 ADR 不一致。原因是本轮可写路径被限定在
+# `.github/` 之下。冲突与两条可选处置记在 docs/ci-pipeline.md 第 7 节，
+# ADR 一侧不动。无论最终取哪一条，要改的都只有本文件——判定逻辑全在
+# xtask 与 .github/ci/pipeline-stages.tsv 里，一行不动。
+#
+# 本文件不表达任何门禁判定逻辑，这是 ADR-0005 决定二的要求。它只做三件事：
+# 准备环境、跑本机可验的两条自检、把 11 个阶段交给一个调度点执行。
+#
+# 全部步骤离线：不装任何工具，不拉任何依赖，Cargo 一律 `--locked --offline`，
+# 依赖来自执行器预置的 CARGO_HOME。
+
+name: ci
+
+# 加引号是因为 YAML 1.1 会把裸 on 读成布尔真，加了引号解析器两边一致。
+"on":
+  push:
+  pull_request:
+  workflow_dispatch:
+
+env:
+  # 离线依赖仓库由执行器镜像预置在此路径；缺失时阶段 1 立即失败，不回落到公网。
+  CARGO_HOME: /opt/ep/cargo
+  CARGO_NET_OFFLINE: "true"
+
+jobs:
+  pipeline:
+    runs-on: [self-hosted, linux, x64]
+    # 计划第 9.4 节：全量不超过 60 分钟。超时即判失败，不放宽。
+    timeout-minutes: 60
+    steps:
+      - name: 取源码
+        uses: actions/checkout@v4
+
+      # 登记表是流水线的唯一真值。它自己先要是对的：引用的命令必须存在且可执行，
+      # 门禁状态列必须与工具实际行为相符，阶段表必须与文档逐行相等。
+      - name: 自检 流水线登记表
+        run: bash .github/ci/verify-pipeline-commands.sh
+
+      # 判定件本身的负样例。每条只做一处定向改动并断言那条规则自己的报错文字。
+      - name: 自检 判定件负样例
+        run: bash .github/ci/tests/run-negative.sh
+
+      # 11 个阶段的执行。当前 9 条门禁未交付、以退出码 70 明示，故本步骤返回 70，
+      # 整条流水线因此为红。未交付的步骤一律不写 `|| true`，也不折算成通过。
+      #
+      # ADR-0005 决定二的聚合入口 `cargo xtask ci` 交付后，本步骤改为
+      # `run: cargo xtask ci`，run-pipeline.sh 与登记表一并作废。
+      - name: 执行 D-07 的 11 个阶段
+        run: bash .github/ci/run-pipeline.sh

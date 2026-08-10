@@ -1,0 +1,228 @@
+# EP 单机编排，Docker Compose 一侧。规格第 13.2 章的编排取值是「Docker Compose 或 Podman 加 systemd」，
+# 两者择一部署，因此本文件与 deploy/podman/ 下的 Quadlet 单元必须等价，
+# 等价性由 scripts/verify-orchestration-equivalence.py 逐项核对，不靠人眼比对。
+#
+# 配额一个数都不在本文件里。九个服务各写一个 cgroup_parent 指向 deploy/systemd/system/ 下的分片，
+# 四类取值只落在 <slice>.d/10-resource-limits.conf 一处，由 scripts/verify-resource-limits.sh 判定。
+# 在本文件写 cpus、mem_limit 或 deploy.resources 就是第二套配额取值，核对脚本会红。
+#
+# ${VAR:-默认值} 的默认值与 Quadlet 一侧的字面量逐字相同。Quadlet 是 systemd 单元，不做这类展开，
+# 所以可变的只有 Compose 这一侧；本地开发环境（交付物 D-13）正是靠这四个变量把路径挪出系统目录。
+name: ep
+
+services:
+
+  postgres:
+    container_name: ep-postgres
+    image: "docker.io/library/postgres:16"
+    # 主机网络：技术基线第 2 节的监听地址一律是 127.0.0.1，主机网络下这些取值原样成立，
+    # 既不必发布端口，也不会有任何一个监听意外可从网络到达。
+    network_mode: host
+    cgroup_parent: app-db.slice
+    restart: always
+    stop_grace_period: 45s
+    # 官方镜像要以 root 起再 setuid 到 postgres，丢弃全部能力会让它起不来，因此本服务不写 cap_drop。
+    security_opt:
+      - "no-new-privileges:true"
+    environment:
+      POSTGRES_PASSWORD_FILE: /run/secrets/postgres-superuser
+    volumes:
+      - "ep-pgdata:/var/lib/postgresql/data"
+      - "${EP_SECRETS_DIR:-/var/lib/ep/secrets}/postgres-superuser:/run/secrets/postgres-superuser:ro"
+    healthcheck:
+      test:
+        - "CMD"
+        - "pg_isready"
+        - "-U"
+        - "postgres"
+      interval: 10s
+      timeout: 5s
+      retries: 6
+
+  core-server:
+    container_name: ep-core-server
+    image: "${EP_IMAGE_PREFIX:-localhost/ep}/core-server:${EP_IMAGE_TAG:-0.1.0}"
+    network_mode: host
+    cgroup_parent: app-core.slice
+    restart: always
+    stop_grace_period: 45s
+    read_only: true
+    security_opt:
+      - "no-new-privileges:true"
+    cap_drop:
+      - "ALL"
+    volumes:
+      - "${EP_ETC_DIR:-/etc/ep}:/etc/ep:ro"
+      - "${EP_SECRETS_DIR:-/var/lib/ep/secrets}:/var/lib/ep/secrets:ro"
+      - "ep-ipc:/run/ep/ipc"
+      - "ep-files:/var/lib/ep/files"
+    # plugin.sock 由 plugin-host 建，core-server 连接它，故排在其后。
+    depends_on:
+      postgres:
+        condition: service_healthy
+      plugin-host:
+        condition: service_started
+
+  job-worker:
+    container_name: ep-job-worker
+    image: "${EP_IMAGE_PREFIX:-localhost/ep}/job-worker:${EP_IMAGE_TAG:-0.1.0}"
+    network_mode: host
+    cgroup_parent: app-worker.slice
+    restart: always
+    stop_grace_period: 45s
+    read_only: true
+    security_opt:
+      - "no-new-privileges:true"
+    cap_drop:
+      - "ALL"
+    volumes:
+      - "${EP_ETC_DIR:-/etc/ep}:/etc/ep:ro"
+      - "${EP_SECRETS_DIR:-/var/lib/ep/secrets}:/var/lib/ep/secrets:ro"
+      - "ep-files:/var/lib/ep/files"
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  portal-gateway:
+    container_name: ep-portal-gateway
+    image: "${EP_IMAGE_PREFIX:-localhost/ep}/portal-gateway:${EP_IMAGE_TAG:-0.1.0}"
+    network_mode: host
+    cgroup_parent: app-portal.slice
+    restart: always
+    stop_grace_period: 45s
+    read_only: true
+    security_opt:
+      - "no-new-privileges:true"
+    cap_drop:
+      - "ALL"
+    # 规格第 13.1 章要求门户不持有事务数据库账号与文件存储目录的直接访问凭据，
+    # 因此这里既不挂机密目录也不挂 ep-files，只挂配置。
+    volumes:
+      - "${EP_ETC_DIR:-/etc/ep}:/etc/ep:ro"
+    depends_on:
+      core-server:
+        condition: service_started
+
+  integration-gateway:
+    container_name: ep-integration-gateway
+    image: "${EP_IMAGE_PREFIX:-localhost/ep}/integration-gateway:${EP_IMAGE_TAG:-0.1.0}"
+    network_mode: host
+    # 与 core-server 同处 app-core.slice，slice 内不再细分配额。
+    cgroup_parent: app-core.slice
+    restart: always
+    stop_grace_period: 45s
+    read_only: true
+    security_opt:
+      - "no-new-privileges:true"
+    cap_drop:
+      - "ALL"
+    volumes:
+      - "${EP_ETC_DIR:-/etc/ep}:/etc/ep:ro"
+      - "${EP_SECRETS_DIR:-/var/lib/ep/secrets}:/var/lib/ep/secrets:ro"
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  plugin-host:
+    container_name: ep-plugin-host
+    image: "${EP_IMAGE_PREFIX:-localhost/ep}/plugin-host:${EP_IMAGE_TAG:-0.1.0}"
+    network_mode: host
+    cgroup_parent: app-plugin.slice
+    restart: always
+    stop_grace_period: 45s
+    read_only: true
+    security_opt:
+      - "no-new-privileges:true"
+    cap_drop:
+      - "ALL"
+    volumes:
+      - "${EP_ETC_DIR:-/etc/ep}:/etc/ep:ro"
+      - "ep-ipc:/run/ep/ipc"
+
+  ops-agent:
+    container_name: ep-ops-agent
+    image: "${EP_IMAGE_PREFIX:-localhost/ep}/ops-agent:${EP_IMAGE_TAG:-0.1.0}"
+    network_mode: host
+    # 与反向代理同处 app-edge.slice；反向代理在本仓库无镜像来源，见 deploy/ORCHESTRATION.md 缺口二。
+    cgroup_parent: app-edge.slice
+    restart: always
+    stop_grace_period: 45s
+    read_only: true
+    security_opt:
+      - "no-new-privileges:true"
+    cap_drop:
+      - "ALL"
+    volumes:
+      - "${EP_ETC_DIR:-/etc/ep}:/etc/ep:ro"
+      - "${EP_SECRETS_DIR:-/var/lib/ep/secrets}:/var/lib/ep/secrets:ro"
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  archive-writer:
+    container_name: ep-archive-writer
+    image: "${EP_IMAGE_PREFIX:-localhost/ep}/archive-writer:${EP_IMAGE_TAG:-0.1.0}"
+    network_mode: host
+    cgroup_parent: app-archive.slice
+    restart: always
+    stop_grace_period: 45s
+    read_only: true
+    security_opt:
+      - "no-new-privileges:true"
+    cap_drop:
+      - "ALL"
+    # 本进程只读附件正文以产生服务器之外的副本，故 ep-files 挂只读。
+    volumes:
+      - "${EP_ETC_DIR:-/etc/ep}:/etc/ep:ro"
+      - "${EP_SECRETS_DIR:-/var/lib/ep/secrets}:/var/lib/ep/secrets:ro"
+      - "ep-ipc:/run/ep/ipc"
+      - "ep-files:/var/lib/ep/files:ro"
+      - "ep-spool-archive:/var/lib/ep/archive-writer/spool"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      core-server:
+        condition: service_started
+
+  backup-writer:
+    container_name: ep-backup-writer
+    image: "${EP_IMAGE_PREFIX:-localhost/ep}/backup-writer:${EP_IMAGE_TAG:-0.1.0}"
+    network_mode: host
+    # 与 archive-writer 分属两个 cgroup，不共享磁盘 IO 预算，规格第 13.1 章明令不得合并为一个进程。
+    cgroup_parent: app-backup.slice
+    restart: always
+    stop_grace_period: 45s
+    read_only: true
+    security_opt:
+      - "no-new-privileges:true"
+    cap_drop:
+      - "ALL"
+    volumes:
+      - "${EP_ETC_DIR:-/etc/ep}:/etc/ep:ro"
+      - "${EP_SECRETS_DIR:-/var/lib/ep/secrets}:/var/lib/ep/secrets:ro"
+      - "ep-ipc:/run/ep/ipc"
+      - "ep-files:/var/lib/ep/files:ro"
+      - "ep-spool-backup:/var/lib/ep/backup-writer/spool"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      core-server:
+        condition: service_started
+
+# 卷名写死，不取 Compose 默认的项目名前缀，Quadlet 一侧的 .volume 单元用 VolumeName= 取同一个名字。
+volumes:
+
+  ep-pgdata:
+    name: ep-pgdata
+
+  ep-ipc:
+    name: ep-ipc
+
+  ep-files:
+    name: ep-files
+
+  ep-spool-archive:
+    name: ep-spool-archive
+
+  ep-spool-backup:
+    name: ep-spool-backup

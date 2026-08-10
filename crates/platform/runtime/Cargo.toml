@@ -3,9 +3,31 @@ name = "ep-platform-runtime"
 edition.workspace = true
 version.workspace = true
 publish.workspace = true
+build = "build.rs"
 
 [lints]
 workspace = true
 
 [dependencies]
 ep-foundation.workspace = true
+ep-platform-obs.workspace = true
+async-trait.workspace = true
+chrono.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+toml.workspace = true
+tokio.workspace = true
+axum.workspace = true
+hyper.workspace = true
+hyper-util.workspace = true
+http-body-util.workspace = true
+sha2.workspace = true
+
+[target.'cfg(target_os = "linux")'.dependencies]
+libc.workspace = true
+
+[build-dependencies]
+sha2.workspace = true
+
+[dev-dependencies]
+tokio = { workspace = true, features = ["rt-multi-thread", "macros", "time", "net"] }

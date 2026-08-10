@@ -7,5 +7,10 @@ publish.workspace = true
 [lints]
 workspace = true
 
+# 按裁定 B-01，探针 schema 与探针表由 ci-probe feature 保护，默认关闭。
+# 发布制品的 `cargo tree -e features` 输出中不得出现该 feature（阶段 14 的 RG-CI-PROBE-ABSENT）。
+[features]
+ci-probe = []
+
 [dependencies]
 ep-foundation.workspace = true

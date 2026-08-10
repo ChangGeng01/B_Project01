@@ -1,0 +1,27 @@
+# backup-writer：每日全量备份、附件存量搬运与每日全量写出、备份自动校验。
+# 本进程与 archive-writer 分属两个 cgroup，不共享磁盘 IO 预算，规格第 13.1 章明令不得合并为一个进程。
+[Unit]
+Description=EP 单机部署：backup-writer
+Requires=postgres.service core-server.service
+After=postgres.service core-server.service
+
+[Container]
+ContainerName=ep-backup-writer
+Image=localhost/ep/backup-writer:0.1.0
+Network=host
+Volume=/etc/ep:/etc/ep:ro
+Volume=/var/lib/ep/secrets:/var/lib/ep/secrets:ro
+Volume=ep-ipc.volume:/run/ep/ipc
+Volume=ep-files.volume:/var/lib/ep/files:ro
+Volume=ep-spool-backup.volume:/var/lib/ep/backup-writer/spool
+ReadOnly=true
+NoNewPrivileges=true
+DropCapability=ALL
+
+[Service]
+Slice=app-backup.slice
+Restart=always
+TimeoutStopSec=45
+
+[Install]
+WantedBy=multi-user.target

@@ -1,6 +1,12 @@
-//! ep-platform-obs — 阶段 1 只建骨架，实质内容由后续阶段补齐。
+//! ep-platform-obs — 日志字段约定、指标注册表与追踪上下文。
 //!
-//! 职责：日志字段约定、指标注册表、追踪上下文、运维中心台账模型。
-//!
-//! 编译期断言：本 crate 的依赖方向由 `xtask archcheck` 逐条断言，
-//! 允许的上游见技术基线第 1.3 节。骨架期不留 `todo!()`。
+//! 本 crate 只依赖 ep-foundation，依赖方向由 `xtask archcheck` 逐条断言。
+//! 指标名的唯一出处是 `docs/metrics-catalog.md` 的登记表，代码侧的注册落点
+//! 由阶段 1 计划第 13 节新增决定五定在 `src/metrics/registry.rs`。
+
+pub mod log;
+pub mod metrics;
+pub mod trace;
+
+pub use metrics::registry::MetricsRegistry;
+pub use trace::{CorrelationId, TraceContext};

@@ -1,0 +1,8 @@
+# app-core.slice：规格第 13.1 章配额表第 2 行「Rust 核心与集成网关」的 cgroup 承载物，承载进程 core-server 与 integration-gateway。
+# 本单元不写任何配额取值。四类取值一律只落在 app-core.slice.d/10-resource-limits.conf 一处，
+# 单元里再写一份就是第二套取值，改一处漏一处时无从判定哪一处为准。
+# 两个进程同处本分片，slice 内不再细分配额，见技术基线第 2 节。
+
+[Unit]
+Description=EP 单机部署：Rust 核心与集成网关分片
+Before=slices.target

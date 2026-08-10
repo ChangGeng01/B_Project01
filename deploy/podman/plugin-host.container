@@ -1,0 +1,22 @@
+# plugin-host：服务端签名 WASM Component 的受控宿主，无数据库连接。
+# 本进程建 /run/ep/ipc/plugin.sock 供 core-server 连接，因此不排在 core-server 之后。
+[Unit]
+Description=EP 单机部署：plugin-host
+
+[Container]
+ContainerName=ep-plugin-host
+Image=localhost/ep/plugin-host:0.1.0
+Network=host
+Volume=/etc/ep:/etc/ep:ro
+Volume=ep-ipc.volume:/run/ep/ipc
+ReadOnly=true
+NoNewPrivileges=true
+DropCapability=ALL
+
+[Service]
+Slice=app-plugin.slice
+Restart=always
+TimeoutStopSec=45
+
+[Install]
+WantedBy=multi-user.target

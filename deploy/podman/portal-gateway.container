@@ -1,0 +1,24 @@
+# portal-gateway：公网供应商门户站点，取数一律经 core-server 的受控能力 API。
+# 规格第 13.1 章要求门户不持有事务数据库账号与文件存储目录的直接访问凭据，
+# 因此本容器既不挂机密目录也不挂 ep-files，只挂配置。
+[Unit]
+Description=EP 单机部署：portal-gateway
+Requires=core-server.service
+After=core-server.service
+
+[Container]
+ContainerName=ep-portal-gateway
+Image=localhost/ep/portal-gateway:0.1.0
+Network=host
+Volume=/etc/ep:/etc/ep:ro
+ReadOnly=true
+NoNewPrivileges=true
+DropCapability=ALL
+
+[Service]
+Slice=app-portal.slice
+Restart=always
+TimeoutStopSec=45
+
+[Install]
+WantedBy=multi-user.target
