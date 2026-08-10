@@ -12,6 +12,7 @@
 pub mod deps;
 pub mod foundation;
 pub mod frozen;
+pub mod registry;
 pub mod source;
 
 use std::path::Path;
@@ -25,8 +26,9 @@ use deps::Violation;
 /// 本表与基线 12.1 节 delegated 段必须逐行相等。
 pub const DELEGATED: [(&str, &str); 1] = [(
     "foundation-no-business/necessity",
-    "不由本工具判定。承接方：评审举证，加 foundation-no-internal-dep、\
-     foundation-frozen-items、foundation-module-registry、foundation-no-single-owner 四条替身",
+    "不由本工具判定。承接方：评审举证，加 foundation-no-business/no-internal-dep、\
+     foundation-frozen-items、foundation-marker-shape、foundation-module-registry、\
+     foundation-no-single-owner 五条替身",
 )];
 
 pub struct Report {
@@ -84,9 +86,15 @@ pub fn evaluate(ws: &Workspace) -> Report {
         "foundation-frozen-items",
         "foundation-module-registry",
         "foundation-no-single-owner",
+        "foundation-marker-shape",
     ]);
+
+    checked.push("undecidable-registry-matched");
 
     // 裁定 F-03 后本工具不再声称判定必要性，因此没有任何不可判定项。
     // 该表保留是为了让「未来新增的不可判定判据」有唯一且诚实的落点。
-    Report { violations, checked, undecidable: Vec::new() }
+    let undecidable: Vec<(&'static str, String)> = Vec::new();
+    violations.extend(registry::check(root, &DELEGATED, &undecidable));
+
+    Report { violations, checked, undecidable }
 }

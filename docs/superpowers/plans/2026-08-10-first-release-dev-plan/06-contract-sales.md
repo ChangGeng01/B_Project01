@@ -774,7 +774,7 @@ E2E-6-04、E2E-6-10 的账务侧判据由财务与库存阶段承接，本阶段
 
 1. 第 1 节的十一项交付物全部存在，`cargo build --workspace --release` 与 `cargo clippy --workspace -- -D warnings` 通过；`apps/core-server/src/wiring.rs` 与 `apps/job-worker/src/wiring.rs` 中不出现任何 `Noop`、`Stub`、`Fake`、`Dummy` 前缀的注入行，本阶段不产生任何空实现，该两处按技术基线第 10.4 节的口径指 `apps/core-server/src/wiring/` 与 `apps/job-worker/src/wiring/` 两个目录下的全部文件，判据提供方是阶段 1 随 `xtask` 交付的 archcheck 规则 `unwired-absent`；第 11.5 小节第三批的退出条目与阶段 10 的 finance 端口同批判定，其余条目在第二批结束时判定。
 2. 三个迁移目录的全部迁移在空库上按文件版本号全序执行成功，且各文件的回退说明经一次实际回退验证；按裁定通则第五条本阶段不新增任何跨 schema 迁移，`ledger.posting_trigger_event_types` 的两行登记由阶段 9a 的种子迁移写入，本阶段既不回填也不判读该表。
-3. `apps/core-server --check` 与 `apps/job-worker --check` 在基线第 7.3 节十项上全部通过并输出结构化报告，本阶段不追加任何启动自检项；本模块的 18 个事件与 `docs/event-catalog.md` 经 `xtask configdoc` 逐字比对通过。
+3. `apps/core-server --check` 与 `apps/job-worker --check` 在基线第 7.3 节十项中的九项上全部通过并输出结构化报告，本阶段不追加任何启动自检项；`offsite-sink-requirements` 一项按阶段 1 计划整条推迟到阶段 14，本阶段返回 `NOT_APPLICABLE` 并在报告中标注承担阶段，不计入本条的通过项，该处置按基线第 12 节通则第六条取换判据一档；本模块的 18 个事件与 `docs/event-catalog.md` 经 `xtask configdoc` 逐字比对通过。
 4. 基线第 1.3 节的依赖方向自检脚本对本阶段新增 crate 全部通过，`ep-domain-clm` 与 `ep-domain-sales` 中无 sqlx、reqwest、文件与网络符号。
 5. 第 8.1 至 8.3 节的全部单元、属性与集成测试通过，集成测试跑在真实 PostgreSQL 16 上。
 6. 第 8.4 节的十三个 E2E 场景在 Windows 与 macOS 两端全部通过，在 iOS 与 Android 两端按简化取值通过，合同生效的重新认证在四端一致。

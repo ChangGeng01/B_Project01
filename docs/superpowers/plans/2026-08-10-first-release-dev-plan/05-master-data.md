@@ -75,7 +75,7 @@ T0 不要求分支覆盖，不要求供应商、物料、价目表、取价、�
 | crate | 改动 |
 |---|---|
 | ep-adapter-db-pg | 新增 mdm 与 cpq 两个仓储实现目录，按 schema 分文件，一个仓储只访问自己模块的 schema |
-| ep-foundation | 在阶段 1 建立的空文件 crates/foundation/src/port/doc.rs 中补齐 SheetSpec、ColumnSpec、CellValue、PdfSource、PrintLayout 五个类型与 SpreadsheetPort、DocTemplatePort、PdfRenderPort 三个 trait，签名按裁定 A-08 冻结，阶段 6、10、11、13 只在其上增量取值，不新增 trait |
+| ep-foundation | 在阶段 1 建立的空文件 crates/foundation/src/port/doc.rs 中补齐 SheetSpec、ColumnSpec、CellValue、PdfSource、PrintLayout 五个类型与 SpreadsheetPort、DocTemplatePort、PdfRenderPort 三个 trait，签名按裁定 A-08 冻结，阶段 6、10、11、13 只在其上增量取值，不新增 trait；必要性按基线第 12 节通则第六条在提交说明中逐项举证使用位 |
 | ep-adapter-search | 按 ep_foundation::port::search::SearchDocument 结构定义四类档案与价目表的投影函数，写入方为 job-worker 的索引消费者；索引正文只含编码、名称、简称、规格型号、类别与备注，不含开票要素与银行信息 |
 | ep-testkit | 新增 CustomerBuilder、SupplierBuilder、MaterialBuilder、ProductBuilder、PriceListBuilder、ChangeRequestBuilder 六个构造器与探针桩；探针桩只出现在测试装配中，不进入 apps/core-server/src/wiring/ 与 apps/job-worker/src/wiring/ 两个目录 |
 | ep-datagen | 新增主数据分片，按规格附录 A.3 取值产出 |
@@ -612,7 +612,7 @@ ep-contract-crm 定义 Customer360SectionProvider trait，含 section_key、sect
 
 #### 6.3 幂等键与 Outbox
 
-全部写端点必带 Idempotency-Key，头的存在性与 UUIDv7 合法性由阶段 1 的 IdempotencyKeyHeaderGuard 校验，重放判定经阶段 2 定义的 ep_adapter_db::port::IdempotencyStore 的 try_begin 与 finish 两个方法，落库表为阶段 3a 的 platform_msg.idempotency_keys；幂等作用域为法人、用户、端点、键值四元组，幂等键写入与业务写入同事务，本阶段不自建第三处判等，按裁定 C-07 执行。
+全部写端点必带 Idempotency-Key，头的存在性与 UUIDv7 合法性由阶段 1 的 IdempotencyKeyHeaderGuard 校验，重放判定经阶段 2 定义的 ep_foundation::port::db::IdempotencyStore 的 try_begin 与 finish 两个方法，落库表为阶段 3a 的 platform_msg.idempotency_keys；幂等作用域为法人、用户、端点、键值四元组，幂等键写入与业务写入同事务，本阶段不自建第三处判等，按裁定 C-07 执行。
 
 审批完成事件的消费幂等由 platform_msg.inbox_consumptions 的唯一约束保证，消费副作用与该行插入同事务。本阶段的消费者标识固定为 mdm.change_request_applier 与 mdm.search_indexer 两个，后者按裁定 A-07 消费本阶段的档案变更事件并经 ep_foundation::port::search::SearchIndexPort 写索引，索引写入不在业务事务内进行。
 

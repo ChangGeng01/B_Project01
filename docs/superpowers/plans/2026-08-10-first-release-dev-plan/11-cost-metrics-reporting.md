@@ -94,9 +94,8 @@ T0 的通过判据只有一条：收入卡上该法人该会计期间的取值�
 
 | crate | 改动 | 进程 |
 |---|---|---|
-| ep-foundation | error::codes 新增 36 个常量；新增 Ratio 展示辅助与 UnallocatedBucket 类型 | 全部 |
-| ep-adapter-db | 新增只读事务句柄类型 ReadOnlyTx 与只读池抽象，不含 PostgreSQL 专有语法 | 全部 |
-| ep-adapter-db-pg | 新增 costing 与 reporting 两个 schema 的仓储实现；实现 ep_analyst_ro 只读池的取用钩子，含 SET TRANSACTION READ ONLY ISOLATION LEVEL REPEATABLE READ、statement_timeout、work_mem、temp_file_limit 与会话变量注入清除；实现聚合语句构造器 | core-server、job-worker |
+| ep-foundation | error::codes 新增 36 个常量，这 36 个常量按 foundation-no-single-owner 的扫描面定义（该规则不扫 pub const）不参与词元判定；本行各项进 ep-foundation 的必要性按基线第 12 节通则第六条在提交说明中逐项举证使用位；新增 Ratio 展示辅助与 UnallocatedBucket 类型；`port::db` 新增只读事务端口 trait `ReadOnlyTx` | 全部 |
+| ep-adapter-db-pg | 新增 costing 与 reporting 两个 schema 的仓储实现；实现 ep_analyst_ro 只读池的取用钩子，含 SET TRANSACTION READ ONLY ISOLATION LEVEL REPEATABLE READ、statement_timeout、work_mem、temp_file_limit 与会话变量注入清除；实现聚合语句构造器；只读池抽象与 `ReadOnlyTx` 的唯一实现类型 `PgReadOnlyTx` | core-server、job-worker |
 | ep-adapter-doc | 在阶段 5 交付的 SpreadsheetPort、DocTemplatePort、PdfRenderPort 三个 trait 上增量实现像素级套打的 PrintLayout 取值与 CSV 写出，不新增 trait | job-worker |
 | ep-platform-recon | 消费侧：本阶段不改其实现，只在 ep-app-costing 实现三个 ReconCheck 并经 ReconRegistry::register 注册；框架本体、三张表与 ReconExecutor 由阶段 9a 交付 | job-worker |
 | ep-platform-obs | 注册 5 个新指标 | 全部 |

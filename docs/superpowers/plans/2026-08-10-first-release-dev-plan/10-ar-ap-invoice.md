@@ -135,7 +135,7 @@ PRD 第 6.2.2 的资金账户字段表没有期初余额，而第 6.2.4 的资�
 
 | crate | 改动 | 归属阶段 |
 |---|---|---|
-| ep-foundation | 增加 `TaxRate`（复用 `Rate` 的 newtype）、`IssueRatio`（复用 `Rate`）、`SettlementAmount`（复用 `Money` 且约束非负）三个 newtype；增加 `AccountingPeriodRef` 的 `is_deferred` 标记 | 阶段 1 建立，本阶段追加 |
+| ep-foundation | 增加 `TaxRate`（复用 `Rate` 的 newtype）、`IssueRatio`（复用 `Rate`）、`SettlementAmount`（复用 `Money` 且约束非负）三个 newtype；增加 `AccountingPeriodRef` 的 `is_deferred` 标记；必要性按基线第 12 节通则第六条在提交说明中逐项举证使用位 | 阶段 1 建立，本阶段追加 |
 | ep-adapter-db-pg | 增加 `invoice` 与 `finance` 两个仓储子模块，按 schema 分文件，一个仓储只访问自己模块的 schema，共 36 个仓储实现 | 阶段 1 建立，本阶段追加 |
 | ep-platform-sequence | 注册 9 个新的单据类型码：`INVA` 发票申请、`SINV` 销项发票、`IRVS` 冲销登记、`RCPT` 到款、`PAYM` 付款登记、`RFND` 退款与返款、`CDRV` 资金冲正、`OBST` 超量开票结清、`PINV` 进项发票；九码同时登记到 `docs/data-dictionary.md` 的单据类型码一节，由 `xtask configdoc --check-doc-type-codes` 校验全局唯一，见裁定 C-26 | 阶段 2 建立，本阶段追加类型码 |
 | ep-platform-authz | 注册 14 个对象类型与 12 个动作 | 阶段 2 建立，本阶段追加注册项 |
@@ -1216,7 +1216,7 @@ OPEN 到 PARTIALLY_SETTLED 到 SETTLED，三条结清路径任一条都推进该
 17. E2E-10-01 至 E2E-10-06 六个用例通过，其中 E2E-10-01 全程在应用内完成。
 18. 严重与高危缺陷为零，中危缺陷登记并给出规避方案与责任人，按规格第 17.2 章发布缺陷门禁的口径。
 19. invoice 与 finance 两个模块在规格第 6.2 章能力矩阵中取值为完整或简化的能力域，其四端界面已实现并通过 Playwright 与 tauri-driver 的桌面用例、XCUITest 与 Espresso 的移动用例；取值为 VIEW_ONLY 的能力域只实现只读视图；取值为 NOT_APPLICABLE 的不实现入口。
-20. 本模块数据集视图 `invoice.v_purchase_invoices_dataset`、`finance.v_receivable_ledger_entries`、`finance.v_payable_ledger_entries` 已发布并授予 `ep_analyst_ro`，列签名已同步给阶段 11，阶段 11 的 `reporting-dataset-signature-matched` 在三者上按降级口径校验通过，即签名不符时关闭相关报表入口并开降级窗口而不阻断启动。
+20. 本模块数据集视图 `invoice.v_purchase_invoices_dataset`、`finance.v_receivable_ledger_entries`、`finance.v_payable_ledger_entries` 已发布并授予 `ep_analyst_ro`，列签名已同步给阶段 11。本条在本阶段的被测输入只有本阶段自己的迁移产物与列签名快照，视图已建、授权已授、签名已同步三项均可在本阶段静态判定。阶段 11 的 `reporting-dataset-signature-matched` 在三者上的校验，其被测输入由阶段 11 交付，按基线第 12 节通则第六条取整条推迟一档：本阶段不注册该自检项、不调用它，本条也不断言其结论；三者按第 3.3 节降级口径的通过判定由阶段 11 第 9 节退出条件第 25 条承接，本节不得以任何形态留下以该自检项为被测输入的断言。
 21. 本阶段全部路由的能力域码与动作类别常量已声明在 `crates/contract/invoice/src/capability.rs` 与 `crates/contract/finance/src/capability.rs`，`xtask configdoc` 通过。
 22. 本模块的 `InvoiceReferenceCounter`、`FinanceReferenceCounter`、`InvoiceSalesTradeHistoryProvider`、`InvoicePurchaseTradeHistoryProvider` 已实现并注册到阶段 5 提供的两个注册表。
 23. `finance.cash_accounts` 的银行账号查重经 `derive_blind_key` 与 `BlindIndex` 实现，唯一约束名为 `ux_cash_accounts_legal_entity_id_bank_account_no_bidx`，全库无第二套账号哈希实现。

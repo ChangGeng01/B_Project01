@@ -30,7 +30,7 @@
 平台能力，八项。
 
 1. Outbox 写入与消费：业务状态、审计事件与 Outbox 条目在同一数据库事务写入；job-worker 按法人轮转取件、投递、退避重试、转死信；消费端由 `platform_msg.inbox_consumptions` 保证幂等；投递统计与积压指标可读。
-2. 幂等键（3a 段）：`platform_msg.idempotency_keys` 表与阶段 2 定义的 `ep_adapter_db::port::IdempotencyStore` 端口实现，`try_begin(tx, scope, request_hash)` 返回 `IdempotencyOutcome::FirstCall`、`Replay { status, body }` 或 `PayloadMismatch`，`finish(tx, scope, response_status, response_body)` 写回首次结果；重复请求回放首次结果并回带 `Idempotent-Replay: true`。请求头的存在性与 UUIDv7 合法性由阶段 1 的 `IdempotencyKeyHeaderGuard` 校验并返回 `PLATFORM.IDEMPOTENCY.KEY_REQUIRED`，本阶段不重复校验、不重复登记该码。
+2. 幂等键（3a 段）：`platform_msg.idempotency_keys` 表与阶段 2 定义的 `ep_foundation::port::db::IdempotencyStore` 端口实现，`try_begin(tx, scope, request_hash)` 返回 `IdempotencyOutcome::FirstCall`、`Replay { status, body }` 或 `PayloadMismatch`，`finish(tx, scope, response_status, response_body)` 写回首次结果；重复请求回放首次结果并回带 `Idempotent-Replay: true`。请求头的存在性与 UUIDv7 合法性由阶段 1 的 `IdempotencyKeyHeaderGuard` 校验并返回 `PLATFORM.IDEMPOTENCY.KEY_REQUIRED`，本阶段不重复校验、不重复登记该码。
 3. 单据编号与档案编码：按共享技术基线第 11.1 节的格式生成，在业务事务内取号，回滚即退号，位数溢出自动扩展。
 4. 审计事件哈希链与分段签名：按法人与自然日分段的 SHA-256 哈希链、每 5 分钟或每 1000 条的 ECDSA P-256 段根签名、签名后立即写入独立的审计证据存储路径、链验证工具与验证报告。
 5. 文件引用与本地文件存储：附件对象与版本模型、分片上传与断点续传、类型识别与恶意内容检查、按法人密钥域与密级子域的信封加密落盘、只写入不覆盖不删除的存储适配、附件恢复点水位的只读输入视图、`DisposalPort` 端口定义与处置受理路由（本阶段至阶段 13 之间一律直接拒绝并开一条降级窗口）。
@@ -79,7 +79,6 @@
 | ep-adapter-file | adapter | 新增 | core-server，job-worker 只读 |
 | ep-adapter-search | adapter | 新增（3b 段） | job-worker 写入侧，core-server 查询侧 |
 | ep-foundation | foundation | 改动 | 全部 |
-| ep-adapter-db | adapter | 改动 | 全部持库进程 |
 | ep-adapter-db-pg | adapter | 改动 | 全部持库进程 |
 | ep-platform-obs | platform | 改动 | 全部 |
 | ep-testkit | 测试 | 改动 | 测试 |
@@ -89,7 +88,7 @@
 
 #### 3.2.2 各 crate 的内容边界
 
-`ep-foundation` 新增四组类型，全部为无业务语义的通用类型，符合基线第 1.3 节对 foundation 的禁止项。
+`ep-foundation` 新增四组类型，全部为无业务语义的通用类型，符合基线第 1.3 节对 foundation 的禁止项。必要性按基线第 12 节通则第六条降为评审判据，不由 `xtask archcheck` 判定；下列四组在提交说明中按 文件：行号 逐项举证使用位，缺举证的提交评审时按不通过处理。
 
 - `error::codes` 常量表的 `PLATFORM` 段，`AppError` 的 `incident_no`、`occurred_at`、`retryable`、`advice` 四个字段的构造与序列化。
 - `resilience` 模块：`Backoff`（固定序列与指数两种）、`CircuitBreaker`（失败计数、开启窗口、半开探针）、`RetryPolicy`。这是本基线未覆盖事项，登记为本阶段新增决定。
@@ -919,7 +918,7 @@ select ... from platform_msg.outbox_events
 
 崩溃恢复：`locked_until` 过期的 `DISPATCHING` 条目由扫描器改回 `PENDING` 并把 `available_at` 置当前时刻。因为投递副作用与 `inbox_consumptions` 同事务，重放不会重复产生副作用。
 
-幂等键算法（3a 段）：本阶段只实现阶段 2 定义的 `ep_adapter_db::port::IdempotencyStore`，请求头的存在性与 UUIDv7 合法性已由阶段 1 的 `IdempotencyKeyHeaderGuard` 判定，本阶段不重复判断。`try_begin(tx, scope: IdempotencyScope, request_hash: [u8; 32])` 在业务事务内先执行 `INSERT INTO platform_msg.idempotency_keys (..., state) VALUES (..., 'IN_PROGRESS') ON CONFLICT (legal_entity_id, user_id, endpoint, key) DO NOTHING`，`IdempotencyScope` 的四个字段与该唯一约束逐项对应，`request_hash` 以 64 位小写十六进制存入 `request_hash` 列。受影响行数为 1 返回 `IdempotencyOutcome::FirstCall`；为 0 则读取已有行：`state = 'COMPLETED'` 且 `request_hash` 相同时返回 `Replay { status, body }`，调用方据此回放并带 `Idempotent-Replay: true`；`request_hash` 不同时返回 `PayloadMismatch`，由调用方映射为 `PLATFORM.IDEMPOTENCY.PAYLOAD_MISMATCH`；`state = 'IN_PROGRESS'` 时首次调用尚在执行，此时不返回任何 `IdempotencyOutcome`，而以 `Err(AppError)` 返回 `PLATFORM.IDEMPOTENCY.IN_PROGRESS`。`finish(tx, scope, response_status: u16, response_body: &[u8])` 在同一事务内把 `state` 置 `COMPLETED` 并写入 `response_status` 与 `response_body`。事务回滚时 `IN_PROGRESS` 行一并回滚，不留残留。`request_hash` 取请求体规范化后的 SHA-256，不含请求头。保留 7 天。
+幂等键算法（3a 段）：本阶段只实现阶段 2 定义的 `ep_foundation::port::db::IdempotencyStore`，请求头的存在性与 UUIDv7 合法性已由阶段 1 的 `IdempotencyKeyHeaderGuard` 判定，本阶段不重复判断。`try_begin(tx, scope: IdempotencyScope, request_hash: [u8; 32])` 在业务事务内先执行 `INSERT INTO platform_msg.idempotency_keys (..., state) VALUES (..., 'IN_PROGRESS') ON CONFLICT (legal_entity_id, user_id, endpoint, key) DO NOTHING`，`IdempotencyScope` 的四个字段与该唯一约束逐项对应，`request_hash` 以 64 位小写十六进制存入 `request_hash` 列。受影响行数为 1 返回 `IdempotencyOutcome::FirstCall`；为 0 则读取已有行：`state = 'COMPLETED'` 且 `request_hash` 相同时返回 `Replay { status, body }`，调用方据此回放并带 `Idempotent-Replay: true`；`request_hash` 不同时返回 `PayloadMismatch`，由调用方映射为 `PLATFORM.IDEMPOTENCY.PAYLOAD_MISMATCH`；`state = 'IN_PROGRESS'` 时首次调用尚在执行，此时不返回任何 `IdempotencyOutcome`，而以 `Err(AppError)` 返回 `PLATFORM.IDEMPOTENCY.IN_PROGRESS`。`finish(tx, scope, response_status: u16, response_body: &[u8])` 在同一事务内把 `state` 置 `COMPLETED` 并写入 `response_status` 与 `response_body`。事务回滚时 `IN_PROGRESS` 行一并回滚，不留残留。`request_hash` 取请求体规范化后的 SHA-256，不含请求头。保留 7 天。
 
 #### 3.4.5 站内通知与扇出
 
@@ -1074,7 +1073,7 @@ SLA：以 `kind = 'SLA'` 的定时器表达，触发时不推进实例，只写 
 
 其二，`incident_no` 的生成：格式 `ERR-<YYYYMMDD>-<6 位法人内流水>`，由 `ep-platform-sequence` 以 `scope_kind = 'DOCUMENT'`、`type_code = 'ERR'` 分配。事故编号必须在错误路径上可分配，因此该分配走独立短事务，不参与已回滚的业务事务；分配失败时退化为 `ERR-<YYYYMMDD>-<trace_id 前 12 位>`，保证错误响应永远有关联编号，规格第 15.1 章要求“每个错误包含关联编号”。
 
-其三，数据库重试：序列化失败 40001 与死锁 40P01 在 `ep-adapter-db` 的工作单元层重试 3 次，退避 50、150、450 毫秒，且只对尚未产生任何外部可见副作用的事务重试。“外部可见副作用”在本阶段的判定为：该事务尚未调用过任何 `ep-adapter-file` 的写入方法、尚未调用过 integration-gateway。重试次数计入阶段 2 注册并填充的 `ep_db_tx_retries_total`（counter，标签 `pool` 与 `sqlstate`），按裁定 C-21 本阶段不登记 `ep_tx_retry_total`。重试耗尽返回 `PLATFORM.RETRY.SERIALIZATION_FAILURE_EXHAUSTED`，分类 `INFRASTRUCTURE`，`retryable = true`。
+其三，数据库重试：序列化失败 40001 与死锁 40P01 在 `ep-adapter-db-pg` 的工作单元层重试 3 次，退避 50、150、450 毫秒，且只对尚未产生任何外部可见副作用的事务重试。“外部可见副作用”在本阶段的判定为：该事务尚未调用过任何 `ep-adapter-file` 的写入方法、尚未调用过 integration-gateway。重试次数计入阶段 2 注册并填充的 `ep_db_tx_retries_total`（counter，标签 `pool` 与 `sqlstate`），按裁定 C-21 本阶段不登记 `ep_tx_retry_total`。重试耗尽返回 `PLATFORM.RETRY.SERIALIZATION_FAILURE_EXHAUSTED`，分类 `INFRASTRUCTURE`，`retryable = true`。
 
 其四，熔断器：`foundation::resilience::CircuitBreaker`，连续失败达 `circuit_failure_threshold`（默认 5）后开启 `circuit_open_seconds`（默认 30），半开时放 `circuit_half_open_probes`（默认 1）个探针。本阶段唯一使用者是推送出口；电子签章出口的熔断在其所在阶段复用同一组件。规格第 15.1 章规定 `EXTERNAL_SYSTEM` 分类首版仅指电子签章服务，因此推送失败不映射为 `EXTERNAL_SYSTEM`，只记录送达状态，不产生用户可见错误，也不计入错误率口径。
 
@@ -1329,7 +1328,7 @@ pub trait ConfigItemApplier: Send + Sync {
 
 #### 3.6.2 锁顺序与死锁防范
 
-本阶段引入三类会被多个事务同时争用的行：编号序列行、审计段行、流程实例行。统一加锁顺序为：业务聚合行，编号序列行，流程实例行，审计段行。审计段行排在最后，与判定二一致。跨自然日的多段写入按 `event_day` 升序加锁。该顺序写入 `ep-adapter-db` 的工作单元文档并由代码评审逐条核对；违反顺序的代码在集成测试的死锁注入用例中会被检出。
+本阶段引入三类会被多个事务同时争用的行：编号序列行、审计段行、流程实例行。统一加锁顺序为：业务聚合行，编号序列行，流程实例行，审计段行。审计段行排在最后，与判定二一致。跨自然日的多段写入按 `event_day` 升序加锁。该顺序写入 `ep-adapter-db-pg` 的工作单元文档并由代码评审逐条核对；违反顺序的代码在集成测试的死锁注入用例中会被检出。
 
 #### 3.6.3 与 Outbox 的关系
 
@@ -1522,7 +1521,7 @@ E2E-6 配置发布最小通道（3b 段）：创建含一个 `FLOW_DEFINITION` �
 1. 34 个迁移文件在空库上按文件版本号全序执行成功，每个文件的 `-- rollback:` 段可执行或已注明只能用备份回退；3a 段的第 1 号与 3b 段的第 2 至 34 号在含阶段 4 迁移的合并环境上按版本号单调应用成功。
 2. 30 张新表中，24 张带 `legal_entity_id` 的表全部 `ENABLE` 且 `FORCE` 行级安全，策略按统一模板生成，`tests/rls_matrix` 的本阶段部分八类全通过；六张部署级表按裁定 A-05 与 A-27 不带 `legal_entity_id`、不建策略，且已断言其可见性不随 `app.legal_entity_id` 变化。
 3. 运行期账号 `ep_app_rw` 在本阶段表上无 DDL、无策略管理权限，`--check` 的 `rls-enabled-and-forced` 与 `runtime-role-privileges-bounded` 两项通过。
-4. `--check` 的十四个命名项（基线第 7.3 节现行十项，加本阶段四项 `audit-evidence-store-writable`、`audit-signing-key-usable`、`attachment-store-ready`、`event-catalog-consistent`）在部署环境上全部通过并输出结构化报告，报告逐项给出 `Blocking` 或 `Degrading` 级别；`--check` 对 FAILED 与 DEGRADED 一律非零退出，`event-catalog-consistent` 在注入不一致时不阻止进程启动而是写出一条降级窗口。
+4. `--check` 的十三个命名项（基线第 7.3 节现行十项中除 `offsite-sink-requirements` 外的九项，加本阶段四项 `audit-evidence-store-writable`、`audit-signing-key-usable`、`attachment-store-ready`、`event-catalog-consistent`）在部署环境上全部通过并输出结构化报告，报告逐项给出 `Blocking` 或 `Degrading` 级别；`--check` 对 FAILED 与 DEGRADED 一律非零退出，`event-catalog-consistent` 在注入不一致时不阻止进程启动而是写出一条降级窗口。`offsite-sink-requirements` 按基线第 12 节通则第六条单列：该项在阶段 1 已整条推迟，其被测输入即落点判定与 `DegradationLedger` 登记均不在本阶段交付，因此本阶段不注册该项、不为其输出通过结论，也不计入上述十三项；重新计入的触发谓词是该项已出现在 `SelfCheckRegistry` 的注册清单中，由判定工具自身观测，不以阶段号翻牌。
 5. Outbox 可靠投递三组测试全通过，含至少一次投递、重复投递去重、崩溃恢复不丢不重。
 6. 幂等键三态判定的九种组合全通过，重复请求回带 `Idempotent-Replay: true`。
 7. 编号并发取号 10 万次无重号、无空号，位数扩展临界通过。
@@ -1706,7 +1705,7 @@ U-A-01 与 U-A-02 已由共享技术基线第 11.1 节取值，本阶段直接�
 
 本节是 needs 数组的正文说明，逐项写明依赖内容、被阻塞的范围与临时替代方案。
 
-依赖一，工程基线（阶段 1）：Cargo workspace 骨架、`rust-toolchain.toml`；`ep-foundation` 的 `Id`、`Money`、`Clock`、`IdGen`、`Rng`、`SecurityLevel`、`AppError`、`ErrorCode`、`DomainEvent` 信封，按裁定 A-03 冻结的 19 字段 `SecurityContext` 与两个构造函数，按裁定 A-01 冻结的 `port::tx` 三件套 `Tx`、`SnapshotCtx`、`UnitOfWork`（两个方法 `transact` 与 `snapshot_transact`）与 `id::marker` 的 22 个标记类型，按裁定 A-02 冻结的 `SYSTEM_PRINCIPAL_ID` 与 `SYSTEM_DEVICE_ID`，按裁定 A-05 冻结的 `ModuleCode`，按裁定 A-20 冻结的 `CapabilityDomain` 与 `ActionClass`，以及 `port::search` 的空模块文件；按裁定 C-24 由阶段 1 登记的七个平台错误码；按裁定 C-07 的 `IdempotencyKeyHeaderGuard`；按裁定 C-05 的 `tests/rls_matrix` CI 目标与八个断言函数；按裁定 C-23 注册的两个数据库连接池指标；`ep-adapter-db` 的连接池与 `ep-adapter-db-pg` 的会话变量注入与归还清除钩子，单一全局 refinery Runner 的骨架与 `db/migrations/` 下二十四个空目录，CI 的依赖方向自检与 SQL 静态检查，`ep-testkit` 与 `ep-datagen` 骨架。缺失则本阶段无法开工，无临时替代。
+依赖一，工程基线（阶段 1）：Cargo workspace 骨架、`rust-toolchain.toml`；`ep-foundation` 的 `Id`、`Money`、`Clock`、`IdGen`、`Rng`、`SecurityLevel`、`AppError`、`ErrorCode`、`DomainEvent` 信封，按裁定 A-03 冻结的 19 字段 `SecurityContext` 与两个构造函数，按裁定 A-01 冻结的 `port::tx` 三件套 `Tx`、`SnapshotCtx`、`UnitOfWork`（两个方法 `transact` 与 `snapshot_transact`）与 `id::marker` 的 22 个标记类型，按裁定 A-02 冻结的 `SYSTEM_PRINCIPAL_ID` 与 `SYSTEM_DEVICE_ID`，按裁定 A-05 冻结的 `ModuleCode`，按裁定 A-20 冻结的 `CapabilityDomain` 与 `ActionClass`，以及 `port::search` 的空模块文件；按裁定 C-24 由阶段 1 登记的七个平台错误码；按裁定 C-07 的 `IdempotencyKeyHeaderGuard`；按裁定 C-05 的 `tests/rls_matrix` CI 目标与八个断言函数；按裁定 C-23 注册的两个数据库连接池指标；`ep-adapter-db-pg` 的连接池、会话变量注入与归还清除钩子，单一全局 refinery Runner 的骨架与 `db/migrations/` 下二十四个空目录，CI 的依赖方向自检与 SQL 静态检查，`ep-testkit` 与 `ep-datagen` 骨架。缺失则本阶段无法开工，无临时替代。
 
 依赖二，密钥与密码（阶段 2）：`ep-adapter-kms` 的信封加密（AES-256-GCM 数据密钥的派生与解封）与签名验签（ECDSA P-256），每法人数据加密密钥域与密级子域的建立，以及按裁定 B-04 由阶段 2 提供的盲索引派生函数 `derive_blind_key` 与 `BlindIndex`，本阶段的 `push_registrations.token_bidx` 取其派生值，不自建第二套哈希。缺失时以内存桩实现开发，但第 3.9 节退出条件的第 9、10、13 项必须在真实实现上判定。
 

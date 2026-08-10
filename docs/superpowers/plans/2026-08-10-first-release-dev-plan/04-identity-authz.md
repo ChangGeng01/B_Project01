@@ -343,7 +343,7 @@ ep-platform-identity 侧的关键枚举：AccountStatus、CredentialKind、Sessi
 
 1. 阶段一。middleware 已把 app.legal_entity_id 写入会话变量，且 user_legal_entity_grants 上的行对该法人可见。此处不再做应用侧比较，法人隔离完全由行级策略承担，符合规格第 7.7 章“行级策略以该变量为唯一判据”。若客户端声明的法人不在授权集合内，grant 行不可见，返回 PLATFORM.AUTHZ.LEGAL_ENTITY_NOT_GRANTED，HTTP 403。
 2. 阶段二。在 AuthzSnapshot 中按 (roles, object_type, action) 查表。先收集全部命中的 access_policies，effect 为 DENY 的任一条命中即返回 Deny(ObjectForbidden)；没有 DENY 且存在 role_permission_grants 命中即通过；两者皆无即 Deny(ObjectForbidden)。显式拒绝优先在此实现。
-3. 阶段三。按 object_type 从 object_scope_bindings 取范围锚列；未登记直接 Deny(ScopeBindingMissing)，不默认放行。部门闭包不在本阶段自行展开，按 A-04 经 `ep_platform_tenancy::DepartmentClosureQuery::descendant_ids(tx, legal_entity_id, department_id, max_depth)` 取得，事务句柄类型为 `ep_foundation::port::Tx` 的 `&mut dyn Tx`，max_depth 取 EP__AUTHZ__SCOPE__MAX_DEPARTMENT_DEPTH。把该闭包结果与项目集合、客户集合、显式共享记录集合编译成 RecordPredicate，再由 ep-adapter-db 的 ScopePredicateRenderer 渲染成 SQL 片段附加到仓储查询的 WHERE 后。单条读取时先按主键取行再用同一谓词在内存中比对。
+3. 阶段三。按 object_type 从 object_scope_bindings 取范围锚列；未登记直接 Deny(ScopeBindingMissing)，不默认放行。部门闭包不在本阶段自行展开，按 A-04 经 `ep_platform_tenancy::DepartmentClosureQuery::descendant_ids(tx, legal_entity_id, department_id, max_depth)` 取得，事务句柄类型为 `ep_foundation::port::Tx` 的 `&mut dyn Tx`，max_depth 取 EP__AUTHZ__SCOPE__MAX_DEPARTMENT_DEPTH。把该闭包结果与项目集合、客户集合、显式共享记录集合编译成 RecordPredicate，再由 ep-adapter-db-pg 的 ScopePredicateRenderer 渲染成 SQL 片段附加到仓储查询的 WHERE 后。单条读取时先按主键取行再用同一谓词在内存中比对。
 4. 阶段四。取该对象的 security_level 与各字段的字段密级，用户 clearance_level 低于对象密级时整体 Deny(ClassificationTooHigh)；低于字段密级或字段权限为 HIDDEN 时该字段不进入响应键集合；为 MASKED 时按 mask_style 替换值；为 READ 时只读；为 WRITE 时允许写。
 
 边界条件逐条：用户角色集合为空时阶段二直接拒绝，不回退到任何默认角色；字段密级未赋值时按所属对象密级取值，照抄基线第 4 节公共列说明；部门闭包深度上限取 8，超过深度的部门在编译期被截断并写 WARN 日志与 ep_authz_scope_truncated_total 指标，不静默；departments 集合超过 200 个时谓词由 IN 列表退化为对部门闭包临时表的 EXISTS 子查询，阈值由常量表达，理由是超长 IN 列表会让查询计划从索引扫描退化为顺序扫描，与基线第 3.10 节“不得出现顺序扫描”的要求冲突；调岗生效日期的比较用 (now() AT TIME ZONE 'Asia/Shanghai')::date，不用 current_date，照抄基线第 3.4 节。
@@ -617,7 +617,7 @@ roles、role-permission-grants、access-policies、field-permissions、sod-rules
 
 敏感取值一律不进配置文件：X.509 信任锚、TOTP 主密钥、会话令牌无需密钥（不透明随机），全部按基线第 7.2 节以 secret:// 引用表达，内存中用 secrecy::SecretString 包装。
 
-启动自检新增一个命名项，按 C-25 以注册名标识而不用序号，注册顺序排在基线第 7.3 节的十三个命名项之后：
+启动自检新增一个命名项，按 C-25 以注册名标识而不用序号，注册顺序排在基线第 7.3 节的十项命名项之后（原写的十三项为已作废的旧口径，见 00c 裁定 C-25 与阶段 1 计划第 7.3 节回写）：
 
 - authz-snapshot-loadable：每个法人存在至少一个 EFFECTIVE 的 authz_config_versions，且据其配置行可构造出完整的 AuthzSnapshot。判据只到可构造为止，构造不出即以退出码 78 退出，理由是无快照则任何授权判定都做不了，全拒等价于停机、放行等于灾难，没有第三条路，这一项必须留在阻断级。
 
@@ -721,7 +721,7 @@ checksum 与配置行重算值是否一致不进阻断判据。不一致时进�
 逐条可客观判定，全部达成才算完成。
 
 1. 29 个迁移文件在空库上按文件版本号全序离线执行成功，24 张表与 13 条行级策略全部建立，本阶段 11 张不带法人列的表在 platform_core.unpoliced_table_registry 中各有一行登记且 db/checks 的第十三项返回零行，platform_core.schema_history 记录完整。
-2. core-server 与 job-worker 以 --check 模式退出码为 0，基线第 7.3 节的十三个命名项加本阶段的 authz-snapshot-loadable 一项全部通过，且 platform_ops.degradation_windows 中没有未关闭的 AUTHZ_SNAPSHOT_CHECKSUM_MISMATCH 窗口。
+2. core-server 与 job-worker 以 --check 模式退出码为 0，基线第 7.3 节的十项中除 `audit-chain-verifiable`、`file-store-writable` 与 `offsite-sink-requirements` 三项外全部通过，本阶段的 authz-snapshot-loadable 一项亦通过；该三项的承担阶段均晚于本阶段（前两项归阶段 3b，末项归阶段 14），按基线第 12 节通则第六条以换判据处置，在本阶段返回 `NOT_APPLICABLE` 并在报告中标注承担阶段，既不计入通过也不计入违反，不构成本条的阻断项；且 platform_ops.degradation_windows 中没有未关闭的 AUTHZ_SNAPSHOT_CHECKSUM_MISMATCH 窗口。
 3. 一条端到端脚本可在干净环境上完成：建号、开通、注册第二因子、登记设备、登录、选择法人、访问一个受保护端点、发起一次合同生效类高风险操作、完成重新认证并取得 X-Reauth-Token，全程无人工干预。脚本止于重新认证通过。提交、两级审批与留下审计证据三段属开篇同批清单，本阶段不以任何替身或假实现跑通，也不在本阶段声称可演示，三段与阶段 3b 一并实现并在阶段 3b 结束时一次判定。
 4. 本阶段交付的 matrix_32.rs 的 32 组交叉用例全部通过，入口借用测试在本阶段只有 4 项且全部通过，内部对账上下文一项按第 8.3 节整条归阶段 9a、不计入本阶段判定也不登记顺延，输出的结构化报告中越权读取、越权写入、跨法人聚合泄漏三项计数为零，发布门禁项 RG-RLS-MATRIX-GREEN 判定为绿；该门禁的判据按基线第 3.8 节为 platform_core.unpoliced_table_registry 的行数与 tests/rls_matrix 中承接入口用例数相等且全绿，本阶段交付的 matrix_32.rs 是其中一段。
 5. 规格第 17.2 章“身份与访问控制测试”条目的三段判据逐句有对应用例且全部通过。

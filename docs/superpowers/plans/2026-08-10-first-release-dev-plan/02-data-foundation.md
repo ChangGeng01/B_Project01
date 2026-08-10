@@ -6,7 +6,7 @@
 
 三条边界先写死。一是本阶段拥有 `platform_core` 内的十二张表与 `platform_ops.degradation_windows` 一张表，以及 24 个 schema 的创建与授权；按 C-01，本阶段是 24 个 schema、七个功能角色与二十四个属主角色的唯一提供方，阶段 1 只交付目录约定与空壳，任何其他阶段不得再建 schema 或角色；业务 15 个 schema 在本阶段是空 schema，只有属主、授权与合规断言。二是本阶段拥有的是机制不是策略内容：行级策略模板由本阶段产出并强制，判据取值 `app.legal_entity_id` 由安全上下文写入，而 `SecurityContext` 的字段集合按 A-03 由阶段 1 冻结、其填充与用户授权法人集合的判定属阶段 4；审批、重新认证、职责分离同理，本阶段只提供失败即拒的端口位点。三是凡规格与 PRD 未定义而本阶段必须假设的，一律在第 12 节显式登记。
 
-前置：阶段 1 已冻结 `rust-toolchain.toml`、workspace 根 `Cargo.toml` 的 `[workspace.dependencies]`、CI 骨架与依赖方向自检脚本，并已交付 `ep-foundation` 的 `Id`、`Money`、`Quantity`、`UnitPrice`、`Rate`、`SecurityLevel`、`AppError`、`ErrorCode`、`Clock`、`IdGen`，以及按 A-01 冻结的 `port::tx` 三个 trait 与 `id::marker` 的 22 个标记类型、按 A-02 冻结的 `SYSTEM_PRINCIPAL_ID` 与 `SYSTEM_DEVICE_ID`、按 A-03 冻结的十九字段 `SecurityContext` 与其三个配套枚举、按 A-05 冻结的 `ModuleCode`、按 A-20 冻结的 `CapabilityDomain` 与 `ActionClass`。本阶段不重定义这些类型，只为其补 PostgreSQL 编解码。
+前置：阶段 1 已冻结 `rust-toolchain.toml`、workspace 根 `Cargo.toml` 的 `[workspace.dependencies]`、CI 骨架与依赖方向自检脚本，并已交付 `ep-foundation` 的 `Id`、`Money`、`Quantity`、`UnitPrice`、`Rate`、`SecurityLevel`、`AppError`、`ErrorCode`、`Clock`、`IdGen`，以及按 A-01 冻结的 `port::tx` 三个 trait 与 `id::marker` 的 22 个标记类型、按 A-02 冻结的 `SYSTEM_PRINCIPAL_ID` 与 `SYSTEM_DEVICE_ID`、按 A-03 冻结的十九字段 `SecurityContext` 与其三个配套枚举、按 A-05 冻结的 `ModuleCode`、按 A-20 冻结的 `CapabilityDomain` 与 `ActionClass`。本阶段不重定义这些类型，只为其补 PostgreSQL 编解码。阶段 1 另已按裁定 F-01 建 `port::db` 空模块，本阶段在其中补齐 `IdempotencyStore` 与 `MigrationWindowGuard` 两个端口 trait 与公共能力基线的能力描述。
 
 阶段 1 另按 C-01 与 C-02 向本阶段移交三项：`db/bootstrap/` 五个脚本的内容、单一全局迁移 Runner 与其版本号断言、`tools/ep-migrate` 五个子命令的实现。阶段 1 保留的是目录约定、CLI 骨架与退出码约定。
 
@@ -26,7 +26,7 @@
 | D-02 | `db/bootstrap/` 集群引导脚本集 | 五个文件加一个 shell 包装，需超级用户执行一次 | 在裸 PostgreSQL 16 上建成数据库 `ep`、七个功能角色与二十四个属主角色、集群参数与 `pg_hba` 片段，可重复执行 |
 | D-03 | `db/migrations/` 39 个迁移文件 | SQL | 按文件版本号全序执行成功，每文件含 `-- rollback:` 段；不交付任何顺序声明文件，正确性由空库全量执行验证 |
 | D-04 | `db/checks/` 合规断言集 | 13 个编号断言脚本加 `append_only_consistency.sql` | 每脚本返回 0 行，非 0 行即列出违规对象；编号脚本由 `ep-migrate check` 执行，`append_only_consistency.sql` 按 B-02 由 `xtask sqlcheck` 执行 |
-| D-05 | `ep-adapter-db` | 库 crate | 端口 trait 与类型编译通过，不含任何 PostgreSQL 专有语法 |
+| D-05 | `ep-foundation` 的 `port::db` | 库模块 | `IdempotencyStore` 与 `MigrationWindowGuard` 两个端口 trait 与公共能力基线能力描述编译通过，不含任何 PostgreSQL 专有语法 |
 | D-06 | `ep-adapter-db-pg` | 库 crate | 五池连接管理、会话变量注入与清除、工作单元、重试、编解码全部实现并被集成测试覆盖 |
 | D-07 | `ep-adapter-kms` | 库 crate | 内置 KMS 载体实现并通过全部用例；HSM 载体在 `hsm` feature 下编译通过 |
 | D-08 | `ep-testkit` 数据库夹具 | 库 crate 增量 | `PgTestDb::new()` 按 `ep_test_<nanoid>` 独占建库，用例结束即删库 |
@@ -44,15 +44,14 @@
 
 ### 2. crate 与进程归属
 
-新增 crate 五个，改动 crate 四个。`tools/ep-migrate` 的骨架与退出码约定按 C-02 由阶段 1 交付，本阶段补齐五个子命令的实现，因此计入改动而非新增。
+新增 crate 四个，改动 crate 四个。`tools/ep-migrate` 的骨架与退出码约定按 C-02 由阶段 1 交付，本阶段补齐五个子命令的实现，因此计入改动而非新增。
 
 | crate | 归属层 | 装配进程 | 本阶段职责 |
 |---|---|---|---|
-| `ep-adapter-db` | adapter | core-server、job-worker、integration-gateway、ops-agent | 连接池抽象、`PgUnitOfWork` 与 `PgTx` 对 `ep_foundation::port::tx` 三个 trait 的实现声明位、`port::IdempotencyStore` 端口定义、四个连接模型类型的取值、公共能力基线类型映射、重试判定 |
-| `ep-adapter-db-pg` | adapter | 同上 | 唯一 PostgreSQL 16 实现：五池构建、`after_connect` 与 `after_release` 钩子、RLS 会话变量、编解码、迁移历史读取、SQLSTATE 23503 的统一错误映射 |
+| `ep-adapter-db-pg` | adapter | 同上 | 唯一 PostgreSQL 16 实现：五池构建、`after_connect` 与 `after_release` 钩子、RLS 会话变量、编解码、迁移历史读取、SQLSTATE 23503 的统一错误映射；`PgTx` 与 `PgUnitOfWork` 的声明与实现、`UnitOfWork` 两个方法的唯一实现、重试执行体、四个连接模型类型的定义与取值、公共能力基线到 PostgreSQL 类型与索引的映射 |
 | `ep-adapter-kms` | adapter | core-server、job-worker | 内置 KMS 与 HSM 两种载体的统一接口、信封加密、字段级密钥与盲索引密钥的派生与缓存 |
 | `tools/ep-migrate` | 工具二进制 | 不属八进程，只在迁移窗口内以 `ep_migrator` 运行 | 按 C-02 补齐 `apply`、`status`、`check`、`gen-rls`、`open-window` 五个子命令的实现与六个退出码 |
-| `ep-foundation` | 底座 | 全部 | 只增三项：`crypto::CipherText`、`crypto::KeyDomainId`、`crypto::BlindIndex`。不新增业务概念 |
+| `ep-foundation` | 底座 | 全部 | 只增三项：`crypto::CipherText`、`crypto::KeyDomainId`、`crypto::BlindIndex`。不新增业务概念。必要性按基线第 12 节通则第六条在提交说明中逐项举证使用位 |
 | `ep-testkit` | 测试 | 无 | 独占库夹具、法人夹具、安全上下文夹具、越权矩阵驱动器 |
 | `ep-datagen` | 工具 | 无 | 规模参数框架与公共列填充器 |
 | `ep-platform-tenancy` | platform | core-server、job-worker | 按 A-04 交付组织架构五张表的迁移，以及 `LegalEntityDirectory` 与 `DepartmentClosureQuery` 两个 trait 及其 pg 实现 |
@@ -113,7 +112,7 @@
 
 退出码约定固定为 0 成功、2 参数错误、3 迁移窗口未打开、4 校验和不符、5 版本不一致、78 环境自检失败。
 
-按 B-03，迁移窗口的判定另以组件形态对外提供：端口为 `ep_adapter_db::port::MigrationWindowGuard`，与 C-07 的 `IdempotencyStore` 同 crate 同模块，唯一方法为 `async fn assert_open(&self, tx: &mut dyn Tx) -> Result<(), AppError>`，未持有 `OPEN` 窗口时返回 `PLATFORM.DB.MIGRATION_WINDOW_CLOSED`，HTTP 409，分类 BUSINESS_CONFLICT；唯一实现类型为 `PgMigrationWindowGuard`，位于 `crates/adapter/db-pg/`。端口与实现均由本阶段交付，并在 `apps/core-server/src/wiring.rs` 与 `apps/job-worker/src/wiring.rs` 注入。阶段 13b 的在线 DDL 由 job-worker 的 DDL 执行器发起，在把控制交给 ep-platform-release 的编排之前调用注入实例的 `assert_open(tx)`，`ep-platform-release` 不引用该 trait。
+按 B-03，迁移窗口的判定另以组件形态对外提供：端口为 `ep_foundation::port::db::MigrationWindowGuard`，与 C-07 的 `IdempotencyStore` 同 crate 同模块，唯一方法为 `async fn assert_open(&self, tx: &mut dyn Tx) -> Result<(), AppError>`，未持有 `OPEN` 窗口时返回 `PLATFORM.DB.MIGRATION_WINDOW_CLOSED`，HTTP 409，分类 BUSINESS_CONFLICT；唯一实现类型为 `PgMigrationWindowGuard`，位于 `crates/adapter/db-pg/`。端口与实现均由本阶段交付，并在 `apps/core-server/src/wiring.rs` 与 `apps/job-worker/src/wiring.rs` 注入。阶段 13b 的在线 DDL 由 job-worker 的 DDL 执行器发起，在把控制交给 ep-platform-release 的编排之前调用注入实例的 `assert_open(tx)`，`ep-platform-release` 不引用该 trait。
 
 #### 3.4 迁移编号与顺序
 
@@ -402,11 +401,11 @@ end $$;
 
 #### 4.1 核心类型
 
-`ep-adapter-db` 中的四个类型 `PoolKind`、`SessionContext`、`RetryPolicy`、`ConnectionBudget` 按 C-04 由阶段 1 定义且一律留在 `ep-adapter-db`，不进 `ep-foundation`，本阶段只固定其取值：`PoolKind { Rw, Ro, Worker, Integ, Ops }`；`SessionContext { legal_entity_id, user_id, request_id, trace_id }`；`RetryPolicy` 取 `max_attempts` 为 3、`backoff_ms` 为 `[50, 150, 450]`、`retryable_sqlstates` 为 `["40001", "40P01"]`；`ConnectionBudget` 取 `resident_max` 为 42、`burst_max` 为 52，`per_pool` 五项取 Rw 20、Ro 10、Worker 5、Integ 5、Ops 2。预算校验脚本 `scripts/verify-connection-budget.sh` 由本阶段交付。
+`ep-adapter-db-pg` 中的四个类型 `PoolKind`、`SessionContext`、`RetryPolicy`、`ConnectionBudget` 按 C-04 由阶段 1 定义且一律留在 `ep-adapter-db-pg`，不进 `ep-foundation`，本阶段只固定其取值：`PoolKind { Rw, Ro, Worker, Integ, Ops }`；`SessionContext { legal_entity_id, user_id, request_id, trace_id }`；`RetryPolicy` 取 `max_attempts` 为 3、`backoff_ms` 为 `[50, 150, 450]`、`retryable_sqlstates` 为 `["40001", "40P01"]`；`ConnectionBudget` 取 `resident_max` 为 42、`burst_max` 为 52，`per_pool` 五项取 Rw 20、Ro 10、Worker 5、Integ 5、Ops 2。预算校验脚本 `scripts/verify-connection-budget.sh` 由本阶段交付。
 
-事务句柄与工作单元按 A-01 冻结在 `ep-foundation` 的 `port::tx`，本阶段不重定义：`Tx`、`SnapshotCtx` 与 `UnitOfWork` 三个 trait 的签名取自该模块，契约层的跨模块方法一律写 `&mut dyn Tx`；`UnitOfWork` 的两个方法按 C-03 为 `transact` 与 `snapshot_transact`，`transact_repeatable_read` 一名作废。本阶段在 `ep-adapter-db` 提供 `PgUnitOfWork` 与 `PgTx` 两个实现类型的声明位，实现落在 `ep-adapter-db-pg`。跨 crate 取具体句柄的唯一写法是 `tx.as_any_mut().downcast_mut::<PgTx>()`，只允许出现在 `crates/adapter/db-pg/` 内，由 `xtask archcheck` 断言其他目录不出现 `downcast_mut::<PgTx>`。一个 `UnitOfWork` 实例在装配时绑定一个池，application crate 对其取泛型参数 `U: UnitOfWork` 而不是 trait 对象。
+事务句柄与工作单元按 A-01 冻结在 `ep-foundation` 的 `port::tx`，本阶段不重定义：`Tx`、`SnapshotCtx` 与 `UnitOfWork` 三个 trait 的签名取自该模块，契约层的跨模块方法一律写 `&mut dyn Tx`；`UnitOfWork` 的两个方法按 C-03 为 `transact` 与 `snapshot_transact`，`transact_repeatable_read` 一名作废。本阶段在 `ep-adapter-db-pg` 声明并实现 `PgUnitOfWork` 与 `PgTx` 两个类型。跨 crate 取具体句柄的唯一写法是 `tx.as_any_mut().downcast_mut::<PgTx>()`，只允许出现在 `crates/adapter/db-pg/` 内，由 `xtask archcheck` 断言其他目录不出现 `downcast_mut::<PgTx>`。一个 `UnitOfWork` 实例在装配时绑定一个池，application crate 对其取泛型参数 `U: UnitOfWork` 而不是 trait 对象。
 
-按 C-07，本阶段在 `ep_adapter_db::port` 中定义幂等存储端口，签名见第 6 节，其表与重放实现属阶段 3a，请求头校验属阶段 1。
+按 C-07，本阶段在 `ep_foundation::port::db` 中定义幂等存储端口，签名见第 6 节，其表与重放实现属阶段 3a，请求头校验属阶段 1。
 
 `ep-adapter-kms` 中：`KeyDomain`、`DataKey`、`KeyPurpose`、`CipherEnvelope`、`Aad`、`BlindIndexKey`、`KmsBackend` trait（方法 `wrap`、`unwrap`、`derive_blind_key`、`health`）。
 
@@ -599,10 +598,10 @@ A-09。开窗请求体 `{"approval_ref": "...", "reason": "...", "ttl_minutes": 
 
 与 Outbox 的关系：本阶段不实现 Outbox，但交付其赖以成立的接缝，即同一个 `Tx` 句柄可被业务写入、审计写入与 Outbox 写入共享，三者因此天然同事务。`Tx` 不提供任何逃逸出事务的方法，也不提供裸连接访问。
 
-幂等键：按 C-07，幂等键的职责分三段，本阶段只承担中间一段，即在 `ep-adapter-db` 中定义端口，不校验请求头，不建表，不判等。
+幂等键：按 C-07，幂等键的职责分三段，本阶段只承担中间一段，即在 `ep_foundation::port::db` 中定义端口，不校验请求头，不建表，不判等。
 
 ```rust
-// crates/adapter/db/src/port/idempotency.rs
+// crates/foundation/src/port/db.rs
 pub struct IdempotencyScope { pub legal_entity_id: Id<LegalEntity>, pub user_id: Id<UserAccount>,
                               pub endpoint: String, pub key: uuid::Uuid }
 
@@ -777,9 +776,9 @@ E-13 第 12 节的偏离与新增决定已回写共享技术基线，评审记�
 E-14 代码审查与安全审查由独立角色完成，严重与高危发现全部关闭，符合规格第 17.1 章不得由同一执行角色自行批准的要求。
 E-15 组织架构五张表建成并挂接策略与触发器，`LegalEntityDirectory` 与 `DepartmentClosureQuery` 两个 trait 已交付并可被阶段 3、阶段 4 与阶段 5 在 `wiring.rs` 中注入；IT-39 与 IT-40 通过。
 E-16 `platform_ops.degradation_windows` 建成并带 `subject` 可空列与 `ux_degradation_windows_kind_scope_closed`、`ck_degradation_windows_open_order` 两条约束，其中前一条建在 `kind`、`subject`、`scope_legal_entity_id`、`scope_accounting_period_id` 与开窗状态五者上，`DegradationLedger` 的 `open`、`close`、`open_count` 三个方法可用，`DegradationKind` 的三个初始取值 `OFFSITE_SINK_NOT_CONFIGURED`、`WRITER_NOT_IN_SERVICE` 与 `PORT_NOT_IMPLEMENTED` 已定义且制品中不出现 `WRITER_ROLE_CONTAINMENT_MISSING` 一名，阶段 1 预留的 `// TODO(stage-2): write degradation ledger` 一行已补上。
-E-17 `ep_adapter_db::port::MigrationWindowGuard` 端口与 `PgMigrationWindowGuard` 实现均已交付，`apps/core-server/src/wiring.rs` 与 `apps/job-worker/src/wiring.rs` 两处已注入，窗口关闭时 `assert_open` 返回 `PLATFORM.DB.MIGRATION_WINDOW_CLOSED`；`tools/ep-migrate` 的五个子命令与六个退出码与第 3.3 节逐项一致，阶段 1 的 `migrate`、`verify`、`manifest` 三个名字在本阶段制品中不存在。
+E-17 `ep_foundation::port::db::MigrationWindowGuard` 端口与 `PgMigrationWindowGuard` 实现均已交付，`apps/core-server/src/wiring.rs` 与 `apps/job-worker/src/wiring.rs` 两处已注入，窗口关闭时 `assert_open` 返回 `PLATFORM.DB.MIGRATION_WINDOW_CLOSED`；`tools/ep-migrate` 的五个子命令与六个退出码与第 3.3 节逐项一致，阶段 1 的 `migrate`、`verify`、`manifest` 三个名字在本阶段制品中不存在。
 E-18 `docs/metrics-catalog.md` 的唯一性校验通过，第 7.2 节四个指标的注册方与填充方与该文件一致，制品中不出现 `ep_db_retries_total`、`ep_tx_retry_total`、`ep_db_replication_crosscheck_age_seconds` 与 `ep_replication_crosscheck_age_seconds` 四个已作废的名字。
-E-19 `ep_adapter_db::port::IdempotencyStore` 已按 C-07 定义并被内存实现覆盖，`platform_msg.idempotency_keys` 建表与重放判定不在本阶段交付物中，CI 断言本阶段无第二套判等实现。
+E-19 `ep_foundation::port::db::IdempotencyStore` 已按 C-07 定义并被内存实现覆盖，`platform_msg.idempotency_keys` 建表与重放判定不在本阶段交付物中，CI 断言本阶段无第二套判等实现。
 E-20 本阶段全部路由的能力域码与动作类别常量已声明，常量位于 `crates/platform/tenancy/src/capability.rs`，`xtask configdoc` 通过。
 
 ---
@@ -792,7 +791,7 @@ E-20 本阶段全部路由的能力域码与动作类别常量已声明，常量
 |---|---|
 | 7.1 事务数据 | 单实例单数据库；每模块独立 schema、数据库角色与迁移目录；时间以 UTC 存储、按中国标准时间展示；金额仅人民币 |
 | 7.2 数据所有权与不变量 | 已过账分录、库存流水、审批证据、审计证据不可覆盖的数据库侧强制，即 `assert_append_only` 与不授予 DELETE |
-| 7.3 数据库兼容 | 只交付并认证 PostgreSQL 16；抽象层与实现分离为 `ep-adapter-db` 与 `ep-adapter-db-pg`；认证套件中法人行级隔离与越权测试集本阶段交付并首次通过 |
+| 7.3 数据库兼容 | 只交付并认证 PostgreSQL 16；抽象层与实现分离为 `ep_foundation::port::{tx, db}` 与 `ep-adapter-db-pg`，业务代码只依赖前者；认证套件中法人行级隔离与越权测试集本阶段交付并首次通过 |
 | 7.4 可定制数据库 | 公共能力基线的字段类型与索引限制的断言（禁函数索引、部分索引、JSON 路径索引）；在线变更边界的迁移侧落实与 5 秒锁上限、30 分钟执行上限；`ext` schema 建立 |
 | 7.7 法人行级隔离机制 | 安全上下文写入会话变量、策略以该变量为唯一判据、无 BYPASSRLS、连接归还前清除、按用途分账号、按用途分池、八进程连接枚举、两个复制角色的数据库侧遏制手段即无业务表权限与 `pg_hba` 只放行本机，第三项遏制的检出折叠进阶段 14 的复制槽保留量采样、本阶段不承载，内部对账系统安全上下文的封闭构造与越权测试 |
 | 7.8 密钥域 | 每法人独立数据加密密钥域、密级子密钥、行内敏感字段信封加密、字段级密文不用于过滤排序聚合唯一约束、受治理盲索引、法人密钥销毁只影响本域、销毁证明三项 |

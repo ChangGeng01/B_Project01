@@ -121,10 +121,11 @@ fn check_marker_shape(path: &Path) -> Vec<Violation> {
         .filter(|l| !l.starts_with("//") && !l.is_empty())
         .filter(|l| !is_unit_struct(l))
         .map(|l| {
-            violation(
-                "id/marker.rs",
-                format!("标记类型模块只允许单元结构体，出现了：{l}"),
-            )
+            Violation {
+                rule: "foundation-marker-shape",
+                package: "id/marker.rs".to_string(),
+                detail: format!("标记类型模块只允许单元结构体，出现了：{l}"),
+            }
         })
         .collect()
 }

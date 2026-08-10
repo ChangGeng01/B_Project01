@@ -734,7 +734,7 @@ Tn+1 结论事务：slot 行 FOR UPDATE，写结论与 concluded_at，通过时�
 十三是试算平衡与会计恒等：注入一张人工构造的不平凭证不可能（受 CHECK 阻断），改为在快照上注入余额行差异，断言校验检出并拦截关账。
 
 十四是期初余额批次：借贷不平拒绝、已有凭证拒绝、重复科目拒绝、确认后进入首期期初列。
-十五是受治理数据集视图：以 ep_analyst_ro 连接可 SELECT ledger.v_account_period_balances，该角色对 ledger 的任何基表无读写权限；视图输出含 legal_entity_id、security_level、data_scope_tags 三列且列名与类型签名与阶段 11 登记的 dataset_fields 一致；跨法人取数被行级策略拦截。
+十五是受治理数据集视图：以 ep_analyst_ro 连接可 SELECT ledger.v_account_period_balances，该角色对 ledger 的任何基表无读写权限；视图输出含 legal_entity_id、security_level、data_scope_tags 三列且列名与类型签名与 reporting.dataset_fields 中 dataset code 为 ledger_account_period_balances 的登记行逐列相等；跨法人取数被行级策略拦截。本场景只做上述静态比对，不调用阶段 11 的 reporting-dataset-signature-matched 自检项，该自检项按基线第 12 节通则第六条与 E-17 同一档位整条推迟到阶段 11。
 
 #### 9.8.4 端到端测试
 
@@ -795,7 +795,7 @@ E-14 docs/error-codes.md 的 LEDGER 段与 crates/contract/ledger 的错误码�
 E-15 新增的 4 个指标在 ops-agent 的 127.0.0.1:9101 上可抓取，标签基数符合基线第 9.2 节纪律。
 
 E-16 桌面端五个场景与移动端两个查看场景的端到端用例通过；移动端写入操作按替代路径验证转桌面端完成。
-E-17 受治理数据集视图 ledger.v_account_period_balances 已发布，dataset code 为 ledger_account_period_balances、grain 为 SNAPSHOT，输出含 legal_entity_id、security_level、data_scope_tags 三列，已 GRANT SELECT 给 ep_analyst_ro，列签名已同步给阶段 11 并可由其 reporting-dataset-signature-matched 自检项校验通过。
+E-17 受治理数据集视图 ledger.v_account_period_balances 已发布，dataset code 为 ledger_account_period_balances、grain 为 SNAPSHOT，输出含 legal_entity_id、security_level、data_scope_tags 三列，已 GRANT SELECT 给 ep_analyst_ro，其列名与类型签名与 reporting.dataset_fields 中 dataset code 为 ledger_account_period_balances 的登记行逐列相等；本条以该登记行与本阶段交付的视图定义直接对读判定，是静态比对，不调用任何启动自检项。原写的由阶段 11 的 reporting-dataset-signature-matched 自检项校验通过一句，按基线第 12 节通则第六条整条推迟到阶段 11，由阶段 11 的退出条件承担；其重新生效的触发谓词为该自检项已按基线第 7.3 节注册进 SelfCheckRegistry 并可被 --check 模式实际执行，该谓词由判定工具自身可观测，不写成阶段号，也不需要任何人工翻牌动作。本条的达成与否只取决于上述静态比对，不因该自检项尚未交付而恒真或恒不可满足。
 
 E-18 本模块在规格第 6.2 章能力矩阵中取值为完整或简化的能力域，其四端界面已实现并通过 Playwright 与 tauri-driver 的桌面用例、XCUITest 与 Espresso 的移动用例；取值为 VIEW_ONLY 的能力域只实现只读视图；取值为 NOT_APPLICABLE 的不实现入口。
 
