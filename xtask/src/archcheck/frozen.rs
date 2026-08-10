@@ -12,8 +12,9 @@ fn violation(package: &str, detail: impl Into<String>) -> Violation {
 }
 
 /// 冻结项的期望数量。取值出处为技术基线第 1.4 节。
-const EXPECTED: [(&str, &str, usize); 7] = [
+const EXPECTED: [(&str, &str, usize); 8] = [
     ("id/marker.rs", "跨模块引用标记类型", 22),
+    ("security/context.rs::HumanContextInput", "human 入参字段", 18),
     ("security/context.rs::SecurityContext", "安全上下文字段", 19),
     ("security/context.rs::ClientKind", "X-Client 取值", 6),
     ("security/context.rs::DutyClass", "职责类别", 6),
@@ -28,6 +29,7 @@ pub fn check(root: &Path) -> Vec<Violation> {
 
     let actual = [
         count_unit_structs(&base.join("id/marker.rs")),
+        count_block_items(&base.join("security/context.rs"), "pub struct HumanContextInput {"),
         count_block_items(&base.join("security/context.rs"), "pub struct SecurityContext {"),
         count_block_items(&base.join("security/context.rs"), "pub enum ClientKind {"),
         count_block_items(&base.join("security/context.rs"), "pub enum DutyClass {"),
@@ -116,7 +118,14 @@ fn check_marker_names(path: &Path) -> Vec<Violation> {
 
 /// 标记类型必须是无字段、无方法、无 trait 实现的单元结构体。
 fn check_marker_shape(path: &Path) -> Vec<Violation> {
-    let Ok(text) = fs::read_to_string(path) else { return Vec::new() };
+    let Ok(text) = fs::read_to_string(path) else {
+        // 读不到即未覆盖，不是通过。这是全仓唯一一处曾静默返回「零违反」的规则路径。
+        return vec![Violation {
+            rule: "foundation-marker-shape",
+            package: "id/marker.rs".to_string(),
+            detail: "标记类型模块读不到，形态无法判定".to_string(),
+        }];
+    };
     text.lines()
         .map(str::trim)
         .filter(|l| !l.starts_with("//") && !l.is_empty())
@@ -185,5 +194,56 @@ mod negative_samples {
         assert!(!is_unit_struct("pub struct LegalEntity(pub u32);"));
         // 有 derive 就有 trait 实现，该行本身不是单元结构体行，会被单独报出。
         assert!(!is_unit_struct("#[derive(Clone)]"));
+    }
+}
+
+#[cfg(test)]
+mod rule_negative_samples {
+    use std::path::PathBuf;
+
+    use super::*;
+
+    fn marker_fixture(tag: &str, body: &str) -> PathBuf {
+        let root = std::env::temp_dir().join(format!("ep-frozen-{tag}"));
+        let _ = fs::remove_dir_all(&root);
+        fs::create_dir_all(&root).expect("建夹具目录");
+        let p = root.join("marker.rs");
+        fs::write(&p, body).expect("写夹具文件");
+        p
+    }
+
+    fn all_22() -> String {
+        MARKER_NAMES.iter().map(|n| format!("pub struct {n};\n")).collect()
+    }
+
+    /// 负样例：改名。数量仍是 22，只数数量的实现会静默通过。
+    #[test]
+    fn negative_marker_rename_is_caught() {
+        let body = all_22().replace("pub struct SalesOrder;", "pub struct Foo;");
+        let v = check_marker_names(&marker_fixture("rename", &body));
+        assert_eq!(v.len(), 2, "缺一个与多一个各报一条");
+        assert!(v.iter().any(|x| x.detail.contains("缺少标记类型 SalesOrder")));
+        assert!(v.iter().any(|x| x.detail.contains("清单外的标记类型 Foo")));
+        assert!(check_marker_names(&marker_fixture("ok", &all_22())).is_empty());
+    }
+
+    /// 负样例：形态违反——带字段的元组结构体与带 derive 的都不是标记类型。
+    #[test]
+    fn negative_marker_shape_is_caught() {
+        let with_field = all_22() + "pub struct Extra(pub u32);\n";
+        let v = check_marker_shape(&marker_fixture("shape", &with_field));
+        assert!(v.iter().any(|x| x.rule == "foundation-marker-shape"));
+
+        let with_derive = format!("#[derive(Clone)]\n{}", all_22());
+        assert!(!check_marker_shape(&marker_fixture("derive", &with_derive)).is_empty());
+    }
+
+    /// 读不到文件必须报，不得判通过。
+    #[test]
+    fn negative_marker_unreadable_is_not_a_pass() {
+        let missing = std::env::temp_dir().join("ep-frozen-nope/marker.rs");
+        let v = check_marker_shape(&missing);
+        assert_eq!(v.len(), 1);
+        assert!(v[0].detail.contains("读不到"));
     }
 }

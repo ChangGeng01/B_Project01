@@ -11,8 +11,9 @@
 //!     而第 1.3 节禁止项第五条禁止 adapter 之间互相依赖，`xtask archcheck`
 //!     的 adapter-no-peer-adapter 规则会直接判失败。
 //!
-//! 两条冲突互相独立，只改其中一条都不够。本文件按「声明与实现同处本 crate」
-//! 落地，ep-adapter-db 只保留与 PostgreSQL 无关的抽象。该偏离待裁定。
+//! 两条冲突互相独立，只改其中一条都不够。裁定 F-01 据此撤销 crate ep-adapter-db，
+//! 端口下沉 ep_foundation::port::db；工作区内不存在名为 ep-adapter-db 的 crate。
+//! 上面两条只作为成因说明保留。
 
 use ep_foundation::error::AppError;
 use ep_foundation::id::marker::LegalEntity;

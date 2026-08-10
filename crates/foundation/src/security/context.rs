@@ -202,8 +202,12 @@ pub struct SecurityContext {
     pub trace_id: TraceId,
 }
 
-/// `SecurityContext::human` 的入参。19 个字段全部由调用方给出，
-/// 单独成型是因为 clippy 的 too_many_arguments 与可读性，字段与上表一一对应。
+/// `SecurityContext::human` 的入参，18 个字段。
+///
+/// 上表第 19 项中的 `account_kind` **不入参**，由本构造函数固定为
+/// `AccountKind::Human`，与 `system` 固定为 `AccountKind::System` 对称，
+/// 任何调用方不得指定——否则 HTTP 层可伪造 `account_kind: System`。
+/// 其余 18 项与上表一一对应。
 #[derive(Clone, Debug)]
 pub struct HumanContextInput {
     pub user_id: Id<UserAccount>,

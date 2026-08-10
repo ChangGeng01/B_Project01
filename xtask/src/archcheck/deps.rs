@@ -157,7 +157,8 @@ fn rule_adapter_no_peer_adapter(pkg: &Package) -> Vec<Violation> {
 /// 禁止六（依赖图可判定的一半）：ep-foundation 不依赖工作区内任何 crate。
 ///
 /// 另一半「必要性：被两个及以上 ep-contract-* 引用，或被 ep-platform-* 引用」
-/// 见 [`super::source::foundation_necessity`]。
+/// 按裁定 F-03 降为评审判据，不由本工具判定，登记见 [`super::DELEGATED`]
+/// 与技术基线第 12.1 节 delegated 段。
 fn rule_foundation_no_business(pkg: &Package, members: &[&str]) -> Vec<Violation> {
     const RULE: &str = "foundation-no-business";
     if pkg.layer != Layer::Foundation {

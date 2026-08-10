@@ -308,3 +308,87 @@ mod negative_samples {
         assert!(hits[0].1.starts_with("v_"));
     }
 }
+
+#[cfg(test)]
+mod rule_negative_samples {
+    use super::*;
+
+    /// 造真目录夹具。两条规则都读文件系统，合成图喂不进去。
+    fn fixture(tag: &str, files: &[(&str, &str)]) -> PathBuf {
+        let root = std::env::temp_dir().join(format!("ep-src-{tag}"));
+        let _ = fs::remove_dir_all(&root);
+        for (rel, body) in files {
+            let p = root.join(rel);
+            fs::create_dir_all(p.parent().expect("有父目录")).expect("建夹具目录");
+            fs::write(&p, body).expect("写夹具文件");
+        }
+        root
+    }
+
+    const BOTH_WIRING: [(&str, &str); 2] = [
+        ("apps/core-server/src/wiring/mod.rs", "//! 装配。\n"),
+        ("apps/job-worker/src/wiring/mod.rs", "//! 装配。\n"),
+    ];
+
+    /// 负样例：wiring 目录里出现四类前缀之一的实现类型。
+    #[test]
+    fn negative_unwired_absent_catches_injection() {
+        let mut files = BOTH_WIRING.to_vec();
+        files.push(("apps/core-server/src/wiring/ledger.rs", "pub struct NoopLedgerPort;\n"));
+        let v = unwired_absent(&fixture("unwired-bad", &files));
+        assert_eq!(v.len(), 1);
+        assert!(v[0].detail.contains("第 1 行"), "须给出行号");
+        assert!(v[0].detail.contains("Noop"));
+    }
+
+    /// 负样例：断言对象目录缺席时必须报出，不得当作零违反通过。
+    #[test]
+    fn negative_unwired_absent_missing_dir() {
+        let v = unwired_absent(&fixture("unwired-missing", &BOTH_WIRING[..1]));
+        assert_eq!(v.len(), 1);
+        assert!(v[0].detail.contains("目录不存在"));
+    }
+
+    /// 正样例守边界：注释里提到 Noop 不算违反，否则规则自身的说明文字会把自己判红。
+    #[test]
+    fn negative_unwired_absent_skips_comments() {
+        let mut files = BOTH_WIRING.to_vec();
+        files.push(("apps/job-worker/src/wiring/note.rs", "//! 本目录不得出现 NoopClock 之类。\n"));
+        assert!(unwired_absent(&fixture("unwired-comment", &files)).is_empty());
+    }
+
+    /// 负样例：仓储文件读了他模块的基表。
+    #[test]
+    fn negative_one_schema_cross_module_base_table() {
+        let root = fixture("schema-cross", &[(
+            "crates/adapter/db-pg/src/sales/orders.rs",
+            "pub const Q: &str = \"select * from inventory.stock_value_entries\";\n",
+        )]);
+        let v = one_schema_per_file(&root);
+        assert_eq!(v.len(), 1);
+        assert!(v[0].detail.contains("他模块基表 inventory.stock_value_entries"));
+        assert!(v[0].detail.contains("本文件的 schema 是 sales"));
+    }
+
+    /// 负样例：不在任何 schema 目录下的文件引用了 schema 对象。
+    #[test]
+    fn negative_one_schema_no_owner_dir() {
+        let root = fixture("schema-noowner", &[(
+            "crates/adapter/db-pg/src/tx.rs",
+            "pub const Q: &str = \"select * from sales.orders\";\n",
+        )]);
+        let v = one_schema_per_file(&root);
+        assert_eq!(v.len(), 1);
+        assert!(v[0].detail.contains("不在任何 schema 目录下"));
+    }
+
+    /// 正样例守边界：受治理视图是通道二，不在禁止面内。
+    #[test]
+    fn negative_one_schema_governed_view_allowed() {
+        let root = fixture("schema-view", &[(
+            "crates/adapter/db-pg/src/costing/cogs.rs",
+            "pub const Q: &str = \"select * from inventory.v_stock_value_entries\";\n",
+        )]);
+        assert!(one_schema_per_file(&root).is_empty());
+    }
+}
