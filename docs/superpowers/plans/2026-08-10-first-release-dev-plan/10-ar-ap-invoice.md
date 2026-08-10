@@ -826,7 +826,7 @@ OPEN 到 PARTIALLY_SETTLED 到 SETTLED，三条结清路径任一条都推进该
 
 `rows` 按 `ledger_side` 写入 `finance.receivable_entries`、`finance.payable_entries`、`finance.advance_receipt_entries`、`finance.advance_payment_entries` 四张表之一，`source_doc_type` 一律取 `MIGRATION_OPENING`，`sales_invoice_id`、`purchase_invoice_id`、`receipt_id`、`payment_id` 四列在期初条目上取空。
 
-本通道与资金账户期初、总账期初、库存期初四者一律不生成凭证：期初对应的总账侧由阶段 9a 的期初余额批次承担，两侧的平衡由第 3.3 节的八个 `finance.v_recon_*` 视图在首个会计期间校验。逐行独立事务落库，失败行不回滚已成功行，逐行返回原因，与第 0.4 节 F-16 的批量导入口径一致。
+本通道与资金账户期初、总账期初、库存期初四者一律不生成凭证：期初对应的总账侧由阶段 9a 的期初余额批次承担，两侧的平衡由第 3.3 节的十个 `finance.v_recon_*` 视图在首个会计期间校验。逐行独立事务落库，失败行不回滚已成功行，逐行返回原因，与第 0.4 节 F-16 的批量导入口径一致。
 
 ---
 
@@ -1136,7 +1136,7 @@ OPEN 到 PARTIALLY_SETTLED 到 SETTLED，三条结清路径任一条都推进该
 21. 高风险操作：开票、付款、超量开票路径三三项验证重新认证缺失时拒绝、审批未完成时拒绝、申请人自审时拒绝。
 22. 并发：第 6.5 节列出的六组各一个用例，用两个连接交叉提交。
 23. 采购发票登记全链路：采购订单、收货、发票三单匹配通过，应付条目、暂估回冲、价差拆分、超量开票挂账与凭证五处逐项核对；采购退货经 `PurchaseCreditNotePort` 登记红字进项发票并冲回应付。
-24. 期初余额导入：应收、应付、预收、预付四个方向各一批，`source_doc_type` 为 MIGRATION_OPENING，导入后首个会计期间的八个 `finance.v_recon_*` 视图差额为零；失败行不回滚已成功行。
+24. 期初余额导入：应收、应付、预收、预付四个方向各一批，`source_doc_type` 为 MIGRATION_OPENING，导入后首个会计期间的十个 `finance.v_recon_*` 视图差额为零；失败行不回滚已成功行。
 
 #### 8.4 端到端测试
 
@@ -1225,7 +1225,7 @@ OPEN 到 PARTIALLY_SETTLED 到 SETTLED，三条结清路径任一条都推进该
 25. 本阶段八个事件在 `ledger.posting_trigger_event_types` 中的登记行由阶段 9a 的种子迁移写入且每行只填 `event_type`，本阶段不含任何 `backfill_posting_trigger_event_types` 迁移；本模块八个事件与 `docs/event-catalog.md` 逐字比对通过，该比对由 CI 的 `xtask configdoc` 承担，本项不点名任何运行期断言方法，进程启动路径与关账受理路径上都不存在与本项相关的判定，也不存在退出码 78。
 26. 八个反向依赖点按第 0.5 节的三档处置逐条落地并端到端通过：`UnbilledArPort`、`ReceivableExposureQuery` 与 `InvoiceReversalStatusQuery` 三者与阶段 6 第三批同批接线、同批验收，`OverbillingMatchPort` 在交付时一并接入阶段 7 的收货用例，`ReceiptInvoiceMatchQueryPort`、`PurchaseCreditNotePort`、`SupplierStatementQuery` 与 `PayableLedgerQuery` 承接四条整条推迟的分支，其中 `PayableLedgerQuery` 一条含阶段 7 第 4.5 节的付款申请 `INVOICE_PAYMENT` 分支与其占用写入路径，本阶段按原形态实现并端到端通过，同一张采购发票被两张付款申请并发引用时可串行化；两个 wiring 目录下的全部文件中不出现任何占位实现类型，本阶段不开也不关任何降级窗口，`SALES.SALES_RETURN.INVOICE_NOT_CREDIT_NOTED` 判定与交付确认三腿的过渡科目净额断言在本阶段一次真实通过。
 27. `invoice.tax_rate_options` 的建表迁移 `V202611030900__invoice_create_tax_rate_options.sql` 与种子迁移 `V202611030950__invoice_backfill_seed_tax_rate_options.sql` 已在 T0 期间执行且六档出厂预置可查，全库取默认税率只有 `ep_contract_invoice::TaxRateOptionQuery::default_rate` 一条路径，任何阶段不提供税率桩，本阶段不含任何从 mdm 迁移税率的回填迁移。
-28. 期初导入通道在四个方向上各通过一次，导入后首个会计期间的八个 `finance.v_recon_*` 视图差额为零，且该通道不产生任何凭证。
+28. 期初导入通道在四个方向上各通过一次，导入后首个会计期间的十个 `finance.v_recon_*` 视图差额为零，且该通道不产生任何凭证。
 29. 本阶段按裁定 A-06 不实现也不注册任何 `ReconCheck`，原定的 `FIN_CROSS_MODULE_LINK` 整条删除。判定方式为本阶段新增与修改的代码内不出现 `ep_platform_recon::ReconCheck` 的实现体与 `ReconRegistry::register` 的调用。本阶段对内部对账的贡献只有取数一侧，即第 5.5 节的十个对账视图与 `ReconciliationItemQuery`，其比较由阶段 9b 的子账与总账勾稽 `ReconCheck` 驱动，该项的验收见本节第 8 条，本条不重复判定。
 30. `platform_core.sensitive_field_registry` 中存在 `finance.cash_accounts.bank_account_no` 一行，`is_field_encrypted` 为真，`security_level` 为 30，`blind_index_column` 为 `bank_account_no_bidx`；`db/checks/11` 返回零行，即物理表上存在 `bank_account_no_enc bytea` 且不存在同名明文列 `bank_account_no`，见裁定 A-28。
 31. 第 0.2 节登记的规格回写项已完成，即规格第 5.2 章事件-分录表的开票事件与采购发票事件两行的分支与附加规则列已补入自动核销预收账款与预付账款的分录腿，本阶段的附加腿按回写后的分录执行；回写未完成即为本阶段的阻塞前置，不得以假设取值放行。
