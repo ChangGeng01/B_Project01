@@ -101,7 +101,7 @@ T0 贯通线。阶段 3b-1 结束后、阶段 5 全量开工之前插入一条�
 表 3 platform_ops.degradation_windows，降级与暴露窗口台账，可更新。本表由阶段 2 按 A-26 建立，列定义与下列各行完全一致，本阶段只做扩展，不重建表、不增删列。
 列：id、security_level、data_scope_tags、row_version、kind text not null CHECK in（下列 18 个取值）、subject text null（CHECK 长度不超过 200，承载端口或能力的完整类型名，由阶段 2 建表时给出）、scope_key text not null（CHECK 长度不超过 200）、scope_legal_entity_id uuid null、scope_accounting_period_id uuid null、basis text not null（CHECK 长度不超过 2000）、detail jsonb not null default '{}'、opened_at timestamptz not null、closed_at timestamptz not null default 'infinity'、closing_condition text not null（CHECK 长度不超过 2000）、is_suppressible boolean not null、suppressed_until timestamptz null、created_at、created_by、updated_at、updated_by。
 kind 取值：OFFSITE_SINK_NOT_CONFIGURED、WRITER_NOT_IN_SERVICE、PORT_NOT_IMPLEMENTED、OFFSITE_SINK_OFFLINE_MEDIA_RPO_DEGRADED、WAL_ARCHIVE_WRITEOUT_OVERDUE_OR_FAILED、ATTACHMENT_INCREMENTAL_WRITEOUT_OVERDUE_OR_FAILED、ATTACHMENT_BOOTSTRAP_WINDOW_EXCEEDED、ATTACHMENT_RPO_NOT_YET_ACHIEVED、AUDIT_EVIDENCE_WRITEOUT_OVERDUE_OR_FAILED、PORTAL_WAF_NOT_CONFIGURED、AUDIT_ANCHOR_OVERDUE、OFFSITE_COPY_PROTECTION_MISSING、ARCHIVE_SLOT_RETENTION_WARNING、ARCHIVE_CHAIN_BROKEN、RECON_RUN_UNFINISHED、PERIOD_CLOSE_ACCEPTANCE_REJECTED、AUTHZ_SNAPSHOT_CHECKSUM_MISMATCH、CUSTOM_OBJECT_DDL_INCONSISTENT，共 18 个。其中 OFFSITE_SINK_NOT_CONFIGURED、WRITER_NOT_IN_SERVICE 与 PORT_NOT_IMPLEMENTED 三项由阶段 2 建表时给出并原样保留，本阶段不改名、不改其触发条件、不改其可抑制性；其余 15 项由本阶段扩展该列的 CHECK 取值。PORT_NOT_IMPLEMENTED 是跨模块与平台能力缺位的唯一登记形态，由缺位期间的调用方开窗、由被调方所在阶段注入实现后关窗，端口名记在 subject 列，本阶段只保证该取值在 CHECK 中存在并在台账与视图上展示，不代任何阶段开闭；AUTHZ_SNAPSHOT_CHECKSUM_MISMATCH 由阶段 4 在授权快照校验和不符时开窗，CUSTOM_OBJECT_DDL_INCONSISTENT 由阶段 13 在自定义对象 DDL 不一致时开窗，两者本阶段同样只提供取值与展示。原列表中的 REPLICATION_CROSSCHECK_NO_RESULT 随第 4.8 节交叉核对子系统删除，BACKGROUND_TASK_WINDOW_MISSED 与 RESOURCE_QUOTA_EXPOSURE 随让路顺序与配额事件台账删除，三者一并撤销。
-约束：ux_degradation_windows_kind_scope_closed (kind, subject, scope_legal_entity_id, scope_accounting_period_id, closed_at) 与 ck_degradation_windows_open_order CHECK (closed_at > opened_at) 两条由阶段 2 建表时交付，前者保证同一 kind 与同一 subject 在同一法人与会计期间作用域下至多一条活动条目，从而使同一 kind 下多个端口可同时开窗，本阶段不改写这两条；scope_key 保留为展示用的作用域说明列，不进该唯一约束。本阶段追加 ck_degradation_windows_le_required CHECK (kind not in ('RECON_RUN_UNFINISHED','PERIOD_CLOSE_ACCEPTANCE_REJECTED') or (scope_legal_entity_id is not null and scope_accounting_period_id is not null)) 与 ck_degradation_windows_not_suppressible CHECK (kind <> 'OFFSITE_SINK_NOT_CONFIGURED' or (is_suppressible = false and suppressed_until is null)) 两条，后者只护住未配置落点这一类。WRITER_NOT_IN_SERVICE 由阶段 2 定为可抑制并不在该 CHECK 的 kind 清单内，理由是它反映的是真实的备份缺失而非配置漏项，运维在已知维护窗口内应能临时静音并记名记时。
+约束：ux_degradation_windows_kind_scope_closed (kind, subject, scope_legal_entity_id, scope_accounting_period_id, closed_at) 与 ck_degradation_windows_open_order CHECK (closed_at > opened_at) 两条由阶段 2 建表时交付，前者保证同一 kind 与同一 subject 在同一法人与会计期间作用域下至多一条活动条目，从而使同一 kind 下多个端口可同时开窗，本阶段不改写这两条；scope_key 保留为展示用的作用域说明列，不进该唯一约束。本阶段追加 ck_degradation_windows_le_required CHECK (kind not in ('RECON_RUN_UNFINISHED','PERIOD_CLOSE_ACCEPTANCE_REJECTED') or (scope_legal_entity_id is not null and scope_accounting_period_id is not null)) 与 ck_degradation_windows_not_suppressible CHECK (kind not in ('OFFSITE_SINK_NOT_CONFIGURED', 'WRITER_NOT_IN_SERVICE') or (is_suppressible = false and suppressed_until is null)) 两条，后者护住未配置落点与两个写出进程未投入运行两类。WRITER_NOT_IN_SERVICE 由阶段 2 定为可抑制并不在该 CHECK 的 kind 清单内，理由是它反映的是真实的备份缺失而非配置漏项，运维在已知维护窗口内应能临时静音并记名记时。
 索引：全部索引由本阶段追加，即 ix_degradation_windows_kind_opened_at；ix_degradation_windows_closed_at_opened_at；ix_degradation_windows_scope_legal_entity_id_opened_at。
 说明：归档通道暂停不单列 kind，按规格第 15.3 章含在 ARCHIVE_CHAIN_BROKEN 的同一个暴露窗口内，其 detail 内以 sub_state 取值 SUSPENDED 标注；这与规格“含落点持续不可写期间暂不重建复制槽的那一段”一致，窗口自断点起算，只在新的全量基础备份写出并通过自动校验时闭合。
 
@@ -553,13 +553,13 @@ ep-release-gate 逐项判定，判定结论进入发布证据包，任一为否�
 1. archive-writer、backup-writer、ops-agent 三个进程在 BC-1 基线组合上以 --check 通过本进程适用的全部已注册自检项，两个写出进程对 SQL 类自检项一律标 NotApplicable，报告中无 FAILED 也无 DEGRADED；并在生产配置下连续运行不少于 7 个自然日，期间三类写出周期无一次超过 15 分钟。
 2. 第 3 节的 17 张表（其中 degradation_windows 由阶段 2 建立，本阶段只做取值、约束与索引扩展）、5 个视图与 21 个迁移文件全部落库，每个迁移带 rollback 段，platform_core.schema_history 与二进制期望版本一致。
 3. 归档通道状态机的八条迁移在集成测试中逐条通过，落点可写与不可写两支各完整走通一次，暂停态在落点恢复后自动转入重建且无需人工发起。
-4. 台账十八类 kind 的开闭各至少一条实证记录；OFFSITE_SINK_NOT_CONFIGURED 这一类不可关闭告警在管理员尝试关闭时被拒并写审计；其余类含 WRITER_NOT_IN_SERVICE 的抑制与静音记名记时写入审计；同一 kind 下 subject 不同的两条窗口可同时活动且各自独立开闭。
+4. 台账十八类 kind 的开闭各至少一条实证记录；OFFSITE_SINK_NOT_CONFIGURED 与 WRITER_NOT_IN_SERVICE 两类不可关闭告警在管理员尝试关闭时均被拒并写审计；其余各类的抑制与静音记名记时写入审计；同一 kind 下 subject 不同的两条窗口可同时活动且各自独立开闭。
 5. v_rpo_status 在七种依据下各输出一次正确取值，且在任一降级、未达成或承诺不成立状态下均未输出 900。
 6. 落点上的全部写出对象为密文；无恢复材料时无法从副本读出任何业务数据，含未被字段级加密的明文业务表内容；以写出组件系统账户之外的身份读取落点被拒绝并告警；落点访问控制核对结论与实测证据已写入部署记录。
 7. 两个专用角色的越权测试在 tests/rls_matrix 目标内全部通过，断言取阶段 2 提供的 assert_replication_role_containment，本阶段无同名函数的第二份实现；部署期三项遏制手段任一未落实时这两个专用角色不被启用、两个写出进程不投入运行、--check 以非零码退出，且有一条载明缺失项的 WRITER_NOT_IN_SERVICE 窗口，补齐后角色启用、两个写出进程投入运行、该窗口闭合，开闭两端各有一条实证记录；仅该章第三项在角色已启用之后的运行期连续两个周期未产生比对结论时按告警与暴露窗口处理，两个写出进程照常运行、连续归档与每日全量备份不停止；交付说明中已按第 21.21 章披露这三项遏制都不阻止本机特权主体这条路径。
 8. 未知复制槽与未知复制会话的检出随保留量采样周期持续执行；注入的一个白名单外复制槽与一条非写出进程复制会话均在下一次采样内被检出并写审计；本阶段未为此建立任何独立连接、独立表、独立指标与独立配置键，只读分析池的交互式并发已恢复为 10。
 9. 附录 A.6 整机失效恢复与密钥恢复材料隔离恢复两类演练各执行两次且两次均达标，四份演练报告齐备，其中附件元数据与正文的逐条比对结论、未通过条目清单与该校验实际耗时单独留证，恢复模式的不变量校验分批取值已冻结。
-10. 附录 A.1 至 A.4 的完整基线测试执行一次，第 8.5 节八项必判项全部成立，全部必记项已记入认证报告，服务器规格随该报告冻结；cgroup 只保留三类调优取值且不进认证冻结范围，硬件变更只改这三个数字，不重跑配额认证。
+10. 附录 A.1 至 A.4 的完整基线测试执行一次，第 8.5 节八项必判项全部成立，全部必记项已记入认证报告，服务器规格随该报告冻结并按规格第 13.1 章作为交付客户的服务器规格下限；客户服务器规格不低于认证报告所记规格时沿用该次认证结论，不重跑附录 A.4；cgroup 的两个权重列即 CPUWeight 与 IOWeight 原样沿用，取绝对字节的三项由实施方按 BC-1 认证所用的同一算定式对全部八个 slice 同批重算，重算结果随部署记录留存。
 11. 规格第 17.2 章十七类自动化测试的本阶段相关类型全部执行：混沌与故障注入六类、备份与完整恢复、审计链与不可变存储、数据保护控制与销毁证明、安全模糊与渗透。严重与高危缺陷全部关闭，中危缺陷登记并给出规避方案与责任人。
 12. 覆盖率达标：平台内核与不变量相关代码不低于 85%，新增与修改代码不低于 80%，工作区整体不低于 80%，无带 issue 编号之外的 #[ignore]。
 13. 等级保护三级控制项自评矩阵完成，除第 17.5 章登记的四项永久性不符合项外全部符合，其余不符合项均已关闭并经具备资质机构预评估；CI 校验不符合项条目未超出封闭清单。
@@ -582,12 +582,12 @@ ep-release-gate 逐项判定，判定结论进入发布证据包，任一为否�
 - 第 7.7 章：两个写出进程的连接与复制槽枚举（按 pg_receivewal 与 pg_basebackup 形态重取为稳态一条连接一个槽、备份窗口内不超过三条连接两个槽）、本机 WAL 暂存上限、四类上报路径、未知复制槽与未知复制会话的检出、三项角色侧遏制手段、越权测试项；三项角色侧遏制手段按该章原文落地，部署期缺一不得启用该角色、两个写出进程随之不得投入运行，仅该章第三项自身写明的运行期例外保留，即角色已启用之后比对连续两个周期未产生比对结论时照常运行并持续告警；本阶段不回写删除该章任何一句。
 - 第 7.8 章与第 12.3 章：部署级备份加密密钥为实例级、不属任一法人密钥域、载体只有内置 KMS 与客户自有硬件密码机；密钥恢复材料的分片、双人控制与每 6 个月核验。
 - 第 12.5 章：审计证据存储向落点的写出周期不超过 15 分钟并自动校验；最近一次成功锚定时间在运维中心可见且超期告警。
-- 第 13.1 章：恢复模式的资源档位；文件存储正文读写按发起进程计费。cgroup 由九行三列冻结配额表降为三类调优取值，即每个 unit 一个 memory.max、backup-writer 一个 io.max 硬上限、archive-writer 与数据库的 io.weight 高于 backup-writer，CPU 一列整列删除，取值写进部署骨架并由部署校验脚本断言一次，不做每进程启动自检；八级让路顺序全文、配额事件台账、保底份额被击穿的两条件判定与 cgroup-quota-matched 自检项一并删除，规格第 21.19 章的风险条目随之作废，其诚实披露折叠进第 7.5 章。
+- 第 13.1 章：恢复模式的资源档位；文件存储正文读写按发起进程计费。cgroup 按规格第 13.1 章配额表恢复为四类静态取值，即每个 slice 一个 CPUWeight、一个 IOWeight、一个 MemoryLow 与一个 MemoryMax，两个权重列逐行取该章百分数乘以 100，MemoryLow 与 MemoryMax 取同值并按 BC-1 可分配量算定绝对字节，取值写进部署骨架并由部署校验脚本断言一次，不做每进程启动自检；该章配额表第 9 行内置搜索索引在首版无独立进程也无独立 slice，其份额不落 drop-in、不加和、不拆分，八行权重之和因此低于 100，实际承载该负载的 app-core 与 app-worker 相对欠配、其余六个 slice 相对超配，该偏差与突发上限一列在首版无承载一并如实披露；八级让路顺序全文、配额事件台账、保底份额被击穿的两条件判定与 cgroup-quota-matched 自检项一并删除。规格第 21.19 章的风险条目不作废，该条自身写明“本条不是新增的延期项，不在第 5.7 章登记”，本阶段按原文保留其登记与披露，第 11 节风险六是其在本卷的承接。
 - 第 13.2 章：BC-1 部署适配、单机容器编排、OCI 容器交付。
 - 第 13.3 章：RPO 与 RTO 两项目标及其全部前提、降级与不成立情形、以演练验收不以运行期统计值判定。
 - 第 13.4 章：全部十九条备份要求逐条落地，含连续归档与时间点恢复、服务器之外落点、三类写出周期、复制槽保留量阈值与硬上限、归档链断裂两支处置、附件与元数据恢复点对齐、落点三项最低要求、写出组件、服务器之外副本保护、落点访问控制分层、落点回传吞吐单独度量、离线介质降级、未配置落点无承诺、附件每日全量写出、配置与证书与模块包与低代码规则包与基础设施定义单独备份、密钥恢复材料分离保管、每份备份自动校验、定期隔离恢复演练。
 - 第 15.1 章与第 15.2 章：本阶段错误码的五类归属；备份与写出失败不静默忽略。
-- 第 15.3 章：运维中心全部登记项、两个 RPO 取值与依据枚举、告警持续可见、一类不可关闭告警即 OFFSITE_SINK_NOT_CONFIGURED、其余类抑制与静音记名记时、台账快照与暴露窗口记录纳入交付验收。
+- 第 15.3 章：运维中心全部登记项、两个 RPO 取值与依据枚举、告警持续可见、两类不可关闭告警即 OFFSITE_SINK_NOT_CONFIGURED 与 WRITER_NOT_IN_SERVICE、其余各类抑制与静音记名记时、台账快照与暴露窗口记录纳入交付验收。
 - 第 16 章与附录 A.1 至 A.4：性能与容量认证的度量对象、统计口径、基准数据集、负载模型与全部必判必记项。
 - 第 17.2 章：混沌与故障注入六类、备份与完整恢复、审计链与不可变存储、数据保护控制与销毁证明、安全模糊与渗透五类测试；发布缺陷门禁。
 - 第 17.3 章：恢复后的全部强制不变量校验作为恢复验收口径的调用与留证。
@@ -621,7 +621,7 @@ PRD 条目。
 
 风险五，本机不保留可直接读回的全量备份副本，落点与恢复材料同时不可用即无恢复路径。控制：恢复材料按分片、双人控制、每 6 个月核验且不得与其保护的副本同处一个落点，由 ck_key_recovery_materials_not_colocated 在数据库层强制。
 
-风险六，备份、报表、对账与交易共用同一台服务器的磁盘与内存，平台不提供隔离保证，极端情况下备份窗口内交易时延仍可能被拉高。控制：cgroup 只保留三类调优取值，即每个 unit 一个 memory.max、backup-writer 一个 io.max 硬上限、archive-writer 与数据库的 io.weight 高于 backup-writer，由部署校验脚本断言一次，硬件变更只改这三个数字；真正的保证是附录 A.2 的时延通过线与第 8.5 节必判项六，两者在备份窗口内的样本子集上同样成立；容量水位达到下限 80% 时按第 15.3 章告警并要求扩容或按处置流程物理删除，二者均未执行时把容量暴露写入部署记录并书面告知客户；无隔离保证一句按规格第 7.5 章写入交付说明。
+风险六，备份、报表、对账与交易共用同一台服务器的磁盘与内存，平台不提供隔离保证，极端情况下备份窗口内交易时延仍可能被拉高。控制：cgroup 按规格第 13.1 章配额表落为四类静态取值，即每个 slice 一个 CPUWeight、一个 IOWeight、一个 MemoryLow 与一个 MemoryMax，两个权重列逐行取该章百分数乘以 100，MemoryLow 与 MemoryMax 取同值并按 BC-1 可分配量算定绝对字节，由部署校验脚本断言一次；客户服务器规格不低于认证报告所记规格时沿用该次认证结论、不重跑附录 A.4，两个权重列原样沿用，取绝对字节的三项按同一算定式对全部八个 slice 同批重算；真正的保证是附录 A.2 的时延通过线与第 8.5 节必判项六，两者在备份窗口内的样本子集上同样成立；容量水位达到下限 80% 时按第 15.3 章告警并要求扩容或按处置流程物理删除，二者均未执行时把容量暴露写入部署记录并书面告知客户；无隔离保证一句按规格第 7.5 章写入交付说明。
 
 风险七，对象存储落点使写出进程具备出网能力，扩大了攻击面。控制：出向策略的目的地址集合固定为部署记录所载落点，写出侧凭据只由写出进程系统账户持有、不下发人类用户、不用于交互式登录、不复用于其他进程；该项纳入部署验收核对。
 

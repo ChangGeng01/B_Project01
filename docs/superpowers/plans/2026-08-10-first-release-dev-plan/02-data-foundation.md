@@ -57,7 +57,7 @@
 | `ep-platform-tenancy` | platform | core-server、job-worker | 按 A-04 交付组织架构五张表的迁移，以及 `LegalEntityDirectory` 与 `DepartmentClosureQuery` 两个 trait 及其 pg 实现 |
 | `ep-platform-obs` | platform | 全部 | 按 A-26 交付 `DegradationLedger` trait 与其 pg 实现、`DegradationKind` 的三个初始取值，以及第 7.2 节四个指标中 `ep_db_tx_retries_total` 与 `ep_degradation_windows_open` 两项的注册，与四个指标全部的填充 |
 
-进程侧结论：portal-gateway 与 plugin-host 不链接 `ep-adapter-db-pg`，由 CI 的 `cargo metadata` 断言强制，这是规格第 7.7 章两进程常驻连接数为零的编译期保证，不依赖运行期配置。archive-writer 与 backup-writer 同样不链接该 crate，其复制角色凭据只由各自系统账户持有，本阶段只交付其数据库侧的角色、权限与 `pg_hba` 约束，进程实现属备份阶段；两个写出进程是否投入运行不受任何遏制手段配置项的判定影响。
+进程侧结论：portal-gateway 与 plugin-host 不链接 `ep-adapter-db-pg`，由 CI 的 `cargo metadata` 断言强制，这是规格第 7.7 章两进程常驻连接数为零的编译期保证，不依赖运行期配置。archive-writer 与 backup-writer 同样不链接该 crate，其复制角色凭据只由各自系统账户持有，本阶段只交付其数据库侧的角色、权限与 `pg_hba` 约束，进程实现属备份阶段；两个写出进程是否投入运行按规格第 7.7 章的部署期与运行期两分判定，部署期三项遏制手段缺一即不得启用该角色、两个写出进程随之不得投入运行，仅该章第三项在角色已启用之后的运行期例外保留。
 
 ---
 
@@ -327,7 +327,7 @@ pub trait DegradationLedger: Send + Sync {
 }
 ```
 
-`DegradationKind` 由本阶段定义，初始取值三个：`OFFSITE_SINK_NOT_CONFIGURED`、`WRITER_NOT_IN_SERVICE` 与 `PORT_NOT_IMPLEMENTED`。`WRITER_NOT_IN_SERVICE` 的触发条件是客观事实，即两个写出进程中任一未运行或连续若干周期无上报，不由任何遏制手段的配置是否齐备触发，且可关闭；本阶段曾用的 `WRITER_ROLE_CONTAINMENT_MISSING` 一名作废，`ck_degradation_windows_not_suppressible` 的不可抑制取值只保留 `OFFSITE_SINK_NOT_CONFIGURED` 一项。`PORT_NOT_IMPLEMENTED` 是跨模块与平台能力缺位的唯一登记形态，按第 0 节只供 `WasmComputePort`、`RuleEvaluator` 与 `DisposalPort` 三项末期平台能力在其交付阶段之前开窗使用，开窗时由 `subject` 列记下该端口的完整类型名，交付阶段注入实现后关窗，其窗口必须可关闭。本阶段是 `DegradationKind` 的唯一定义方，终态取值清单的唯一出处是阶段 14 计划，且必须是本阶段这三项的超集，任何阶段新增取值都须同批写入阶段 14 的取值表。`DegradationScope` 承载上述两个可空标注列与 `subject` 的组合。阶段 4、阶段 9、阶段 11、阶段 13 凡登记降级窗口的路径一律调用本端口，不自建第二套台账。
+`DegradationKind` 由本阶段定义，初始取值三个：`OFFSITE_SINK_NOT_CONFIGURED`、`WRITER_NOT_IN_SERVICE` 与 `PORT_NOT_IMPLEMENTED`。`WRITER_NOT_IN_SERVICE` 的触发条件是客观事实，即两个写出进程中任一未运行或连续若干周期无上报，不以遏制手段的配置是否齐备为判据；遏制手段缺项致角色未启用时，写出进程随之未投入运行，该客观条件同样成立。该取值不可抑制；本阶段曾用的 `WRITER_ROLE_CONTAINMENT_MISSING` 一名作废，`ck_degradation_windows_not_suppressible` 的不可抑制取值由一项扩为两项，即 `OFFSITE_SINK_NOT_CONFIGURED` 与 `WRITER_NOT_IN_SERVICE`。后一项按整个 kind 取不可抑制是一次有意的超集口径：规格在降级与暴露窗口台账一章只点名「第 7.7 章两个专用角色未启用致两个写出进程未投入运行」这一成因不可由管理员关闭，而按 `basis` 列区分同一 kind 内各成因的可抑制性是一套新机制，代价高于收益，故本阶段一律取不可抑制。代价是写出进程因日常维护停机时运维也无法静音该告警；窗口仍在触发条件消除时自动闭合，不形成永久噪声。`PORT_NOT_IMPLEMENTED` 是跨模块与平台能力缺位的唯一登记形态，按第 0 节只供 `WasmComputePort`、`RuleEvaluator` 与 `DisposalPort` 三项末期平台能力在其交付阶段之前开窗使用，开窗时由 `subject` 列记下该端口的完整类型名，交付阶段注入实现后关窗，其窗口必须可关闭。本阶段是 `DegradationKind` 的唯一定义方，终态取值清单的唯一出处是阶段 14 计划，且必须是本阶段这三项的超集，任何阶段新增取值都须同批写入阶段 14 的取值表。`DegradationScope` 承载上述两个可空标注列与 `subject` 的组合。阶段 4、阶段 9、阶段 11、阶段 13 凡登记降级窗口的路径一律调用本端口，不自建第二套台账。
 
 表十三 `platform_core.unpoliced_table_registry`（未受行级策略表登记，不带 `legal_entity_id`，不建策略，登记本表自身）
 
@@ -686,7 +686,7 @@ pub trait IdempotencyStore: Send + Sync {
 
 按 C-25，自检项一律以注册名标识，不用序号。自检项另分两档严重度，`SelfCheckItem` 的 `severity` 取 `Blocking` 与 `Degrading` 两值：`Blocking` 判读的一律是二进制、环境与目录，失败即以退出码 78 退出；`Degrading` 判读的是运行期可变的业务数据行，失败不阻断启动，改为经 `DegradationLedger::open` 登记窗口、持续告警，并按本节写明的运行期后果就地收窄该项相关的功能。`--check` 模式两档均以非零退出，闸门落在部署与升级前置，不落在进程启动。本阶段承担五项：`database-reachable` 判定数据库可达且版本为 16.x、`timezone` 为 UTC、`max_connections` 不低于 52、`max_wal_senders` 不低于 4、`max_replication_slots` 不低于 3，取 `Blocking`；`migration-version-matched` 判定迁移历史版本与二进制期望版本逐 schema 一致，取 `Blocking`；`rls-enabled-and-forced` 判定全部带法人列的表已 ENABLE 且 FORCE 行级安全且运行期账号不具备 BYPASSRLS 与 SUPERUSER，只读 `pg_class` 与 `pg_roles`，取 `Blocking`；`runtime-role-privileges-bounded` 判定运行期账号不具备 DDL、角色管理与策略管理权限，取 `Blocking`；`secrets-resolvable` 拆为两段，机密可解引用且 KMS 或 HSM 可用一段取 `Blocking`，每个法人的数据加密密钥域存在一段取 `Degrading`，后者失败时登记降级窗口并告警，该法人的字段级加密写入在取不到 `ACTIVE` DEK 时返回 `PLATFORM.KEY_DOMAIN.NOT_PROVISIONED`，其余法人与其余功能不受影响。后一段必须取 `Degrading`：建立密钥域的唯一入口是第 5 节 A-03 端点，由 core-server 承载，若缺域即拒绝启动则该端点永远不可达，形成自锁，而这台服务器没有备节点。上述五项在 portal-gateway、plugin-host、archive-writer 与 backup-writer 四个进程上一律返回 `NOT_APPLICABLE`，理由是前两者不链接 `ep-adapter-db-pg`，后两者只持复制连接、不执行任何 SQL，与基线第 7.3 节列出的四个进程逐项一致。自检 runner 与 `SelfCheckRegistry` 属阶段 1，本阶段以 `DataFoundationCheck` trait 提供这五项的实现并返回结构化结论，不追加任何新的自检项名。
 
-另按 A-26，本阶段补上阶段 1 在 `offsite-sink-requirements` 一项中预留的 `// TODO(stage-2): write degradation ledger` 一行：该项失败时经 `DegradationLedger::open` 登记 `OFFSITE_SINK_NOT_CONFIGURED` 窗口，该窗口不可抑制。两个复制角色的遏制手段是否齐备不再进入任何自检项，也不再登记降级窗口，更不得决定两个写出进程是否投入运行；`WRITER_NOT_IN_SERVICE` 只在写出进程实际未运行或连续若干周期无上报时由阶段 14 登记。
+另按 A-26，本阶段补上阶段 1 在 `offsite-sink-requirements` 一项中预留的 `// TODO(stage-2): write degradation ledger` 一行：该项失败时经 `DegradationLedger::open` 登记 `OFFSITE_SINK_NOT_CONFIGURED` 窗口，该窗口不可抑制。规格第 7.7 章要求两个复制角色各自具备的三项遏制手段，由阶段 14 实现为 `offsite-sink-requirements` 的第八个子判定：按该章「三项缺一不得启用该角色，两个写出进程随之不得投入运行」，该子判定不通过即意味着角色不得启用。本阶段不承担该子判定的实现，也不在本节五项之外新增任何自检项名，只交付其失败时可调用的 `DegradationLedger` 端口。阶段 14 计划把该子判定的 severity 记为 `Blocking`；该取值与自检注册表按项设一个 severity 的模型之间的张力已按本轮登记为待决条目，本阶段不预判。`WRITER_NOT_IN_SERVICE` 的登记方仍是阶段 14，其触发条件仍是客观事实，即写出进程实际未运行或连续若干周期无上报；遏制手段缺项致角色未启用时，两个写出进程随之未投入运行，该客观条件自然成立，无须另设以配置是否齐备为判据的触发路径。
 
 #### 7.2 指标登记与填充分工
 
@@ -758,7 +758,7 @@ RLS：IT-16 策略文本与模板全等；IT-17 会话变量缺失时读为 0 �
 
 第一块，八类 × 2 法人共 16 组：读取、写入、更新、删除、聚合、排序、报表投影、错误信息泄漏。错误信息泄漏一项的判据是对不可见记录的读、写、删一律返回 404 与 `PLATFORM.AUTHZ.NOT_FOUND_OR_DENIED`，响应体中不出现对方法人的任何标识、计数或时间戳。
 
-第二块，两个复制角色 5 项：无法读取任何业务表、无法执行任何 DDL、无法从该服务器之外建立连接、无法经界面借用、无法经 API 借用。后两项以 core-server 的路由表与依赖图断言实现，即不存在任何路径可构造出以这两个角色为身份的连接。该块由本阶段追加的 `assert_replication_role_containment` 承载，五项全部保留，因为它们是保留下来的角色权限、`pg_hba` 本机限制与凭据隔离三项控制的唯一验证方；遏制手段是否齐备不再登记任何降级窗口，也不作为两个写出进程投入运行的前置。
+第二块，两个复制角色 5 项：无法读取任何业务表、无法执行任何 DDL、无法从该服务器之外建立连接、无法经界面借用、无法经 API 借用。后两项以 core-server 的路由表与依赖图断言实现，即不存在任何路径可构造出以这两个角色为身份的连接。该块由本阶段追加的 `assert_replication_role_containment` 承载，五项全部保留，因为它们是保留下来的角色权限、`pg_hba` 本机限制与凭据隔离三项控制的唯一验证方；遏制手段是否齐备由阶段 14 实现为 `offsite-sink-requirements` 的第八个子判定，其 severity 为 Blocking，部署期缺一即两个写出进程不投入运行并登记 `WRITER_NOT_IN_SERVICE` 降级窗口。
 
 第三块，内部对账系统安全上下文 5 个入口：界面、API、低代码、插件与规格第 9.1 章的高级只读 SQL 均无法建立或借用。本阶段的实现方式是把该上下文的构造器设为 crate 内可见并只对 job-worker 装配路径开放，另加一条运行期断言：该上下文建立时校验调用栈来源标记，来源非内置对账任务即 panic 前先写审计再中止当前任务。该块由本阶段追加的 `assert_recon_context_borrow` 承载。本阶段不留签名语句集与其校验位点：封闭性改为静态判据，即该上下文不存在运行期 SQL 入口，执行器只按注册表分发已注册的 `ReconCheck` 实现、不接受语句文本入参，由 `xtask archcheck` 断言 `ep-platform-recon` 与各 `ReconCheck` 实现体内不出现字符串拼接 SQL 与动态语句执行入口；`ReconCheck` 实现本身按 A-06 由阶段 9a 提供。审计侧原先要记的语句集版本与签名摘要改记制品版本号与制品签名摘要，取自阶段 1 的制品元数据。
 
