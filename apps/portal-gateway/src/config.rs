@@ -39,7 +39,8 @@ mod tests {
 
     fn load(extra: &str) -> Result<PortalConfig, String> {
         let mut l = ConfigLoader::new();
-        l.layer_str("defaults", DEFAULTS).map_err(|e| e.to_string())?;
+        l.layer_str("defaults", DEFAULTS)
+            .map_err(|e| e.to_string())?;
         l.layer_str("test", extra).map_err(|e| e.to_string())?;
         l.finish().map_err(|e| e.to_string())
     }

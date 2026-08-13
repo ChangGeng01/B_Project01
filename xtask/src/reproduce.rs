@@ -165,14 +165,22 @@ pub fn compare(a: &Evidence, b: &Evidence) -> Vec<String> {
     let mut out = Vec::new();
 
     for (label, x, y) in [
-        ("source_date_epoch", &a.source_date_epoch, &b.source_date_epoch),
+        (
+            "source_date_epoch",
+            &a.source_date_epoch,
+            &b.source_date_epoch,
+        ),
         ("rustflags", &a.rustflags, &b.rustflags),
         ("target", &a.target, &b.target),
     ] {
         if x.is_empty() || y.is_empty() {
-            out.push(format!("{label} 至少一侧为空，构建参数未固定即无从谈可复现"));
+            out.push(format!(
+                "{label} 至少一侧为空，构建参数未固定即无从谈可复现"
+            ));
         } else if x != y {
-            out.push(format!("{label} 两侧不等：\n      一次：{x}\n      二次：{y}"));
+            out.push(format!(
+                "{label} 两侧不等：\n      一次：{x}\n      二次：{y}"
+            ));
         }
     }
     if !a.target.is_empty() && a.target != FROZEN_TARGET {
@@ -311,7 +319,10 @@ mod rule_negative_samples {
     #[test]
     fn negative_binary_hash_differs() {
         let g = good_evidence();
-        let idx = BINARIES.iter().position(|n| *n == "core-server").expect("花名册里有 core-server");
+        let idx = BINARIES
+            .iter()
+            .position(|n| *n == "core-server")
+            .expect("花名册里有 core-server");
         let b = g.replace(
             &format!("binary core-server {}", fake_hash(idx)),
             &format!("binary core-server {}", fake_hash(0xff)),
@@ -320,7 +331,9 @@ mod rule_negative_samples {
         let r = evaluate(&fixture("hash-diff", &g, &b), None);
         assert_eq!(r.outcome(), Outcome::Violated);
         assert!(
-            r.problems.iter().any(|p| p.contains("binary core-server") && p.contains("两次构建不等")),
+            r.problems
+                .iter()
+                .any(|p| p.contains("binary core-server") && p.contains("两次构建不等")),
             "实得：{:?}",
             r.problems
         );
@@ -330,11 +343,17 @@ mod rule_negative_samples {
     #[test]
     fn negative_image_missing_on_one_side() {
         let g = good_evidence();
-        let b: String = g.lines().filter(|l| !l.starts_with("image ep-migrate ")).collect::<Vec<_>>().join("\n");
+        let b: String = g
+            .lines()
+            .filter(|l| !l.starts_with("image ep-migrate "))
+            .collect::<Vec<_>>()
+            .join("\n");
         let r = evaluate(&fixture("image-missing", &g, &b), None);
         assert_eq!(r.outcome(), Outcome::Violated);
         assert!(
-            r.problems.iter().any(|p| p.contains("image ep-migrate 只在第一次")),
+            r.problems
+                .iter()
+                .any(|p| p.contains("image ep-migrate 只在第一次")),
             "实得：{:?}",
             r.problems
         );
@@ -348,7 +367,10 @@ mod rule_negative_samples {
         );
         let r = evaluate(&fixture("empty", &head, &head), None);
         assert_eq!(r.outcome(), Outcome::Violated);
-        assert!(r.problems.iter().any(|p| p.contains("一条二进制记录都没有")));
+        assert!(r
+            .problems
+            .iter()
+            .any(|p| p.contains("一条二进制记录都没有")));
         assert!(r.problems.iter().any(|p| p.contains("一条镜像记录都没有")));
     }
 
@@ -382,7 +404,10 @@ mod rule_negative_samples {
     fn negative_evidence_parse() {
         assert!(parse_evidence("binary a b c").is_err(), "多出第四段");
         assert!(parse_evidence("blob a b").is_err(), "未知类别");
-        assert!(parse_evidence("binary a x\nbinary a y").is_err(), "同名重复");
+        assert!(
+            parse_evidence("binary a x\nbinary a y").is_err(),
+            "同名重复"
+        );
         assert!(parse_evidence("what=1").is_err(), "未知键");
         assert!(parse_evidence("# 只有注释\n").is_ok());
     }

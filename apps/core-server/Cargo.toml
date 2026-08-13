@@ -16,9 +16,21 @@ ci-probe = []
 ep-foundation.workspace = true
 ep-platform-runtime.workspace = true
 ep-platform-obs.workspace = true
+ep-platform-tenancy.workspace = true
 ep-adapter-ipc.workspace = true
+# 阶段 2 集成 B：数据库装配与九个平台端点所需的载体层依赖。
+# 依赖方向约束（E-01）只禁 portal-gateway 与 plugin-host 链接 ep-adapter-db-pg。
+ep-adapter-db-pg.workspace = true
+ep-adapter-kms.workspace = true
+# 阶段 3a 任务 #18：ConfigItemApplierRegistry 装配位（wiring/release.rs）。
+ep-platform-release.workspace = true
+# 阶段 4 任务 #21：身份域装配与端点（wiring/identity.rs、platform/identity*.rs）。
+ep-platform-identity.workspace = true
+ep-platform-authz.workspace = true
 async-trait.workspace = true
 axum.workspace = true
+chrono.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 tokio.workspace = true
+uuid.workspace = true

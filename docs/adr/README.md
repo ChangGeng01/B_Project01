@@ -32,5 +32,15 @@
 | [ADR-0005](ADR-0005-ci-platform.md) | CI 平台取内网自建 Forgejo 加 Woodpecker | 已接受 | 阶段 1 计划第 13 节新增决定八 |
 | [ADR-0006](ADR-0006-domain-invariant-property-tests.md) | 五组领域不变量属性测试的挂载点 | 已接受 | 阶段 1 计划第 9 节领域属性测试一段 |
 | [ADR-0007](ADR-0007-file-secret-provider-interim.md) | `FileSecretProvider` 为临时实现 | 已接受 | 阶段 1 计划第 8 节末段 |
+| [ADR-0008](ADR-0008-five-named-pools-budget-exit-78.md) | 五具名连接池与启动预算求和校验违例退 78 | 已接受 | 阶段 2 计划第 7.2 节与裁定 C-04 |
+| [ADR-0009](ADR-0009-kms-registry-db-as-truth.md) | 内置 KMS 内存注册表不持久化，重启后以数据库为基准重建 | 已接受（临时） | 阶段 2 任务 #12、#14 偏离登记第十二条 |
+| [ADR-0010](ADR-0010-migration-window-singleton-lock.md) | 迁移窗口并发开窗以单例锁表串行化 | 已接受 | 阶段 2 计划第 3.5 节表六 |
+| [ADR-0011](ADR-0011-endpoint-context-interim.md) | 端点上下文头推导为阶段 2 临时实现 | 已接受（临时） | 阶段 2 任务 #14 偏离登记第五条 |
+| [ADR-0012](ADR-0012-axum-query-feature.md) | workspace axum 依赖条目新增 `query` feature | 已接受 | 阶段 2 任务 #14 偏离登记第十三条 |
+| [ADR-0013](ADR-0013-migration-runner-refinery-replacement.md) | 迁移执行器弃用 refinery 改自建语义兼容 Runner | 已接受 | 阶段 2 计划 §3.3 与 §12 实施期偏离登记第一条 |
+| [ADR-0014](ADR-0014-cipher-envelope-aad-binding.md) | 密文自描述信封头与 AAD 三段拼接 | 已接受 | 阶段 2 计划 §4.3 与 §12 新增决定四 |
+| [ADR-0015](ADR-0015-blind-index-16-byte-truncation.md) | 盲索引默认截断 16 字节且不建唯一约束（宽度待决） | 已接受 | 阶段 2 计划 §4.4 与 §11 假设三 |
+| [ADR-0016](ADR-0016-legal-entities-unpoliced.md) | `legal_entities` 不建行级安全策略并登记于未受策略表登记表 | 已接受 | 阶段 2 计划 §3.5 表一与 §12 偏离项第一条 |
+| [ADR-0017](ADR-0017-no-delete-grant-on-business-schemas.md) | 运行期账号在业务 schema 上不授予 DELETE | 已接受 | 阶段 2 计划 §12 新增决定五 |
 
-阶段 1 退出条件 18 要求本目录至少含工具链冻结、collation 选型、musl 静态链接、CI 平台选型、新增 crate 五篇，即上表的 ADR-0002、ADR-0003、ADR-0004、ADR-0005 与 ADR-0001。ADR-0006 与 ADR-0007 是阶段 1 计划正文另行点名要求写入 ADR 的两项，一并在本阶段登记。
+阶段 1 退出条件 18 要求本目录至少含工具链冻结、collation 选型、musl 静态链接、CI 平台选型、新增 crate 五篇，即上表的 ADR-0002、ADR-0003、ADR-0004、ADR-0005 与 ADR-0001。ADR-0006 与 ADR-0007 是阶段 1 计划正文另行点名要求写入 ADR 的两项，一并在本阶段登记。ADR-0008 至 ADR-0012 五篇由阶段 2 任务 #14 登记：其中 0009 与 0011 是已知临时实现，替换方分别在密钥/事件阶段与阶段 4，符合本目录登记标准第四类；0008、0010、0012 分别是冻结取值、基线外新增约定与依赖能力面变更，对应第二、三两类。ADR-0013 至 ADR-0017 五篇由阶段 2 任务 #17 按 D-13/E-12 点名补齐：0013 与 0016 对应基线外偏离（实施期偏离登记第一条、偏离项第一条），0014、0015、0017 对应 §12 新增决定四、假设三与新增决定五；其中 0015 的返回宽度是已声明的待决项，合一前不得读成冻结结论。五篇与 ADR-0008 至 0012 逐一核对无实质重叠：迁移主题上 0010 记的是窗口单例锁，0013 记的是执行器选型，两者对象不同；密钥主题上 0009 记的是内存注册表重建，0014 记的是密文信封与 AAD，两者对象不同。

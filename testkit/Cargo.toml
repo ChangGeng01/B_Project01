@@ -14,3 +14,9 @@ ci-probe = []
 
 [dependencies]
 ep-foundation.workspace = true
+# 内存幂等实现要实现 async_trait 端口，实现侧需同名宏。
+async-trait.workspace = true
+
+[dev-dependencies]
+# 仅测试构造 Id 与幂等键需要 uuid；库代码不具名引用该类型。
+uuid.workspace = true

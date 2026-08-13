@@ -79,8 +79,9 @@ pub fn run(root: &Path) -> Report {
     match code_module_codes(root) {
         Err(e) => problems.push(e),
         Ok(codes) => {
-            let want: Vec<String> =
-                std::iter::once(PLATFORM_SEGMENT.to_string()).chain(codes).collect();
+            let want: Vec<String> = std::iter::once(PLATFORM_SEGMENT.to_string())
+                .chain(codes)
+                .collect();
             if !segments.is_empty() && segments != want {
                 problems.push(format!(
                     "{DOC} 第 3 节的模块段清单与 {MODULE_RS} 的 ModuleCode 不一致。\n      文档：{}\n      代码：{}",
@@ -98,7 +99,9 @@ pub fn run(root: &Path) -> Report {
         *seen.entry(e.as_str()).or_insert(0) += 1;
     }
     for (name, n) in seen.iter().filter(|(_, n)| **n > 1) {
-        problems.push(format!("{DOC} 中 {name} 登记了 {n} 次；一个事件类型只能由一个阶段登记"));
+        problems.push(format!(
+            "{DOC} 中 {name} 登记了 {n} 次；一个事件类型只能由一个阶段登记"
+        ));
     }
     for e in &registered {
         if let Err(why) = check_event_name(e, &segments) {
@@ -129,7 +132,11 @@ pub fn run(root: &Path) -> Report {
         }
     }
 
-    Report { problems, uncovered, compared: registered.len().max(in_code.len()) }
+    Report {
+        problems,
+        uncovered,
+        compared: registered.len().max(in_code.len()),
+    }
 }
 
 /// 第 3 节那一行 `` `platform`、`mdm`、… `` 的反引号词元，按出现顺序。
@@ -210,10 +217,17 @@ fn doc_events(doc: &str) -> Vec<String> {
 fn check_event_name(name: &str, segments: &[String]) -> Result<(), String> {
     let parts: Vec<&str> = name.split('.').collect();
     if parts.len() != 4 {
-        return Err(format!("应为四段 <module>.<aggregate>.<past_participle>.v<major>，实际 {} 段", parts.len()));
+        return Err(format!(
+            "应为四段 <module>.<aggregate>.<past_participle>.v<major>，实际 {} 段",
+            parts.len()
+        ));
     }
     for p in &parts[..3] {
-        if p.is_empty() || !p.chars().all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '_') {
+        if p.is_empty()
+            || !p
+                .chars()
+                .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '_')
+        {
             return Err(format!("段「{p}」只允许小写字母、数字与下划线"));
         }
     }
@@ -233,8 +247,14 @@ fn code_events(root: &Path) -> BTreeMap<String, Vec<String>> {
     let mut out: BTreeMap<String, Vec<String>> = BTreeMap::new();
     for dir in SCAN_DIRS {
         for path in rust_files(&root.join(dir)) {
-            let Ok(text) = fs::read_to_string(&path) else { continue };
-            let rel = path.strip_prefix(root).unwrap_or(&path).to_string_lossy().replace('\\', "/");
+            let Ok(text) = fs::read_to_string(&path) else {
+                continue;
+            };
+            let rel = path
+                .strip_prefix(root)
+                .unwrap_or(&path)
+                .to_string_lossy()
+                .replace('\\', "/");
             for lit in string_literals(&text) {
                 if check_event_name(&lit, &[]).is_ok() {
                     out.entry(lit).or_default().push(rel.clone());
@@ -247,7 +267,9 @@ fn code_events(root: &Path) -> BTreeMap<String, Vec<String>> {
 
 fn rust_files(dir: &Path) -> Vec<PathBuf> {
     let mut out = Vec::new();
-    let Ok(entries) = fs::read_dir(dir) else { return out };
+    let Ok(entries) = fs::read_dir(dir) else {
+        return out;
+    };
     let mut paths: Vec<_> = entries.filter_map(Result::ok).map(|e| e.path()).collect();
     paths.sort();
     for p in paths {
@@ -281,16 +303,29 @@ mod negative_samples {
     use super::*;
 
     fn repo_root() -> PathBuf {
-        Path::new(env!("CARGO_MANIFEST_DIR")).parent().expect("xtask 在工作区根之下").to_path_buf()
+        Path::new(env!("CARGO_MANIFEST_DIR"))
+            .parent()
+            .expect("xtask 在工作区根之下")
+            .to_path_buf()
     }
 
-    /// 仓库现状：模块段一致、登记表为空、代码侧无字面量，因此是「未覆盖」而不是「通过」。
+    /// 仓库现状：模块段一致，阶段 2 登记三个事件、阶段 4 登记
+    /// 四个事件（任务 #21 一个 + 任务 #23 派生三个），双向比对
+    /// 有被测输入且逐项一致，因此是 Clean。
     #[test]
-    fn the_repository_is_uncovered_not_clean() {
+    fn the_repository_is_clean_with_registered_events() {
         let r = run(&repo_root());
-        assert!(r.problems.is_empty(), "模块段与命名判据应全绿：{:#?}", r.problems);
-        assert_eq!(r.outcome(), Outcome::Uncovered, "空登记表不得判 Clean");
-        assert!(r.uncovered[0].contains("双向比对"));
+        assert!(
+            r.problems.is_empty(),
+            "模块段、命名与双向比对应全绿：{:#?}",
+            r.problems
+        );
+        assert_eq!(
+            r.outcome(),
+            Outcome::Clean,
+            "登记表与代码侧字面量应逐项一致"
+        );
+        assert_eq!(r.compared, 7, "阶段 2 三个 + 阶段 4 四个共七个事件");
     }
 
     /// 负样例断言模块段清单这条规则本身：文档少一段即报，且报的是这一条。
@@ -299,7 +334,11 @@ mod negative_samples {
         let doc = fs::read_to_string(repo_root().join(DOC)).expect("读得到事件目录");
         let segments = doc_module_segments(&doc).expect("清单行可解析");
         let codes = code_module_codes(&repo_root()).expect("ModuleCode 可解析");
-        assert_eq!(segments.len(), codes.len() + 1, "文档段数应为 ModuleCode 项数加 platform");
+        assert_eq!(
+            segments.len(),
+            codes.len() + 1,
+            "文档段数应为 ModuleCode 项数加 platform"
+        );
         assert_eq!(segments[0], PLATFORM_SEGMENT);
         assert_eq!(segments[1..].to_vec(), codes);
 
@@ -311,7 +350,10 @@ mod negative_samples {
     /// 负样例断言四段命名这条规则本身，逐类给一个反例。
     #[test]
     fn negative_event_names_are_rejected_by_shape() {
-        let segs: Vec<String> = ["platform", "sales"].iter().map(|s| s.to_string()).collect();
+        let segs: Vec<String> = ["platform", "sales"]
+            .iter()
+            .map(|s| s.to_string())
+            .collect();
         assert!(check_event_name("sales.order.created.v1", &segs).is_ok());
         // 命令式、段数不足、模块段未登记、版本段写错，四类都要拒。
         assert!(check_event_name("order.create", &segs).is_err());
@@ -324,13 +366,17 @@ mod negative_samples {
     /// 负样例断言双向比对这条规则本身：两个方向各报一条，不能只报一边。
     #[test]
     fn negative_comparison_reports_both_directions() {
-        let doc_only = "| `sales.order.created.v1` | sales.orders | 提交时 | — | 暂无（阶段 6） | 阶段 5 |";
+        let doc_only =
+            "| `sales.order.created.v1` | sales.orders | 提交时 | — | 暂无（阶段 6） | 阶段 5 |";
         let found = doc_events(doc_only);
         assert_eq!(found, vec!["sales.order.created.v1"]);
         // 表头行与说明行不得被当成登记项。
         assert!(doc_events("| 事件类型 | 聚合类型 |").is_empty());
         // 写坏的登记行必须进得来，交给命名判据挑出，而不是在取行时消失。
-        assert_eq!(doc_events("| `sales.order.created` |"), vec!["sales.order.created"]);
+        assert_eq!(
+            doc_events("| `sales.order.created` |"),
+            vec!["sales.order.created"]
+        );
     }
 
     #[test]

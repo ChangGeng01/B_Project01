@@ -25,7 +25,8 @@ use config::{IntegrationConfig, DEFAULTS};
 const PROCESS: ProcessKind = ProcessKind::IntegrationGateway;
 
 fn main() -> ExitCode {
-    let p = match boot::prepare::<IntegrationConfig>(PROCESS, DEFAULTS, |c| &c.log, |c| &c.runtime) {
+    let p = match boot::prepare::<IntegrationConfig>(PROCESS, DEFAULTS, |c| &c.log, |c| &c.runtime)
+    {
         Ok(p) => p,
         Err(code) => return code,
     };
@@ -44,11 +45,23 @@ async fn serve(
     boot::enter_selfchecking(&mut lifecycle, &logger);
 
     let metrics = boot::metrics(&logger);
-    let registry = baseline_registry(PROCESS, layers, cfg.selfcheck.clock_skew_max_ms, wiring::sql_probe());
+    let registry = baseline_registry(
+        PROCESS,
+        layers,
+        cfg.selfcheck.clock_skew_max_ms,
+        wiring::sql_probe(),
+        None,
+        None,
+    );
     if check_only {
-        return boot::check_exit(&registry.run_all(PROCESS, BuildInfo::current().version).await);
+        return boot::check_exit(
+            &registry
+                .run_all(PROCESS, BuildInfo::current().version)
+                .await,
+        );
     }
-    let report = match boot::selfcheck(&registry, PROCESS, &mut lifecycle, &metrics, &logger).await {
+    let report = match boot::selfcheck(&registry, PROCESS, &mut lifecycle, &metrics, &logger).await
+    {
         Ok(r) => r,
         Err((report, code)) => {
             println!("{}", report.to_json());
@@ -56,7 +69,14 @@ async fn serve(
         }
     };
 
-    let state = SystemState::new(PROCESS, BuildInfo::current(), lifecycle, report, metrics, logger.clone());
+    let state = SystemState::new(
+        PROCESS,
+        BuildInfo::current(),
+        lifecycle,
+        report,
+        metrics,
+        logger.clone(),
+    );
 
     let mut serving = Serving::new();
 
@@ -65,7 +85,10 @@ async fn serve(
     match egress::rehearse(&cfg.egress.allowlist, cfg.egress.breaker) {
         Ok(msg) => logger.log(
             Level::Info,
-            LogFields::msg("egress", format!("{msg}，连接超时 {} 毫秒", cfg.egress.connect_timeout_ms)),
+            LogFields::msg(
+                "egress",
+                format!("{msg}，连接超时 {} 毫秒", cfg.egress.connect_timeout_ms),
+            ),
         ),
         Err(e) => serving.mark_failed(format!("出网骨架演练不通过：{e}")),
     }
@@ -84,6 +107,14 @@ async fn serve(
         .with_state(state.clone());
 
     serving.spawn_http(addr, router, &logger).await;
-    logger.log(Level::Info, LogFields::msg("startup", format!("已就绪，状态 {}", state.state().as_str())));
-    serving.wait_and_drain(&state, &logger, cfg.http.shutdown_drain_ms).await
+    logger.log(
+        Level::Info,
+        LogFields::msg(
+            "startup",
+            format!("已就绪，状态 {}", state.state().as_str()),
+        ),
+    );
+    serving
+        .wait_and_drain(&state, &logger, cfg.http.shutdown_drain_ms)
+        .await
 }

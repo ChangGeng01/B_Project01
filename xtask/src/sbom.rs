@@ -145,7 +145,10 @@ pub fn license_roster(components: &[Component], allowed: &[String]) -> Vec<Strin
     let mut out = Vec::new();
     for c in components {
         if c.licenses.is_empty() {
-            out.push(format!("{} {} 没有许可证标识，许可证清单不完整", c.name, c.version));
+            out.push(format!(
+                "{} {} 没有许可证标识，许可证清单不完整",
+                c.name, c.version
+            ));
             continue;
         }
         // 多个标识是 OR 关系，命中任一即可。
@@ -198,7 +201,11 @@ fn licenses_of(item: &serde_json::Value) -> Vec<String> {
     };
     let mut out = Vec::new();
     for entry in list {
-        if let Some(id) = entry.get("license").and_then(|l| l.get("id")).and_then(|v| v.as_str()) {
+        if let Some(id) = entry
+            .get("license")
+            .and_then(|l| l.get("id"))
+            .and_then(|v| v.as_str())
+        {
             out.push(id.to_string());
         } else if let Some(expr) = entry.get("expression").and_then(|v| v.as_str()) {
             // 表达式按 OR 拆开；AND 组合本工具不拆，整串留给允许清单比对。
@@ -257,7 +264,10 @@ pub fn parse_allowed_licenses(text: &str) -> Result<Vec<String>, String> {
 /// 依赖漏洞与禁用依赖扫描。工具不在时判定未做出，不折算为零严重零高危。
 fn cargo_deny(root: &Path) -> (Vec<String>, Vec<String>) {
     let cargo = std::env::var("CARGO").unwrap_or_else(|_| "cargo".into());
-    let probe = Command::new(&cargo).args(["deny", "--version"]).current_dir(root).output();
+    let probe = Command::new(&cargo)
+        .args(["deny", "--version"])
+        .current_dir(root)
+        .output();
     match probe {
         Ok(o) if o.status.success() => {}
         _ => {
@@ -272,11 +282,21 @@ fn cargo_deny(root: &Path) -> (Vec<String>, Vec<String>) {
         }
     }
     let out = Command::new(&cargo)
-        .args(["deny", "--offline", "check", "advisories", "bans", "licenses"])
+        .args([
+            "deny",
+            "--offline",
+            "check",
+            "advisories",
+            "bans",
+            "licenses",
+        ])
         .current_dir(root)
         .output();
     match out {
-        Err(e) => (Vec::new(), vec![format!("cargo deny 启动失败：{e}，扫描判定未做出")]),
+        Err(e) => (
+            Vec::new(),
+            vec![format!("cargo deny 启动失败：{e}，扫描判定未做出")],
+        ),
         Ok(o) if o.status.success() => (Vec::new(), Vec::new()),
         Ok(o) => (
             vec![format!(
@@ -296,8 +316,14 @@ mod parse_negative_samples {
     #[test]
     fn negative_sbom_parse() {
         assert!(parse_sbom("{}").is_err(), "没有 bomFormat");
-        assert!(parse_sbom(r#"{"bomFormat":"SPDX","components":[]}"#).is_err(), "格式不受理");
-        assert!(parse_sbom(r#"{"bomFormat":"CycloneDX"}"#).is_err(), "没有 components");
+        assert!(
+            parse_sbom(r#"{"bomFormat":"SPDX","components":[]}"#).is_err(),
+            "格式不受理"
+        );
+        assert!(
+            parse_sbom(r#"{"bomFormat":"CycloneDX"}"#).is_err(),
+            "没有 components"
+        );
         assert!(
             parse_sbom(r#"{"bomFormat":"CycloneDX","components":[{"version":"1"}]}"#).is_err(),
             "组件没有 name"
@@ -314,15 +340,25 @@ mod parse_negative_samples {
         let c = parse_sbom(doc).expect("可解析");
         assert_eq!(c[0].licenses, ["MIT"]);
         assert_eq!(c[1].licenses, ["MIT", "Apache-2.0"]);
-        assert!(c[2].licenses.is_empty(), "没有许可证要如实为空，不得默认一个");
+        assert!(
+            c[2].licenses.is_empty(),
+            "没有许可证要如实为空，不得默认一个"
+        );
     }
 
     #[test]
     fn negative_allow_list_parse() {
-        let v = parse_allowed_licenses("[licenses]\nallow = [\"MIT\", \"Apache-2.0\"]\n").expect("可解析");
+        let v = parse_allowed_licenses("[licenses]\nallow = [\"MIT\", \"Apache-2.0\"]\n")
+            .expect("可解析");
         assert_eq!(v, ["MIT", "Apache-2.0"]);
-        assert!(parse_allowed_licenses("[licenses]\nallow = []\n").is_err(), "空清单会恒真");
-        assert!(parse_allowed_licenses("[bans]\nallow = [\"MIT\"]\n").is_err(), "段名不对");
+        assert!(
+            parse_allowed_licenses("[licenses]\nallow = []\n").is_err(),
+            "空清单会恒真"
+        );
+        assert!(
+            parse_allowed_licenses("[bans]\nallow = [\"MIT\"]\n").is_err(),
+            "段名不对"
+        );
     }
 }
 
@@ -363,7 +399,9 @@ mod rule_negative_samples {
         assert_eq!(r.outcome(), Outcome::Violated);
         for name in EXCLUDED_PACKAGES {
             assert!(
-                r.problems.iter().any(|p| p.contains(RULE_TOOLS_EXCLUDED) && p.contains(name)),
+                r.problems
+                    .iter()
+                    .any(|p| p.contains(RULE_TOOLS_EXCLUDED) && p.contains(name)),
                 "{name} 未被点名，实得：{:?}",
                 r.problems
             );
@@ -386,7 +424,10 @@ mod rule_negative_samples {
         let extra = r#",
             {"name":"gpl-thing","version":"9","licenses":[{"license":{"id":"GPL-3.0"}}]}"#;
         let r = evaluate(&fixture(extra), Some(&allow()));
-        assert!(r.problems.iter().any(|p| p.contains("GPL-3.0") && p.contains("允许清单")));
+        assert!(r
+            .problems
+            .iter()
+            .any(|p| p.contains("GPL-3.0") && p.contains("允许清单")));
     }
 
     /// 负样例：组件没有许可证标识，同样不通过。
@@ -394,13 +435,19 @@ mod rule_negative_samples {
     fn negative_missing_license() {
         let extra = r#", {"name":"nolicense","version":"1"}"#;
         let r = evaluate(&fixture(extra), Some(&allow()));
-        assert!(r.problems.iter().any(|p| p.contains("nolicense") && p.contains("没有许可证标识")));
+        assert!(r
+            .problems
+            .iter()
+            .any(|p| p.contains("nolicense") && p.contains("没有许可证标识")));
     }
 
     /// 负样例：空 SBOM 会让排除断言恒真，必须判不符而不是通过。
     #[test]
     fn negative_empty_sbom_must_not_pass() {
-        let r = evaluate(r#"{"bomFormat":"CycloneDX","components":[]}"#, Some(&allow()));
+        let r = evaluate(
+            r#"{"bomFormat":"CycloneDX","components":[]}"#,
+            Some(&allow()),
+        );
         assert_eq!(r.outcome(), Outcome::Violated);
         assert!(r.problems[0].contains("恒真"));
     }

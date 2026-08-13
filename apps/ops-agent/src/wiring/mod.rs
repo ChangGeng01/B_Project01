@@ -21,8 +21,14 @@ mod tests {
     #[tokio::test]
     async fn unwired_probe_yields_pending_not_passed() {
         let p = ProcessKind::OpsAgent;
-        let report = baseline_registry(p, String::new(), 1_000, sql_probe()).run_all(p, "0.1.0").await;
-        let item = report.items.iter().find(|i| i.name == "database-reachable").expect("项必须在报告里");
+        let report = baseline_registry(p, String::new(), 1_000, sql_probe(), None, None)
+            .run_all(p, "0.1.0")
+            .await;
+        let item = report
+            .items
+            .iter()
+            .find(|i| i.name == "database-reachable")
+            .expect("项必须在报告里");
         assert_eq!(item.outcome, Outcome::Pending);
     }
 }

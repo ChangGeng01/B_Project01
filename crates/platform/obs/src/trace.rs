@@ -24,7 +24,10 @@ impl TraceContext {
     /// trace-id 不需要时间有序，混用会把生成时刻泄漏到公网侧的关联标识里。
     pub fn new() -> Self {
         let trace = uuid::Uuid::new_v4().as_u128();
-        Self { trace_id: format!("{trace:032x}"), span_id: next_span_id() }
+        Self {
+            trace_id: format!("{trace:032x}"),
+            span_id: next_span_id(),
+        }
     }
 
     pub fn trace_id(&self) -> &str {
@@ -37,7 +40,10 @@ impl TraceContext {
 
     /// 同一 trace 下的下一个 span。
     pub fn child(&self) -> Self {
-        Self { trace_id: self.trace_id.clone(), span_id: next_span_id() }
+        Self {
+            trace_id: self.trace_id.clone(),
+            span_id: next_span_id(),
+        }
     }
 }
 
@@ -77,7 +83,10 @@ mod tests {
     fn trace_id_is_32_lowercase_hex() {
         let t = TraceContext::new();
         assert_eq!(t.trace_id().len(), 32);
-        assert!(t.trace_id().chars().all(|c| c.is_ascii_hexdigit() && !c.is_ascii_uppercase()));
+        assert!(t
+            .trace_id()
+            .chars()
+            .all(|c| c.is_ascii_hexdigit() && !c.is_ascii_uppercase()));
         assert_eq!(t.span_id().len(), 16);
     }
 
@@ -91,7 +100,10 @@ mod tests {
 
     #[test]
     fn two_traces_do_not_collide() {
-        assert_ne!(TraceContext::new().trace_id(), TraceContext::new().trace_id());
+        assert_ne!(
+            TraceContext::new().trace_id(),
+            TraceContext::new().trace_id()
+        );
     }
 
     #[test]

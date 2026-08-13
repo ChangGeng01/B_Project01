@@ -13,7 +13,11 @@ pub struct HistogramState {
 
 impl HistogramState {
     pub fn new(buckets: usize) -> Self {
-        Self { counts: vec![0; buckets], sum: 0.0, count: 0 }
+        Self {
+            counts: vec![0; buckets],
+            sum: 0.0,
+            count: 0,
+        }
     }
 
     /// 观测一个取值。上界之外的取值只进 `+Inf`，由 `count` 承载。

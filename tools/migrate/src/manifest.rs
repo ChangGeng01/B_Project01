@@ -73,10 +73,7 @@ fn collect_files(root: &Path, dir: &Path, acc: &mut Vec<PathBuf>) -> Result<(), 
         if meta.is_dir() {
             collect_files(root, &path, acc)?;
         } else {
-            let rel = path
-                .strip_prefix(root)
-                .unwrap_or(&path)
-                .to_path_buf();
+            let rel = path.strip_prefix(root).unwrap_or(&path).to_path_buf();
             acc.push(rel);
         }
     }
@@ -104,7 +101,9 @@ pub fn manifest_sha256(root: &Path) -> Result<String, ManifestError> {
 
 /// 期望值的形态判定：64 位小写十六进制。形态不合法属参数错误，不属校验和不符。
 pub fn is_wellformed_sha256(v: &str) -> bool {
-    v.len() == 64 && v.bytes().all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b))
+    v.len() == 64
+        && v.bytes()
+            .all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b))
 }
 
 #[cfg(test)]

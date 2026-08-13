@@ -4,7 +4,9 @@
 //! 按规格第 7.7 章只持 REPLICATION 属性，配置里出现 db 段即启动失败。
 //! 这是把账号边界前移到类型层——写在文档里的边界，运行时无人执行。
 
-use ep_platform_runtime::config::{IpcCfg, LogCfg, RuntimeCfg, SecretsCfg, SelfcheckCfg, SpoolCfg, TraceCfg};
+use ep_platform_runtime::config::{
+    IpcCfg, LogCfg, RuntimeCfg, SecretsCfg, SelfcheckCfg, SpoolCfg, TraceCfg,
+};
 use serde::Deserialize;
 
 pub const DEFAULTS: &str = r#"
@@ -38,7 +40,8 @@ mod tests {
 
     fn load(extra: &str) -> Result<ArchiveWriterConfig, String> {
         let mut l = ConfigLoader::new();
-        l.layer_str("defaults", DEFAULTS).map_err(|e| e.to_string())?;
+        l.layer_str("defaults", DEFAULTS)
+            .map_err(|e| e.to_string())?;
         l.layer_str("test", extra).map_err(|e| e.to_string())?;
         l.finish().map_err(|e| e.to_string())
     }
@@ -46,8 +49,14 @@ mod tests {
     #[test]
     fn writer_takes_core_socket_and_its_own_spool() {
         let cfg = load("").expect("默认层必须自洽");
-        assert_eq!(cfg.ipc.socket_path.to_string_lossy(), "/run/ep/ipc/core.sock");
-        assert_eq!(cfg.spool.dir.to_string_lossy(), "/var/lib/ep/archive-writer/spool");
+        assert_eq!(
+            cfg.ipc.socket_path.to_string_lossy(),
+            "/run/ep/ipc/core.sock"
+        );
+        assert_eq!(
+            cfg.spool.dir.to_string_lossy(),
+            "/var/lib/ep/archive-writer/spool"
+        );
         assert_eq!(cfg.spool.max_bytes, 268_435_456);
     }
 
@@ -62,6 +71,9 @@ mod tests {
 
     #[test]
     fn an_http_section_is_rejected() {
-        assert!(load("[http]\nbind_addr = \"127.0.0.1:9000\"\n").is_err(), "archive-writer 无监听");
+        assert!(
+            load("[http]\nbind_addr = \"127.0.0.1:9000\"\n").is_err(),
+            "archive-writer 无监听"
+        );
     }
 }

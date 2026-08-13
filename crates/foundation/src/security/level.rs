@@ -59,19 +59,31 @@ mod tests {
 
     #[test]
     fn codes_match_the_common_column() {
-        assert_eq!(SecurityLevel::ALL.map(SecurityLevel::code), [10, 20, 30, 40]);
+        assert_eq!(
+            SecurityLevel::ALL.map(SecurityLevel::code),
+            [10, 20, 30, 40]
+        );
     }
 
     #[test]
     fn serializes_as_number_not_variant_name() {
         let json = serde_json::to_string(&SecurityLevel::Confidential).expect("可序列化");
-        assert_eq!(json, "30", "公共列是 smallint，序列化为变体名会与库内取值分叉");
+        assert_eq!(
+            json, "30",
+            "公共列是 smallint，序列化为变体名会与库内取值分叉"
+        );
     }
 
     #[test]
     fn unknown_code_fails_loudly() {
-        assert!(serde_json::from_str::<SecurityLevel>("25").is_err(), "未知取值不得静默降级");
-        assert_eq!(serde_json::from_str::<SecurityLevel>("40").expect("合法"), SecurityLevel::Secret);
+        assert!(
+            serde_json::from_str::<SecurityLevel>("25").is_err(),
+            "未知取值不得静默降级"
+        );
+        assert_eq!(
+            serde_json::from_str::<SecurityLevel>("40").expect("合法"),
+            SecurityLevel::Secret
+        );
     }
 
     #[test]

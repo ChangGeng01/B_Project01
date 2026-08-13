@@ -21,19 +21,32 @@ pub struct Pending {
 pub enum ForwardOutcome {
     Sent,
     /// 对端不可用，已落盘。`evicted` 非零时调用方必须记 ERROR。
-    Spooled { evicted: usize, reason: String },
+    Spooled {
+        evicted: usize,
+        reason: String,
+    },
     /// 连盘都落不下。这是最坏的一档，必须让调用方看见。
-    Lost { reason: String },
+    Lost {
+        reason: String,
+    },
 }
 
 #[derive(Debug, PartialEq)]
 pub enum ReplayOutcome {
     Nothing,
     /// 全部补写成功，spool 已截断。
-    Replayed { count: usize },
+    Replayed {
+        count: usize,
+    },
     /// 补写到第 `ok` 条时失败，其余保留在 spool 中等下一轮。
-    Partial { ok: usize, remaining: usize, reason: String },
-    Broken { reason: String },
+    Partial {
+        ok: usize,
+        remaining: usize,
+        reason: String,
+    },
+    Broken {
+        reason: String,
+    },
 }
 
 pub struct Forwarder {
@@ -53,7 +66,11 @@ impl Forwarder {
     /// 先补写历史帧，再发当前帧；当前帧发不出去就落盘。
     pub async fn send(&self, pending: &Pending) -> (ReplayOutcome, ForwardOutcome) {
         let replay = self.replay().await;
-        let forward = match self.client.call(&pending.method, pending.payload.clone()).await {
+        let forward = match self
+            .client
+            .call(&pending.method, pending.payload.clone())
+            .await
+        {
             Ok(_) => ForwardOutcome::Sent,
             Err(e) => self.spool_it(pending, &e.to_string()),
         };
@@ -63,11 +80,20 @@ impl Forwarder {
     fn spool_it(&self, pending: &Pending, reason: &str) -> ForwardOutcome {
         let line = match serde_json::to_string(pending) {
             Ok(l) => l,
-            Err(e) => return ForwardOutcome::Lost { reason: format!("待上报记录不可序列化：{e}") },
+            Err(e) => {
+                return ForwardOutcome::Lost {
+                    reason: format!("待上报记录不可序列化：{e}"),
+                }
+            }
         };
         match self.spool.append(&line) {
-            Ok(outcome) => ForwardOutcome::Spooled { evicted: outcome.evicted, reason: reason.to_string() },
-            Err(e) => ForwardOutcome::Lost { reason: format!("{e}") },
+            Ok(outcome) => ForwardOutcome::Spooled {
+                evicted: outcome.evicted,
+                reason: reason.to_string(),
+            },
+            Err(e) => ForwardOutcome::Lost {
+                reason: format!("{e}"),
+            },
         }
     }
 
@@ -75,7 +101,11 @@ impl Forwarder {
     pub async fn replay(&self) -> ReplayOutcome {
         let lines = match self.spool.read_lines() {
             Ok(l) => l,
-            Err(e) => return ReplayOutcome::Broken { reason: e.to_string() },
+            Err(e) => {
+                return ReplayOutcome::Broken {
+                    reason: e.to_string(),
+                }
+            }
         };
         if lines.is_empty() {
             return ReplayOutcome::Nothing;
@@ -100,16 +130,24 @@ impl Forwarder {
             if let Err(e) = self.client.call(&pending.method, pending.payload).await {
                 if sent > 0 {
                     if let Err(se) = self.drop_sent(sent) {
-                        return ReplayOutcome::Broken { reason: se.to_string() };
+                        return ReplayOutcome::Broken {
+                            reason: se.to_string(),
+                        };
                     }
                 }
-                return ReplayOutcome::Partial { ok: sent, remaining: total - sent, reason: e.to_string() };
+                return ReplayOutcome::Partial {
+                    ok: sent,
+                    remaining: total - sent,
+                    reason: e.to_string(),
+                };
             }
             sent += 1;
         }
         match self.spool.truncate() {
             Ok(()) => ReplayOutcome::Replayed { count: sent },
-            Err(e) => ReplayOutcome::Broken { reason: e.to_string() },
+            Err(e) => ReplayOutcome::Broken {
+                reason: e.to_string(),
+            },
         }
     }
 
@@ -143,7 +181,10 @@ mod tests {
     }
 
     fn pending(n: u32) -> Pending {
-        Pending { method: "system.ping".into(), payload: serde_json::json!({ "n": n }) }
+        Pending {
+            method: "system.ping".into(),
+            payload: serde_json::json!({ "n": n }),
+        }
     }
 
     #[tokio::test]
@@ -155,12 +196,19 @@ mod tests {
         // 对端不可用：两帧都落盘。
         for n in 0..2 {
             let (_, out) = fwd.send(&pending(n)).await;
-            assert!(matches!(out, ForwardOutcome::Spooled { evicted: 0, .. }), "{out:?}");
+            assert!(
+                matches!(out, ForwardOutcome::Spooled { evicted: 0, .. }),
+                "{out:?}"
+            );
         }
         assert_eq!(fwd.spool().read_lines().unwrap().len(), 2);
 
         // 对端恢复：补写并截断。
-        let server = IpcServer::new(&sock, 4096, MethodTable::new().with("system.ping", Arc::new(Accept)));
+        let server = IpcServer::new(
+            &sock,
+            4096,
+            MethodTable::new().with("system.ping", Arc::new(Accept)),
+        );
         let listener = server.bind().unwrap();
         let (tx, rx) = tokio::sync::oneshot::channel::<()>();
         let handle = tokio::spawn(async move {
@@ -174,7 +222,10 @@ mod tests {
         let (replay, out) = fwd.send(&pending(2)).await;
         assert_eq!(replay, ReplayOutcome::Replayed { count: 2 });
         assert_eq!(out, ForwardOutcome::Sent);
-        assert!(fwd.spool().read_lines().unwrap().is_empty(), "补写成功后必须截断");
+        assert!(
+            fwd.spool().read_lines().unwrap().is_empty(),
+            "补写成功后必须截断"
+        );
 
         let _ = tx.send(());
         let _ = handle.await;
@@ -208,7 +259,11 @@ mod tests {
         let client = IpcClient::new(&sock, 4096, Duration::from_millis(100));
         let fwd = Forwarder::new(client, spool);
         match fwd.replay().await {
-            ReplayOutcome::Partial { ok: 1, remaining: 0, reason } => {
+            ReplayOutcome::Partial {
+                ok: 1,
+                remaining: 0,
+                reason,
+            } => {
                 assert!(reason.contains("不可解析"), "{reason}");
             }
             other => panic!("坏行必须被丢弃并如实上报，实际 {other:?}"),

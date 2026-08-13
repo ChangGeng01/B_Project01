@@ -68,22 +68,34 @@ impl Report {
     }
 
     pub fn failed(&self) -> Vec<&(&'static str, &'static str, Outcome)> {
-        self.results.iter().filter(|(_, _, o)| matches!(o, Outcome::Failed(_))).collect()
+        self.results
+            .iter()
+            .filter(|(_, _, o)| matches!(o, Outcome::Failed(_)))
+            .collect()
     }
 
     pub fn skipped(&self) -> Vec<&(&'static str, &'static str, Outcome)> {
-        self.results.iter().filter(|(_, _, o)| matches!(o, Outcome::Skipped(_))).collect()
+        self.results
+            .iter()
+            .filter(|(_, _, o)| matches!(o, Outcome::Skipped(_)))
+            .collect()
     }
 
     pub fn passed_count(&self) -> usize {
-        self.results.iter().filter(|(_, _, o)| *o == Outcome::Passed).count()
+        self.results
+            .iter()
+            .filter(|(_, _, o)| *o == Outcome::Passed)
+            .count()
     }
 }
 
 /// 逐条跑用例。不短路：一条失败不影响后续用例，报告要一次给全。
 pub fn run_cases(profile: &str, cases: &[Case]) -> Report {
     let results = cases.iter().map(|c| (c.id, c.title, (c.run)())).collect();
-    Report { profile: profile.to_string(), results }
+    Report {
+        profile: profile.to_string(),
+        results,
+    }
 }
 
 /// 报告到退出码的映射。与 `archcheck` 的三态一致：0 通过、1 有失败、3 有未覆盖。
@@ -137,7 +149,10 @@ fn parse_profile(args: &[String]) -> Result<&'static str, String> {
             return Err(format!("未知参数 {arg}"));
         };
         let Some(known) = PROFILES.iter().find(|p| **p == value) else {
-            return Err(format!("未知 profile {value}；已交付：{}", PROFILES.join("、")));
+            return Err(format!(
+                "未知 profile {value}；已交付：{}",
+                PROFILES.join("、")
+            ));
         };
         chosen = Some(known);
     }
@@ -145,11 +160,18 @@ fn parse_profile(args: &[String]) -> Result<&'static str, String> {
 }
 
 fn print_report(report: &Report) {
-    println!("e2e profile={} 登记用例 {} 条。", report.profile, report.total());
+    println!(
+        "e2e profile={} 登记用例 {} 条。",
+        report.profile,
+        report.total()
+    );
 
     if report.is_empty() {
         // 这三行是本模块存在的一半理由，见模块注释：空集必须看得见。
-        println!("本阶段用例集为空：profile {} 下没有任何已登记用例，一条都没有执行。", report.profile);
+        println!(
+            "本阶段用例集为空：profile {} 下没有任何已登记用例，一条都没有执行。",
+            report.profile
+        );
         println!("这是阶段 1 计划第 10 节退出条件第 25 条明文允许的状态，不是执行失败。");
         println!("若你刚加了用例却仍看到这一行，说明它没有被登记进 T0_CASES。");
         return;
@@ -193,7 +215,11 @@ mod tests {
     }
 
     fn case(id: &'static str, run: fn() -> Outcome) -> Case {
-        Case { id, title: "夹具用例", run }
+        Case {
+            id,
+            title: "夹具用例",
+            run,
+        }
     }
 
     /// 本阶段判据：空用例集返回 0。

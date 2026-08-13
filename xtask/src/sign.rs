@@ -94,7 +94,9 @@ pub fn evaluate(dir: &Path) -> Report {
     let manifest_text = match fs::read_to_string(dir.join(MANIFEST)) {
         Ok(t) => t,
         Err(e) => {
-            r.problems.push(format!("{MANIFEST} 读不到：{e}。目录存在而校验清单缺失即结构不完整"));
+            r.problems.push(format!(
+                "{MANIFEST} 读不到：{e}。目录存在而校验清单缺失即结构不完整"
+            ));
             return r;
         }
     };
@@ -106,7 +108,8 @@ pub fn evaluate(dir: &Path) -> Report {
         }
     };
     if entries.is_empty() {
-        r.problems.push(format!("{MANIFEST} 中一条记录都没有。空清单不是通过"));
+        r.problems
+            .push(format!("{MANIFEST} 中一条记录都没有。空清单不是通过"));
         return r;
     }
 
@@ -117,14 +120,17 @@ pub fn evaluate(dir: &Path) -> Report {
 
     match fs::read_to_string(dir.join(METADATA)) {
         Ok(t) => r.problems.extend(authority_problems(&t)),
-        Err(e) => r.problems.push(format!("{METADATA} 读不到：{e}。签名来源无从判定，按不符处理")),
+        Err(e) => r.problems.push(format!(
+            "{METADATA} 读不到：{e}。签名来源无从判定，按不符处理"
+        )),
     }
 
     let (sig_problems, sig_undecidable) = verify_signature(dir);
     r.problems.extend(sig_problems);
     r.undecidable.extend(sig_undecidable);
 
-    r.notes.push(format!("校验清单覆盖 {} 个文件", entries.len()));
+    r.notes
+        .push(format!("校验清单覆盖 {} 个文件", entries.len()));
     r
 }
 
@@ -148,9 +154,15 @@ pub fn parse_manifest(text: &str) -> Result<Vec<ManifestEntry>, String> {
         let Some((hash, path)) = line.split_once("  ") else {
             return Err(format!("第 {} 行不是「哈希两空格路径」形态：{line}", i + 1));
         };
-        if hash.len() != 64 || !hash.chars().all(|c| c.is_ascii_hexdigit() && !c.is_ascii_uppercase())
+        if hash.len() != 64
+            || !hash
+                .chars()
+                .all(|c| c.is_ascii_hexdigit() && !c.is_ascii_uppercase())
         {
-            return Err(format!("第 {} 行的哈希不是 64 位小写十六进制：{hash}", i + 1));
+            return Err(format!(
+                "第 {} 行的哈希不是 64 位小写十六进制：{hash}",
+                i + 1
+            ));
         }
         let path = path.trim();
         if path.starts_with('/') || path.contains("..") {
@@ -159,14 +171,20 @@ pub fn parse_manifest(text: &str) -> Result<Vec<ManifestEntry>, String> {
         if !seen.insert(path.to_string()) {
             return Err(format!("第 {} 行的路径 {path} 在清单中重复", i + 1));
         }
-        out.push(ManifestEntry { sha256: hash.to_string(), path: path.to_string() });
+        out.push(ManifestEntry {
+            sha256: hash.to_string(),
+            path: path.to_string(),
+        });
     }
     Ok(out)
 }
 
 /// D-11 点名的必备项：九个镜像、SBOM、回退说明，另加签名元数据。
 pub fn required_entries() -> Vec<String> {
-    let mut v: Vec<String> = IMAGES.iter().map(|n| format!("images/{n}.oci.tar")).collect();
+    let mut v: Vec<String> = IMAGES
+        .iter()
+        .map(|n| format!("images/{n}.oci.tar"))
+        .collect();
     v.push(SBOM_IN_PACKAGE.to_string());
     v.push(ROLLBACK.to_string());
     v.push(METADATA.to_string());
@@ -183,7 +201,9 @@ pub fn structure_problems(listed: &[String]) -> Vec<String> {
     }
     for skip in NOT_IN_MANIFEST {
         if have.contains(skip) {
-            out.push(format!("{skip} 不该出现在校验清单里：清单不能自证，签名与公钥也不由清单覆盖"));
+            out.push(format!(
+                "{skip} 不该出现在校验清单里：清单不能自证，签名与公钥也不由清单覆盖"
+            ));
         }
     }
     out
@@ -220,7 +240,9 @@ fn uncovered_files(dir: &Path, listed: &[String]) -> Vec<String> {
                 stack.push(p);
                 continue;
             }
-            let Ok(rel) = p.strip_prefix(dir) else { continue };
+            let Ok(rel) = p.strip_prefix(dir) else {
+                continue;
+            };
             let rel = rel.to_string_lossy().replace('\\', "/");
             if NOT_IN_MANIFEST.contains(&rel.as_str()) || have.contains(rel.as_str()) {
                 continue;
@@ -239,7 +261,9 @@ pub fn authority_problems(meta_text: &str) -> Vec<String> {
         Err(e) => return vec![format!("{METADATA} 不是合法 JSON：{e}")],
     };
     match value.get("signing_authority").and_then(|v| v.as_str()) {
-        None => vec![format!("{METADATA} 中没有 signing_authority 字段，签名来源无从判定")],
+        None => vec![format!(
+            "{METADATA} 中没有 signing_authority 字段，签名来源无从判定"
+        )],
         Some(AUTHORITY_HSM) => Vec::new(),
         Some(AUTHORITY_DEV) => vec![format!(
             "signing_authority={AUTHORITY_DEV}：软件密钥签名只允许内部阶段制品使用，\
@@ -270,7 +294,9 @@ fn verify_signature(dir: &Path) -> (Vec<String>, Vec<String>) {
     match out {
         Err(e) => (
             Vec::new(),
-            vec![format!("openssl 不可用（{e}），签名验证未做出判定，不得据此判通过")],
+            vec![format!(
+                "openssl 不可用（{e}），签名验证未做出判定，不得据此判通过"
+            )],
         ),
         Ok(o) if o.status.success() => (Vec::new(), Vec::new()),
         Ok(o) => (
@@ -464,7 +490,10 @@ mod rule_negative_samples {
         for p in paths {
             map.insert(p.as_str(), sha256_file(&dir.join(p))?);
         }
-        Ok(map.into_iter().map(|(p, h)| format!("{h}  {p}\n")).collect())
+        Ok(map
+            .into_iter()
+            .map(|(p, h)| format!("{h}  {p}\n"))
+            .collect())
     }
 
     fn fixture(tag: &str, files: &[(&str, &str)]) -> PathBuf {
@@ -482,16 +511,26 @@ mod rule_negative_samples {
     fn full_package(tag: &str, tamper: Option<&str>) -> PathBuf {
         let mut files: Vec<(String, String)> = IMAGES
             .iter()
-            .map(|n| (format!("images/{n}.oci.tar"), format!("镜像 {n} 的占位内容\n")))
+            .map(|n| {
+                (
+                    format!("images/{n}.oci.tar"),
+                    format!("镜像 {n} 的占位内容\n"),
+                )
+            })
             .collect();
-        files.push((SBOM_IN_PACKAGE.into(), "{\"bomFormat\":\"CycloneDX\"}\n".into()));
+        files.push((
+            SBOM_IN_PACKAGE.into(),
+            "{\"bomFormat\":\"CycloneDX\"}\n".into(),
+        ));
         files.push((ROLLBACK.into(), "# 回退说明\n".into()));
         files.push((
             METADATA.into(),
             format!("{{\"signing_authority\":\"{AUTHORITY_HSM}\"}}\n"),
         ));
-        let borrowed: Vec<(&str, &str)> =
-            files.iter().map(|(a, b)| (a.as_str(), b.as_str())).collect();
+        let borrowed: Vec<(&str, &str)> = files
+            .iter()
+            .map(|(a, b)| (a.as_str(), b.as_str()))
+            .collect();
         let dir = fixture(tag, &borrowed);
 
         let covered: Vec<String> = required_entries();
@@ -543,11 +582,16 @@ mod rule_negative_samples {
         );
         // 夹具原本标 hsm，改成 dev 即改动了被清单覆盖的字节，反向同理。
         let dir = full_package("metadata-tamper", None);
-        fs::write(dir.join(METADATA), format!("{{\"signing_authority\":\"{AUTHORITY_DEV}\"}}\n"))
-            .expect("改元数据");
+        fs::write(
+            dir.join(METADATA),
+            format!("{{\"signing_authority\":\"{AUTHORITY_DEV}\"}}\n"),
+        )
+        .expect("改元数据");
         let r = evaluate(&dir);
         assert!(
-            r.problems.iter().any(|p| p.contains(METADATA) && p.contains("SHA-256")),
+            r.problems
+                .iter()
+                .any(|p| p.contains(METADATA) && p.contains("SHA-256")),
             "改过的元数据必须被清单查出，实得：{:?}",
             r.problems
         );
@@ -560,7 +604,9 @@ mod rule_negative_samples {
         let r = evaluate(&dir);
         assert_eq!(r.outcome(), Outcome::Violated);
         assert!(
-            r.problems.iter().any(|p| p.contains("core-server.oci.tar") && p.contains("SHA-256")),
+            r.problems
+                .iter()
+                .any(|p| p.contains("core-server.oci.tar") && p.contains("SHA-256")),
             "实得：{:?}",
             r.problems
         );
@@ -573,7 +619,9 @@ mod rule_negative_samples {
         fs::write(dir.join("images/rogue.oci.tar"), "夹带\n").expect("写夹带文件");
         let r = evaluate(&dir);
         assert!(
-            r.problems.iter().any(|p| p.contains("images/rogue.oci.tar") && p.contains("签名覆盖不到")),
+            r.problems
+                .iter()
+                .any(|p| p.contains("images/rogue.oci.tar") && p.contains("签名覆盖不到")),
             "实得：{:?}",
             r.problems
         );
@@ -585,7 +633,10 @@ mod rule_negative_samples {
         let p = authority_problems(&format!("{{\"signing_authority\":\"{AUTHORITY_DEV}\"}}"));
         assert_eq!(p.len(), 1);
         assert!(p[0].contains("不放行"));
-        assert!(authority_problems(&format!("{{\"signing_authority\":\"{AUTHORITY_HSM}\"}}")).is_empty());
+        assert!(
+            authority_problems(&format!("{{\"signing_authority\":\"{AUTHORITY_HSM}\"}}"))
+                .is_empty()
+        );
         assert_eq!(authority_problems("{}").len(), 1, "字段缺失同样是不符");
     }
 
@@ -594,7 +645,10 @@ mod rule_negative_samples {
     fn negative_manifest_parse() {
         assert!(parse_manifest("deadbeef  a.txt").is_err(), "哈希位数不足");
         let ok = "0".repeat(64);
-        assert!(parse_manifest(&format!("{ok}  ../etc/passwd")).is_err(), "路径越出制品根");
+        assert!(
+            parse_manifest(&format!("{ok}  ../etc/passwd")).is_err(),
+            "路径越出制品根"
+        );
         assert!(
             parse_manifest(&format!("{ok}  a.txt\n{ok}  a.txt")).is_err(),
             "同一路径两条记录"

@@ -88,6 +88,7 @@ pub fn evaluate(ws: &Workspace) -> Report {
     checked.extend([
         "platform-acyclic",
         "platform-no-adapter",
+        "postgres-driver-tooling-only",
         "crate-naming-consistent",
         "unwired-absent",
         "downcast-pgtx-confined",
@@ -106,5 +107,9 @@ pub fn evaluate(ws: &Workspace) -> Report {
     violations.extend(registry::check(root, &DELEGATED, &undecidable));
     violations.extend(registry::rule_roster(root, &checked));
 
-    Report { violations, checked, undecidable }
+    Report {
+        violations,
+        checked,
+        undecidable,
+    }
 }

@@ -900,4 +900,44 @@ R-08 幂等键的三段职责按 C-07 已经拆定，本阶段只定义端口，
 
 假设四，迁移窗口的默认存活时长为 60 分钟、上限 240 分钟。规格第 7.7 章只说迁移账号在迁移窗口内启用，未给窗口时长。取值依据是基线第 3.9 节的迁移执行上限 30 分钟加一倍余量，上限对齐规格第 12.1 章应急账号 8 小时的一半以示更严。
 
+实施期偏离登记（任务 #11、#13、#14）十三条。与上文「偏离项两条」不同，两条是计划层面对基线的修改并已回写；本十三条是实施阶段落码时与本计划自身口径的偏差，逐条如实记录，不改基线。
+
+一、迁移执行器未采用 refinery，`ep-migrate` 自实现迁移施加与版本台账（任务 #11）。理由是 refinery 的迁移模型与本阶段要求的 schema 分段、并发目录与窗口守卫断言不对齐，自实现使执行路径全部在仓内可审。
+
+二、迁移文件的校验和由 build.rs 在编译期计算并与已落库台账对齐（任务 #11），而非计划第 5 节设想的运行期现算后仅告警。
+
+三、自检裁定枚举新增 `Verdict::Degraded`（任务 #13）。计划只设 Pass 与 Fail 两态，实施中发现数据库不可达时应使进程以降级态继续服务而非退出，该态的语义与降级窗口台账联动。
+
+四、模块缺域时自检登记暂用 `PORT_NOT_IMPLEMENTED`（任务 #14），与计划第 10 节预留扩展点九的口径一致；正式的分型拆分留待承接方阶段。
+
+五、九个端点的上下文头推导是阶段 2 权宜（任务 #14）：`X-Legal-Entity-Id` 等四头只校存在性与格式，真实校验属阶段 4，与 ADR-0007 同一类临时状态。
+
+六、配置模型补齐 `KmsCfg` 与 `MigrationCfg` 两段（任务 #12、#13），计划第 8 节只列到段落名未给字段级口径，实施时以 configdoc 登记为准。
+
+七、`sensitive_field_registry` 疑似存在重复列（任务 #12），尚未验证；若确认为迁移笔误，由阶段 3a 的一次在线迁移修正并补登记。
+
+八、A-01 法人目录的分页与排序在装配层实现（任务 #14），而非计划第 6 节设想的仓储层入参，理由是首版只有 2 个法人，分页属接口形态兼容而非性能需求。
+
+九、A-09 开窗的 `approval_ref` 只做非空存在校验（任务 #14），审批单实体与其核验属阶段 3b，此前不得被读成「已接审批流」。
+
+十、`kms.provider` 取 `hsm` 时不回落内置实现（任务 #12），配置指向不存在的硬件后端即以配置错误退出码失败，理由是静默回落会使密文信封头里的算法与密钥标识与实际解封路径不一致。
+
+十一、A-03 开通密钥域只对 ACTIVE 态做幂等重放（任务 #14），PROVISIONING 残留的重入恢复未实现；进程在开通半途崩溃后该域行需人工介入清理，清理口径留待阶段 3b 的 Outbox 与重试一并设计。
+
+十二、进程重启后 KMS 内存注册表断档（任务 #14）：内置 KMS 的已激活域状态不持久化，重启后 A-04 轮换以数据库为基准经 `generate_detached_data_key` 重建，A-06 快照只在注册表存在时同步；不得被读成「KMS 具备高可用」。
+
+十三、workspace 依赖表的 axum 条目新增 `query` feature（任务 #14），供九个端点的查询串提取器取用，属依赖能力面扩充而非新增依赖。
+
+活库补验提请裁定登记（任务 #26）五条。任务 #25 的活库补验在本机 PostgreSQL 16 上跑通 bootstrap 幂等、69 迁移空库全量、13 断言与 819 测试，留下两项口径冲突，本节正式登记其裁定；补验中的三个设计级修复一并登记，其余纯缺陷修复不列。
+
+十四、空库首装自举口径（鸡生蛋收口）。冲突原文位置：`platform_core.migration_windows` 与 `migration_window_lock` 由迁移 V20260901093500 创建（本计划 §3.5 表六），而 `ep-migrate apply` 的窗口闸（本计划 §3.3）要求两表先存在且调用方出示窗口，空库首装互为前提。补验曾以「ep_migrator 预施 090000/090500/093500 三个文件」的临时口径绕过。裁定取值：`ep-migrate apply` 探测目标库无 `platform_core.schema_history`（既有 to_regclass 口径）且未出示 `--window-id` 时自动进入首装自举——同一连接以 ep_migrator 身份在单一事务内建出历史表与窗口两表的最小 DDL（形态与 V20260901090000/V20260901093500 的最终形态逐字一致：列集、约束、属主归位 ep_mod_platform_core，一致性由 ep-migrate 单测逐字断言），并插入一条一次性安装窗口行（approval_ref 取 `INITIAL_INSTALL`，reason 写明首装自举，opened_by 取系统主体，ttl 取假设四默认 60 分钟），随后按正常 apply 流程执行全部迁移；全部迁移成功后窗口不显式关闭，到期自动关闭由既有窗口生命周期机制承担。自举后重复 apply 走正常比对路径退出码 0，不再自举；出示 `--window-id` 的调用永不走自举，退出码纪律（0/2/3/4/5/78）与三态语义不变。不回改的理由：迁移文件形态不可动（预施口径使 Runner 校验和台账与迁移语义错位，且预施本身绕过窗口闸）；窗口两表不能提前建或豁免窗口闸（使 A-09 开窗口径落空）；自举把临时口径收敛为仅空库触发的一次性路径，非空库判据不变。临时预施口径自本条登记起作废，空库首装的命令行用法自此固定为 `ep-migrate apply --db-url=<连接串>`，不需预施、不需 `--window-id`。
+
+十五、`platform_msg.idempotency_keys` 的公共列与基线索引豁免口径。冲突原文位置：03 计划表 12 逐字冻结该表列集、§3.3.2 明示纯技术表不带 `security_level` 与 `data_scope_tags`，与本计划 §3.9 check 01（db/checks/01）的公共列位序要求（九件公共列按序占据第 1 至第 9 列）直接矛盾，也与基线 §3.10 的 `ix_<table>_legal_entity_id_created_at` 索引要求矛盾（该表索引清单按 03 计划表 12 冻结为 pk + ux_idempotency_keys_le_user_id_endpoint_key + ix_idempotency_keys_expires_at 三件）。裁定取值：维持 03 计划表 12 的冻结列集与索引清单，db/checks/01 与 db/checks/10 对该表具名豁免（豁免注释引用本条），检查判定逻辑不作任何改动。不回改的理由：03 计划表 12 是后位计划对该表的逐字冻结，属后位计划对公共列适用口径的逐表修订；幂等键是纯技术表，不承载密级过滤与派生存储语义，强补公共列与法人前缀覆盖索引只会制造无人维护的常量列与重复索引；基线不回改，豁免只在该表一处生效，不扩散。
+
+十六、`attach_table_guards` 与 `assert_baseline_indexes` 定为 security invoker，并对全部 24 个 `ep_mod_*` 授 `platform_core.append_only_registry` 的 SELECT（补验修复一）。取值：两函数保持默认 security invoker 不改 definer；登记表创建迁移与授权收口迁移（V20260901100500）对 24 个属主角色显式授 SELECT。理由：PostgreSQL 要求 ALTER TABLE 的执行者是表属主，守卫挂接必须以各表属主角色 ep_mod_<schema> 身份执行；若改 definer，生效角色变为函数属主 ep_mod_platform_core，对他 schema 的表做 ALTER 会 permission denied，而 pg 目录对任意角色可读，invoker 权限下无需额外授权。
+
+十七、历史表属主归位（补验修复二）。取值：Runner 建出 `platform_core.schema_history` 后逐文件事务内执行 `ALTER TABLE ... OWNER TO ep_mod_platform_core`（ep-migrate 的 align_history_owner_sql），属主对齐 schema 属主角色。理由：授权收口迁移以 `SET ROLE ep_mod_<schema>` 对 schema 内全部表 GRANT，GRANT 要求执行者是表属主；属主留在连接账号 ep_migrator 会使授权迁移报 permission denied。
+
+十八、pgcrypto 扩展建在 `platform_core` schema（补验修复三）。取值：`create extension if not exists pgcrypto schema platform_core`，扩展对象显式落位 platform_core。理由：引导后 public schema 已删除，ep_migrator 的默认 search_path 里没有可建 schema，不指定落位会报 no schema has been selected to create in；ep_migrator 是 ep_mod_platform_core 成员，可在该 schema 建扩展，且与平台元数据承载口径（本节新增决定六）一致。
+
 被业务决策阻塞的判定：本阶段无被阻塞项。U-A-03、U-A-04、U-A-12 与 F-17 四项虽与本阶段相关，但其载体分别是 CHECK 约束、列类型与登记表，三者的变更都在在线变更或登记行变更范围内，切换代价分别为一次在线迁移、一次停机窗口内的列类型变更与一次登记行变更；U-A-12 若决策为开户银行也做字段级加密，按 A-28 另需在同一次变更内改物理列并删去同名明文列，该代价落在阶段 5 而不落在本阶段。四项均不构成本阶段的开工前提。幂等键一项按 C-07 是三段分工而非阻塞，见第 6 节与 R-08。

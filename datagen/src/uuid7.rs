@@ -75,9 +75,10 @@ mod tests {
         let groups: Vec<&str> = s.split('-').collect();
         groups.len() == 5
             && [8, 4, 4, 4, 12] == groups.iter().map(|g| g.len()).collect::<Vec<_>>()[..]
-            && groups
-                .iter()
-                .all(|g| g.bytes().all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b)))
+            && groups.iter().all(|g| {
+                g.bytes()
+                    .all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b))
+            })
     }
 
     #[test]

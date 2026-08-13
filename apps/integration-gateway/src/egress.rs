@@ -50,7 +50,10 @@ impl Breaker {
         match self.state {
             BreakerState::Closed => true,
             BreakerState::Open => {
-                let elapsed = self.opened_at.map(|t| now.duration_since(t)).unwrap_or_default();
+                let elapsed = self
+                    .opened_at
+                    .map(|t| now.duration_since(t))
+                    .unwrap_or_default();
                 if elapsed >= Duration::from_millis(u64::from(self.cfg.open_ms)) {
                     self.state = BreakerState::HalfOpen;
                     self.half_open_inflight = 0;
@@ -79,7 +82,9 @@ impl Breaker {
 
     pub fn on_failure(&mut self, now: Instant) {
         self.consecutive_failures = self.consecutive_failures.saturating_add(1);
-        if self.state == BreakerState::HalfOpen || self.consecutive_failures >= self.cfg.failure_threshold {
+        if self.state == BreakerState::HalfOpen
+            || self.consecutive_failures >= self.cfg.failure_threshold
+        {
             self.state = BreakerState::Open;
             self.opened_at = Some(now);
             self.half_open_inflight = 0;
@@ -154,12 +159,19 @@ mod tests {
         let list = [target("https://esign.example.com")];
         assert!(!is_allowed(&list, "https://esign.example.com.evil.test"));
         assert!(!is_allowed(&list, "https://evil-esign.example.com"));
-        assert!(!is_allowed(&[], "https://esign.example.com"), "空白名单一律拒绝");
+        assert!(
+            !is_allowed(&[], "https://esign.example.com"),
+            "空白名单一律拒绝"
+        );
     }
 
     #[test]
     fn breaker_opens_after_threshold_consecutive_failures() {
-        let cfg = BreakerCfg { failure_threshold: 3, open_ms: 1_000, half_open_probes: 1 };
+        let cfg = BreakerCfg {
+            failure_threshold: 3,
+            open_ms: 1_000,
+            half_open_probes: 1,
+        };
         let mut b = Breaker::new(cfg);
         let now = Instant::now();
         for _ in 0..2 {
@@ -173,7 +185,11 @@ mod tests {
 
     #[test]
     fn breaker_half_opens_after_the_window_and_limits_probes() {
-        let cfg = BreakerCfg { failure_threshold: 1, open_ms: 1_000, half_open_probes: 1 };
+        let cfg = BreakerCfg {
+            failure_threshold: 1,
+            open_ms: 1_000,
+            half_open_probes: 1,
+        };
         let mut b = Breaker::new(cfg);
         let t0 = Instant::now();
         b.on_failure(t0);
@@ -185,7 +201,11 @@ mod tests {
 
     #[test]
     fn a_failed_probe_reopens_the_breaker() {
-        let cfg = BreakerCfg { failure_threshold: 1, open_ms: 10, half_open_probes: 1 };
+        let cfg = BreakerCfg {
+            failure_threshold: 1,
+            open_ms: 10,
+            half_open_probes: 1,
+        };
         let mut b = Breaker::new(cfg);
         let t0 = Instant::now();
         b.on_failure(t0);
@@ -197,22 +217,38 @@ mod tests {
 
     #[test]
     fn rehearsal_passes_with_the_documented_defaults() {
-        let msg = rehearse(&[target("https://esign.example.com")], BreakerCfg::default()).unwrap();
+        let msg = rehearse(
+            &[target("https://esign.example.com")],
+            BreakerCfg::default(),
+        )
+        .unwrap();
         assert!(msg.contains("演练通过"), "{msg}");
     }
 
     // 负样例断言的是演练这条规则本身：熔断后永不恢复的取值必须被抓出来。
     #[test]
     fn rehearsal_rejects_parameters_that_never_recover() {
-        let cfg = BreakerCfg { failure_threshold: 5, open_ms: 100, half_open_probes: 0 };
+        let cfg = BreakerCfg {
+            failure_threshold: 5,
+            open_ms: 100,
+            half_open_probes: 0,
+        };
         assert!(rehearse(&[], cfg).is_err());
-        let cfg = BreakerCfg { failure_threshold: 0, open_ms: 100, half_open_probes: 1 };
+        let cfg = BreakerCfg {
+            failure_threshold: 0,
+            open_ms: 100,
+            half_open_probes: 1,
+        };
         assert!(rehearse(&[], cfg).is_err());
     }
 
     #[test]
     fn success_closes_the_breaker_and_clears_the_counter() {
-        let cfg = BreakerCfg { failure_threshold: 2, open_ms: 10, half_open_probes: 1 };
+        let cfg = BreakerCfg {
+            failure_threshold: 2,
+            open_ms: 10,
+            half_open_probes: 1,
+        };
         let mut b = Breaker::new(cfg);
         let now = Instant::now();
         b.on_failure(now);

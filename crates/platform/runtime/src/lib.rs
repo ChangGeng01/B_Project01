@@ -14,6 +14,7 @@ pub mod config;
 pub mod http;
 pub mod incident;
 pub mod lifecycle;
+pub mod migrations;
 pub mod process;
 pub mod selfcheck;
 pub mod serving;

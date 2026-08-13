@@ -32,7 +32,12 @@ impl Default for Serving {
 impl Serving {
     pub fn new() -> Self {
         let (trigger, signal) = shutdown::channel();
-        Self { trigger, signal, tasks: Vec::new(), failed: None }
+        Self {
+            trigger,
+            signal,
+            tasks: Vec::new(),
+            failed: None,
+        }
     }
 
     /// 停机信号的一个副本，供调用方自己写的后台循环使用。
@@ -45,7 +50,10 @@ impl Serving {
     pub async fn spawn_http(&mut self, addr: SocketAddr, router: Router, logger: &JsonLogger) {
         match http::bind(addr).await {
             Ok((listener, local)) => {
-                logger.log(Level::Info, LogFields::msg("startup", format!("监听 {local}")));
+                logger.log(
+                    Level::Info,
+                    LogFields::msg("startup", format!("监听 {local}")),
+                );
                 let signal = self.signal.clone();
                 self.tasks.push(tokio::spawn(async move {
                     let _ = http::serve_on(listener, router, async move {
@@ -80,7 +88,10 @@ impl Serving {
         drain_ms: u32,
     ) -> ExitCode {
         if let Some(detail) = self.failed {
-            logger.log(Level::Error, LogFields::msg("startup", format!("启动未完成：{detail}")));
+            logger.log(
+                Level::Error,
+                LogFields::msg("startup", format!("启动未完成：{detail}")),
+            );
             self.trigger.fire(StopReason::Internal);
             for t in self.tasks {
                 let _ = t.await;
@@ -92,7 +103,10 @@ impl Serving {
             Ok(reason) => {
                 logger.log(
                     Level::Info,
-                    LogFields::msg("shutdown", format!("收到停机信号 {reason:?}，停止接收新请求")),
+                    LogFields::msg(
+                        "shutdown",
+                        format!("收到停机信号 {reason:?}，停止接收新请求"),
+                    ),
                 );
                 if let Err(e) = state.fire(Event::Sigterm) {
                     logger.log(Level::Error, LogFields::msg("lifecycle", format!("{e}")));
@@ -100,7 +114,10 @@ impl Serving {
                 self.trigger.fire(reason);
             }
             Err(e) => {
-                logger.log(Level::Error, LogFields::msg("shutdown", format!("信号处理器安装失败：{e}")));
+                logger.log(
+                    Level::Error,
+                    LogFields::msg("shutdown", format!("信号处理器安装失败：{e}")),
+                );
                 return ExitCode::from(EXIT_PANIC);
             }
         }

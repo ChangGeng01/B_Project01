@@ -17,7 +17,7 @@ ep-datagen — 基准数据集生成器。独立二进制，不属八进程。
   ep-datagen help
 
 选项：
-  --scale=<档位>  样本档名。本阶段只交付 t0-min。
+  --scale=<档位>  样本档名。已交付 t0-min、t0 与 small 三档。
   --seed=<u64>    生成种子，必须显式给出，无默认值。
   --out=<路径>    写出目标；缺省写 stdout。两种写出的字节完全相同。
 ";
@@ -37,7 +37,11 @@ pub fn usage() -> String {
 #[derive(Clone, PartialEq, Eq, Debug)]
 pub enum Command {
     Help,
-    Generate { scale: Scale, seed: u64, out: Option<PathBuf> },
+    Generate {
+        scale: Scale,
+        seed: u64,
+        out: Option<PathBuf>,
+    },
 }
 
 #[derive(Clone, PartialEq, Eq, Debug)]
@@ -67,7 +71,11 @@ impl std::fmt::Display for CliError {
             CliError::UnknownSubcommand(s) => write!(f, "未知子命令 {s}；可用：generate、help"),
             CliError::UnknownArgument(s) => write!(f, "未知参数 {s}"),
             CliError::MissingOption("--scale") => {
-                write!(f, "缺必填选项 --scale；已登记档位：{}", REGISTERED.join("、"))
+                write!(
+                    f,
+                    "缺必填选项 --scale；已登记档位：{}",
+                    REGISTERED.join("、")
+                )
             }
             CliError::MissingOption(name) => write!(f, "缺必填选项 {name}"),
             CliError::BadSeed(s) => write!(f, "--seed 取值 {s} 不是合法的 u64 十进制整数"),
@@ -108,7 +116,9 @@ fn parse_generate(args: &[String]) -> Result<Command, CliError> {
     let scale_name = scale_name.ok_or(CliError::MissingOption("--scale"))?;
     let seed_text = seed_text.ok_or(CliError::MissingOption("--seed"))?;
     let scale = Scale::parse(&scale_name).map_err(CliError::Scale)?;
-    let seed = seed_text.parse::<u64>().map_err(|_| CliError::BadSeed(seed_text.clone()))?;
+    let seed = seed_text
+        .parse::<u64>()
+        .map_err(|_| CliError::BadSeed(seed_text.clone()))?;
     Ok(Command::Generate { scale, seed, out })
 }
 
@@ -122,7 +132,12 @@ mod tests {
 
     #[test]
     fn generate_parses_all_options() {
-        let cmd = parse(&args(&["generate", "--scale=t0-min", "--seed=42", "--out=/tmp/x"]));
+        let cmd = parse(&args(&[
+            "generate",
+            "--scale=t0-min",
+            "--seed=42",
+            "--out=/tmp/x",
+        ]));
         assert_eq!(
             cmd,
             Ok(Command::Generate {
@@ -162,7 +177,11 @@ mod tests {
     #[test]
     fn bad_seed_is_rejected() {
         for bad in ["", "-1", "1.5", "abc", "18446744073709551616"] {
-            let got = parse(&args(&["generate", "--scale=t0-min", &format!("--seed={bad}")]));
+            let got = parse(&args(&[
+                "generate",
+                "--scale=t0-min",
+                &format!("--seed={bad}"),
+            ]));
             assert_eq!(got, Err(CliError::BadSeed(bad.to_string())), "seed={bad}");
         }
     }
@@ -178,15 +197,41 @@ mod tests {
     /// 负样例：未登记的档位是参数错误。
     #[test]
     fn unknown_scale_maps_to_exit_2() {
-        let e = parse(&args(&["generate", "--scale=t0", "--seed=1"])).unwrap_err();
+        let e = parse(&args(&["generate", "--scale=t0-mega", "--seed=1"])).unwrap_err();
         assert_eq!(e.exit().code(), 2);
+    }
+
+    /// D-09：`t0` 与 `small` 两档可解析并落到 generate 命令。
+    #[test]
+    fn t0_and_small_scales_parse_into_generate() {
+        assert_eq!(
+            parse(&args(&["generate", "--scale=t0", "--seed=1"])),
+            Ok(Command::Generate {
+                scale: Scale::T0,
+                seed: 1,
+                out: None,
+            })
+        );
+        assert_eq!(
+            parse(&args(&["generate", "--scale=small", "--seed=2"])),
+            Ok(Command::Generate {
+                scale: Scale::Small,
+                seed: 2,
+                out: None,
+            })
+        );
     }
 
     /// 负样例：多余参数不得被静默忽略。
     #[test]
     fn unknown_argument_is_rejected() {
         assert_eq!(
-            parse(&args(&["generate", "--scale=t0-min", "--seed=1", "--verbose"])),
+            parse(&args(&[
+                "generate",
+                "--scale=t0-min",
+                "--seed=1",
+                "--verbose"
+            ])),
             Err(CliError::UnknownArgument("--verbose".to_string()))
         );
     }
@@ -212,7 +257,11 @@ mod tests {
     fn usage_lists_every_exit_code_and_scale() {
         let text = usage();
         for e in Exit::ALL {
-            assert!(text.contains(&format!("  {:<4}{}", e.code(), e.label())), "缺退出码 {}", e.code());
+            assert!(
+                text.contains(&format!("  {:<4}{}", e.code(), e.label())),
+                "缺退出码 {}",
+                e.code()
+            );
         }
         for name in REGISTERED {
             assert!(text.contains(name), "缺档位 {name}");

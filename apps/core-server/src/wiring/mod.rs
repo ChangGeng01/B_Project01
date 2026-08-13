@@ -5,8 +5,16 @@
 //! 因此能力缺位在这里一律以「不注入」表达，由自检项如实报未覆盖，
 //! 不以一个返回成功的空实现顶位。
 
+pub mod authn;
+pub mod authz;
+pub mod context;
 pub mod db;
+pub mod identity;
 pub mod ipc;
+pub mod kms;
+pub mod metrics;
+pub mod probes;
+pub mod release;
 
-pub use db::sql_probe;
+pub use db::{budget_check, build, DbAssembly};
 pub use ipc::method_table;

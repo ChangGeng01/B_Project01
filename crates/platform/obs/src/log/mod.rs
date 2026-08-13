@@ -62,7 +62,11 @@ pub struct LogFields {
 
 impl LogFields {
     pub fn msg(target: &'static str, msg: impl Into<String>) -> Self {
-        Self { target, msg: msg.into(), ..Self::default() }
+        Self {
+            target,
+            msg: msg.into(),
+            ..Self::default()
+        }
     }
 }
 
@@ -75,7 +79,11 @@ pub struct JsonLogger {
 
 impl JsonLogger {
     pub fn new(process: &'static str, version: &'static str, level: Level) -> Self {
-        Self { process, version, level: Mutex::new(level) }
+        Self {
+            process,
+            version,
+            level: Mutex::new(level),
+        }
     }
 
     /// `log.level` 取 SIGHUP 热加载，因此级别是可变的。
@@ -188,7 +196,11 @@ mod tests {
     #[test]
     fn rendered_line_carries_every_fixed_field() {
         let logger = JsonLogger::new("core-server", "0.1.0", Level::Info);
-        let line = logger.render(Level::Info, &LogFields::msg("startup", "已就绪"), "x".into());
+        let line = logger.render(
+            Level::Info,
+            &LogFields::msg("startup", "已就绪"),
+            "x".into(),
+        );
         let v: serde_json::Value = serde_json::from_str(&line).expect("日志行必须是合法 JSON");
         let obj = v.as_object().expect("日志行必须是对象");
         assert_eq!(obj.len(), FIXED_FIELDS.len(), "字段数必须与固定集合相等");
@@ -200,7 +212,10 @@ mod tests {
     #[test]
     fn level_below_threshold_is_dropped() {
         let logger = JsonLogger::new("core-server", "0.1.0", Level::Warn);
-        assert!(Level::Info < logger.level(), "info 低于 warn 阈值时不应输出");
+        assert!(
+            Level::Info < logger.level(),
+            "info 低于 warn 阈值时不应输出"
+        );
     }
 
     #[test]
@@ -215,6 +230,9 @@ mod tests {
         assert_eq!(s, "2026-08-15T03:04:05.000007Z");
         // 纪元当天与闰年 2 月末各取一点，防止只在某一年成立。
         assert_eq!(format_rfc3339_micros(0, 0), "1970-01-01T00:00:00.000000Z");
-        assert_eq!(format_rfc3339_micros(1_709_164_799, 999_999), "2024-02-28T23:59:59.999999Z");
+        assert_eq!(
+            format_rfc3339_micros(1_709_164_799, 999_999),
+            "2024-02-28T23:59:59.999999Z"
+        );
     }
 }

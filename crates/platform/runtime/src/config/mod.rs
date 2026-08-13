@@ -3,15 +3,19 @@
 //! 结构体分段而不是一整块：八个进程各取所需的段，段的缺席本身就是一条约束。
 
 pub mod loader;
-pub mod sections;
 pub mod secret;
+pub mod sections;
 
 pub use loader::{ConfigError, ConfigLoader};
 pub use secret::{SecretRef, SecretString};
 pub use sections::{
-    BreakerCfg, DbCfg, EgressTarget, DbPoolCfg, DbRetryCfg, DbRoCfg, DbTimeoutCfg, EgressCfg, HttpCfg, IpcCfg,
-    LogCfg, MetricsCfg, PoolTimeoutCfg, PortalCfg, RuntimeCfg, SecretsCfg, SecretsProvider,
-    SelfcheckCfg, SpoolCfg, TraceCfg,
+    AdmissionCfg, AuthArgon2Cfg, AuthBreakglassCfg, AuthCfg, AuthLockoutCfg, AuthPasswordCfg,
+    AuthReauthCfg, AuthSessionCfg, AuthTotpCfg, AuthWebauthnCfg, AuthX509Cfg, AuthzCfg,
+    AuthzDecisionCfg, AuthzExportCfg, AuthzScopeCfg, AuthzSnapshotCfg, BreakerCfg, DbCfg,
+    DbPoolCfg, DbRetryCfg, DbRoCfg, DbTimeoutCfg, EgressCfg, EgressTarget, HttpCfg, IdempotencyCfg,
+    IpcCfg, KmsBuiltinCfg, KmsCfg, KmsHsmCfg, LogCfg, MetricsCfg, MigrationCfg, PlatformCfg,
+    PoolTimeoutCfg, PortalCfg, RuntimeCfg, SecretsCfg, SecretsProvider, SelfcheckCfg, SpoolCfg,
+    TraceCfg,
 };
 
 use std::path::PathBuf;

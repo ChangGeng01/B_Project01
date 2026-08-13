@@ -5,8 +5,7 @@ use crate::id::marker::LegalEntity;
 use crate::id::Id;
 use crate::security::context::SecurityContext;
 
-pub type BoxFuture<'a, T> =
-    core::pin::Pin<Box<dyn core::future::Future<Output = T> + Send + 'a>>;
+pub type BoxFuture<'a, T> = core::pin::Pin<Box<dyn core::future::Future<Output = T> + Send + 'a>>;
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub struct TxId(pub uuid::Uuid);
@@ -40,15 +39,9 @@ pub trait UnitOfWork: Send + Sync + 'static {
     async fn transact<T, F>(&self, ctx: &SecurityContext, body: F) -> Result<T, AppError>
     where
         T: Send + 'static,
-        F: for<'t> FnOnce(&'t mut dyn Tx) -> BoxFuture<'t, Result<T, AppError>>
-            + Send
-            + 'static;
+        F: for<'t> FnOnce(&'t mut dyn Tx) -> BoxFuture<'t, Result<T, AppError>> + Send + 'static;
 
-    async fn snapshot_transact<T, F>(
-        &self,
-        ctx: &SecurityContext,
-        body: F,
-    ) -> Result<T, AppError>
+    async fn snapshot_transact<T, F>(&self, ctx: &SecurityContext, body: F) -> Result<T, AppError>
     where
         T: Send + 'static,
         F: for<'s> FnOnce(&'s dyn SnapshotCtx) -> BoxFuture<'s, Result<T, AppError>>

@@ -21,23 +21,30 @@ pub struct ConfigSourcesSpec {
     pub sets: Vec<String>,
 }
 
-pub const USAGE: &str = "用法: <进程> [--check] [--config <文件>] [--config-dir <目录>] [--set <键路径>=<取值>]...";
+pub const USAGE: &str =
+    "用法: <进程> [--check] [--config <文件>] [--config-dir <目录>] [--set <键路径>=<取值>]...";
 
 impl Cli {
     /// 解析失败返回可直接打印的中文说明。未知开关一律报错，
     /// 不忽略——被忽略的开关会让运维以为参数生效了。
     pub fn parse<I: IntoIterator<Item = String>>(args: I) -> Result<Cli, String> {
-        let mut cli = Cli { check: false, help: false, sources: ConfigSourcesSpec::default() };
+        let mut cli = Cli {
+            check: false,
+            help: false,
+            sources: ConfigSourcesSpec::default(),
+        };
         let mut it = args.into_iter();
         while let Some(arg) = it.next() {
             match arg.as_str() {
                 "--check" => cli.check = true,
                 "--help" | "-h" => cli.help = true,
                 "--config" => {
-                    cli.sources.file = Some(it.next().ok_or_else(|| "--config 缺参数".to_string())?);
+                    cli.sources.file =
+                        Some(it.next().ok_or_else(|| "--config 缺参数".to_string())?);
                 }
                 "--config-dir" => {
-                    cli.sources.dir = Some(it.next().ok_or_else(|| "--config-dir 缺参数".to_string())?);
+                    cli.sources.dir =
+                        Some(it.next().ok_or_else(|| "--config-dir 缺参数".to_string())?);
                 }
                 "--set" => {
                     let kv = it.next().ok_or_else(|| "--set 缺参数".to_string())?;

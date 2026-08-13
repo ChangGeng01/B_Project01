@@ -13,7 +13,11 @@ pub enum Determinism {
     /// 两次产出逐字节相同。
     Identical { len: usize },
     /// 两次产出不同。
-    Differed { first_diff_at: usize, left_len: usize, right_len: usize },
+    Differed {
+        first_diff_at: usize,
+        left_len: usize,
+        right_len: usize,
+    },
 }
 
 impl Determinism {
@@ -107,7 +111,11 @@ mod tests {
         });
         assert_eq!(
             outcome,
-            Determinism::Differed { first_diff_at: 0, left_len: 1, right_len: 1 }
+            Determinism::Differed {
+                first_diff_at: 0,
+                left_len: 1,
+                right_len: 1
+            }
         );
         assert!(describe("样例", &outcome).contains("不一致"));
     }
@@ -117,7 +125,11 @@ mod tests {
     fn length_mismatch_is_caught() {
         assert_eq!(
             classify(&[1, 2], &[1, 2, 3]),
-            Determinism::Differed { first_diff_at: 2, left_len: 2, right_len: 3 }
+            Determinism::Differed {
+                first_diff_at: 2,
+                left_len: 2,
+                right_len: 3
+            }
         );
     }
 

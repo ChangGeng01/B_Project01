@@ -17,12 +17,18 @@ pub const UNWIRED_PREFIXES: [&str; 4] = ["Noop", "Stub", "Fake", "Dummy"];
 pub const WIRING_DIRS: [&str; 2] = ["apps/core-server/src/wiring", "apps/job-worker/src/wiring"];
 
 fn violation(rule: &'static str, package: &str, detail: impl Into<String>) -> Violation {
-    Violation { rule, package: package.to_string(), detail: detail.into() }
+    Violation {
+        rule,
+        package: package.to_string(),
+        detail: detail.into(),
+    }
 }
 
 fn rust_files(dir: &Path) -> Vec<PathBuf> {
     let mut out = Vec::new();
-    let Ok(entries) = fs::read_dir(dir) else { return out };
+    let Ok(entries) = fs::read_dir(dir) else {
+        return out;
+    };
     for entry in entries.flatten() {
         let path = entry.path();
         if path.is_dir() {
@@ -49,7 +55,11 @@ pub fn naming(ws: &Workspace) -> Vec<Violation> {
     ws.packages
         .iter()
         .filter_map(|p| match expected_name(&p.dir) {
-            None => Some(violation(RULE, &p.name, format!("目录 {} 不在第 1.1 节的布局之内", p.dir))),
+            None => Some(violation(
+                RULE,
+                &p.name,
+                format!("目录 {} 不在第 1.1 节的布局之内", p.dir),
+            )),
             Some(want) if want != p.name => Some(violation(
                 RULE,
                 &p.name,
@@ -73,8 +83,14 @@ pub fn unwired_absent(root: &Path) -> Vec<Violation> {
             continue;
         }
         for file in rust_files(&path) {
-            let Ok(text) = fs::read_to_string(&file) else { continue };
-            let rel = file.strip_prefix(root).unwrap_or(&file).display().to_string();
+            let Ok(text) = fs::read_to_string(&file) else {
+                continue;
+            };
+            let rel = file
+                .strip_prefix(root)
+                .unwrap_or(&file)
+                .display()
+                .to_string();
             for (no, line) in code_lines(&text) {
                 for prefix in UNWIRED_PREFIXES {
                     if contains_ident_with_prefix(line, prefix) {
@@ -120,11 +136,17 @@ pub fn downcast_confined(root: &Path) -> Vec<Violation> {
     let mut found = Vec::new();
     for dir in ["crates", "apps", "testkit", "datagen", "tools"] {
         for file in rust_files(&root.join(dir)) {
-            let rel = file.strip_prefix(root).unwrap_or(&file).display().to_string();
+            let rel = file
+                .strip_prefix(root)
+                .unwrap_or(&file)
+                .display()
+                .to_string();
             if rel.starts_with(ALLOWED) {
                 continue;
             }
-            let Ok(text) = fs::read_to_string(&file) else { continue };
+            let Ok(text) = fs::read_to_string(&file) else {
+                continue;
+            };
             for (no, line) in code_lines(&text) {
                 if line.contains(NEEDLE) {
                     found.push(violation(
@@ -142,16 +164,28 @@ pub fn downcast_confined(root: &Path) -> Vec<Violation> {
 /// 禁止项第三条的 std 部分：domain 与 contract 不得触碰文件与网络 API。
 pub fn forbidden_std_io(ws: &Workspace, root: &Path) -> Vec<Violation> {
     const RULE: &str = "domain-contract-no-io";
-    const NEEDLES: [&str; 6] =
-        ["std::fs", "std::net", "std::process", "tokio::fs", "tokio::net", "tokio::process"];
+    const NEEDLES: [&str; 6] = [
+        "std::fs",
+        "std::net",
+        "std::process",
+        "tokio::fs",
+        "tokio::net",
+        "tokio::process",
+    ];
     let mut found = Vec::new();
     for pkg in &ws.packages {
         if !matches!(pkg.layer, Layer::Domain(_) | Layer::Contract(_)) {
             continue;
         }
         for file in rust_files(&root.join(&pkg.dir)) {
-            let Ok(text) = fs::read_to_string(&file) else { continue };
-            let rel = file.strip_prefix(root).unwrap_or(&file).display().to_string();
+            let Ok(text) = fs::read_to_string(&file) else {
+                continue;
+            };
+            let rel = file
+                .strip_prefix(root)
+                .unwrap_or(&file)
+                .display()
+                .to_string();
             for (no, line) in code_lines(&text) {
                 for needle in NEEDLES {
                     if line.contains(needle) {
@@ -173,10 +207,29 @@ pub fn forbidden_std_io(ws: &Workspace, root: &Path) -> Vec<Violation> {
 /// 早先的实现只认 `platform_` 与 `biz_` 两个前缀，而 15 个业务 schema 全是裸名、
 /// `biz_` 前缀在全卷根本不存在——该判据在业务侧恒不命中，等于没有。
 pub const SCHEMAS: [&str; 24] = [
-    "platform_core", "platform_authz", "platform_meta", "platform_flow",
-    "platform_audit", "platform_msg", "platform_file", "platform_ops",
-    "mdm", "crm", "cpq", "clm", "sales", "procure", "inventory", "costing",
-    "project", "service", "finance", "ledger", "invoice", "portal", "reporting",
+    "platform_core",
+    "platform_authz",
+    "platform_meta",
+    "platform_flow",
+    "platform_audit",
+    "platform_msg",
+    "platform_file",
+    "platform_ops",
+    "mdm",
+    "crm",
+    "cpq",
+    "clm",
+    "sales",
+    "procure",
+    "inventory",
+    "costing",
+    "project",
+    "service",
+    "finance",
+    "ledger",
+    "invoice",
+    "portal",
+    "reporting",
     "ext",
 ];
 
@@ -189,8 +242,14 @@ pub fn one_schema_per_file(root: &Path) -> Vec<Violation> {
     let base = root.join("crates/adapter/db-pg/src");
     let mut found = Vec::new();
     for file in rust_files(&base) {
-        let Ok(text) = fs::read_to_string(&file) else { continue };
-        let rel = file.strip_prefix(root).unwrap_or(&file).display().to_string();
+        let Ok(text) = fs::read_to_string(&file) else {
+            continue;
+        };
+        let rel = file
+            .strip_prefix(root)
+            .unwrap_or(&file)
+            .display()
+            .to_string();
         let own = own_schema(&file, &base);
         for (no, line) in code_lines(&text) {
             for (schema, object) in schema_refs(line) {
@@ -273,7 +332,10 @@ mod negative_samples {
 
     #[test]
     fn negative_unwired_prefix_matching() {
-        assert!(contains_ident_with_prefix("let x = NoopClock::new();", "Noop"));
+        assert!(contains_ident_with_prefix(
+            "let x = NoopClock::new();",
+            "Noop"
+        ));
         assert!(contains_ident_with_prefix("use crate::StubLedger;", "Stub"));
         // 词内出现不算：Restub 的 Stub 前面是标识符字符。
         assert!(!contains_ident_with_prefix("let restubbed = 1;", "Stub"));
@@ -300,9 +362,22 @@ mod negative_samples {
     #[test]
     fn negative_own_schema_and_views() {
         let base = Path::new("/w/crates/adapter/db-pg/src");
-        assert_eq!(own_schema(Path::new("/w/crates/adapter/db-pg/src/costing/cogs.rs"), base).as_deref(), Some("costing"));
-        assert_eq!(own_schema(Path::new("/w/crates/adapter/db-pg/src/inventory.rs"), base).as_deref(), Some("inventory"));
-        assert_eq!(own_schema(Path::new("/w/crates/adapter/db-pg/src/tx.rs"), base), None);
+        assert_eq!(
+            own_schema(
+                Path::new("/w/crates/adapter/db-pg/src/costing/cogs.rs"),
+                base
+            )
+            .as_deref(),
+            Some("costing")
+        );
+        assert_eq!(
+            own_schema(Path::new("/w/crates/adapter/db-pg/src/inventory.rs"), base).as_deref(),
+            Some("inventory")
+        );
+        assert_eq!(
+            own_schema(Path::new("/w/crates/adapter/db-pg/src/tx.rs"), base),
+            None
+        );
         // 受治理视图是跨模块取数的既定通道，不在禁止面内。
         let hits = schema_refs("\"select * from inventory.v_stock_value_entries\"");
         assert!(hits[0].1.starts_with("v_"));
@@ -334,7 +409,10 @@ mod rule_negative_samples {
     #[test]
     fn negative_unwired_absent_catches_injection() {
         let mut files = BOTH_WIRING.to_vec();
-        files.push(("apps/core-server/src/wiring/ledger.rs", "pub struct NoopLedgerPort;\n"));
+        files.push((
+            "apps/core-server/src/wiring/ledger.rs",
+            "pub struct NoopLedgerPort;\n",
+        ));
         let v = unwired_absent(&fixture("unwired-bad", &files));
         assert_eq!(v.len(), 1);
         assert!(v[0].detail.contains("第 1 行"), "须给出行号");
@@ -353,30 +431,41 @@ mod rule_negative_samples {
     #[test]
     fn negative_unwired_absent_skips_comments() {
         let mut files = BOTH_WIRING.to_vec();
-        files.push(("apps/job-worker/src/wiring/note.rs", "//! 本目录不得出现 NoopClock 之类。\n"));
+        files.push((
+            "apps/job-worker/src/wiring/note.rs",
+            "//! 本目录不得出现 NoopClock 之类。\n",
+        ));
         assert!(unwired_absent(&fixture("unwired-comment", &files)).is_empty());
     }
 
     /// 负样例：仓储文件读了他模块的基表。
     #[test]
     fn negative_one_schema_cross_module_base_table() {
-        let root = fixture("schema-cross", &[(
-            "crates/adapter/db-pg/src/sales/orders.rs",
-            "pub const Q: &str = \"select * from inventory.stock_value_entries\";\n",
-        )]);
+        let root = fixture(
+            "schema-cross",
+            &[(
+                "crates/adapter/db-pg/src/sales/orders.rs",
+                "pub const Q: &str = \"select * from inventory.stock_value_entries\";\n",
+            )],
+        );
         let v = one_schema_per_file(&root);
         assert_eq!(v.len(), 1);
-        assert!(v[0].detail.contains("他模块基表 inventory.stock_value_entries"));
+        assert!(v[0]
+            .detail
+            .contains("他模块基表 inventory.stock_value_entries"));
         assert!(v[0].detail.contains("本文件的 schema 是 sales"));
     }
 
     /// 负样例：不在任何 schema 目录下的文件引用了 schema 对象。
     #[test]
     fn negative_one_schema_no_owner_dir() {
-        let root = fixture("schema-noowner", &[(
-            "crates/adapter/db-pg/src/tx.rs",
-            "pub const Q: &str = \"select * from sales.orders\";\n",
-        )]);
+        let root = fixture(
+            "schema-noowner",
+            &[(
+                "crates/adapter/db-pg/src/tx.rs",
+                "pub const Q: &str = \"select * from sales.orders\";\n",
+            )],
+        );
         let v = one_schema_per_file(&root);
         assert_eq!(v.len(), 1);
         assert!(v[0].detail.contains("不在任何 schema 目录下"));
@@ -385,10 +474,13 @@ mod rule_negative_samples {
     /// 正样例守边界：受治理视图是通道二，不在禁止面内。
     #[test]
     fn negative_one_schema_governed_view_allowed() {
-        let root = fixture("schema-view", &[(
-            "crates/adapter/db-pg/src/costing/cogs.rs",
-            "pub const Q: &str = \"select * from inventory.v_stock_value_entries\";\n",
-        )]);
+        let root = fixture(
+            "schema-view",
+            &[(
+                "crates/adapter/db-pg/src/costing/cogs.rs",
+                "pub const Q: &str = \"select * from inventory.v_stock_value_entries\";\n",
+            )],
+        );
         assert!(one_schema_per_file(&root).is_empty());
     }
 }

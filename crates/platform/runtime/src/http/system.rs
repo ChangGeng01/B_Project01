@@ -70,7 +70,11 @@ async fn ready(State(st): State<Shared>) -> Response {
     }
     let data = ReadyData {
         // 降级状态必须在就绪端点上显形，PRD 11.9 要求用户可见。
-        state: if st.state() == crate::lifecycle::State::Degraded { "DEGRADED" } else { "READY" },
+        state: if st.state() == crate::lifecycle::State::Degraded {
+            "DEGRADED"
+        } else {
+            "READY"
+        },
         pending_items: st.report().pending_items(),
     };
     axum::Json(Envelope::ok(data, trace_id())).into_response()
@@ -103,26 +107,45 @@ async fn self_check(State(st): State<Shared>) -> Response {
 
 pub async fn metrics_text(State(st): State<Shared>) -> Response {
     let text = st.metrics().encode_text();
-    ([(header::CONTENT_TYPE, "text/plain; version=0.0.4; charset=utf-8")], text).into_response()
+    (
+        [(
+            header::CONTENT_TYPE,
+            "text/plain; version=0.0.4; charset=utf-8",
+        )],
+        text,
+    )
+        .into_response()
 }
 
 async fn healthz(State(st): State<Shared>) -> Response {
-    (StatusCode::OK, format!("UP {} {}\n", st.process().name(), st.build().version)).into_response()
+    (
+        StatusCode::OK,
+        format!("UP {} {}\n", st.process().name(), st.build().version),
+    )
+        .into_response()
 }
 
 async fn readyz(State(st): State<Shared>) -> Response {
     if st.is_serving() {
         (StatusCode::OK, format!("{}\n", st.state().as_str())).into_response()
     } else {
-        (StatusCode::SERVICE_UNAVAILABLE, format!("{}\n", st.state().as_str())).into_response()
+        (
+            StatusCode::SERVICE_UNAVAILABLE,
+            format!("{}\n", st.state().as_str()),
+        )
+            .into_response()
     }
 }
 
 /// 路由不存在时统一返回 404 与 `PLATFORM.ROUTE.NOT_FOUND`，
 /// 不用框架默认的空 404，否则四端拿不到可读的错误形态。
 pub async fn fallback(State(st): State<Shared>) -> Response {
-    ApiError::new(ep_foundation::error::codes::PLATFORM_ROUTE_NOT_FOUND, st.next_incident_no(), trace_id())
-        .into_response()
+    ApiError::new(
+        ep_foundation::error::codes::PLATFORM_ROUTE_NOT_FOUND,
+        st.next_incident_no(),
+        trace_id(),
+    )
+    .into_response()
 }
 
 /// core-server 的五个系统端点。
@@ -160,7 +183,9 @@ where
     S: Clone + Send + Sync + 'static,
     Shared: FromRef<S>,
 {
-    Router::new().route("/healthz", get(healthz)).route("/readyz", get(readyz))
+    Router::new()
+        .route("/healthz", get(healthz))
+        .route("/readyz", get(readyz))
 }
 
 /// portal-gateway 的两个自有端点；`upstream` 由 portal-gateway 自行装配。

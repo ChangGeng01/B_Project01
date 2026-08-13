@@ -11,15 +11,23 @@ pub const PENDING_FILE: &str = "pending.jsonl";
 
 #[derive(Debug)]
 pub enum SpoolError {
-    Io { path: PathBuf, detail: String },
+    Io {
+        path: PathBuf,
+        detail: String,
+    },
     /// 单条记录本身就超过容量上限，落盘无从谈起。
-    RecordTooLarge { bytes: usize, max_bytes: u64 },
+    RecordTooLarge {
+        bytes: usize,
+        max_bytes: u64,
+    },
 }
 
 impl std::fmt::Display for SpoolError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            SpoolError::Io { path, detail } => write!(f, "spool {} 操作失败：{detail}", path.display()),
+            SpoolError::Io { path, detail } => {
+                write!(f, "spool {} 操作失败：{detail}", path.display())
+            }
             SpoolError::RecordTooLarge { bytes, max_bytes } => {
                 write!(f, "单条 {bytes} 字节超过 spool 上限 {max_bytes} 字节")
             }
@@ -43,7 +51,10 @@ pub struct Spool {
 
 impl Spool {
     pub fn new(dir: impl Into<PathBuf>, max_bytes: u64) -> Self {
-        Self { dir: dir.into(), max_bytes }
+        Self {
+            dir: dir.into(),
+            max_bytes,
+        }
     }
 
     pub fn file(&self) -> PathBuf {
@@ -51,8 +62,10 @@ impl Spool {
     }
 
     pub fn ensure_dir(&self) -> Result<(), SpoolError> {
-        std::fs::create_dir_all(&self.dir)
-            .map_err(|e| SpoolError::Io { path: self.dir.clone(), detail: e.to_string() })
+        std::fs::create_dir_all(&self.dir).map_err(|e| SpoolError::Io {
+            path: self.dir.clone(),
+            detail: e.to_string(),
+        })
     }
 
     /// 追加一条。超上限时从最旧一条开始丢，直到容得下新的一条。
@@ -61,7 +74,10 @@ impl Spool {
         self.ensure_dir()?;
         let line = format!("{}\n", record.replace('\n', " "));
         if line.len() as u64 > self.max_bytes {
-            return Err(SpoolError::RecordTooLarge { bytes: line.len(), max_bytes: self.max_bytes });
+            return Err(SpoolError::RecordTooLarge {
+                bytes: line.len(),
+                max_bytes: self.max_bytes,
+            });
         }
         let mut lines = self.read_lines()?;
         lines.push(line.trim_end().to_string());
@@ -71,16 +87,26 @@ impl Spool {
             evicted += 1;
         }
         self.rewrite(&lines)?;
-        Ok(AppendOutcome { evicted, bytes_after: total_bytes(&lines) })
+        Ok(AppendOutcome {
+            evicted,
+            bytes_after: total_bytes(&lines),
+        })
     }
 
     /// 按写入顺序读出全部待补写记录。
     pub fn read_lines(&self) -> Result<Vec<String>, SpoolError> {
         let path = self.file();
         match std::fs::read_to_string(&path) {
-            Ok(text) => Ok(text.lines().filter(|l| !l.trim().is_empty()).map(str::to_string).collect()),
+            Ok(text) => Ok(text
+                .lines()
+                .filter(|l| !l.trim().is_empty())
+                .map(str::to_string)
+                .collect()),
             Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(Vec::new()),
-            Err(e) => Err(SpoolError::Io { path, detail: e.to_string() }),
+            Err(e) => Err(SpoolError::Io {
+                path,
+                detail: e.to_string(),
+            }),
         }
     }
 
@@ -90,7 +116,10 @@ impl Spool {
         match std::fs::remove_file(&path) {
             Ok(()) => Ok(()),
             Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(()),
-            Err(e) => Err(SpoolError::Io { path, detail: e.to_string() }),
+            Err(e) => Err(SpoolError::Io {
+                path,
+                detail: e.to_string(),
+            }),
         }
     }
 
@@ -106,12 +135,20 @@ impl Spool {
 
     fn rewrite(&self, lines: &[String]) -> Result<(), SpoolError> {
         let path = self.file();
-        let mut file = std::fs::File::create(&path)
-            .map_err(|e| SpoolError::Io { path: path.clone(), detail: e.to_string() })?;
+        let mut file = std::fs::File::create(&path).map_err(|e| SpoolError::Io {
+            path: path.clone(),
+            detail: e.to_string(),
+        })?;
         for l in lines {
-            writeln!(file, "{l}").map_err(|e| SpoolError::Io { path: path.clone(), detail: e.to_string() })?;
+            writeln!(file, "{l}").map_err(|e| SpoolError::Io {
+                path: path.clone(),
+                detail: e.to_string(),
+            })?;
         }
-        file.flush().map_err(|e| SpoolError::Io { path, detail: e.to_string() })
+        file.flush().map_err(|e| SpoolError::Io {
+            path,
+            detail: e.to_string(),
+        })
     }
 }
 
@@ -194,7 +231,11 @@ mod tests {
         let dir = temp("newline");
         let spool = Spool::new(&dir, 1024);
         spool.append("{\"a\":\"x\ny\"}").unwrap();
-        assert_eq!(spool.read_lines().unwrap().len(), 1, "一帧一行，内嵌换行不得撕开一条记录");
+        assert_eq!(
+            spool.read_lines().unwrap().len(),
+            1,
+            "一帧一行，内嵌换行不得撕开一条记录"
+        );
         std::fs::remove_dir_all(&dir).ok();
     }
 }

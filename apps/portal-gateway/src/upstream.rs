@@ -55,11 +55,19 @@ async fn upstream(State(st): State<PortalState>) -> Response {
         // 抓不到就是抓不到：不返回一个 reachable=true 的空壳。
         Err(e) => (false, None, Some(e.to_string())),
     };
-    let data = UpstreamData { upstream: url, reachable, status, detail };
+    let data = UpstreamData {
+        upstream: url,
+        reachable,
+        status,
+        detail,
+    };
     let trace = ep_platform_obs::TraceContext::new();
     let correlation = CorrelationId::new();
     (
-        [(HeaderName::from_static(CORRELATION_HEADER), correlation.as_str().to_string())],
+        [(
+            HeaderName::from_static(CORRELATION_HEADER),
+            correlation.as_str().to_string(),
+        )],
         axum::Json(Envelope::ok(data, trace.trace_id().to_string())),
     )
         .into_response()
@@ -90,6 +98,7 @@ mod tests {
     // 上游地址不是 core 的健康端点时，拼出来的路径必须仍落在该端点上。
     #[test]
     fn upstream_url_never_forwards_an_arbitrary_path() {
-        assert!(upstream_health_url("http://127.0.0.1:8080/anything").ends_with("/api/v1/system/health"));
+        assert!(upstream_health_url("http://127.0.0.1:8080/anything")
+            .ends_with("/api/v1/system/health"));
     }
 }

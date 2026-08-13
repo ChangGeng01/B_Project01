@@ -72,7 +72,11 @@ pub struct Dataset {
 /// 编码期可检出的越界输入。分隔符与换行进了取值会静默损坏整行，必须显式失败。
 #[derive(Clone, PartialEq, Eq, Debug)]
 pub enum EncodeError {
-    IllegalChar { kind: &'static str, field: &'static str, ch: char },
+    IllegalChar {
+        kind: &'static str,
+        field: &'static str,
+        ch: char,
+    },
 }
 
 impl std::fmt::Display for EncodeError {
@@ -90,7 +94,11 @@ impl std::error::Error for EncodeError {}
 
 impl Dataset {
     pub fn new(scale: &'static str, seed: u64, records: Vec<Record>) -> Self {
-        Self { scale, seed, records }
+        Self {
+            scale,
+            seed,
+            records,
+        }
     }
 
     pub fn records(&self) -> &[Record] {
@@ -109,7 +117,11 @@ impl Dataset {
         // 生成器版本入表头，是因为技术基线第 625 行要求生成器版本化并随认证结论冻结——
         // 换了生成器版本的实测结果不得与旧结论混用，而混用与否要能从文件本身看出来。
         let _ = write!(out, "#! format={FORMAT_VERSION}{LINE_SEP}");
-        let _ = write!(out, "#! generator=ep-datagen/{}{LINE_SEP}", env!("CARGO_PKG_VERSION"));
+        let _ = write!(
+            out,
+            "#! generator=ep-datagen/{}{LINE_SEP}",
+            env!("CARGO_PKG_VERSION")
+        );
         let _ = write!(out, "#! scale={}{LINE_SEP}", self.scale);
         let _ = write!(out, "#! seed={}{LINE_SEP}", self.seed);
         let _ = write!(out, "#! records={}{LINE_SEP}", self.records.len());
@@ -119,7 +131,11 @@ impl Dataset {
             for (name, value) in &record.fields {
                 let encoded = value.encode();
                 if let Some(ch) = illegal_char(&encoded) {
-                    return Err(EncodeError::IllegalChar { kind: record.kind, field: name, ch });
+                    return Err(EncodeError::IllegalChar {
+                        kind: record.kind,
+                        field: name,
+                        ch,
+                    });
                 }
                 let _ = write!(line, "{FIELD_SEP}{name}={encoded}");
             }
@@ -131,14 +147,16 @@ impl Dataset {
 }
 
 fn illegal_char(s: &str) -> Option<char> {
-    s.chars().find(|c| matches!(c, '\t' | '\n' | '\r' | '\\')).and_then(|c| {
-        // NULL 记号本身就是反斜杠开头，它由编码器自己产出而不是来自取值，放行。
-        if s == NULL_TOKEN {
-            None
-        } else {
-            Some(c)
-        }
-    })
+    s.chars()
+        .find(|c| matches!(c, '\t' | '\n' | '\r' | '\\'))
+        .and_then(|c| {
+            // NULL 记号本身就是反斜杠开头，它由编码器自己产出而不是来自取值，放行。
+            if s == NULL_TOKEN {
+                None
+            } else {
+                Some(c)
+            }
+        })
 }
 
 #[cfg(test)]
@@ -149,7 +167,10 @@ mod tests {
         Dataset::new(
             "unit",
             1,
-            vec![Record::new("thing", vec![("code", Value::Text(text.to_string()))])],
+            vec![Record::new(
+                "thing",
+                vec![("code", Value::Text(text.to_string()))],
+            )],
         )
     }
 
@@ -186,7 +207,11 @@ mod tests {
         let err = sample("A\t1").encode().expect_err("含制表符必须失败");
         assert_eq!(
             err,
-            EncodeError::IllegalChar { kind: "thing", field: "code", ch: '\t' }
+            EncodeError::IllegalChar {
+                kind: "thing",
+                field: "code",
+                ch: '\t'
+            }
         );
     }
 

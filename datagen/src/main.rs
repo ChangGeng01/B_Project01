@@ -1,13 +1,15 @@
 //! ep-datagen — 基准数据集生成器。独立二进制，不属于八进程。
 //!
-//! 阶段 1 交付骨架与 `t0-min` 最小样本档：一个法人、一个客户、一个产品。
-//! 同一 seed 两次生成结果必须字节一致，该判据由 `t0_min` 与 `record` 两处的用例守。
+//! 阶段 1 交付骨架与 `t0-min` 最小样本档；阶段 2 按 D-09 追加 `t0`
+//! （一个法人及其组织架构最小行）与 `small`（两个法人）两档。
+//! 同一 seed 两次生成结果必须字节一致，该判据由各样本档模块的用例守。
 //!
 //! 本文件只做「参数 → 产出 → 写出」的接线，判定逻辑一律在子模块里，
 //! 使每条判定都能在不起进程的前提下被测到。
 
 mod cli;
 mod exit;
+mod platform_sample;
 mod record;
 mod rng;
 mod scale;
@@ -41,11 +43,26 @@ fn main() -> ExitCode {
 fn generate(scale: Scale, seed: u64, out: Option<&Path>) -> Exit {
     let dataset = match scale {
         Scale::T0Min => t0_min::build(seed),
+        Scale::T0 => platform_sample::build(scale, seed, 1),
+        Scale::Small => platform_sample::build(scale, seed, 2),
     };
 
     // 形状校验放在写出之前：形状不符的样本档一个字节都不该落地。
-    if let Err(violations) = t0_min::verify(&dataset) {
-        eprintln!("样本档 {} 形状不符（{} 处）：", scale.as_str(), violations.len());
+    // 两套违反项类型各自展成文本，主流程只认「逐条可印」这一件事。
+    fn texts<T: std::fmt::Display>(violations: Vec<T>) -> Vec<String> {
+        violations.iter().map(|v| v.to_string()).collect()
+    }
+    let shape: Result<(), Vec<String>> = match scale {
+        Scale::T0Min => t0_min::verify(&dataset).map_err(texts),
+        Scale::T0 => platform_sample::verify(&dataset, 1).map_err(texts),
+        Scale::Small => platform_sample::verify(&dataset, 2).map_err(texts),
+    };
+    if let Err(violations) = shape {
+        eprintln!(
+            "样本档 {} 形状不符（{} 处）：",
+            scale.as_str(),
+            violations.len()
+        );
         for v in &violations {
             eprintln!("  {v}");
         }
@@ -63,7 +80,9 @@ fn generate(scale: Scale, seed: u64, out: Option<&Path>) -> Exit {
     match write_out(&bytes, out) {
         Ok(()) => Exit::Ok,
         Err(e) => {
-            let target = out.map(|p| p.display().to_string()).unwrap_or_else(|| "stdout".into());
+            let target = out
+                .map(|p| p.display().to_string())
+                .unwrap_or_else(|| "stdout".into());
             eprintln!("写出 {target} 失败：{e}");
             fail(Exit::IoError)
         }
@@ -114,5 +133,19 @@ mod tests {
         let got = generate(Scale::T0Min, 1, Some(path));
         assert_eq!(got, Exit::IoError);
         assert_eq!(got.code(), 74);
+    }
+
+    /// D-09：`t0` 与 `small` 两档端到端可生成，写文件字节与编码字节一致。
+    #[test]
+    fn platform_scales_generate_end_to_end() {
+        for (scale, n) in [(Scale::T0, 1usize), (Scale::Small, 2)] {
+            let expected = platform_sample::build(scale, 7, n).encode().unwrap();
+            let path =
+                std::env::temp_dir().join(format!("ep-datagen-{}-7.dataset", scale.as_str()));
+            assert_eq!(generate(scale, 7, Some(&path)), Exit::Ok);
+            let written = std::fs::read(&path).expect("样本档应已写出");
+            assert_eq!(written, expected);
+            let _ = std::fs::remove_file(&path);
+        }
     }
 }

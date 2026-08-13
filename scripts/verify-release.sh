@@ -111,7 +111,7 @@ check_structure() {
 	local missing=0 f
 	for f in "$MANIFEST" "$SIGNATURE" "$PUBLIC_KEY" "$METADATA" "$ROLLBACK" "$SBOM"; do
 		if [ ! -f "$RELEASE_DIR/$f" ]; then
-			mismatch "缺 $f，升级包结构不完整"
+			mismatch "缺 ${f}，升级包结构不完整"
 			missing=$((missing + 1))
 		fi
 	done
@@ -124,7 +124,7 @@ check_structure() {
 $(images)
 EOF
 	if [ "$missing" = "0" ]; then
-		pass "结构完整：九个镜像、$SBOM、$ROLLBACK、$MANIFEST、$SIGNATURE、$PUBLIC_KEY、$METADATA"
+		pass "结构完整：九个镜像、${SBOM}、${ROLLBACK}、${MANIFEST}、${SIGNATURE}、${PUBLIC_KEY}、$METADATA"
 	fi
 }
 
@@ -160,13 +160,13 @@ check_manifest() {
 		printf '%s\n' "$rel" >>"$listed_file"
 		listed_count=$((listed_count + 1))
 		if [ ! -f "$RELEASE_DIR/$rel" ]; then
-			mismatch "$MANIFEST 列了 $rel，包内没有这个文件"
+			mismatch "$MANIFEST 列了 ${rel}，包内没有这个文件"
 			bad=$((bad + 1))
 			continue
 		fi
 		actual=$(sha_of "$RELEASE_DIR/$rel")
 		if [ "$actual" != "$hash" ]; then
-			mismatch "$rel 的 SHA-256 与清单不符（清单 $hash，实际 $actual）"
+			mismatch "$rel 的 SHA-256 与清单不符（清单 ${hash}，实际 ${actual}）"
 			bad=$((bad + 1))
 		fi
 	done <"$RELEASE_DIR/$MANIFEST"

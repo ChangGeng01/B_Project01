@@ -4,4 +4,5 @@ pub mod db;
 pub mod doc;
 pub mod kms;
 pub mod search;
+pub mod sensitive;
 pub mod tx;

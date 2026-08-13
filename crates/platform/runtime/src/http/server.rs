@@ -36,8 +36,10 @@ impl From<ConfigError> for ServeError {
 }
 
 pub fn parse_addr(addr: &str) -> Result<SocketAddr, ServeError> {
-    addr.parse::<SocketAddr>()
-        .map_err(|e| ServeError::BadAddr { addr: addr.to_string(), detail: e.to_string() })
+    addr.parse::<SocketAddr>().map_err(|e| ServeError::BadAddr {
+        addr: addr.to_string(),
+        detail: e.to_string(),
+    })
 }
 
 /// 绑定并提供服务，直到 `shutdown` 完成。
@@ -50,7 +52,10 @@ where
 {
     let listener = TcpListener::bind(addr)
         .await
-        .map_err(|e| ServeError::Bind { addr: addr.to_string(), detail: e.to_string() })?;
+        .map_err(|e| ServeError::Bind {
+            addr: addr.to_string(),
+            detail: e.to_string(),
+        })?;
     axum::serve(listener, router)
         .with_graceful_shutdown(shutdown)
         .await
@@ -61,14 +66,22 @@ where
 pub async fn bind(addr: SocketAddr) -> Result<(TcpListener, SocketAddr), ServeError> {
     let listener = TcpListener::bind(addr)
         .await
-        .map_err(|e| ServeError::Bind { addr: addr.to_string(), detail: e.to_string() })?;
-    let local = listener
-        .local_addr()
-        .map_err(|e| ServeError::Bind { addr: addr.to_string(), detail: e.to_string() })?;
+        .map_err(|e| ServeError::Bind {
+            addr: addr.to_string(),
+            detail: e.to_string(),
+        })?;
+    let local = listener.local_addr().map_err(|e| ServeError::Bind {
+        addr: addr.to_string(),
+        detail: e.to_string(),
+    })?;
     Ok((listener, local))
 }
 
-pub async fn serve_on<F>(listener: TcpListener, router: Router, shutdown: F) -> Result<(), ServeError>
+pub async fn serve_on<F>(
+    listener: TcpListener,
+    router: Router,
+    shutdown: F,
+) -> Result<(), ServeError>
 where
     F: std::future::Future<Output = ()> + Send + 'static,
 {
@@ -93,6 +106,9 @@ mod tests {
     fn malformed_address_is_rejected_without_falling_back() {
         assert!(parse_addr("127.0.0.1").is_err());
         assert!(parse_addr("").is_err());
-        assert!(parse_addr("localhost:8080").is_err(), "只接受 IP 字面量，不做名字解析");
+        assert!(
+            parse_addr("localhost:8080").is_err(),
+            "只接受 IP 字面量，不做名字解析"
+        );
     }
 }

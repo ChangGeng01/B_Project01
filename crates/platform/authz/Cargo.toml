@@ -9,3 +9,16 @@ workspace = true
 
 [dependencies]
 ep-foundation.workspace = true
+ep-platform-tenancy.workspace = true
+ep-platform-release.workspace = true
+arc-swap.workspace = true
+async-trait.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+sha2.workspace = true
+uuid.workspace = true
+rand.workspace = true
+tokio.workspace = true
+
+[dev-dependencies]
+tokio.workspace = true

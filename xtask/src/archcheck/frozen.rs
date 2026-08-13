@@ -8,13 +8,21 @@ use std::path::Path;
 use super::deps::Violation;
 
 fn violation(package: &str, detail: impl Into<String>) -> Violation {
-    Violation { rule: "foundation-frozen-items", package: package.to_string(), detail: detail.into() }
+    Violation {
+        rule: "foundation-frozen-items",
+        package: package.to_string(),
+        detail: detail.into(),
+    }
 }
 
 /// 冻结项的期望数量。取值出处为技术基线第 1.4 节。
 const EXPECTED: [(&str, &str, usize); 8] = [
     ("id/marker.rs", "跨模块引用标记类型", 22),
-    ("security/context.rs::HumanContextInput", "human 入参字段", 18),
+    (
+        "security/context.rs::HumanContextInput",
+        "human 入参字段",
+        18,
+    ),
     ("security/context.rs::SecurityContext", "安全上下文字段", 19),
     ("security/context.rs::ClientKind", "X-Client 取值", 6),
     ("security/context.rs::DutyClass", "职责类别", 6),
@@ -29,8 +37,14 @@ pub fn check(root: &Path) -> Vec<Violation> {
 
     let actual = [
         count_unit_structs(&base.join("id/marker.rs")),
-        count_block_items(&base.join("security/context.rs"), "pub struct HumanContextInput {"),
-        count_block_items(&base.join("security/context.rs"), "pub struct SecurityContext {"),
+        count_block_items(
+            &base.join("security/context.rs"),
+            "pub struct HumanContextInput {",
+        ),
+        count_block_items(
+            &base.join("security/context.rs"),
+            "pub struct SecurityContext {",
+        ),
         count_block_items(&base.join("security/context.rs"), "pub enum ClientKind {"),
         count_block_items(&base.join("security/context.rs"), "pub enum DutyClass {"),
         count_block_items(&base.join("module.rs"), "pub enum ModuleCode {"),
@@ -41,20 +55,16 @@ pub fn check(root: &Path) -> Vec<Violation> {
     for ((what, label, want), got) in EXPECTED.iter().zip(actual) {
         match got {
             None => found.push(violation(what, format!("{label}的落点读不到，无法计数"))),
-            Some(n) if n != *want => {
-                found.push(violation(what, format!("{label}应为 {want} 项，实际 {n} 项")))
-            }
+            Some(n) if n != *want => found.push(violation(
+                what,
+                format!("{label}应为 {want} 项，实际 {n} 项"),
+            )),
             Some(_) => {}
         }
     }
 
-    // 四个端口空模块必须存在，且阶段 1 内不得有任何条目。
-    for (rel, owner) in [
-        ("port/search.rs", "阶段 3b"),
-        ("port/doc.rs", "阶段 5"),
-        ("port/db.rs", "阶段 2 与阶段 11"),
-        ("port/kms.rs", "阶段 2"),
-    ] {
+    // 尚未到归属阶段的端口模块必须保持空，内容由属主阶段补齐。
+    for (rel, owner) in [("port/search.rs", "阶段 3b"), ("port/doc.rs", "阶段 5")] {
         let path = base.join(rel);
         match fs::read_to_string(&path) {
             Err(_) => found.push(violation(rel, "空端口模块文件不存在")),
@@ -74,6 +84,50 @@ pub fn check(root: &Path) -> Vec<Violation> {
         }
     }
 
+    // 阶段 2 已补齐的两个端口模块：判据从「必须为空」演进为「冻结项逐名在场」。
+    // db.rs 只断言 C-07/B-03 四项，`ReadOnlyTx` 归阶段 11，不在本断言面；
+    // kms.rs 断言 F-04 端口面九项 = KmsBackend trait 加八个词汇类型。
+    const PORT_STAGE2: [(&str, &[&str]); 2] = [
+        (
+            "port/db.rs",
+            &[
+                "IdempotencyScope",
+                "IdempotencyOutcome",
+                "IdempotencyStore",
+                "MigrationWindowGuard",
+            ],
+        ),
+        (
+            "port/kms.rs",
+            &[
+                "KmsBackend",
+                "CipherText",
+                "KeyDomainId",
+                "BlindIndex",
+                "Aad",
+                "KeyRef",
+                "Signature",
+                "CipherEnvelope",
+                "KeyPurpose",
+            ],
+        ),
+    ];
+    for (rel, items) in PORT_STAGE2 {
+        let path = base.join(rel);
+        let Ok(text) = fs::read_to_string(&path) else {
+            found.push(violation(rel, "阶段 2 端口模块文件不存在"));
+            continue;
+        };
+        for name in items {
+            if !declares(&text, name) {
+                found.push(violation(
+                    rel,
+                    format!("缺少阶段 2 冻结项 {name} 的声明；端口语汇不得增删改名"),
+                ));
+            }
+        }
+    }
+
     found.extend(check_marker_shape(&base.join("id/marker.rs")));
     found.extend(check_marker_names(&base.join("id/marker.rs")));
     found
@@ -84,15 +138,34 @@ pub fn check(root: &Path) -> Vec<Violation> {
 /// 只数数量挡不住改名——把 SalesOrder 改成 Foo 仍是 22 个、静默通过。
 /// 清单出处为技术基线第 1.4 节与裁定 A-01，两处逐字一致。
 const MARKER_NAMES: [&str; 22] = [
-    "LegalEntity", "UserAccount", "Session", "Department", "Position", "Project",
-    "Customer", "Supplier", "Material", "Product", "Warehouse", "Contract",
-    "ContractLine", "SalesOrder", "SalesOrderLine", "DeliveryConfirmation",
-    "DeliveryConfirmationLine", "PurchaseOrder", "GoodsReceiptLine",
-    "PurchaseInvoice", "PurchaseInvoiceLine", "AccountingPeriod",
+    "LegalEntity",
+    "UserAccount",
+    "Session",
+    "Department",
+    "Position",
+    "Project",
+    "Customer",
+    "Supplier",
+    "Material",
+    "Product",
+    "Warehouse",
+    "Contract",
+    "ContractLine",
+    "SalesOrder",
+    "SalesOrderLine",
+    "DeliveryConfirmation",
+    "DeliveryConfirmationLine",
+    "PurchaseOrder",
+    "GoodsReceiptLine",
+    "PurchaseInvoice",
+    "PurchaseInvoiceLine",
+    "AccountingPeriod",
 ];
 
 fn check_marker_names(path: &Path) -> Vec<Violation> {
-    let Ok(text) = fs::read_to_string(path) else { return Vec::new() };
+    let Ok(text) = fs::read_to_string(path) else {
+        return Vec::new();
+    };
     let actual: Vec<&str> = text
         .lines()
         .map(str::trim)
@@ -102,7 +175,10 @@ fn check_marker_names(path: &Path) -> Vec<Violation> {
     let mut found = Vec::new();
     for want in MARKER_NAMES {
         if !actual.contains(&want) {
-            found.push(violation("id/marker.rs", format!("冻结清单缺少标记类型 {want}")));
+            found.push(violation(
+                "id/marker.rs",
+                format!("冻结清单缺少标记类型 {want}"),
+            ));
         }
     }
     for got in &actual {
@@ -130,12 +206,10 @@ fn check_marker_shape(path: &Path) -> Vec<Violation> {
         .map(str::trim)
         .filter(|l| !l.starts_with("//") && !l.is_empty())
         .filter(|l| !is_unit_struct(l))
-        .map(|l| {
-            Violation {
-                rule: "foundation-marker-shape",
-                package: "id/marker.rs".to_string(),
-                detail: format!("标记类型模块只允许单元结构体，出现了：{l}"),
-            }
+        .map(|l| Violation {
+            rule: "foundation-marker-shape",
+            package: "id/marker.rs".to_string(),
+            detail: format!("标记类型模块只允许单元结构体，出现了：{l}"),
         })
         .collect()
 }
@@ -144,9 +218,30 @@ fn is_unit_struct(line: &str) -> bool {
     line.starts_with("pub struct ") && line.ends_with(';') && !line.contains('(')
 }
 
+/// 判定文本内是否有一条以 `name` 命名的 pub 声明（struct/enum/trait/type）。
+/// 名字后必须不是标识符续字符，否则 `Blind` 会误命中 `BlindIndex`。
+fn declares(text: &str, name: &str) -> bool {
+    text.lines().map(str::trim).any(|l| {
+        ["pub struct ", "pub enum ", "pub trait ", "pub type "]
+            .iter()
+            .any(|h| {
+                l.strip_prefix(&format!("{h}{name}")).is_some_and(|rest| {
+                    rest.chars()
+                        .next()
+                        .is_none_or(|c| !c.is_ascii_alphanumeric() && c != '_')
+                })
+            })
+    })
+}
+
 fn count_unit_structs(path: &Path) -> Option<usize> {
     let text = fs::read_to_string(path).ok()?;
-    Some(text.lines().map(str::trim).filter(|l| is_unit_struct(l)).count())
+    Some(
+        text.lines()
+            .map(str::trim)
+            .filter(|l| is_unit_struct(l))
+            .count(),
+    )
 }
 
 /// 数 `header` 之后到配对右花括号之间的顶层条目数。
@@ -213,7 +308,10 @@ mod rule_negative_samples {
     }
 
     fn all_22() -> String {
-        MARKER_NAMES.iter().map(|n| format!("pub struct {n};\n")).collect()
+        MARKER_NAMES
+            .iter()
+            .map(|n| format!("pub struct {n};\n"))
+            .collect()
     }
 
     /// 负样例：改名。数量仍是 22，只数数量的实现会静默通过。
@@ -222,7 +320,9 @@ mod rule_negative_samples {
         let body = all_22().replace("pub struct SalesOrder;", "pub struct Foo;");
         let v = check_marker_names(&marker_fixture("rename", &body));
         assert_eq!(v.len(), 2, "缺一个与多一个各报一条");
-        assert!(v.iter().any(|x| x.detail.contains("缺少标记类型 SalesOrder")));
+        assert!(v
+            .iter()
+            .any(|x| x.detail.contains("缺少标记类型 SalesOrder")));
         assert!(v.iter().any(|x| x.detail.contains("清单外的标记类型 Foo")));
         assert!(check_marker_names(&marker_fixture("ok", &all_22())).is_empty());
     }
@@ -245,5 +345,15 @@ mod rule_negative_samples {
         let v = check_marker_shape(&missing);
         assert_eq!(v.len(), 1);
         assert!(v[0].detail.contains("读不到"));
+    }
+
+    #[test]
+    fn negative_declares() {
+        let src = "pub struct BlindIndex([u8; 16]);\npub trait KmsBackend: Send {\n";
+        assert!(declares(src, "BlindIndex"));
+        assert!(declares(src, "KmsBackend"));
+        // 同名前缀不得误判，改名即缺项。
+        assert!(!declares(src, "Blind"));
+        assert!(!declares(src, "CipherText"));
     }
 }

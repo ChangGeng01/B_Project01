@@ -98,15 +98,25 @@ mod tests {
 
     #[test]
     fn success_response_has_no_error_field() {
-        let text = serde_json::to_string(&IpcResponse::ok("x", serde_json::json!({"a":1}))).unwrap();
-        assert!(!text.contains("error"), "成功响应不得带空的 error 字段：{text}");
+        let text =
+            serde_json::to_string(&IpcResponse::ok("x", serde_json::json!({"a":1}))).unwrap();
+        assert!(
+            !text.contains("error"),
+            "成功响应不得带空的 error 字段：{text}"
+        );
     }
 
     #[test]
     fn failure_response_has_no_payload_field() {
-        let body = error_body(ep_foundation::error::codes::PLATFORM_ROUTE_NOT_FOUND, "未知方法");
+        let body = error_body(
+            ep_foundation::error::codes::PLATFORM_ROUTE_NOT_FOUND,
+            "未知方法",
+        );
         let text = serde_json::to_string(&IpcResponse::failed("x", body)).unwrap();
-        assert!(!text.contains("payload"), "失败响应不得带空的 payload 字段：{text}");
+        assert!(
+            !text.contains("payload"),
+            "失败响应不得带空的 payload 字段：{text}"
+        );
         assert!(text.contains("PERMISSION_DENIED"));
     }
 

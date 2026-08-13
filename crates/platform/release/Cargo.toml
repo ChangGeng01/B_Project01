@@ -9,3 +9,7 @@ workspace = true
 
 [dependencies]
 ep-foundation.workspace = true
+# 阶段 3a 任务 #18：ConfigPackageItem 的 id/config_package_id 用 Uuid。
+# 退出条件 29 的判据是无 ep-platform-identity/ep-platform-authz 依赖，
+# 外部基础库不破坏该判据。
+uuid.workspace = true

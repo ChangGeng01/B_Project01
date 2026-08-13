@@ -41,10 +41,49 @@
 单独注入。该纪律由 `xtask sqlcheck` 规则 SQL-020 强制，规则在阶段 1 实现并配负样例，
 被检对象自阶段 2 写入脚本内容起产生。
 
-## 阶段 1 的五个文件里有什么
+## 五个文件里有什么
 
-只有说明性注释，**没有任何可执行语句**。它们不建库、不建角色、不改任何参数。
-在阶段 2 写入内容之前，用 psql 执行其中任何一个都不会产生任何数据库对象。
+阶段 2 已按阶段 2 计划第 3.1 节交付全部实质语句：`00_database.sql` 建库与库级默认值，
+`01_roles.sql` 七个功能角色与 24 个属主角色及权限边界，`02_cluster_params.sql` 实例级参数，
+`03_role_defaults.sql` 角色级会话默认值兜底，`04_pg_hba.fragment` 认证记录行。
+五个脚本均可重复执行：建库与建角色以存在性检查守护，ALTER 类语句覆盖同值即幂等，
+第二次执行退出码 0 且无变更（阶段 2 退出条件 E-02 的判据）。
+
+## 执行方式
+
+需超级用户执行一次，按 00 → 01 → 02 → 03 → 04 顺序，逐个文件单独调用 psql，
+并统一带 `-v ON_ERROR_STOP=1` 使任何一条失败即中断：
+
+```sh
+psql -U <超级用户> -d postgres -v ON_ERROR_STOP=1 -f db/bootstrap/00_database.sql
+psql -U <超级用户> -d postgres -v ON_ERROR_STOP=1 -f db/bootstrap/01_roles.sql
+psql -U <超级用户> -d postgres -v ON_ERROR_STOP=1 -f db/bootstrap/02_cluster_params.sql
+psql -U <超级用户> -d postgres -v ON_ERROR_STOP=1 -f db/bootstrap/03_role_defaults.sql
+```
+
+- `00_database.sql` 连接 `postgres` 库执行；文件内含 `\c ep`，会在建库后自行切入 ep 库
+  完成 `public` schema 的回收与删除；`\gexec` 形态要求 psql 客户端。
+- `02_cluster_params.sql` 写入 `postgresql.auto.conf`，其中多数取值需重启生效；
+  安装器在 02 之后、继续执行 03 之前触发一次实例重启（03、04 不依赖重启后的取值）。
+- `04_pg_hba.fragment` 不经 psql 执行：由安装器合入 `pg_hba.conf` 的现有记录之前
+  （专用角色限定规则必须排在宽泛规则之前），然后执行一次 `select pg_reload_conf();`。
+- 登录类角色（`ep_app_rw`、`ep_analyst_ro`、`ep_ops_ro`、`ep_migrator`、两个复制角色）的
+  口令由安装器从机密库读取后经 `ALTER ROLE ... PASSWORD` 单独注入，不写进本目录。
+
+## 下一步：迁移首装
+
+五个脚本只交付簇级与库级前提（库、角色、参数、认证）；库内对象全部由迁移全序交付。
+引导完成后的空库首装直接执行：
+
+```sh
+ep-migrate apply --db-url=postgres://ep_migrator@<主机>:<端口>/ep
+```
+
+无需预施任何迁移文件、无需出示 `--window-id`：`ep-migrate` 探测到目标库无
+`platform_core.schema_history` 时进入首装自举，以 `ep_migrator` 身份建出历史表与
+迁移窗口两表并自开一次性安装窗口（审批引用 `INITIAL_INSTALL`），随后按全序执行
+全部迁移。口径登记于 02 计划第 12 节偏离登记十四；非空库的窗口闸判据不变。
+
 
 ## `xtask sqlcheck` 对本目录的判据
 

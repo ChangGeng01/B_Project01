@@ -14,3 +14,5 @@ pub mod security;
 pub use error::{AppError, ErrorCode};
 pub use id::Id;
 pub use module::ModuleCode;
+// 三个密码学值类型按 02 计划第 4.1 节经本处再导出，使 `foundation::BlindIndex` 等逐字写法继续成立。
+pub use port::kms::{BlindIndex, CipherText, KeyDomainId};

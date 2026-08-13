@@ -17,7 +17,11 @@ pub enum ConfigError {
     /// TOML 语法错误。
     Syntax { layer: String, detail: String },
     /// 环境变量或命令行的键路径不合法。
-    KeyPath { layer: String, key: String, detail: String },
+    KeyPath {
+        layer: String,
+        key: String,
+        detail: String,
+    },
     /// 反序列化失败，含未知键与类型错误。消息里必须带键路径。
     Shape(String),
 }
@@ -25,7 +29,9 @@ pub enum ConfigError {
 impl fmt::Display for ConfigError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            ConfigError::Io { path, detail } => write!(f, "读取配置 {} 失败：{detail}", path.display()),
+            ConfigError::Io { path, detail } => {
+                write!(f, "读取配置 {} 失败：{detail}", path.display())
+            }
             ConfigError::Syntax { layer, detail } => write!(f, "配置层 {layer} 语法错误：{detail}"),
             ConfigError::KeyPath { layer, key, detail } => {
                 write!(f, "配置层 {layer} 的键 {key} 不合法：{detail}")
@@ -52,11 +58,15 @@ impl ConfigLoader {
 
     /// 内置默认层与进程固定层都走这里。
     pub fn layer_str(&mut self, layer: &str, text: &str) -> Result<(), ConfigError> {
-        let parsed: Value = text
-            .parse::<Value>()
-            .map_err(|e| ConfigError::Syntax { layer: layer.to_string(), detail: e.to_string() })?;
+        let parsed: Value = text.parse::<Value>().map_err(|e| ConfigError::Syntax {
+            layer: layer.to_string(),
+            detail: e.to_string(),
+        })?;
         let Value::Table(t) = parsed else {
-            return Err(ConfigError::Syntax { layer: layer.to_string(), detail: "顶层必须是表".into() });
+            return Err(ConfigError::Syntax {
+                layer: layer.to_string(),
+                detail: "顶层必须是表".into(),
+            });
         };
         merge(&mut self.table, t, layer, "", &mut self.origin);
         Ok(())
@@ -71,7 +81,10 @@ impl ConfigLoader {
                 Ok(true)
             }
             Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(false),
-            Err(e) => Err(ConfigError::Io { path: path.to_path_buf(), detail: e.to_string() }),
+            Err(e) => Err(ConfigError::Io {
+                path: path.to_path_buf(),
+                detail: e.to_string(),
+            }),
         }
     }
 
@@ -80,7 +93,12 @@ impl ConfigLoader {
         let entries = match std::fs::read_dir(dir) {
             Ok(e) => e,
             Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(0),
-            Err(e) => return Err(ConfigError::Io { path: dir.to_path_buf(), detail: e.to_string() }),
+            Err(e) => {
+                return Err(ConfigError::Io {
+                    path: dir.to_path_buf(),
+                    detail: e.to_string(),
+                })
+            }
         };
         let mut files: Vec<PathBuf> = entries
             .flatten()
@@ -101,13 +119,17 @@ impl ConfigLoader {
     {
         let head = format!("{prefix}__");
         let mut applied = 0;
-        let mut pairs: Vec<(String, String)> =
-            vars.into_iter().filter(|(k, _)| k.starts_with(&head)).collect();
+        let mut pairs: Vec<(String, String)> = vars
+            .into_iter()
+            .filter(|(k, _)| k.starts_with(&head))
+            .collect();
         // 字典序，保证同一组环境变量的生效结果与遍历顺序无关。
         pairs.sort();
         for (key, raw) in pairs {
-            let path: Vec<String> =
-                key[head.len()..].split("__").map(|s| s.to_ascii_lowercase()).collect();
+            let path: Vec<String> = key[head.len()..]
+                .split("__")
+                .map(|s| s.to_ascii_lowercase())
+                .collect();
             if path.iter().any(|s| s.is_empty()) {
                 return Err(ConfigError::KeyPath {
                     layer: "env".into(),
@@ -148,7 +170,9 @@ impl ConfigLoader {
         let value = scalar_from_str(raw);
         let mut cursor = &mut self.table;
         for seg in &path[..path.len() - 1] {
-            let entry = cursor.entry(seg.clone()).or_insert_with(|| Value::Table(toml::value::Table::new()));
+            let entry = cursor
+                .entry(seg.clone())
+                .or_insert_with(|| Value::Table(toml::value::Table::new()));
             if !entry.is_table() {
                 return Err(ConfigError::KeyPath {
                     layer: layer.to_string(),
@@ -174,7 +198,9 @@ impl ConfigLoader {
 
     /// 落到目标结构。未知键与类型错误在这里被拒，消息里带键路径。
     pub fn finish<T: DeserializeOwned>(self) -> Result<T, ConfigError> {
-        Value::Table(self.table).try_into::<T>().map_err(|e| ConfigError::Shape(e.to_string()))
+        Value::Table(self.table)
+            .try_into::<T>()
+            .map_err(|e| ConfigError::Shape(e.to_string()))
     }
 }
 
@@ -183,7 +209,10 @@ impl ConfigLoader {
 fn scalar_from_str(raw: &str) -> Value {
     let probe = format!("v = {raw}");
     match probe.parse::<Value>() {
-        Ok(Value::Table(t)) => t.get("v").cloned().unwrap_or_else(|| Value::String(raw.to_string())),
+        Ok(Value::Table(t)) => t
+            .get("v")
+            .cloned()
+            .unwrap_or_else(|| Value::String(raw.to_string())),
         _ => Value::String(raw.to_string()),
     }
 }
@@ -196,7 +225,11 @@ fn merge(
     origin: &mut BTreeMap<String, String>,
 ) {
     for (k, v) in over {
-        let path = if prefix.is_empty() { k.clone() } else { format!("{prefix}.{k}") };
+        let path = if prefix.is_empty() {
+            k.clone()
+        } else {
+            format!("{prefix}.{k}")
+        };
         match (base.get_mut(&k), v) {
             (Some(Value::Table(existing)), Value::Table(incoming)) => {
                 merge(existing, incoming, layer, &path, origin);
@@ -223,7 +256,10 @@ mod tests {
 
     impl Default for Pool {
         fn default() -> Self {
-            Self { rw_max: 20, ro_max: 10 }
+            Self {
+                rw_max: 20,
+                ro_max: 10,
+            }
         }
     }
 
@@ -236,7 +272,10 @@ mod tests {
 
     impl Default for Db {
         fn default() -> Self {
-            Self { host: "127.0.0.1".into(), pool: Pool::default() }
+            Self {
+                host: "127.0.0.1".into(),
+                pool: Pool::default(),
+            }
         }
     }
 
@@ -249,14 +288,18 @@ mod tests {
 
     impl Default for Root {
         fn default() -> Self {
-            Self { db: Db::default(), enabled: true }
+            Self {
+                db: Db::default(),
+                enabled: true,
+            }
         }
     }
 
     #[test]
     fn later_layer_overrides_earlier_one_key_by_key() {
         let mut l = ConfigLoader::new();
-        l.layer_str("defaults", "[db]\nhost = \"a\"\n[db.pool]\nrw_max = 20\n").unwrap();
+        l.layer_str("defaults", "[db]\nhost = \"a\"\n[db.pool]\nrw_max = 20\n")
+            .unwrap();
         l.layer_str("main", "[db]\nhost = \"b\"\n").unwrap();
         let cfg: Root = l.finish().unwrap();
         assert_eq!(cfg.db.host, "b");
@@ -267,7 +310,11 @@ mod tests {
     fn env_double_underscore_maps_to_nested_key() {
         let mut l = ConfigLoader::new();
         l.layer_str("defaults", "[db.pool]\nrw_max = 20\n").unwrap();
-        l.layer_env("EP", [("EP__DB__POOL__RW_MAX".to_string(), "30".to_string())]).unwrap();
+        l.layer_env(
+            "EP",
+            [("EP__DB__POOL__RW_MAX".to_string(), "30".to_string())],
+        )
+        .unwrap();
         assert_eq!(l.origin_of("db.pool.rw_max"), Some("env"));
         let cfg: Root = l.finish().unwrap();
         assert_eq!(cfg.db.pool.rw_max, 30);
@@ -276,7 +323,8 @@ mod tests {
     #[test]
     fn cli_layer_wins_over_env_layer() {
         let mut l = ConfigLoader::new();
-        l.layer_env("EP", [("EP__DB__HOST".to_string(), "from-env".to_string())]).unwrap();
+        l.layer_env("EP", [("EP__DB__HOST".to_string(), "from-env".to_string())])
+            .unwrap();
         l.layer_cli(&["db.host=from-cli".to_string()]).unwrap();
         assert_eq!(l.origin_of("db.host"), Some("cli"));
         let cfg: Root = l.finish().unwrap();
@@ -304,13 +352,17 @@ mod tests {
         let mut l = ConfigLoader::new();
         l.layer_str("main", "[db]\nhostt = \"typo\"\n").unwrap();
         let err = l.finish::<Root>().expect_err("未知键必须被拒");
-        assert!(format!("{err}").contains("hostt"), "错误消息必须带键路径：{err}");
+        assert!(
+            format!("{err}").contains("hostt"),
+            "错误消息必须带键路径：{err}"
+        );
     }
 
     #[test]
     fn type_error_message_carries_the_key_path() {
         let mut l = ConfigLoader::new();
-        l.layer_cli(&["db.pool.rw_max=not-a-number".to_string()]).unwrap();
+        l.layer_cli(&["db.pool.rw_max=not-a-number".to_string()])
+            .unwrap();
         let err = l.finish::<Root>().expect_err("类型错误必须被拒");
         assert!(format!("{err}").contains("rw_max"), "{err}");
     }
@@ -318,21 +370,31 @@ mod tests {
     #[test]
     fn missing_main_file_is_not_an_error() {
         let mut l = ConfigLoader::new();
-        assert!(!l.layer_file(Path::new("/nonexistent/ep-core.toml")).unwrap());
+        assert!(!l
+            .layer_file(Path::new("/nonexistent/ep-core.toml"))
+            .unwrap());
     }
 
     #[test]
     fn scalars_keep_their_toml_types() {
         assert_eq!(scalar_from_str("30"), Value::Integer(30));
         assert_eq!(scalar_from_str("true"), Value::Boolean(true));
-        assert_eq!(scalar_from_str("[1, 2]"), Value::Array(vec![Value::Integer(1), Value::Integer(2)]));
-        assert_eq!(scalar_from_str("127.0.0.1:8080"), Value::String("127.0.0.1:8080".into()));
+        assert_eq!(
+            scalar_from_str("[1, 2]"),
+            Value::Array(vec![Value::Integer(1), Value::Integer(2)])
+        );
+        assert_eq!(
+            scalar_from_str("127.0.0.1:8080"),
+            Value::String("127.0.0.1:8080".into())
+        );
     }
 
     #[test]
     fn empty_key_segment_is_rejected() {
         let mut l = ConfigLoader::new();
         assert!(l.layer_cli(&["db..host=x".to_string()]).is_err());
-        assert!(l.layer_env("EP", [("EP__DB____HOST".to_string(), "x".to_string())]).is_err());
+        assert!(l
+            .layer_env("EP", [("EP__DB____HOST".to_string(), "x".to_string())])
+            .is_err());
     }
 }

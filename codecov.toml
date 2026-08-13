@@ -1,0 +1,22 @@
+# 覆盖率分档规则。
+#
+# 出处：计划 00-overview 第 6.4 节 R13 原文——「强制不变量与平台内核代码要求 85%，
+# 工作区整体 80%，新增修改代码 80%」。
+#
+# 本文件唯一的消费者是 `xtask coverage`（xtask/src/coverage.rs），它只读
+# [coverage.tier_a] 段下的 paths 数组：路径匹配前缀的归入 A 档，补集归 B 档。
+# 四档阈值是该模块内的硬编码常量（A 档 85%、B 档 70%、整体档 80%、增量档 80%），
+# 不从本文件读取；此处以注释写明，防止行文与工具行为漂移。
+#
+# 分档对象：
+#   crates/domain/      强制不变量的实现代码（领域规则）
+#   crates/foundation/  平台内核基座
+#   crates/platform/    平台内核通用能力
+# 其余路径自动落入 B 档，不单独登记。
+
+[coverage.tier_a]
+paths = [
+    "crates/domain/",
+    "crates/foundation/",
+    "crates/platform/",
+]

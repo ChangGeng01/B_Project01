@@ -76,11 +76,17 @@ impl SystemState {
     /// 锁中毒说明持锁线程 panic 过；状态本身是 Copy 的枚举，取回内层值继续，
     /// 不把一次 panic 放大成整个进程读不到状态。
     pub fn state(&self) -> State {
-        self.lifecycle.read().unwrap_or_else(|p| p.into_inner()).state()
+        self.lifecycle
+            .read()
+            .unwrap_or_else(|p| p.into_inner())
+            .state()
     }
 
     pub fn fire(&self, event: Event) -> Result<State, IllegalTransition> {
-        self.lifecycle.write().unwrap_or_else(|p| p.into_inner()).fire(event)
+        self.lifecycle
+            .write()
+            .unwrap_or_else(|p| p.into_inner())
+            .fire(event)
     }
 
     /// 就绪端点的判据：只有 READY 与 DEGRADED 两个状态算在服务中。

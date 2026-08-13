@@ -1,7 +1,8 @@
 //! ep-xtask — 结构门禁与文档校验工具。只在开发期运行，不进制品。
 //!
-//! 十一个子命令：archcheck、sqlcheck、codecheck、errorcodes、eventcatalog、
-//! configdoc、coverage、sbom、sign、reproduce、e2e，本阶段全部交付。
+//! 十二个子命令：archcheck、sqlcheck、codecheck、errorcodes、eventcatalog、
+//! configdoc、coverage、sbom、sign、reproduce、e2e 与流水线聚合入口 ci，
+//! 本阶段全部交付。
 //!
 //! 退出码三态互不合并：0 通过、1 有违反、3 判定未做出（被测对象不存在或所需工具缺失）。
 //! 「判定未做出」既不得表达为通过也不得表达为违反——阶段 1 计划第 10 节退出条件 27
@@ -9,6 +10,7 @@
 //! 退出码 70 保留给将来可能出现的未交付子命令，本阶段无一命中。
 
 mod archcheck;
+mod ci;
 mod codecheck;
 mod configdoc;
 mod coverage;
@@ -24,9 +26,19 @@ mod sqlcheck;
 use std::path::PathBuf;
 use std::process::ExitCode;
 
-const SUBCOMMANDS: [&str; 11] = [
-    "archcheck", "sqlcheck", "codecheck", "errorcodes", "eventcatalog",
-    "configdoc", "coverage", "sbom", "sign", "reproduce", "e2e",
+const SUBCOMMANDS: [&str; 12] = [
+    "archcheck",
+    "sqlcheck",
+    "codecheck",
+    "errorcodes",
+    "eventcatalog",
+    "configdoc",
+    "coverage",
+    "sbom",
+    "sign",
+    "reproduce",
+    "e2e",
+    "ci",
 ];
 
 /// 未实现的子命令退出码。与「参数错误」的 2 区分，避免误读为通过。
@@ -52,6 +64,7 @@ fn main() -> ExitCode {
     }
     match cmd {
         "archcheck" => run_archcheck(),
+        "ci" => ci::run(&workspace_root(), &args[1..]),
         "errorcodes" => run_errorcodes(),
         "e2e" => e2e::run(&args[1..]),
         "sqlcheck" => report(cmd, sqlcheck::run(&workspace_root())),
@@ -210,7 +223,15 @@ fn run_archcheck() -> ExitCode {
     println!("archcheck 已判定 {} 条规则：", report.checked.len());
     for rule in &report.checked {
         let hits = report.violations.iter().filter(|v| &v.rule == rule).count();
-        println!("  {:<28} {}", rule, if hits == 0 { "通过".into() } else { format!("{hits} 处违反") });
+        println!(
+            "  {:<28} {}",
+            rule,
+            if hits == 0 {
+                "通过".into()
+            } else {
+                format!("{hits} 处违反")
+            }
+        );
     }
 
     if !archcheck::DELEGATED.is_empty() {

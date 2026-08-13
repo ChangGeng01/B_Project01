@@ -42,11 +42,23 @@ async fn serve(
 
     let metrics = boot::metrics(&logger);
     // 不持 SQL 会话：四项 SQL 自检对本进程一律 NotApplicable。
-    let registry = baseline_registry(PROCESS, layers, cfg.selfcheck.clock_skew_max_ms, None);
+    let registry = baseline_registry(
+        PROCESS,
+        layers,
+        cfg.selfcheck.clock_skew_max_ms,
+        None,
+        None,
+        None,
+    );
     if check_only {
-        return boot::check_exit(&registry.run_all(PROCESS, BuildInfo::current().version).await);
+        return boot::check_exit(
+            &registry
+                .run_all(PROCESS, BuildInfo::current().version)
+                .await,
+        );
     }
-    let report = match boot::selfcheck(&registry, PROCESS, &mut lifecycle, &metrics, &logger).await {
+    let report = match boot::selfcheck(&registry, PROCESS, &mut lifecycle, &metrics, &logger).await
+    {
         Ok(r) => r,
         Err((report, code)) => {
             println!("{}", report.to_json());
@@ -54,7 +66,14 @@ async fn serve(
         }
     };
 
-    let state = SystemState::new(PROCESS, BuildInfo::current(), lifecycle, report, metrics, logger.clone());
+    let state = SystemState::new(
+        PROCESS,
+        BuildInfo::current(),
+        lifecycle,
+        report,
+        metrics,
+        logger.clone(),
+    );
     let mut serving = Serving::new();
 
     let ipc = IpcServer::new(
@@ -65,7 +84,10 @@ async fn serve(
     match ipc.bind() {
         Ok(listener) => {
             let signal = serving.signal();
-            logger.log(Level::Info, LogFields::msg("startup", format!("IPC 监听 {}", ipc.path().display())));
+            logger.log(
+                Level::Info,
+                LogFields::msg("startup", format!("IPC 监听 {}", ipc.path().display())),
+            );
             serving.spawn(async move {
                 ipc.serve(listener, async move {
                     signal.wait().await;
@@ -77,6 +99,14 @@ async fn serve(
         Err(e) => serving.mark_failed(format!("IPC 服务端不可用：{e}")),
     }
 
-    logger.log(Level::Info, LogFields::msg("startup", format!("已就绪，状态 {}", state.state().as_str())));
-    serving.wait_and_drain(&state, &logger, SHUTDOWN_DRAIN_MS).await
+    logger.log(
+        Level::Info,
+        LogFields::msg(
+            "startup",
+            format!("已就绪，状态 {}", state.state().as_str()),
+        ),
+    );
+    serving
+        .wait_and_drain(&state, &logger, SHUTDOWN_DRAIN_MS)
+        .await
 }

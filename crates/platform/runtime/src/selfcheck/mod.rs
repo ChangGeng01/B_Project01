@@ -3,6 +3,7 @@
 pub mod items;
 pub mod probe;
 pub mod registry;
+pub mod secrets;
 
 pub use items::{baseline_registry, BASELINE_ITEMS, REGISTERED_THIS_STAGE};
 pub use probe::{
@@ -13,3 +14,4 @@ pub use registry::{
     DuplicateName, ItemReport, Outcome, SelfCheckItem, SelfCheckRegistry, SelfCheckReport,
     SelfCheckRun, Severity, Verdict,
 };
+pub use secrets::{SecretsProbe, SecretsResolvable, KEY_DOMAIN_WINDOW_SUBJECT};

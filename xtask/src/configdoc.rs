@@ -76,7 +76,12 @@ pub fn run(root: &Path) -> Report {
     compared += check_config_keys(root, &mut problems, &mut uncovered);
     compared += check_metrics(root, &mut problems, &mut uncovered);
 
-    Report { problems, uncovered, deferred: Vec::new(), compared }
+    Report {
+        problems,
+        uncovered,
+        deferred: Vec::new(),
+        compared,
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -101,19 +106,25 @@ fn check_config_keys(
         return 0;
     }
     for (k, n) in duplicates(&doc_keys) {
-        problems.push(format!("{CONFIG_DOC} 中配置键 {k} 出现 {n} 次；登记表内不得重复"));
+        problems.push(format!(
+            "{CONFIG_DOC} 中配置键 {k} 出现 {n} 次；登记表内不得重复"
+        ));
     }
 
     let structs = match struct_fields(root, SECTIONS_RS) {
         Ok(s) if !s.is_empty() => s,
         _ => {
-            uncovered.push(format!("未覆盖：{SECTIONS_RS} 里没有解析出任何配置分段结构体"));
+            uncovered.push(format!(
+                "未覆盖：{SECTIONS_RS} 里没有解析出任何配置分段结构体"
+            ));
             return 0;
         }
     };
     let roots = app_config_roots(root, &structs);
     if roots.is_empty() {
-        uncovered.push(format!("未覆盖：{APPS}/*/src/config.rs 里没有解析出任何配置根结构体"));
+        uncovered.push(format!(
+            "未覆盖：{APPS}/*/src/config.rs 里没有解析出任何配置根结构体"
+        ));
         return 0;
     }
 
@@ -131,7 +142,9 @@ fn check_config_keys(
     }
     for d in &doc_keys {
         if !code_keys.iter().any(|k| key_matches(d, k)) {
-            problems.push(format!("{CONFIG_DOC} 登记了 {d}，代码的配置结构体里没有对应字段"));
+            problems.push(format!(
+                "{CONFIG_DOC} 登记了 {d}，代码的配置结构体里没有对应字段"
+            ));
         }
     }
 
@@ -157,7 +170,9 @@ fn doc_config_keys(doc: &str) -> Vec<String> {
 
 /// 第 6 节列的已删除键。
 fn removed_keys(doc: &str) -> Vec<String> {
-    let Some(section) = doc.split("## 6. ").nth(1) else { return Vec::new() };
+    let Some(section) = doc.split("## 6. ").nth(1) else {
+        return Vec::new();
+    };
     let section = section.split("\n## ").next().unwrap_or(section);
     section
         .lines()
@@ -173,11 +188,16 @@ fn key_matches(doc_key: &str, code_key: &str) -> bool {
     let d: Vec<&str> = doc_key.split('.').collect();
     let c: Vec<&str> = code_key.split('.').collect();
     d.len() == c.len()
-        && d.iter().zip(c.iter()).all(|(a, b)| (a.starts_with('<') && a.ends_with('>')) || a == b)
+        && d.iter()
+            .zip(c.iter())
+            .all(|(a, b)| (a.starts_with('<') && a.ends_with('>')) || a == b)
 }
 
 /// 从一个 `.rs` 文件里取全部 `pub struct X { pub f: T, … }` 的字段表。
-fn struct_fields(root: &Path, rel: &str) -> Result<BTreeMap<String, Vec<(String, String)>>, String> {
+fn struct_fields(
+    root: &Path,
+    rel: &str,
+) -> Result<BTreeMap<String, Vec<(String, String)>>, String> {
     let text = fs::read_to_string(root.join(rel)).map_err(|_| format!("读不到 {rel}"))?;
     Ok(parse_structs(&text))
 }
@@ -200,8 +220,12 @@ fn parse_structs(text: &str) -> BTreeMap<String, Vec<(String, String)>> {
             }
             continue;
         }
-        let Some(rest) = line.strip_prefix("pub struct ") else { continue };
-        let Some(name) = rest.strip_suffix('{').map(str::trim) else { continue };
+        let Some(rest) = line.strip_prefix("pub struct ") else {
+            continue;
+        };
+        let Some(name) = rest.strip_suffix('{').map(str::trim) else {
+            continue;
+        };
         if !name.is_empty() {
             current = Some((name.to_string(), Vec::new()));
         }
@@ -215,11 +239,15 @@ fn app_config_roots(
     structs: &BTreeMap<String, Vec<(String, String)>>,
 ) -> Vec<(String, String)> {
     let mut out: Vec<(String, String)> = Vec::new();
-    let Ok(entries) = fs::read_dir(root.join(APPS)) else { return out };
+    let Ok(entries) = fs::read_dir(root.join(APPS)) else {
+        return out;
+    };
     let mut paths: Vec<PathBuf> = entries.filter_map(Result::ok).map(|e| e.path()).collect();
     paths.sort();
     for p in paths {
-        let Ok(text) = fs::read_to_string(p.join("src/config.rs")) else { continue };
+        let Ok(text) = fs::read_to_string(p.join("src/config.rs")) else {
+            continue;
+        };
         for (_, fields) in parse_structs(&text) {
             for (name, ty) in fields {
                 if structs.contains_key(&ty) && !out.iter().any(|(n, t)| n == &name && t == &ty) {
@@ -260,7 +288,10 @@ fn duplicates(items: &[String]) -> Vec<(String, usize)> {
     for i in items {
         *seen.entry(i.as_str()).or_insert(0) += 1;
     }
-    seen.into_iter().filter(|(_, n)| *n > 1).map(|(k, n)| (k.to_string(), n)).collect()
+    seen.into_iter()
+        .filter(|(_, n)| *n > 1)
+        .map(|(k, n)| (k.to_string(), n))
+        .collect()
 }
 
 // ---------------------------------------------------------------------------
@@ -287,11 +318,15 @@ fn check_metrics(root: &Path, problems: &mut Vec<String>, uncovered: &mut Vec<St
         return 0;
     }
     for (name, n) in duplicates(&doc_names) {
-        problems.push(format!("{METRICS_DOC} 中指标名 {name} 出现 {n} 次；重名即失败"));
+        problems.push(format!(
+            "{METRICS_DOC} 中指标名 {name} 出现 {n} 次；重名即失败"
+        ));
     }
 
     match fs::read_to_string(root.join(METRICS_RS)) {
-        Err(_) => uncovered.push(format!("未覆盖：读不到 {METRICS_RS}，指标登记表两侧比对无被测输入")),
+        Err(_) => uncovered.push(format!(
+            "未覆盖：读不到 {METRICS_RS}，指标登记表两侧比对无被测输入"
+        )),
         Ok(code) => {
             let code_names = registered_metrics(&code);
             if code_names.is_empty() {
@@ -319,7 +354,9 @@ fn check_metrics(root: &Path, problems: &mut Vec<String>, uncovered: &mut Vec<St
 
 /// `REGISTERED` 数组里的 `name: "…"` 行。
 fn registered_metrics(code: &str) -> Vec<String> {
-    let Some(body) = code.split("pub const REGISTERED").nth(1) else { return Vec::new() };
+    let Some(body) = code.split("pub const REGISTERED").nth(1) else {
+        return Vec::new();
+    };
     let body = body.split("\n];").next().unwrap_or(body);
     body.lines()
         .map(str::trim)
@@ -331,7 +368,9 @@ fn registered_metrics(code: &str) -> Vec<String> {
 
 fn files_with_ext(dir: &Path, ext: &str) -> Vec<PathBuf> {
     let mut out = Vec::new();
-    let Ok(entries) = fs::read_dir(dir) else { return out };
+    let Ok(entries) = fs::read_dir(dir) else {
+        return out;
+    };
     let mut paths: Vec<_> = entries.filter_map(Result::ok).map(|e| e.path()).collect();
     paths.sort();
     for p in paths {
@@ -375,7 +414,12 @@ pub fn run_doc_type_codes(root: &Path) -> Report {
         }
     }
     if !problems.is_empty() {
-        return Report { problems, uncovered, deferred, compared: 0 };
+        return Report {
+            problems,
+            uncovered,
+            deferred,
+            compared: 0,
+        };
     }
 
     let codes = dict_type_codes(&doc);
@@ -384,11 +428,18 @@ pub fn run_doc_type_codes(root: &Path) -> Report {
             "{DICT_DOC} 的 {DICT_TABLE} 当前 0 行，逐项一致且无重复按退出条件 23 整条推迟；\
              该表出现第一行即自动生效，不以阶段号为触发谓词"
         ));
-        return Report { problems, uncovered, deferred, compared: 0 };
+        return Report {
+            problems,
+            uncovered,
+            deferred,
+            compared: 0,
+        };
     }
 
     for (code, n) in duplicates(&codes) {
-        problems.push(format!("{DICT_DOC} 中类型码 {code} 出现 {n} 次；类型码全局唯一"));
+        problems.push(format!(
+            "{DICT_DOC} 中类型码 {code} 出现 {n} 次；类型码全局唯一"
+        ));
     }
     let in_code = sequence_type_codes(root);
     if in_code.is_empty() {
@@ -396,24 +447,40 @@ pub fn run_doc_type_codes(root: &Path) -> Report {
             "未覆盖：{DICT_DOC} 已登记 {} 个类型码，但 {SEQUENCE_SRC} 下找不到任何类型码常量，比对做不了",
             codes.len()
         ));
-        return Report { problems, uncovered, deferred, compared: codes.len() };
+        return Report {
+            problems,
+            uncovered,
+            deferred,
+            compared: codes.len(),
+        };
     }
     for c in &codes {
         if !in_code.contains(c) {
-            problems.push(format!("{DICT_DOC} 登记了类型码 {c}，ep-platform-sequence 的常量表中没有"));
+            problems.push(format!(
+                "{DICT_DOC} 登记了类型码 {c}，ep-platform-sequence 的常量表中没有"
+            ));
         }
     }
     for c in &in_code {
         if !codes.contains(c) {
-            problems.push(format!("ep-platform-sequence 有类型码 {c}，{DICT_DOC} 中没有登记"));
+            problems.push(format!(
+                "ep-platform-sequence 有类型码 {c}，{DICT_DOC} 中没有登记"
+            ));
         }
     }
-    Report { problems, uncovered, deferred, compared: codes.len() }
+    Report {
+        problems,
+        uncovered,
+        deferred,
+        compared: codes.len(),
+    }
 }
 
 /// 5.1 登记表的第一格。
 fn dict_type_codes(doc: &str) -> Vec<String> {
-    let Some(section) = doc.split(DICT_TABLE).nth(1) else { return Vec::new() };
+    let Some(section) = doc.split(DICT_TABLE).nth(1) else {
+        return Vec::new();
+    };
     let section = section.split("\n### ").next().unwrap_or(section);
     section
         .lines()
@@ -435,7 +502,9 @@ fn is_type_code(s: &str) -> bool {
 fn sequence_type_codes(root: &Path) -> Vec<String> {
     let mut out = Vec::new();
     for path in files_with_ext(&root.join(SEQUENCE_SRC), "rs") {
-        let Ok(text) = fs::read_to_string(&path) else { continue };
+        let Ok(text) = fs::read_to_string(&path) else {
+            continue;
+        };
         for line in text.lines() {
             let mut rest = line;
             while let Some(start) = rest.find('"') {
@@ -459,7 +528,10 @@ mod negative_samples {
     use super::*;
 
     fn repo_root() -> PathBuf {
-        Path::new(env!("CARGO_MANIFEST_DIR")).parent().expect("xtask 在工作区根之下").to_path_buf()
+        Path::new(env!("CARGO_MANIFEST_DIR"))
+            .parent()
+            .expect("xtask 在工作区根之下")
+            .to_path_buf()
     }
 
     /// 仓库现状：配置键与指标名两侧齐备，本子命令应全绿。
@@ -482,9 +554,18 @@ mod negative_samples {
     /// 负样例断言通配段这条规则本身：`<池>` 只匹配一段，不匹配跨段。
     #[test]
     fn negative_placeholder_matches_exactly_one_segment() {
-        assert!(key_matches("db.timeout.<池>.lock_ms", "db.timeout.rw.lock_ms"));
-        assert!(!key_matches("db.timeout.<池>.lock_ms", "db.timeout.lock_ms"));
-        assert!(!key_matches("db.timeout.<池>.lock_ms", "db.timeout.rw.x.lock_ms"));
+        assert!(key_matches(
+            "db.timeout.<池>.lock_ms",
+            "db.timeout.rw.lock_ms"
+        ));
+        assert!(!key_matches(
+            "db.timeout.<池>.lock_ms",
+            "db.timeout.lock_ms"
+        ));
+        assert!(!key_matches(
+            "db.timeout.<池>.lock_ms",
+            "db.timeout.rw.x.lock_ms"
+        ));
         assert!(!key_matches("http.max_body_bytes", "http.max_body_byte"));
     }
 
@@ -507,7 +588,10 @@ mod negative_samples {
     /// 负样例断言文档取键这条规则本身：表头与非键单元格不得被当成键。
     #[test]
     fn negative_doc_key_extraction_skips_headers() {
-        assert_eq!(doc_config_keys("| 键 | 类型 |\n| http.bind_addr | string |"), vec!["http.bind_addr"]);
+        assert_eq!(
+            doc_config_keys("| 键 | 类型 |\n| http.bind_addr | string |"),
+            vec!["http.bind_addr"]
+        );
         assert!(doc_config_keys("| core-server | 8080 |").is_empty());
     }
 
@@ -529,7 +613,10 @@ mod negative_samples {
         let r = run_doc_type_codes(&repo_root());
         assert!(r.problems.is_empty(), "{:#?}", r.problems);
         assert_eq!(r.deferred.len(), 1, "推迟段必须单列一条");
-        assert!(r.deferred[0].contains("出现第一行"), "必须写出可观测的触发谓词");
+        assert!(
+            r.deferred[0].contains("出现第一行"),
+            "必须写出可观测的触发谓词"
+        );
         assert_eq!(r.outcome(), Outcome::Clean);
     }
 

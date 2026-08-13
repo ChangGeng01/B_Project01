@@ -9,3 +9,15 @@ workspace = true
 
 [dependencies]
 ep-foundation.workspace = true
+# 实现体依赖（任务 #13）：tokio-postgres 是本工具唯一数据库通道；
+# toml 解析库侧期望版本清单（schema-history-version-matched）；
+# chrono 只取 RFC3339 时间文本（历史表 applied_on 列与 refinery 同形态）；
+# uuid 生成迁移窗口行的 v7 标识。
+# 计划 §3.3 原指定 refinery 0.8 Runner，但其版本号是 i32，装不下本项目
+# V<YYYYMMDDHHMMSS> 的 14 位时间戳版本号（计划内部结构性矛盾），
+# 经 leader 批准改自建 refinery 语义兼容 Runner，故不引 refinery 依赖。
+tokio-postgres.workspace = true
+tokio.workspace = true
+toml.workspace = true
+chrono.workspace = true
+uuid.workspace = true

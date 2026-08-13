@@ -70,7 +70,7 @@ checked_xtask="" # 已核对过状态的 xtask 子命令，避免重复执行
 
 while IFS=$'\t' read -r stage id kind argv status; do
     [[ -z ${stage:-} ]] && continue
-    label="阶段 $stage（$id）的 $kind 命令「$argv」"
+    label="阶段 ${stage}（${id}）的 $kind 命令「${argv}」"
 
     if [[ ! $stage =~ ^[0-9]+$ ]]; then
         note_mismatch "登记表首列 $stage 不是阶段号"
@@ -90,16 +90,16 @@ while IFS=$'\t' read -r stage id kind argv status; do
     case $kind in
     cargo)
         if ! command -v cargo >/dev/null 2>&1; then
-            note_mismatch "$label：本机没有可执行的 cargo"
+            note_mismatch "${label}：本机没有可执行的 cargo"
         fi
         ;;
     script)
         rel=${argv%% *}
         path="$REPO_ROOT/$rel"
         if [[ ! -e $path ]]; then
-            note_mismatch "$label：$rel 在仓库内不存在"
+            note_mismatch "${label}：$rel 在仓库内不存在"
         elif [[ ! -x $path ]]; then
-            note_mismatch "$label：$rel 存在但没有可执行位"
+            note_mismatch "${label}：$rel 存在但没有可执行位"
         fi
         ;;
     xtask)
@@ -107,7 +107,7 @@ while IFS=$'\t' read -r stage id kind argv status; do
         if [[ -z $xtask_subcommands ]]; then
             : # 子命令表读不到，已在上面记过一次未覆盖，不重复记
         elif ! printf '%s\n' "$xtask_subcommands" | grep -qx "$sub"; then
-            note_mismatch "$label：cargo xtask 不受理子命令 $sub"
+            note_mismatch "${label}：cargo xtask 不受理子命令 $sub"
         else
             # 核对门禁状态：真跑一次，看工具是否如登记表所称。
             case " $checked_xtask " in
@@ -126,7 +126,7 @@ while IFS=$'\t' read -r stage id kind argv status; do
         fi
         ;;
     *)
-        note_uncovered "$label：命令类别 $kind 不认识，该行的存在性判定未做出"
+        note_uncovered "${label}：命令类别 $kind 不认识，该行的存在性判定未做出"
         ;;
     esac
 done <<<"$rows"

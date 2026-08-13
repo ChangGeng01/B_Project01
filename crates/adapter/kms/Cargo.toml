@@ -7,5 +7,28 @@ publish.workspace = true
 [lints]
 workspace = true
 
+[features]
+# 客户 HSM 载体（PKCS#11）由本 feature 门控：声明位与实现位同在本 crate，
+# 首版为占位实现，按降级返回已登记错误码，不接真实 PKCS#11 调用。
+hsm = []
+
 [dependencies]
 ep-foundation.workspace = true
+async-trait.workspace = true
+uuid.workspace = true
+sha2.workspace = true
+# 密码学取 RustCrypto 系：AES-256-GCM（信封与 DEK 封包）、HKDF（盲索引密钥与
+# 签名密钥派生）、HMAC（盲索引值）、P-256（ECDSA 签名，算法全卷固定）。
+aes-gcm.workspace = true
+hkdf.workspace = true
+hmac.workspace = true
+p256.workspace = true
+# foundation 尚无 Rng 端口（port/ 目录只有 db/doc/kms/search/tx），
+# 信封 nonce 的随机源按任务裁定暂用 rand，偏离已在任务汇报标注。
+rand.workspace = true
+# 盲索引归一化 TRIM_NFKC/TRIM_NFKC_LOWER 需要 NFKC 规范化。
+unicode-normalization.workspace = true
+
+[target.'cfg(unix)'.dependencies]
+# master.key 属主校验需要进程 uid。
+libc.workspace = true

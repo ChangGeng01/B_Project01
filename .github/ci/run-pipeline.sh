@@ -62,14 +62,14 @@ while IFS=$'\t' read -r stage id kind argv status; do
         cmdline=(bash "$REPO_ROOT/$rel" "${args[@]:1}")
         ;;
     *)
-        echo "阶段 $stage（$id）：命令类别 $kind 不认识，无法调度。" >&2
+        echo "阶段 ${stage}（${id}）：命令类别 $kind 不认识，无法调度。" >&2
         n_fail=$((n_fail + 1))
         summary+="  阶段 $stage $id  $kind $argv  →  无法调度"$'\n'
         continue
         ;;
     esac
 
-    echo "::: 阶段 $stage（$id） ${cmdline[*]}"
+    echo "::: 阶段 ${stage}（${id}） ${cmdline[*]}"
     rc=0
     "${cmdline[@]}" || rc=$?
 
@@ -88,7 +88,7 @@ while IFS=$'\t' read -r stage id kind argv status; do
         ;;
     *)
         n_fail=$((n_fail + 1))
-        verdict="不符（退出码 $rc）"
+        verdict="不符（退出码 ${rc}）"
         ;;
     esac
 

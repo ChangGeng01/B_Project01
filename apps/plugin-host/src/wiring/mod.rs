@@ -40,6 +40,11 @@ impl IpcMethod for SystemVersion {
 
 pub fn method_table(state: Arc<SystemState>) -> MethodTable {
     MethodTable::new()
-        .with(METHODS[0], Arc::new(SystemPing { state: state.clone() }))
+        .with(
+            METHODS[0],
+            Arc::new(SystemPing {
+                state: state.clone(),
+            }),
+        )
         .with(METHODS[1], Arc::new(SystemVersion { state }))
 }

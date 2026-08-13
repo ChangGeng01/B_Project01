@@ -37,7 +37,8 @@ mod tests {
 
     fn load(extra: &str) -> Result<IntegrationConfig, String> {
         let mut l = ConfigLoader::new();
-        l.layer_str("defaults", DEFAULTS).map_err(|e| e.to_string())?;
+        l.layer_str("defaults", DEFAULTS)
+            .map_err(|e| e.to_string())?;
         l.layer_str("test", extra).map_err(|e| e.to_string())?;
         l.finish().map_err(|e| e.to_string())
     }
@@ -47,7 +48,10 @@ mod tests {
         let cfg = load("").expect("默认层必须自洽");
         assert_eq!(cfg.http.bind_addr, "127.0.0.1:8082");
         assert_eq!(cfg.db.pool.integ_max, 5);
-        assert!(cfg.egress.allowlist.is_empty(), "白名单默认为空，出网默认拒绝");
+        assert!(
+            cfg.egress.allowlist.is_empty(),
+            "白名单默认为空，出网默认拒绝"
+        );
         assert_eq!(cfg.egress.breaker.failure_threshold, 5);
     }
 

@@ -14,7 +14,9 @@
 
 建库参数固定为 `LOCALE_PROVIDER icu` 加 `ICU_LOCALE 'zh-Hans-CN'` 加 `LC_COLLATE 'C'` 与 `LC_CTYPE 'C'`，即默认排序取字节序，ICU 只作为按需显式指定 `COLLATE` 时的提供者。同时删除 public schema。
 
-落地脚本按裁定 C-01 由阶段 2 交付，其 `db/bootstrap/00_database.sql` 写为 `CREATE DATABASE ep ENCODING 'UTF8' LC_COLLATE 'C' LC_CTYPE 'C' TEMPLATE template0` 并执行 `DROP SCHEMA public`。取值以该脚本为准，阶段 1 只保留本决定本身，不另行取值，也不产出任何 `db/` 下的文件。
+落地脚本按裁定 C-01 由阶段 2 交付，其 `db/bootstrap/00_database.sql` 写为 `CREATE DATABASE ep ENCODING 'UTF8' LOCALE_PROVIDER icu ICU_LOCALE 'zh-Hans-CN' LC_COLLATE 'C' LC_CTYPE 'C' TEMPLATE template0` 并执行 `DROP SCHEMA public`。阶段 1 只保留本决定本身，不另行取值，也不产出任何 `db/` 下的文件。
+
+**本段此前漏写 `LOCALE_PROVIDER icu` 与 `ICU_LOCALE 'zh-Hans-CN'` 两个子句，并写有「取值以该脚本为准」一句，两者合起来会使上一段的决定自动落空。**在 PostgreSQL 16.14 上实测：按漏写的脚本文本建库，`pg_database.datlocprovider` 为 `c` 即 libc、`daticulocale` 为空；补上两个子句后为 `i` 与 `zh-Hans-CN`。「取值以该脚本为准」一句一并删除——脚本是决定的落地物，不是决定的出处，两者冲突时以本节决定段为准。
 
 ## 理由
 

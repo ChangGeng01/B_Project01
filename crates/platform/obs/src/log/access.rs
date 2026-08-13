@@ -3,7 +3,7 @@
 //! 访问日志与业务日志共用同一固定字段集合，差别只在 `target` 与 `operation`
 //! 的取值上；不另立一套字段，否则两套字段会各自漂移。
 
-use super::{LogFields, Level};
+use super::{Level, LogFields};
 
 /// 一次 HTTP 请求的访问日志素材。
 #[derive(Clone, Debug)]
@@ -80,7 +80,11 @@ mod tests {
 
     #[test]
     fn client_error_is_error_outcome_but_not_error_level() {
-        assert_eq!(sample(400).level(), Level::Info, "4xx 不需要人工介入，不占 ERROR");
+        assert_eq!(
+            sample(400).level(),
+            Level::Info,
+            "4xx 不需要人工介入，不占 ERROR"
+        );
         assert_eq!(sample(400).into_fields().outcome, Some("error"));
     }
 }

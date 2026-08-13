@@ -82,7 +82,11 @@ pub fn apply_option(inv: &mut Invocation, key: &str, value: &str) -> Result<(), 
                 "text" => StatusFormat::Text,
                 "json" => StatusFormat::Json,
                 "manifest" => StatusFormat::Manifest,
-                other => return err(format!("--format 取值 {other} 未知；可用 text、json、manifest。")),
+                other => {
+                    return err(format!(
+                        "--format 取值 {other} 未知；可用 text、json、manifest。"
+                    ))
+                }
             };
         }
         "ttl-minutes" => {

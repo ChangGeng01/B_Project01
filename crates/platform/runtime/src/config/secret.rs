@@ -70,7 +70,10 @@ mod tests {
 
     #[test]
     fn well_formed_reference_is_accepted() {
-        assert_eq!(SecretRef::parse("secret://db/app_rw#1").unwrap().as_str(), "secret://db/app_rw#1");
+        assert_eq!(
+            SecretRef::parse("secret://db/app_rw#1").unwrap().as_str(),
+            "secret://db/app_rw#1"
+        );
     }
 
     // 负样例断言的是「配置里不得出现明文机密」这条规则本身：

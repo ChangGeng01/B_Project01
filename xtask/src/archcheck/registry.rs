@@ -10,12 +10,17 @@ use std::path::Path;
 use super::deps::Violation;
 
 const RULE: &str = "undecidable-registry-matched";
-const DOC: &str = "docs/superpowers/plans/2026-08-10-first-release-dev-plan/00b-technical-baseline.md";
+const DOC: &str =
+    "docs/superpowers/plans/2026-08-10-first-release-dev-plan/00b-technical-baseline.md";
 const SECTION: &str = "### 12.1 ";
 const SPLIT: &str = "undecidable 段登记";
 
 fn violation(detail: impl Into<String>) -> Violation {
-    Violation { rule: RULE, package: DOC.to_string(), detail: detail.into() }
+    Violation {
+        rule: RULE,
+        package: DOC.to_string(),
+        detail: detail.into(),
+    }
 }
 
 /// 登记表的一行：判据名与承接方两列参与比对，其余三列供人读。
@@ -25,7 +30,11 @@ pub struct Entry {
     pub taker: String,
 }
 
-pub fn check(root: &Path, delegated: &[(&str, &str)], undecidable: &[(&str, String)]) -> Vec<Violation> {
+pub fn check(
+    root: &Path,
+    delegated: &[(&str, &str)],
+    undecidable: &[(&str, String)],
+) -> Vec<Violation> {
     let path = root.join(DOC);
     let Ok(text) = fs::read_to_string(&path) else {
         return vec![violation("读不到基线第 12.1 节所在文件")];
@@ -35,18 +44,34 @@ pub fn check(root: &Path, delegated: &[(&str, &str)], undecidable: &[(&str, Stri
     };
     let section = section.split("\n## ").next().unwrap_or(section);
     let Some((head, tail)) = section.split_once(SPLIT) else {
-        return vec![violation("第 12.1 节缺少 undecidable 段，两段不得合并成一张表")];
+        return vec![violation(
+            "第 12.1 节缺少 undecidable 段，两段不得合并成一张表",
+        )];
     };
 
     let mut found = Vec::new();
-    found.extend(compare("delegated", &rows(head), &delegated
-        .iter()
-        .map(|(n, t)| Entry { name: (*n).to_string(), taker: normalize(t) })
-        .collect::<Vec<_>>()));
-    found.extend(compare("undecidable", &rows(tail), &undecidable
-        .iter()
-        .map(|(n, _)| Entry { name: (*n).to_string(), taker: String::new() })
-        .collect::<Vec<_>>()));
+    found.extend(compare(
+        "delegated",
+        &rows(head),
+        &delegated
+            .iter()
+            .map(|(n, t)| Entry {
+                name: (*n).to_string(),
+                taker: normalize(t),
+            })
+            .collect::<Vec<_>>(),
+    ));
+    found.extend(compare(
+        "undecidable",
+        &rows(tail),
+        &undecidable
+            .iter()
+            .map(|(n, _)| Entry {
+                name: (*n).to_string(),
+                taker: String::new(),
+            })
+            .collect::<Vec<_>>(),
+    ));
     found
 }
 
@@ -55,10 +80,18 @@ fn rows(md: &str) -> Vec<Entry> {
     md.lines()
         .map(str::trim)
         .filter(|l| l.starts_with('|') && l.ends_with('|'))
-        .map(|l| l.trim_matches('|').split('|').map(str::trim).collect::<Vec<_>>())
+        .map(|l| {
+            l.trim_matches('|')
+                .split('|')
+                .map(str::trim)
+                .collect::<Vec<_>>()
+        })
         .filter(|cells| cells.len() == 5)
         .filter(|cells| cells[0] != "判据名" && !cells[0].starts_with("---"))
-        .map(|cells| Entry { name: cells[0].to_string(), taker: normalize(cells[3]) })
+        .map(|cells| Entry {
+            name: cells[0].to_string(),
+            taker: normalize(cells[3]),
+        })
         .collect()
 }
 
@@ -117,22 +150,34 @@ mod negative_samples {
 
     #[test]
     fn negative_code_has_extra_row() {
-        let code = [Entry { name: "b".into(), taker: "承接方乙".into() }];
+        let code = [Entry {
+            name: "b".into(),
+            taker: "承接方乙".into(),
+        }];
         let v = compare("delegated", &[], &code);
         assert_eq!(v.len(), 1, "工具多输出一条即违反");
     }
 
     #[test]
     fn negative_taker_drift() {
-        let code = [Entry { name: "a/necessity".into(), taker: "承接方乙".into() }];
+        let code = [Entry {
+            name: "a/necessity".into(),
+            taker: "承接方乙".into(),
+        }];
         let v = compare("delegated", &rows(TABLE), &code);
         assert_eq!(v.len(), 1, "承接方漂移即违反");
     }
 
     #[test]
     fn negative_whitespace_is_ignored() {
-        let code = [Entry { name: "a/necessity".into(), taker: normalize("承接方\n     甲") }];
-        assert!(compare("delegated", &rows(TABLE), &code).is_empty(), "续行不算差异");
+        let code = [Entry {
+            name: "a/necessity".into(),
+            taker: normalize("承接方\n     甲"),
+        }];
+        assert!(
+            compare("delegated", &rows(TABLE), &code).is_empty(),
+            "续行不算差异"
+        );
     }
 }
 
@@ -150,13 +195,19 @@ const ROSTER_MARKER: &str = "`xtask archcheck` 的规则面与三态输出就位
 /// 判据完全可判定：被测输入只有该行与本工具自身的输出两项。
 pub fn rule_roster(root: &Path, checked: &[&'static str]) -> Vec<Violation> {
     const RULE: &str = "rule-roster-matched";
-    let make = |d: String| Violation { rule: RULE, package: ROSTER_DOC.to_string(), detail: d };
+    let make = |d: String| Violation {
+        rule: RULE,
+        package: ROSTER_DOC.to_string(),
+        detail: d,
+    };
 
     let Ok(text) = fs::read_to_string(root.join(ROSTER_DOC)) else {
         return vec![make("读不到阶段 1 计划".into())];
     };
     let Some(line) = text.lines().find(|l| l.contains(ROSTER_MARKER)) else {
-        return vec![make(format!("找不到退出条件 27 的花名册句，锚点为「{ROSTER_MARKER}」"))];
+        return vec![make(format!(
+            "找不到退出条件 27 的花名册句，锚点为「{ROSTER_MARKER}」"
+        ))];
     };
 
     let mut found = Vec::new();
@@ -164,7 +215,7 @@ pub fn rule_roster(root: &Path, checked: &[&'static str]) -> Vec<Violation> {
     let claimed_count: Option<usize> = line
         .split_once(ROSTER_MARKER)
         .and_then(|(_, rest)| rest.split_once(' ').map(|(n, _)| n.trim_end_matches('条')))
-        .and_then(|n| cn_number(n));
+        .and_then(cn_number);
     match claimed_count {
         None => found.push(make("退出条件 27 的条数读不出来".into())),
         Some(n) if n != checked.len() => found.push(make(format!(
@@ -177,7 +228,9 @@ pub fn rule_roster(root: &Path, checked: &[&'static str]) -> Vec<Violation> {
     let listed: Vec<&str> = backticked(line);
     for name in checked {
         if !listed.contains(name) {
-            found.push(make(format!("本工具判定了 {name}，但退出条件 27 的名单里没有它")));
+            found.push(make(format!(
+                "本工具判定了 {name}，但退出条件 27 的名单里没有它"
+            )));
         }
     }
     for name in &listed {
@@ -186,9 +239,13 @@ pub fn rule_roster(root: &Path, checked: &[&'static str]) -> Vec<Violation> {
         // crate 名一律 `ep-` 前缀，规则名一律不是——这是排除 crate 名的唯一判据。
         let rule_shaped = name.contains('-')
             && !name.starts_with("ep-")
-            && name.chars().all(|c| c.is_ascii_lowercase() || c == '-' || c == '/');
+            && name
+                .chars()
+                .all(|c| c.is_ascii_lowercase() || c == '-' || c == '/');
         if rule_shaped && !checked.contains(name) {
-            found.push(make(format!("退出条件 27 列了 {name}，但本工具没有这条规则")));
+            found.push(make(format!(
+                "退出条件 27 列了 {name}，但本工具没有这条规则"
+            )));
         }
     }
     found
@@ -223,20 +280,30 @@ mod roster_negative_samples {
 
     #[test]
     fn negative_rule_shape() {
-        let shaped = |n: &str| n.contains('-')
-            && !n.starts_with("ep-")
-            && n.chars().all(|c| c.is_ascii_lowercase() || c == '-' || c == '/');
+        let shaped = |n: &str| {
+            n.contains('-')
+                && !n.starts_with("ep-")
+                && n.chars()
+                    .all(|c| c.is_ascii_lowercase() || c == '-' || c == '/')
+        };
         assert!(shaped("platform-no-adapter"));
         assert!(shaped("foundation-no-business/necessity"));
         // 通配 crate 名与类型名不是规则名。
         assert!(!shaped("ep-platform-*"));
         assert!(!shaped("PgTx"));
-        assert!(!shaped("ep-foundation"), "crate 名一律 ep- 前缀，规则名一律不是");
+        assert!(
+            !shaped("ep-foundation"),
+            "crate 名一律 ep- 前缀，规则名一律不是"
+        );
     }
 
     #[test]
     fn negative_count_parse() {
         assert_eq!(cn_number("17"), Some(17));
-        assert_eq!(cn_number("十七"), None, "中文数字视为读不出来，宁可报错不可静默");
+        assert_eq!(
+            cn_number("十七"),
+            None,
+            "中文数字视为读不出来，宁可报错不可静默"
+        );
     }
 }

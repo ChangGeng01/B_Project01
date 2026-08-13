@@ -59,7 +59,8 @@ pub fn prepare<T: serde::de::DeserializeOwned>(
 ) -> Result<Prepared<T>, ExitCode> {
     let cli = parse_cli()?;
     let sources = cli.config_sources(process);
-    let cfg: T = crate::config::load(defaults, &sources).map_err(|e| config_invalid_exit(process, &e))?;
+    let cfg: T =
+        crate::config::load(defaults, &sources).map_err(|e| config_invalid_exit(process, &e))?;
     let logger = logger(process, &log_of(&cfg).level).map_err(|e| {
         eprintln!("{e}");
         ExitCode::from(EXIT_USAGE)
@@ -69,7 +70,13 @@ pub fn prepare<T: serde::de::DeserializeOwned>(
         ExitCode::from(crate::lifecycle::EXIT_PANIC)
     })?;
     let layers = cli.layers_description(&sources);
-    Ok(Prepared { cfg, logger, runtime, layers, check: cli.check })
+    Ok(Prepared {
+        cfg,
+        logger,
+        runtime,
+        layers,
+        check: cli.check,
+    })
 }
 
 /// 配置不可用时的收尾：出一份只有 `config-parsed` 一项的报告，再以 78 退出。
@@ -82,7 +89,9 @@ pub fn config_invalid_exit(process: ProcessKind, error: &ConfigError) -> ExitCod
         "config-parsed",
         "配置解析成功且无未知键",
         Severity::Blocking,
-        Arc::new(ConfigInvalid { detail: error.to_string() }),
+        Arc::new(ConfigInvalid {
+            detail: error.to_string(),
+        }),
     ))
     .expect("单项注册不可能重名");
     let report = futures_block_on(reg.run_all(process, BuildInfo::current().version));
@@ -104,7 +113,9 @@ fn futures_block_on<F: std::future::Future>(fut: F) -> F::Output {
 /// 按配置构造多线程运行时。`worker_threads` 取 0 表示交给 tokio 按 CPU 配额推导。
 pub fn tokio_runtime(cfg: &RuntimeCfg) -> std::io::Result<tokio::runtime::Runtime> {
     let mut builder = tokio::runtime::Builder::new_multi_thread();
-    builder.enable_all().max_blocking_threads(usize::from(cfg.blocking_threads));
+    builder
+        .enable_all()
+        .max_blocking_threads(usize::from(cfg.blocking_threads));
     if cfg.worker_threads > 0 {
         builder.worker_threads(usize::from(cfg.worker_threads));
     }
@@ -113,16 +124,28 @@ pub fn tokio_runtime(cfg: &RuntimeCfg) -> std::io::Result<tokio::runtime::Runtim
 
 /// 日志器。级别取值非法必须报错，不静默降级为 info。
 pub fn logger(process: ProcessKind, level: &str) -> Result<Arc<JsonLogger>, String> {
-    let lvl = Level::parse(level).ok_or_else(|| format!("log.level 取值 {level} 不在 debug/info/warn/error 之内"))?;
-    Ok(Arc::new(JsonLogger::new(process.name(), BuildInfo::current().version, lvl)))
+    let lvl = Level::parse(level)
+        .ok_or_else(|| format!("log.level 取值 {level} 不在 debug/info/warn/error 之内"))?;
+    Ok(Arc::new(JsonLogger::new(
+        process.name(),
+        BuildInfo::current().version,
+        lvl,
+    )))
 }
 
 /// 指标注册表，并填 `ep_build_info`。
 pub fn metrics(logger: &JsonLogger) -> Arc<MetricsRegistry> {
     let reg = Arc::new(MetricsRegistry::new());
     let b = BuildInfo::current();
-    if let Err(e) = reg.set_gauge("ep_build_info", &[("version", b.version), ("git_commit", b.git_commit)], 1.0) {
-        logger.log(Level::Error, LogFields::msg("metrics", format!("ep_build_info 写入失败：{e}")));
+    if let Err(e) = reg.set_gauge(
+        "ep_build_info",
+        &[("version", b.version), ("git_commit", b.git_commit)],
+        1.0,
+    ) {
+        logger.log(
+            Level::Error,
+            LogFields::msg("metrics", format!("ep_build_info 写入失败：{e}")),
+        );
     }
     reg
 }
@@ -137,13 +160,18 @@ pub async fn selfcheck(
     metrics: &MetricsRegistry,
     logger: &JsonLogger,
 ) -> Result<SelfCheckReport, (SelfCheckReport, ExitCode)> {
-    let report = registry.run_all(process, BuildInfo::current().version).await;
+    let report = registry
+        .run_all(process, BuildInfo::current().version)
+        .await;
     if let Err(e) = metrics.set_gauge(
         "ep_selfcheck_pending_items",
         &[("process", process.name())],
         report.pending_items() as f64,
     ) {
-        logger.log(Level::Error, LogFields::msg("metrics", format!("Pending 计数写入失败：{e}")));
+        logger.log(
+            Level::Error,
+            LogFields::msg("metrics", format!("Pending 计数写入失败：{e}")),
+        );
     }
 
     let event = match report.overall {
@@ -173,7 +201,10 @@ pub fn check_exit(report: &SelfCheckReport) -> ExitCode {
         eprintln!("--check 未通过：overall={:?}", report.overall);
     }
     if report.pending_items() > 0 {
-        eprintln!("注意：{} 项自检为 PENDING（未覆盖，不计入成败）", report.pending_items());
+        eprintln!(
+            "注意：{} 项自检为 PENDING（未覆盖，不计入成败）",
+            report.pending_items()
+        );
     }
     ExitCode::from(code)
 }
@@ -193,12 +224,19 @@ pub fn enter_selfchecking(lifecycle: &mut Lifecycle, logger: &JsonLogger) {
 }
 
 /// 停机收尾：Draining → Stopped，退出码 0。
-pub fn finish_draining(state: &SystemState, logger: &JsonLogger, drained_in_time: bool) -> ExitCode {
+pub fn finish_draining(
+    state: &SystemState,
+    logger: &JsonLogger,
+    drained_in_time: bool,
+) -> ExitCode {
     if let Err(e) = state.fire(Event::DrainComplete) {
         logger.log(Level::Error, LogFields::msg("lifecycle", format!("{e}")));
     }
     if !drained_in_time {
-        logger.log(Level::Warn, LogFields::msg("shutdown", "drain 超时，强制关闭在途连接"));
+        logger.log(
+            Level::Warn,
+            LogFields::msg("shutdown", "drain 超时，强制关闭在途连接"),
+        );
     }
     logger.log(Level::Info, LogFields::msg("shutdown", "已停止，退出码 0"));
     ExitCode::SUCCESS
@@ -223,9 +261,17 @@ mod tests {
 
     #[test]
     fn worker_threads_zero_means_derive_from_quota() {
-        let rt = tokio_runtime(&RuntimeCfg { worker_threads: 0, blocking_threads: 8 }).unwrap();
+        let rt = tokio_runtime(&RuntimeCfg {
+            worker_threads: 0,
+            blocking_threads: 8,
+        })
+        .unwrap();
         drop(rt);
-        let rt = tokio_runtime(&RuntimeCfg { worker_threads: 2, blocking_threads: 8 }).unwrap();
+        let rt = tokio_runtime(&RuntimeCfg {
+            worker_threads: 2,
+            blocking_threads: 8,
+        })
+        .unwrap();
         drop(rt);
     }
 }

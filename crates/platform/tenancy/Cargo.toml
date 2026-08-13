@@ -9,3 +9,9 @@ workspace = true
 
 [dependencies]
 ep-foundation.workspace = true
+# 阶段 2 任务 #13：两个读取契约 trait 的 async 签名与 foundation 端口同形。
+async-trait.workspace = true
+
+[dev-dependencies]
+# 单测构造 Id<T> 用。
+uuid.workspace = true

@@ -24,7 +24,13 @@ struct DayState {
 
 impl IncidentNoGen {
     pub fn new(process: ProcessKind) -> Self {
-        Self { ordinal: process.ordinal(), state: Mutex::new(DayState { day: String::new(), seq: 0 }) }
+        Self {
+            ordinal: process.ordinal(),
+            state: Mutex::new(DayState {
+                day: String::new(),
+                seq: 0,
+            }),
+        }
     }
 
     /// 取一个新的关联编号。
@@ -81,7 +87,11 @@ mod tests {
         let gen = IncidentNoGen::new(ProcessKind::JobWorker);
         assert_eq!(gen.next_on("20260811"), "ERR-20260811-200000");
         assert_eq!(gen.next_on("20260811"), "ERR-20260811-200001");
-        assert_eq!(gen.next_on("20260812"), "ERR-20260812-200000", "跨自然日归零");
+        assert_eq!(
+            gen.next_on("20260812"),
+            "ERR-20260812-200000",
+            "跨自然日归零"
+        );
     }
 
     #[test]
@@ -93,7 +103,11 @@ mod tests {
             g.seq = PER_PROCESS_CAPACITY - 1;
         }
         assert_eq!(gen.next_on("20260811"), "ERR-20260811-199999");
-        assert_eq!(gen.next_on("20260811"), "ERR-20260811-100000", "回绕后仍在本进程段内");
+        assert_eq!(
+            gen.next_on("20260811"),
+            "ERR-20260811-100000",
+            "回绕后仍在本进程段内"
+        );
     }
 
     #[test]

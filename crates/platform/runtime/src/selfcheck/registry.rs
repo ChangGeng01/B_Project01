@@ -1,8 +1,14 @@
 //! 启动自检注册表。落点由技术基线第 7.3 节与裁定 C-25 定死在本文件。
 //!
-//! 判定与分级分开：自检项自己只回答「过、不过、未覆盖、不适用」四种事实，
+//! 判定与分级分开：自检项自己回答「过、不过、降级、未覆盖、不适用」五种事实，
 //! 「不过」要不要拦启动由 severity 决定，由注册表统一映射。让每个项自己
 //! 决定拦不拦，等于把闸门散落到十个地方。
+//!
+//! `Degraded` 是阶段 2 为 `secrets-resolvable` 密钥域段增设的结论：该项
+//! 按基线十项登记为 Blocking 一个档位，但其密钥域一段按 02 计划 §7.1 必须
+//! 取 Degrading 语义——缺域登记降级窗口而不阻断启动。单一档位无法表达两段
+//! 语义，故由自检项自己以 `Degraded` 上报已登记的降级结论，注册表直接映射
+//! 为 DEGRADED，不再经 severity 二次映射。
 
 use std::sync::Arc;
 
@@ -24,6 +30,9 @@ pub enum Verdict {
     Pass(String),
     /// 判定执行了，结论是不符。
     Fail(String),
+    /// 判定执行了，结论是降级而非失败：降级窗口已由自检项登记，
+    /// 不阻断启动，`--check` 模式仍按非零退出。
+    Degraded(String),
     /// 被测对象在本阶段还不存在，或判定手段尚未交付。这是一种如实上报，
     /// 不是空实现，也绝不等同于通过。
     Pending(String),
@@ -63,7 +72,12 @@ impl SelfCheckItem {
         severity: Severity,
         run: Arc<dyn SelfCheckRun>,
     ) -> Self {
-        Self { name, title, severity, run }
+        Self {
+            name,
+            title,
+            severity,
+            run,
+        }
     }
 }
 
@@ -118,6 +132,7 @@ impl SelfCheckRegistry {
                     Severity::Blocking => (Outcome::Failed, d),
                     Severity::Degrading => (Outcome::Degraded, d),
                 },
+                Verdict::Degraded(d) => (Outcome::Degraded, d),
                 Verdict::Pending(d) => (Outcome::Pending, d),
                 Verdict::NotApplicable(d) => (Outcome::NotApplicable, d),
             };
@@ -130,7 +145,12 @@ impl SelfCheckRegistry {
             });
         }
         let overall = overall_of(&items);
-        SelfCheckReport { process: process.name(), version: version.to_string(), items, overall }
+        SelfCheckReport {
+            process: process.name(),
+            version: version.to_string(),
+            items,
+            overall,
+        }
     }
 }
 
@@ -163,7 +183,10 @@ pub struct SelfCheckReport {
 
 impl SelfCheckReport {
     pub fn pending_items(&self) -> usize {
-        self.items.iter().filter(|i| i.outcome == Outcome::Pending).count()
+        self.items
+            .iter()
+            .filter(|i| i.outcome == Outcome::Pending)
+            .count()
     }
 
     /// 运行期是否允许继续启动：只看 Blocking 项。
@@ -183,7 +206,10 @@ impl SelfCheckReport {
     pub fn to_json(&self) -> String {
         serde_json::to_string_pretty(self).unwrap_or_else(|e| {
             // 报告序列化失败本身也要看得见，绝不能返回一个空对象假装成功。
-            format!("{{\"process\":\"{}\",\"error\":\"报告序列化失败: {e}\"}}", self.process)
+            format!(
+                "{{\"process\":\"{}\",\"error\":\"报告序列化失败: {e}\"}}",
+                self.process
+            )
         })
     }
 }
@@ -215,7 +241,12 @@ mod tests {
 
     #[tokio::test]
     async fn blocking_failure_is_failed_and_blocks_startup() {
-        let r = report(vec![item("a", Severity::Blocking, Verdict::Fail("坏了".into()))]).await;
+        let r = report(vec![item(
+            "a",
+            Severity::Blocking,
+            Verdict::Fail("坏了".into()),
+        )])
+        .await;
         assert_eq!(r.items[0].outcome, Outcome::Failed);
         assert_eq!(r.overall, Outcome::Failed);
         assert!(!r.startup_allowed());
@@ -224,9 +255,27 @@ mod tests {
 
     #[tokio::test]
     async fn degrading_failure_is_degraded_and_allows_startup_but_fails_check() {
-        let r = report(vec![item("a", Severity::Degrading, Verdict::Fail("链断了".into()))]).await;
+        let r = report(vec![item(
+            "a",
+            Severity::Degrading,
+            Verdict::Fail("链断了".into()),
+        )])
+        .await;
         assert_eq!(r.items[0].outcome, Outcome::Degraded);
         assert!(r.startup_allowed(), "Degrading 项不阻止启动");
+        assert_eq!(r.check_exit_code(), 78, "--check 严于运行期");
+    }
+
+    #[tokio::test]
+    async fn degraded_verdict_is_degraded_regardless_of_severity() {
+        let r = report(vec![item(
+            "a",
+            Severity::Blocking,
+            Verdict::Degraded("缺域已登记降级窗口".into()),
+        )])
+        .await;
+        assert_eq!(r.items[0].outcome, Outcome::Degraded);
+        assert!(r.startup_allowed(), "降级不阻断启动");
         assert_eq!(r.check_exit_code(), 78, "--check 严于运行期");
     }
 
@@ -234,7 +283,11 @@ mod tests {
     async fn pending_is_reported_but_not_counted_as_pass_or_fail() {
         let r = report(vec![
             item("a", Severity::Blocking, Verdict::Pass("ok".into())),
-            item("b", Severity::Blocking, Verdict::Pending("承接方为阶段 3b".into())),
+            item(
+                "b",
+                Severity::Blocking,
+                Verdict::Pending("承接方为阶段 3b".into()),
+            ),
         ])
         .await;
         assert_eq!(r.pending_items(), 1);
@@ -250,16 +303,28 @@ mod tests {
             item("second", Severity::Blocking, Verdict::Pass(String::new())),
         ])
         .await;
-        assert_eq!(r.items.iter().map(|i| i.name).collect::<Vec<_>>(), ["first", "second"]);
+        assert_eq!(
+            r.items.iter().map(|i| i.name).collect::<Vec<_>>(),
+            ["first", "second"]
+        );
     }
 
     // 负样例断言的是注册表这条规则本身：同名项不得注册两次。
     #[test]
     fn duplicate_registration_is_rejected() {
         let mut reg = SelfCheckRegistry::new();
-        reg.register(item("config-parsed", Severity::Blocking, Verdict::Pass(String::new()))).unwrap();
+        reg.register(item(
+            "config-parsed",
+            Severity::Blocking,
+            Verdict::Pass(String::new()),
+        ))
+        .unwrap();
         let err = reg
-            .register(item("config-parsed", Severity::Blocking, Verdict::Pass(String::new())))
+            .register(item(
+                "config-parsed",
+                Severity::Blocking,
+                Verdict::Pass(String::new()),
+            ))
             .expect_err("重名必须被拒");
         assert_eq!(err, DuplicateName("config-parsed"));
         assert_eq!(reg.len(), 1);
@@ -267,7 +332,12 @@ mod tests {
 
     #[tokio::test]
     async fn not_applicable_neither_passes_nor_fails() {
-        let r = report(vec![item("a", Severity::Blocking, Verdict::NotApplicable("本进程不持 SQL 会话".into()))]).await;
+        let r = report(vec![item(
+            "a",
+            Severity::Blocking,
+            Verdict::NotApplicable("本进程不持 SQL 会话".into()),
+        )])
+        .await;
         assert_eq!(r.items[0].outcome, Outcome::NotApplicable);
         assert_eq!(r.overall, Outcome::Passed);
         assert_eq!(r.check_exit_code(), 0);

@@ -82,7 +82,10 @@ impl Workspace {
     /// 供负样例构造合成图。
     #[cfg(test)]
     pub fn from_packages(packages: Vec<Package>) -> Workspace {
-        Workspace { root: PathBuf::new(), packages }
+        Workspace {
+            root: PathBuf::new(),
+            packages,
+        }
     }
 }
 
@@ -129,10 +132,18 @@ fn parse(root: &Path, meta: &serde_json::Value) -> Result<Workspace, String> {
                     .collect()
             })
             .unwrap_or_default();
-        packages.push(Package { layer: Layer::of(&name, is_process), name, dir, deps });
+        packages.push(Package {
+            layer: Layer::of(&name, is_process),
+            name,
+            dir,
+            deps,
+        });
     }
     packages.sort_by(|a, b| a.name.cmp(&b.name));
-    Ok(Workspace { root: root.to_path_buf(), packages })
+    Ok(Workspace {
+        root: root.to_path_buf(),
+        packages,
+    })
 }
 
 /// 目录名到期望 crate 名的映射，即技术基线第 1.1 节的命名约定。

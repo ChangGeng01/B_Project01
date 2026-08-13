@@ -2,8 +2,8 @@
 //! 的六个码直接由 `MigrateExit::ALL` 生成，改了枚举而忘了改文档这件事不会发生。
 
 use crate::cli::{
-    Subcommand, DB_URL_ENV, DEFAULT_HISTORY_SCHEMA, DEFAULT_HISTORY_TABLE, DEFAULT_MIGRATIONS_DIR,
-    DEFAULT_TTL_MINUTES, MAX_TTL_MINUTES, SUBCOMMANDS,
+    Subcommand, DB_DSN_ENV, DB_URL_ENV, DEFAULT_HISTORY_SCHEMA, DEFAULT_HISTORY_TABLE,
+    DEFAULT_MIGRATIONS_DIR, DEFAULT_TTL_MINUTES, MAX_TTL_MINUTES, SUBCOMMANDS,
 };
 use crate::exit::MigrateExit;
 use crate::preflight::TOOL_VERSION;
@@ -30,14 +30,14 @@ pub fn version() -> String {
         "ep-migrate {TOOL_VERSION}\n\
          迁移历史表：{DEFAULT_HISTORY_SCHEMA}.{DEFAULT_HISTORY_TABLE}（全库唯一，结构任何阶段不改）\n\
          迁移目录默认：{DEFAULT_MIGRATIONS_DIR}\n\
-         子命令实现体由阶段 2 交付，本制品只含参数解析与退出码约定。"
+         五个子命令的实现体由阶段 2（任务 #13）交付：自建 refinery 语义兼容 Runner。"
     )
 }
 
 /// 用法文本。给了子命令就只印该子命令那一段。
 pub fn usage(sub: Option<Subcommand>) -> String {
     let mut out = String::new();
-    out.push_str("ep-migrate — 迁移执行 CLI。阶段 1 只交付参数解析与退出码约定。\n\n");
+    out.push_str("ep-migrate — 迁移执行 CLI。五个子命令的实现体由阶段 2（任务 #13）交付。\n\n");
 
     match sub {
         Some(s) => {
@@ -45,8 +45,10 @@ pub fn usage(sub: Option<Subcommand>) -> String {
             out.push_str(&format!("可用选项：{}\n", subcommand_options(s)));
             if s == Subcommand::Apply {
                 out.push_str(
-                    "  --window-id 必填：apply 必须出示一个由 open-window 开启的迁移窗口，\
-                     缺它即退出码 3。\n",
+                    "  --window-id 出示一个由 open-window 开启的迁移窗口；未出示时的分路：\n\
+                     目标库无历史表 platform_core.schema_history → 首装自举，以 ep_migrator\n\
+                     身份建历史表与窗口两表并自开一次性安装窗口（审批引用 INITIAL_INSTALL）；\n\
+                     目标库已有历史表且无待执行迁移 → 退出码 0；有待执行迁移 → 退出码 3。\n",
                 );
             }
             if s == Subcommand::OpenWindow {
@@ -56,10 +58,15 @@ pub fn usage(sub: Option<Subcommand>) -> String {
             }
         }
         None => {
-            out.push_str(&format!("用法：ep-migrate <{}> [选项]\n\n", SUBCOMMANDS.join("|")));
+            out.push_str(&format!(
+                "用法：ep-migrate <{}> [选项]\n\n",
+                SUBCOMMANDS.join("|")
+            ));
             out.push_str("子命令：\n");
             out.push_str("  apply         按文件版本号全序执行迁移\n");
-            out.push_str("  status        输出迁移历史表的单一版本，--format=manifest 输出制品清单\n");
+            out.push_str(
+                "  status        输出迁移历史表的单一版本，--format=manifest 输出制品清单\n",
+            );
             out.push_str("  check         执行 db/checks/ 的编号合规断言\n");
             out.push_str("  gen-rls       按行级安全模板生成策略语句\n");
             out.push_str("  open-window   开启迁移窗口\n");
@@ -67,14 +74,17 @@ pub fn usage(sub: Option<Subcommand>) -> String {
     }
 
     out.push_str(&format!(
-        "\n连接串来源：--db-url，缺省时读环境变量 {DB_URL_ENV}。gen-rls 不连库。\n"
+        "\n连接串来源：--db-url，缺省时依次读环境变量 {DB_URL_ENV}、{DB_DSN_ENV}\n\
+         （secret:// 引用由运行时配置层解析后注入 {DB_URL_ENV}，本工具不链接机密库）。\n\
+         gen-rls 不连库。开窗的双人审批引用由环境变量出示。\n"
     ));
     out.push_str("\n退出码：\n");
     out.push_str(&exit_code_table());
     out.push_str(
-        "\n\n本阶段的实现状态：五个子命令的实现体按裁定 C-01 与 C-02 归阶段 2。\
-         本制品跑完前置阶梯后一律以退出码 78 报出环境自检项 subcommand-implemented \
-         不通过，不会静默返回 0，也不会执行任何迁移动作。\n",
+        "\n\n实现状态：apply 以事务执行器逐文件执行，db/migrations/<schema>/concurrent/ 下的\n\
+         CREATE INDEX CONCURRENTLY 文件走自动提交的非事务执行器；两路径共用历史表\n\
+         platform_core.schema_history 与同一套校验和算法。出示窗口而窗口未打开时 apply\n\
+         拒绝并落退出码 3；空库首装无需出示窗口，由首装自举承担（见 apply --help）。\n",
     );
     out
 }

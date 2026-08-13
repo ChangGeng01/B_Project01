@@ -14,7 +14,8 @@ use axum::http::StatusCode;
 use axum::middleware::Next;
 use axum::response::{IntoResponse, Response};
 use ep_foundation::error::codes::{
-    PLATFORM_CAPACITY_CONCURRENCY_LIMIT, PLATFORM_SYSTEM_INTERNAL_ERROR, PLATFORM_SYSTEM_SYNC_TIMEOUT,
+    PLATFORM_CAPACITY_CONCURRENCY_LIMIT, PLATFORM_SYSTEM_INTERNAL_ERROR,
+    PLATFORM_SYSTEM_SYNC_TIMEOUT,
 };
 use ep_platform_obs::log::{AccessLog, Level, LogFields};
 use tokio::sync::Semaphore;
@@ -89,8 +90,15 @@ pub async fn observe(State(st): State<Arc<SystemState>>, req: Request, next: Nex
         // 阶段 1 没有鉴权，客户端类型只能取本机运维口径，不臆造 X-Client。
         ("client", "ops"),
     ];
-    if let Err(e) = st.metrics().observe("ep_http_request_duration_seconds", &labels, elapsed.as_secs_f64()) {
-        st.logger().log(Level::Error, LogFields::msg("metrics", format!("指标写入失败：{e}")));
+    if let Err(e) = st.metrics().observe(
+        "ep_http_request_duration_seconds",
+        &labels,
+        elapsed.as_secs_f64(),
+    ) {
+        st.logger().log(
+            Level::Error,
+            LogFields::msg("metrics", format!("指标写入失败：{e}")),
+        );
     }
     response
 }
@@ -104,16 +112,22 @@ pub async fn concurrency_gate(State(gate): State<Arc<Gate>>, req: Request, next:
         Ok(Ok(_permit)) => next.run(req).await,
         Ok(Err(e)) => {
             // 信号量被关闭只可能发生在进程收尾阶段，按未就绪处理而不是放行。
-            gate.system
-                .logger()
-                .log(Level::Error, LogFields::msg("gate", format!("并发闸门不可用：{e}")));
+            gate.system.logger().log(
+                Level::Error,
+                LogFields::msg("gate", format!("并发闸门不可用：{e}")),
+            );
             reject(&gate.system, PLATFORM_CAPACITY_CONCURRENCY_LIMIT)
         }
         Err(_) => {
-            if let Err(e) = gate.system.metrics().inc_counter("ep_quota_throttled_total", &[("route", route.as_str())], 1.0) {
-                gate.system
-                    .logger()
-                    .log(Level::Error, LogFields::msg("metrics", format!("指标写入失败：{e}")));
+            if let Err(e) = gate.system.metrics().inc_counter(
+                "ep_quota_throttled_total",
+                &[("route", route.as_str())],
+                1.0,
+            ) {
+                gate.system.logger().log(
+                    Level::Error,
+                    LogFields::msg("metrics", format!("指标写入失败：{e}")),
+                );
             }
             reject(&gate.system, PLATFORM_CAPACITY_CONCURRENCY_LIMIT)
         }
@@ -121,8 +135,12 @@ pub async fn concurrency_gate(State(gate): State<Arc<Gate>>, req: Request, next:
 }
 
 fn reject(st: &SystemState, code: ep_foundation::ErrorCode) -> Response {
-    ApiError::new(code, st.next_incident_no(), ep_platform_obs::TraceContext::new().trace_id().to_string())
-        .into_response()
+    ApiError::new(
+        code,
+        st.next_incident_no(),
+        ep_platform_obs::TraceContext::new().trace_id().to_string(),
+    )
+    .into_response()
 }
 
 /// 同步等待上限的参数。上限取 `http.request_timeout_ms`。
@@ -133,7 +151,10 @@ pub struct SyncLimit {
 
 impl SyncLimit {
     pub fn new(request_timeout_ms: u32, system: Arc<SystemState>) -> Arc<Self> {
-        Arc::new(Self { limit: Duration::from_millis(u64::from(request_timeout_ms)), system })
+        Arc::new(Self {
+            limit: Duration::from_millis(u64::from(request_timeout_ms)),
+            system,
+        })
     }
 }
 
@@ -151,11 +172,14 @@ pub async fn sync_timeout(State(sl): State<Arc<SyncLimit>>, req: Request, next: 
 pub async fn catch_panic(State(st): State<Arc<SystemState>>, req: Request, next: Next) -> Response {
     // Box::pin 后是 Unpin，可以在安全代码里逐次 poll，不需要手写 pin 投影。
     let mut fut = Box::pin(next.run(req));
-    let caught = poll_fn(|cx| match std::panic::catch_unwind(AssertUnwindSafe(|| fut.as_mut().poll(cx))) {
-        Ok(poll) => poll.map(Ok),
-        Err(payload) => Poll::Ready(Err(payload)),
-    })
-    .await;
+    let caught =
+        poll_fn(
+            |cx| match std::panic::catch_unwind(AssertUnwindSafe(|| fut.as_mut().poll(cx))) {
+                Ok(poll) => poll.map(Ok),
+                Err(payload) => Poll::Ready(Err(payload)),
+            },
+        )
+        .await;
 
     match caught {
         Ok(response) => response,
@@ -174,7 +198,12 @@ pub async fn catch_panic(State(st): State<Arc<SystemState>>, req: Request, next:
                     ..LogFields::default()
                 },
             );
-            ApiError::new(PLATFORM_SYSTEM_INTERNAL_ERROR, st.next_incident_no(), trace_id).into_response()
+            ApiError::new(
+                PLATFORM_SYSTEM_INTERNAL_ERROR,
+                st.next_incident_no(),
+                trace_id,
+            )
+            .into_response()
         }
     }
 }

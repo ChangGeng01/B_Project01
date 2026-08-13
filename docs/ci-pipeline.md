@@ -7,16 +7,18 @@
 本文件第 3 节的阶段表由 `.github/ci/verify-pipeline-commands.sh` 与登记表逐行比对，
 多一条或少一条即判不符。
 
-## 1. 当前状态：D-07 尚未成立
+## 1. 当前状态：登记表内已无未交付门禁
 
-十一个阶段共引用 16 条命令，其中 **10 条登记为本阶段未交付**，涉及 `sqlcheck`、
-`codecheck`、`eventcatalog`、`configdoc`、`sbom`、`sign`、`reproduce`、`coverage`、
-`e2e` 九个 `xtask` 子命令（`e2e` 占两条命令），工具一律以退出码 70 明示。
-只要这十条还在，流水线的全局退出码就不可能是 0，D-07 的「返回 0」这一判定尚不成立。
+十一个阶段共引用 17 条命令，**全部登记为已交付**，登记表内不再有未交付门禁，
+也没有命令以退出码 70 报「本阶段未交付」。`verify-pipeline-commands.sh` 真跑
+xtask 子命令核对门禁状态列，登记面与工具实际行为一致。
 
-未交付的门禁一律不写成 `|| true`，也不折算成通过。理由写在纪律里：把 70 折算成 0
-就是静默放行，本卷已因同类形态返工四次。正确形态是让它们在汇总里以「本阶段未交付」
-单列，并让流水线因此返回非零。
+纪律不变：未交付与不可判定的门禁一律不写成 `|| true`，也不折算成通过。把非零
+折算成 0 就是静默放行，本卷已因同类形态返工四次。正确形态是让 `run-pipeline.sh`
+把各退出码按类归入汇总，全局退出码取最重的一类。
+
+D-07 的「返回 0」判定以执行器上一次全量运行不超过 60 分钟为准；登记表内虽已无
+70，该判定仍以真实执行器的全量结果为准，本文件不拿本机结果冒充。
 
 `cargo xtask ci` 这个 ADR-0005 决定二所指的聚合入口目前也不被 `xtask` 受理
 （未知子命令走参数错误，退出码 2）。在它交付之前，调度由
@@ -71,18 +73,19 @@
 | 1 | `cargo metadata --locked --offline --format-version 1` | 可执行 |
 | 2 | `cargo build --workspace --locked --offline --release` | 可执行 |
 | 3 | `cargo xtask archcheck` | 已交付 |
-| 4 | `cargo xtask sqlcheck` | 未交付（70） |
-| 5 | `cargo xtask codecheck` | 未交付（70） |
+| 4 | `cargo xtask sqlcheck` | 已交付 |
+| 5 | `cargo xtask codecheck` | 已交付 |
+| 5 | `cargo fmt -- --check` | 可执行 |
+| 5 | `cargo clippy --workspace --locked` | 可执行 |
 | 6 | `cargo xtask errorcodes` | 已交付 |
-| 6 | `cargo xtask eventcatalog` | 未交付（70） |
-| 6 | `cargo xtask configdoc` | 未交付（70） |
-| 7 | `cargo xtask sbom` | 未交付（70） |
-| 7 | `cargo xtask sign` | 未交付（70） |
-| 8 | `cargo xtask reproduce` | 未交付（70） |
+| 6 | `cargo xtask eventcatalog` | 已交付 |
+| 6 | `cargo xtask configdoc` | 已交付 |
+| 7 | `cargo xtask sbom` | 已交付 |
+| 7 | `cargo xtask sign` | 已交付 |
+| 8 | `cargo xtask reproduce` | 已交付 |
 | 9 | `cargo test --workspace --locked --offline` | 可执行 |
-| 9 | `cargo xtask coverage` | 未交付（70） |
-| 10 | `cargo xtask e2e` | 未交付（70） |
-| 10 | `cargo xtask e2e --profile=t0` | 未交付（70） |
+| 9 | `cargo xtask coverage` | 已交付 |
+| 10 | `cargo xtask e2e --profile=t0` | 已交付 |
 | 11 | `scripts/verify-resource-limits.sh` | 已交付（需 cgroup v2，无 cgroup 时返回 3 未覆盖） |
 
 外部工具（`cargo-deny`、`cargo-llvm-cov`、SBOM 生成器、签名工具等）一律由 `xtask`
@@ -94,14 +97,16 @@
 
 「全部门禁可离线执行」是硬要求，落实为三条：
 
-1. 凡走 Cargo 的命令一律带 `--locked --offline`。`--locked` 使 `Cargo.lock` 漂移
-   直接失败而不是联网重解析，`--offline` 使任何缺包直接失败而不是回落到 crates.io。
-   阶段 1 的 `cargo metadata --locked --offline` 是这一条的前置探针：依赖不齐时它
-   在几秒内失败，而不是让阶段 2 构建到一半才发现。
+1. 凡走 Cargo 的命令，涉及依赖解析的一律带 `--locked --offline`。`--locked` 使
+   `Cargo.lock` 漂移直接失败而不是联网重解析，`--offline` 使任何缺包直接失败而
+   不是回落到 crates.io。阶段 1 的 `cargo metadata --locked --offline` 是这一条的
+   前置探针：依赖不齐时它在几秒内失败，而不是让阶段 2 构建到一半才发现。
+   例外只有阶段 5 的 `cargo fmt -- --check`：它只对源码跑 rustfmt，不解析依赖，
+   无两个开关可带；`cargo clippy --workspace --locked` 的不出网由调度文件的
+   `CARGO_NET_OFFLINE` 环境变量承担，登记表只带 `--locked`。
 2. 依赖来源是内网离线依赖仓库，由执行器上的 `CARGO_HOME` 预置，不在流水线里拉取。
    ADR-0005 已把「构建不出网」写为平台选型的理由之一。
 3. `xtask` 各子命令内部调用的外部工具一律预装在执行器镜像里，不在流水线里下载。
-   这一条的判定面属未交付门禁的一部分，本文件只登记要求。
 
 ## 6. 退出码约定
 
@@ -135,8 +140,8 @@ Woodpecker 的流水线定义文件应落在 `.woodpecker/`。
 ## 8. 60 分钟口径与当前实测
 
 计划第 9.4 节的门槛是全量不超过 60 分钟、增量不超过 25 分钟。该门槛的实测记录
-属 D-15 性能回归基线，不在本文件。当前 9 条门禁未交付，全量时长无法代表交付后的
-真实时长，本文件不给出一个会误导的数字。
+属 D-15 性能回归基线，不在本文件。门禁全部交付之后，全量时长只有在真实执行器上
+实测才有意义，本机没有 CI runner，本文件不给出一个会误导的数字。
 
 ## 9. 本机可验的部分
 

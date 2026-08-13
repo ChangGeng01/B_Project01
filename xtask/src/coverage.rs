@@ -95,7 +95,11 @@ impl FileCoverage {
     }
 
     fn missing(&self) -> Vec<u32> {
-        self.lines.iter().filter(|(_, h)| **h == 0).map(|(l, _)| *l).collect()
+        self.lines
+            .iter()
+            .filter(|(_, h)| **h == 0)
+            .map(|(l, _)| *l)
+            .collect()
     }
 }
 
@@ -162,8 +166,10 @@ pub fn evaluate(
     }
 
     for tier in [Tier::A, Tier::B] {
-        let picked: Vec<&FileCoverage> =
-            files.iter().filter(|f| classify(&f.path, rules) == tier).collect();
+        let picked: Vec<&FileCoverage> = files
+            .iter()
+            .filter(|f| classify(&f.path, rules) == tier)
+            .collect();
         let total: usize = picked.iter().map(|f| f.lines.len()).sum();
         if total == 0 {
             r.undecidable.push(format!(
@@ -182,7 +188,11 @@ pub fn evaluate(
                 below_threshold_detail(&picked, tier.threshold()),
             ));
         } else {
-            r.notes.push(format!("{} {rate:.2}%（门槛 {:.0}%）", tier.label(), tier.threshold()));
+            r.notes.push(format!(
+                "{} {rate:.2}%（门槛 {:.0}%）",
+                tier.label(),
+                tier.threshold()
+            ));
         }
     }
 
@@ -194,11 +204,15 @@ pub fn evaluate(
             "整体档行覆盖率 {overall:.2}% 低于门槛 {OVERALL_THRESHOLD:.0}%（{covered}/{total}）"
         ));
     } else {
-        r.notes.push(format!("整体档 {overall:.2}%（门槛 {OVERALL_THRESHOLD:.0}%）"));
+        r.notes.push(format!(
+            "整体档 {overall:.2}%（门槛 {OVERALL_THRESHOLD:.0}%）"
+        ));
     }
 
     match diff {
-        None => r.undecidable.push("增量行集合取不到，增量档判定未做出".into()),
+        None => r
+            .undecidable
+            .push("增量行集合取不到，增量档判定未做出".into()),
         Some(d) => {
             let note = diff_tier(files, d, &mut r.problems);
             r.notes.push(note);
@@ -218,10 +232,14 @@ fn diff_tier(
     let mut covered = 0usize;
     let mut misses: Vec<String> = Vec::new();
     for f in files {
-        let Some(changed) = diff.get(&f.path) else { continue };
+        let Some(changed) = diff.get(&f.path) else {
+            continue;
+        };
         let mut file_missing: Vec<u32> = Vec::new();
         for line in changed {
-            let Some(hits) = f.lines.get(line) else { continue };
+            let Some(hits) = f.lines.get(line) else {
+                continue;
+            };
             total += 1;
             if *hits > 0 {
                 covered += 1;
@@ -230,7 +248,11 @@ fn diff_tier(
             }
         }
         if !file_missing.is_empty() {
-            misses.push(format!("      {} 缺失行 {}", f.path, join_lines(&file_missing)));
+            misses.push(format!(
+                "      {} 缺失行 {}",
+                f.path,
+                join_lines(&file_missing)
+            ));
         }
     }
     if total == 0 {
@@ -267,7 +289,11 @@ fn below_threshold_detail(files: &[&FileCoverage], threshold: f64) -> String {
 }
 
 fn join_lines(lines: &[u32]) -> String {
-    let shown: Vec<String> = lines.iter().take(MAX_LISTED_LINES).map(u32::to_string).collect();
+    let shown: Vec<String> = lines
+        .iter()
+        .take(MAX_LISTED_LINES)
+        .map(u32::to_string)
+        .collect();
     if lines.len() > MAX_LISTED_LINES {
         format!("{}…（共 {} 行）", shown.join(","), lines.len())
     } else {
@@ -283,7 +309,11 @@ fn percent(covered: usize, total: usize) -> f64 {
 }
 
 pub fn classify(path: &str, rules: &TierRules) -> Tier {
-    if rules.a_prefixes.iter().any(|p| path.starts_with(p.as_str())) {
+    if rules
+        .a_prefixes
+        .iter()
+        .any(|p| path.starts_with(p.as_str()))
+    {
         Tier::A
     } else {
         Tier::B
@@ -334,7 +364,9 @@ pub fn parse_rules(text: &str) -> Result<TierRules, String> {
     if prefixes.is_empty() {
         return Err("A 档路径清单为空，分档判定会恒真".into());
     }
-    Ok(TierRules { a_prefixes: prefixes })
+    Ok(TierRules {
+        a_prefixes: prefixes,
+    })
 }
 
 /// lcov 只取 `SF:` 与 `DA:` 两种记录，其余（分支、函数）本阶段门槛不涉及。
@@ -348,7 +380,10 @@ pub fn parse_lcov(text: &str) -> Result<Vec<FileCoverage>, String> {
             if current.is_some() {
                 return Err(format!("第 {no} 行又开了一个 SF，上一条没有 end_of_record"));
             }
-            current = Some(FileCoverage { path: normalize(path), lines: BTreeMap::new() });
+            current = Some(FileCoverage {
+                path: normalize(path),
+                lines: BTreeMap::new(),
+            });
         } else if let Some(da) = line.strip_prefix("DA:") {
             let Some(f) = current.as_mut() else {
                 return Err(format!("第 {no} 行的 DA 不属于任何 SF"));
@@ -356,10 +391,16 @@ pub fn parse_lcov(text: &str) -> Result<Vec<FileCoverage>, String> {
             let (l, h) = da
                 .split_once(',')
                 .ok_or_else(|| format!("第 {no} 行的 DA 不是「行号,次数」：{da}"))?;
-            let l: u32 = l.trim().parse().map_err(|_| format!("第 {no} 行的行号非法：{l}"))?;
+            let l: u32 = l
+                .trim()
+                .parse()
+                .map_err(|_| format!("第 {no} 行的行号非法：{l}"))?;
             // 次数列可能带校验和后缀，取第一段。
             let h = h.split(',').next().unwrap_or("0");
-            let h: u64 = h.trim().parse().map_err(|_| format!("第 {no} 行的命中次数非法：{h}"))?;
+            let h: u64 = h
+                .trim()
+                .parse()
+                .map_err(|_| format!("第 {no} 行的命中次数非法：{h}"))?;
             f.lines.insert(l, h);
         } else if line == "end_of_record" {
             let Some(f) = current.take() else {
@@ -377,7 +418,14 @@ pub fn parse_lcov(text: &str) -> Result<Vec<FileCoverage>, String> {
 /// lcov 里的路径可能是绝对路径。统一成相对工作区根的形态，否则前缀匹配一条都不命中。
 fn normalize(path: &str) -> String {
     let p = path.replace('\\', "/");
-    for anchor in ["/crates/", "/apps/", "/tools/", "/testkit/", "/datagen/", "/xtask/"] {
+    for anchor in [
+        "/crates/",
+        "/apps/",
+        "/tools/",
+        "/testkit/",
+        "/datagen/",
+        "/xtask/",
+    ] {
         if let Some(i) = p.find(anchor) {
             return p[i + 1..].to_string();
         }
@@ -474,15 +522,21 @@ pub fn parse_diff(text: &str) -> BTreeMap<String, BTreeSet<u32>> {
             };
             continue;
         }
-        let Some(rest) = line.strip_prefix("@@ ") else { continue };
+        let Some(rest) = line.strip_prefix("@@ ") else {
+            continue;
+        };
         let Some(f) = file.clone() else { continue };
-        let Some(plus) = rest.split_whitespace().find(|t| t.starts_with('+')) else { continue };
+        let Some(plus) = rest.split_whitespace().find(|t| t.starts_with('+')) else {
+            continue;
+        };
         let spec = plus.trim_start_matches('+');
         let (start, count) = match spec.split_once(',') {
             Some((s, c)) => (s.parse::<u32>().ok(), c.parse::<u32>().ok()),
             None => (spec.parse::<u32>().ok(), Some(1)),
         };
-        let (Some(start), Some(count)) = (start, count) else { continue };
+        let (Some(start), Some(count)) = (start, count) else {
+            continue;
+        };
         let entry = out.entry(f).or_default();
         for l in start..start + count {
             entry.insert(l);
@@ -497,15 +551,21 @@ mod parse_negative_samples {
 
     #[test]
     fn negative_rules_parse() {
-        let ok = parse_rules("[coverage.tier_a]\npaths = [\"crates/foundation/\"]\n").expect("可解析");
+        let ok =
+            parse_rules("[coverage.tier_a]\npaths = [\"crates/foundation/\"]\n").expect("可解析");
         assert_eq!(ok.a_prefixes, ["crates/foundation/"]);
         // 多行数组同样受理。
-        let multi = parse_rules("[coverage.tier_a]\npaths = [\n  \"crates/foundation/\",\n  \"crates/platform/\",\n]\n")
-            .expect("可解析");
+        let multi = parse_rules(
+            "[coverage.tier_a]\npaths = [\n  \"crates/foundation/\",\n  \"crates/platform/\",\n]\n",
+        )
+        .expect("可解析");
         assert_eq!(multi.a_prefixes.len(), 2);
         // 空清单会让 A 档恒真，必须报错而不是接受。
         assert!(parse_rules("[coverage.tier_a]\npaths = []\n").is_err());
-        assert!(parse_rules("[coverage.tier_b]\npaths = [\"x\"]\n").is_err(), "段名不对");
+        assert!(
+            parse_rules("[coverage.tier_b]\npaths = [\"x\"]\n").is_err(),
+            "段名不对"
+        );
     }
 
     #[test]
@@ -513,7 +573,10 @@ mod parse_negative_samples {
         let v = parse_lcov("SF:/w/crates/foundation/src/a.rs\nDA:1,3\nDA:2,0\nend_of_record\n")
             .expect("可解析");
         assert_eq!(v.len(), 1);
-        assert_eq!(v[0].path, "crates/foundation/src/a.rs", "绝对路径要归一到相对根");
+        assert_eq!(
+            v[0].path, "crates/foundation/src/a.rs",
+            "绝对路径要归一到相对根"
+        );
         assert_eq!(v[0].covered(), 1);
         assert_eq!(v[0].missing(), [2]);
         assert!(parse_lcov("DA:1,1\n").is_err(), "DA 不属于任何 SF");
@@ -532,11 +595,22 @@ mod parse_negative_samples {
 
     #[test]
     fn negative_classify() {
-        let rules = TierRules { a_prefixes: vec!["crates/foundation/".into()] };
-        assert_eq!(classify("crates/foundation/src/id/marker.rs", &rules), Tier::A);
-        assert_eq!(classify("crates/platform/runtime/src/lib.rs", &rules), Tier::B);
+        let rules = TierRules {
+            a_prefixes: vec!["crates/foundation/".into()],
+        };
+        assert_eq!(
+            classify("crates/foundation/src/id/marker.rs", &rules),
+            Tier::A
+        );
+        assert_eq!(
+            classify("crates/platform/runtime/src/lib.rs", &rules),
+            Tier::B
+        );
         // 前缀不是子串：名字里含 foundation 的别处路径不该被吸进 A 档。
-        assert_eq!(classify("apps/core-server/src/foundation_wiring.rs", &rules), Tier::B);
+        assert_eq!(
+            classify("apps/core-server/src/foundation_wiring.rs", &rules),
+            Tier::B
+        );
     }
 }
 
@@ -545,7 +619,9 @@ mod rule_negative_samples {
     use super::*;
 
     fn rules() -> TierRules {
-        TierRules { a_prefixes: vec!["crates/foundation/".into()] }
+        TierRules {
+            a_prefixes: vec!["crates/foundation/".into()],
+        }
     }
 
     /// 造一个文件：`hit` 行命中，`miss` 行未命中。
@@ -557,7 +633,10 @@ mod rule_negative_samples {
         for i in 0..miss {
             lines.insert(hit + i + 1, 0);
         }
-        FileCoverage { path: path.into(), lines }
+        FileCoverage {
+            path: path.into(),
+            lines,
+        }
     }
 
     fn no_diff() -> BTreeMap<String, BTreeSet<u32>> {
@@ -567,7 +646,10 @@ mod rule_negative_samples {
     /// 正样例守边界：四档都达标时必须全绿。
     #[test]
     fn negative_all_tiers_green() {
-        let files = [file("crates/foundation/src/a.rs", 90, 10), file("crates/platform/x/src/b.rs", 80, 20)];
+        let files = [
+            file("crates/foundation/src/a.rs", 90, 10),
+            file("crates/platform/x/src/b.rs", 80, 20),
+        ];
         let r = evaluate(&files, &rules(), Some(&no_diff()));
         assert_eq!(r.outcome(), Outcome::Clean, "实得：{:?}", r.problems);
     }
@@ -575,19 +657,32 @@ mod rule_negative_samples {
     /// 负样例：人为降低 A 档覆盖率到门槛以下，整条规则必须判红并点名缺失行。
     #[test]
     fn negative_tier_a_below_threshold() {
-        let files = [file("crates/foundation/src/a.rs", 84, 16), file("crates/platform/x/src/b.rs", 90, 10)];
+        let files = [
+            file("crates/foundation/src/a.rs", 84, 16),
+            file("crates/platform/x/src/b.rs", 90, 10),
+        ];
         let r = evaluate(&files, &rules(), Some(&no_diff()));
         assert_eq!(r.outcome(), Outcome::Violated);
-        let msg = r.problems.iter().find(|p| p.contains("A 档")).expect("须点名 A 档");
+        let msg = r
+            .problems
+            .iter()
+            .find(|p| p.contains("A 档"))
+            .expect("须点名 A 档");
         assert!(msg.contains("84.00%"));
-        assert!(msg.contains("crates/foundation/src/a.rs"), "须列出未达标文件");
+        assert!(
+            msg.contains("crates/foundation/src/a.rs"),
+            "须列出未达标文件"
+        );
         assert!(msg.contains("缺失行 85"), "须列出缺失行号");
     }
 
     /// 负样例：B 档单独不达标，A 档达标时也必须判红。
     #[test]
     fn negative_tier_b_below_threshold() {
-        let files = [file("crates/foundation/src/a.rs", 99, 1), file("crates/platform/x/src/b.rs", 60, 40)];
+        let files = [
+            file("crates/foundation/src/a.rs", 99, 1),
+            file("crates/platform/x/src/b.rs", 60, 40),
+        ];
         let r = evaluate(&files, &rules(), Some(&no_diff()));
         assert!(r.problems.iter().any(|p| p.contains("B 档")));
     }
@@ -596,22 +691,39 @@ mod rule_negative_samples {
     #[test]
     fn negative_overall_below_threshold() {
         // B 档恰好压线 70%，A 档 86%，两档都过而整体 71.45% 不过。
-        let files = [file("crates/foundation/src/a.rs", 86, 14), file("crates/platform/x/src/b.rs", 700, 300)];
+        let files = [
+            file("crates/foundation/src/a.rs", 86, 14),
+            file("crates/platform/x/src/b.rs", 700, 300),
+        ];
         let r = evaluate(&files, &rules(), Some(&no_diff()));
-        assert!(r.problems.iter().any(|p| p.contains("整体档")), "实得：{:?}", r.problems);
+        assert!(
+            r.problems.iter().any(|p| p.contains("整体档")),
+            "实得：{:?}",
+            r.problems
+        );
         assert!(!r.problems.iter().any(|p| p.contains("A 档")));
     }
 
     /// 负样例：新增行没测到，前三档全绿也要判红。
     #[test]
     fn negative_diff_tier_below_threshold() {
-        let files = [file("crates/foundation/src/a.rs", 90, 10), file("crates/platform/x/src/b.rs", 90, 10)];
+        let files = [
+            file("crates/foundation/src/a.rs", 90, 10),
+            file("crates/platform/x/src/b.rs", 90, 10),
+        ];
         let mut diff = BTreeMap::new();
         // 该文件 91..100 是未命中行，全部算作本次新增。
-        diff.insert("crates/foundation/src/a.rs".to_string(), (91u32..=100).collect::<BTreeSet<u32>>());
+        diff.insert(
+            "crates/foundation/src/a.rs".to_string(),
+            (91u32..=100).collect::<BTreeSet<u32>>(),
+        );
         let r = evaluate(&files, &rules(), Some(&diff));
         assert_eq!(r.outcome(), Outcome::Violated);
-        let msg = r.problems.iter().find(|p| p.contains("增量档")).expect("须点名增量档");
+        let msg = r
+            .problems
+            .iter()
+            .find(|p| p.contains("增量档"))
+            .expect("须点名增量档");
         assert!(msg.contains("0.00%"));
         assert!(msg.contains("缺失行 91"));
     }
@@ -637,10 +749,16 @@ mod rule_negative_samples {
     /// 负样例：增量行取不到与增量行为空是两件事，前者判未做出，后者如实说明。
     #[test]
     fn negative_diff_unavailable_differs_from_diff_empty() {
-        let files = [file("crates/foundation/src/a.rs", 90, 10), file("crates/platform/x/src/b.rs", 90, 10)];
+        let files = [
+            file("crates/foundation/src/a.rs", 90, 10),
+            file("crates/platform/x/src/b.rs", 90, 10),
+        ];
         let unavailable = evaluate(&files, &rules(), None);
         assert_eq!(unavailable.outcome(), Outcome::Undecidable);
-        assert!(unavailable.undecidable.iter().any(|u| u.contains("增量档判定未做出")));
+        assert!(unavailable
+            .undecidable
+            .iter()
+            .any(|u| u.contains("增量档判定未做出")));
 
         let empty = evaluate(&files, &rules(), Some(&no_diff()));
         assert_eq!(empty.outcome(), Outcome::Clean);

@@ -1,6 +1,37 @@
-//! ep-platform-authz — 阶段 1 只建骨架，实质内容由后续阶段补齐。
+//! ep-platform-authz：授权判定五构件、快照运行形态、SoD 校验与
+//! AUTHZ 类配置项 applier（04 计划 §4.1/§4.2/§4.5/§4.7/§4.8）。
 //!
-//! 职责：RBAC 与 ABAC 判定、字段级与密级过滤、职责分离、审批授权判定。
-//!
-//! 编译期断言：本 crate 的依赖方向由 `xtask archcheck` 逐条断言，
-//! 允许的上游见技术基线第 1.3 节。骨架期不留 `todo!()`。
+//! 依赖方向：foundation + tenancy + release 端口；不依赖 identity、
+//! 不依赖 adapter。SQL 渲染与落库实现体归 ep-adapter-db-pg，
+//! 本 crate 只持有谓词构造与端口消费面。
+
+pub mod admission;
+pub mod applier;
+pub mod decider;
+pub mod field;
+pub mod metrics;
+pub mod reauth;
+pub mod scope;
+pub mod snapshot;
+pub mod sod;
+pub mod spec;
+pub mod types;
+
+pub use admission::{AdmissionConfig, AdmissionGate, AdmissionPermit};
+pub use applier::{
+    register_authz_appliers, AuthzConfigWriteStore, AuthzFieldGrantApplier, AuthzPolicyApplier,
+    AuthzRoleApplier,
+};
+pub use decider::{AccessDecider, Verdict};
+pub use field::{FieldProjector, NoSensitiveFields, SensitiveFieldInfo, SensitiveFieldLookup};
+pub use metrics::{AuthzMetricsSink, SilentMetricsSink};
+pub use reauth::{
+    canonical_amount, subject_digest, ChallengeRecord, ChallengeStatus, IssuedChallenge,
+    ReauthChallengeStore, ReauthGate, ReauthSubject,
+};
+pub use scope::{CompiledScope, ScopeCompiler, ScopeConfig};
+pub use snapshot::{
+    AuthzConfigVersionQuery, AuthzSnapshotHolder, DegradationWindowOpener, EffectiveVersion,
+    EntityAuthzData, ReloadOutcome, SnapshotReloader,
+};
+pub use types::{Action, Decision, DenyReason, HighRiskOperation, RecordScope};

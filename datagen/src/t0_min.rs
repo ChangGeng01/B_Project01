@@ -31,9 +31,27 @@ pub fn build(seed: u64) -> Dataset {
     let product_id = uuid_v7(seed, SLOT_PRODUCT);
 
     let records = vec![
-        archive_record(KIND_LEGAL_ENTITY, &legal_entity_id, &legal_entity_id, "LE-0001", "Legal Entity 0001"),
-        archive_record(KIND_CUSTOMER, &customer_id, &legal_entity_id, "CUST-0001", "Customer 0001"),
-        archive_record(KIND_PRODUCT, &product_id, &legal_entity_id, "PROD-0001", "Product 0001"),
+        archive_record(
+            KIND_LEGAL_ENTITY,
+            &legal_entity_id,
+            &legal_entity_id,
+            "LE-0001",
+            "Legal Entity 0001",
+        ),
+        archive_record(
+            KIND_CUSTOMER,
+            &customer_id,
+            &legal_entity_id,
+            "CUST-0001",
+            "Customer 0001",
+        ),
+        archive_record(
+            KIND_PRODUCT,
+            &product_id,
+            &legal_entity_id,
+            "PROD-0001",
+            "Product 0001",
+        ),
     ];
 
     Dataset::new(Scale::T0Min.as_str(), seed, records)
@@ -43,13 +61,20 @@ pub fn build(seed: u64) -> Dataset {
 #[derive(Clone, PartialEq, Eq, Debug)]
 pub enum ShapeViolation {
     /// 某个逻辑实体的条数不是 1。
-    WrongCount { kind: &'static str, expected: usize, actual: usize },
+    WrongCount {
+        kind: &'static str,
+        expected: usize,
+        actual: usize,
+    },
     /// 出现了三个逻辑实体之外的记录。
     UnexpectedKind(String),
     /// 跨法人引用。数据字典第 2 节明写禁止。
     CrossLegalEntity { kind: &'static str },
     /// 记录缺必填列。
-    MissingField { kind: &'static str, field: &'static str },
+    MissingField {
+        kind: &'static str,
+        field: &'static str,
+    },
 }
 
 /// 校验产出物确实是 `t0-min` 声称的形状。
@@ -63,7 +88,11 @@ pub fn verify(dataset: &Dataset) -> Result<(), Vec<ShapeViolation>> {
     for kind in [KIND_LEGAL_ENTITY, KIND_CUSTOMER, KIND_PRODUCT] {
         let actual = dataset.count_of(kind);
         if actual != 1 {
-            violations.push(ShapeViolation::WrongCount { kind, expected: 1, actual });
+            violations.push(ShapeViolation::WrongCount {
+                kind,
+                expected: 1,
+                actual,
+            });
         }
     }
     for record in dataset.records() {
@@ -83,7 +112,10 @@ pub fn verify(dataset: &Dataset) -> Result<(), Vec<ShapeViolation>> {
     for record in dataset.records() {
         let kind = record.kind();
         let Some(owner) = record.field("legal_entity_id") else {
-            violations.push(ShapeViolation::MissingField { kind, field: "legal_entity_id" });
+            violations.push(ShapeViolation::MissingField {
+                kind,
+                field: "legal_entity_id",
+            });
             continue;
         };
         match &anchor {
@@ -106,7 +138,11 @@ pub fn verify(dataset: &Dataset) -> Result<(), Vec<ShapeViolation>> {
 impl std::fmt::Display for ShapeViolation {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            ShapeViolation::WrongCount { kind, expected, actual } => {
+            ShapeViolation::WrongCount {
+                kind,
+                expected,
+                actual,
+            } => {
                 write!(f, "{kind} 应有 {expected} 条，实际 {actual} 条")
             }
             ShapeViolation::UnexpectedKind(kind) => write!(f, "出现档位之外的记录 {kind}"),
@@ -190,12 +226,24 @@ mod tests {
     #[test]
     fn customer_and_product_belong_to_the_only_legal_entity() {
         let ds = build(7);
-        let le = ds.records().iter().find(|r| r.kind() == KIND_LEGAL_ENTITY).unwrap();
+        let le = ds
+            .records()
+            .iter()
+            .find(|r| r.kind() == KIND_LEGAL_ENTITY)
+            .unwrap();
         let le_id = le.field("id").unwrap().clone();
-        assert_eq!(le.field("legal_entity_id"), Some(&le_id), "法人自身的 legal_entity_id 应指向自己");
+        assert_eq!(
+            le.field("legal_entity_id"),
+            Some(&le_id),
+            "法人自身的 legal_entity_id 应指向自己"
+        );
         for kind in [KIND_CUSTOMER, KIND_PRODUCT] {
             let r = ds.records().iter().find(|r| r.kind() == kind).unwrap();
-            assert_eq!(r.field("legal_entity_id"), Some(&le_id), "{kind} 越法人引用");
+            assert_eq!(
+                r.field("legal_entity_id"),
+                Some(&le_id),
+                "{kind} 越法人引用"
+            );
         }
     }
 
@@ -203,7 +251,11 @@ mod tests {
     #[test]
     fn ids_are_distinct() {
         let ds = build(3);
-        let mut ids: Vec<_> = ds.records().iter().map(|r| r.field("id").unwrap().clone()).collect();
+        let mut ids: Vec<_> = ds
+            .records()
+            .iter()
+            .map(|r| r.field("id").unwrap().clone())
+            .collect();
         ids.sort_by_key(|v| format!("{v:?}"));
         ids.dedup();
         assert_eq!(ids.len(), 3);
@@ -258,7 +310,10 @@ mod tests {
         let ds = Dataset::new(
             "t0-min",
             1,
-            vec![probe(KIND_LEGAL_ENTITY, "le", "le"), probe(KIND_CUSTOMER, "c1", "le")],
+            vec![
+                probe(KIND_LEGAL_ENTITY, "le", "le"),
+                probe(KIND_CUSTOMER, "c1", "le"),
+            ],
         );
         let violations = verify(&ds).expect_err("缺产品必须判不符");
         assert!(violations.contains(&ShapeViolation::WrongCount {
@@ -281,7 +336,9 @@ mod tests {
             ],
         );
         let violations = verify(&ds).expect_err("跨法人引用必须判不符");
-        assert!(violations.contains(&ShapeViolation::CrossLegalEntity { kind: KIND_CUSTOMER }));
+        assert!(violations.contains(&ShapeViolation::CrossLegalEntity {
+            kind: KIND_CUSTOMER
+        }));
     }
 
     /// 负样例：档位之外的记录必须被拦下。
@@ -294,7 +351,10 @@ mod tests {
                 probe(KIND_LEGAL_ENTITY, "le", "le"),
                 probe(KIND_CUSTOMER, "c1", "le"),
                 probe(KIND_PRODUCT, "p1", "le"),
-                Record::new("supplier", vec![("legal_entity_id", Value::Text("le".into()))]),
+                Record::new(
+                    "supplier",
+                    vec![("legal_entity_id", Value::Text("le".into()))],
+                ),
             ],
         );
         let violations = verify(&ds).expect_err("多出的实体必须判不符");
@@ -324,13 +384,26 @@ mod tests {
     #[test]
     fn column_order_follows_the_data_dictionary() {
         let expected = [
-            "id", "legal_entity_id", "security_level", "data_scope_tags", "row_version",
-            "created_at", "created_by", "updated_at", "updated_by",
-            "code", "name", "is_active", "deactivated_at",
+            "id",
+            "legal_entity_id",
+            "security_level",
+            "data_scope_tags",
+            "row_version",
+            "created_at",
+            "created_by",
+            "updated_at",
+            "updated_by",
+            "code",
+            "name",
+            "is_active",
+            "deactivated_at",
         ];
         let bytes = build(1).encode().unwrap();
         let text = String::from_utf8(bytes).unwrap();
-        let line = text.lines().find(|l| l.starts_with(KIND_LEGAL_ENTITY)).unwrap();
+        let line = text
+            .lines()
+            .find(|l| l.starts_with(KIND_LEGAL_ENTITY))
+            .unwrap();
         let names: Vec<&str> = line
             .split('\t')
             .skip(1)

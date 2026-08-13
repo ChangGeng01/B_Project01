@@ -23,6 +23,8 @@
 3	archcheck	xtask	archcheck	delivered
 4	sqlcheck	xtask	sqlcheck	delivered
 5	codecheck	xtask	codecheck	delivered
+5	codecheck	cargo	fmt -- --check	delivered
+5	codecheck	cargo	clippy --workspace --locked	delivered
 6	registry-docs	xtask	errorcodes	delivered
 6	registry-docs	xtask	eventcatalog	delivered
 6	registry-docs	xtask	configdoc	delivered

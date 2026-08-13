@@ -9,6 +9,8 @@ workspace = true
 
 [dependencies]
 ep-foundation.workspace = true
+# 阶段 2 任务 #14：降级台账端口方法为异步，与全工作区统一用 async-trait。
+async-trait.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 # v4 只在本 crate 用于 trace-id 与关联标识的熵，业务标识仍一律 UUIDv7。

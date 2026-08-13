@@ -43,10 +43,12 @@ jobs:
       - name: 自检 判定件负样例
         run: bash .github/ci/tests/run-negative.sh
 
-      # 11 个阶段的执行。当前 9 条门禁未交付、以退出码 70 明示，故本步骤返回 70，
-      # 整条流水线因此为红。未交付的步骤一律不写 `|| true`，也不折算成通过。
+      # 11 个阶段的执行。登记表内 17 条门禁全部登记为已交付，无未交付门禁。
+      # 未交付与不可判定的步骤一律不写 `|| true`，也不折算成通过；各退出码由
+      # `cargo xtask ci` 按类归入汇总，全局退出码取最重的一类。
       #
-      # ADR-0005 决定二的聚合入口 `cargo xtask ci` 交付后，本步骤改为
-      # `run: cargo xtask ci`，run-pipeline.sh 与登记表一并作废。
+      # 本步骤即 ADR-0005 决定二的聚合入口：它直接读登记表逐行调度，判定逻辑
+      # 全部在 xtask 里，本文件不表达任何判定。run-pipeline.sh 保留为备用调度器：
+      # 读同一份登记表，行为与本入口逐行对等，需要排除 Rust 入口时改回调它即可。
       - name: 执行 D-07 的 11 个阶段
-        run: bash .github/ci/run-pipeline.sh
+        run: cargo xtask ci

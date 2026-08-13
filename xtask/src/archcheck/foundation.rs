@@ -20,19 +20,35 @@ const REGISTRY_DOC: &str =
 const REGISTRY_MARKER: &str = "本表即 `xtask archcheck` 的 foundation-module-registry 规则的比对对";
 
 /// 读不到基线表时的兜底清单。命中兜底即报违反，不静默通过。
-const REGISTERED_MODULES: [&str; 7] =
-    ["capability", "error", "id", "module", "port", "principal", "security"];
+const REGISTERED_MODULES: [&str; 7] = [
+    "capability",
+    "error",
+    "id",
+    "module",
+    "port",
+    "principal",
+    "security",
+];
 
 /// 从基线第 1.4 节的登记表读顶层模块名。表体第一列即模块名。
 fn registered_from_doc(root: &Path) -> Option<Vec<String>> {
     let text = fs::read_to_string(root.join(REGISTRY_DOC)).ok()?;
     let after = text.split_once(REGISTRY_MARKER)?.1;
-    let table = after.split("\n\n").find(|b| b.trim_start().starts_with('|'))?;
+    let table = after
+        .split("\n\n")
+        .find(|b| b.trim_start().starts_with('|'))?;
     let names: Vec<String> = table
         .lines()
         .map(str::trim)
         .filter(|l| l.starts_with('|') && l.ends_with('|'))
-        .map(|l| l.trim_matches('|').split('|').next().unwrap_or("").trim().to_string())
+        .map(|l| {
+            l.trim_matches('|')
+                .split('|')
+                .next()
+                .unwrap_or("")
+                .trim()
+                .to_string()
+        })
         .filter(|c| !c.is_empty() && c != "顶层模块" && !c.starts_with("---"))
         .collect();
     (!names.is_empty()).then_some(names)
@@ -42,7 +58,11 @@ fn registered_from_doc(root: &Path) -> Option<Vec<String>> {
 const SINGLE_OWNER_EXEMPT: &str = "crates/foundation/src/id/marker.rs";
 
 fn violation(rule: &'static str, package: &str, detail: impl Into<String>) -> Violation {
-    Violation { rule, package: package.to_string(), detail: detail.into() }
+    Violation {
+        rule,
+        package: package.to_string(),
+        detail: detail.into(),
+    }
 }
 
 /// 替身三：顶层模块清单与登记表逐行相等，多一个少一个都判违反。
@@ -50,7 +70,11 @@ pub fn module_registry(root: &Path) -> Vec<Violation> {
     const RULE: &str = "foundation-module-registry";
     let path = root.join("crates/foundation/src/lib.rs");
     let Ok(text) = fs::read_to_string(&path) else {
-        return vec![violation(RULE, "crates/foundation/src/lib.rs", "读不到 lib.rs")];
+        return vec![violation(
+            RULE,
+            "crates/foundation/src/lib.rs",
+            "读不到 lib.rs",
+        )];
     };
     let mut actual: Vec<String> = text
         .lines()
@@ -101,7 +125,11 @@ pub fn no_single_owner(root: &Path) -> Vec<Violation> {
     const RULE: &str = "foundation-no-single-owner";
     let base = root.join("crates/foundation/src");
     let Some(codes) = module_code_tokens(&base.join("module.rs")) else {
-        return vec![violation(RULE, "module.rs", "读不到 ModuleCode 枚举体，词元表无法建立")];
+        return vec![violation(
+            RULE,
+            "module.rs",
+            "读不到 ModuleCode 枚举体，词元表无法建立",
+        )];
     };
     let exempt = root.join(SINGLE_OWNER_EXEMPT);
 
@@ -110,10 +138,19 @@ pub fn no_single_owner(root: &Path) -> Vec<Violation> {
         if file == exempt {
             continue;
         }
-        let rel = file.strip_prefix(root).unwrap_or(&file).display().to_string();
+        let rel = file
+            .strip_prefix(root)
+            .unwrap_or(&file)
+            .display()
+            .to_string();
         let path_hit: Vec<&String> = file
             .strip_prefix(&base)
-            .map(|p| p.components().filter_map(|c| c.as_os_str().to_str()).map(str::to_string).collect::<Vec<_>>())
+            .map(|p| {
+                p.components()
+                    .filter_map(|c| c.as_os_str().to_str())
+                    .map(str::to_string)
+                    .collect::<Vec<_>>()
+            })
             .unwrap_or_default()
             .iter()
             .map(|s| s.trim_end_matches(".rs").to_string())
@@ -123,7 +160,9 @@ pub fn no_single_owner(root: &Path) -> Vec<Violation> {
             found.push(violation(RULE, &rel, format!("路径含模块码词元「{hit}」")));
         }
 
-        let Ok(text) = fs::read_to_string(&file) else { continue };
+        let Ok(text) = fs::read_to_string(&file) else {
+            continue;
+        };
         for (no, name) in declarations(&text) {
             for token in camel_tokens(&name) {
                 if codes.contains(&token) {
@@ -156,7 +195,13 @@ fn module_code_tokens(path: &Path) -> Option<Vec<String>> {
 }
 
 fn declarations(text: &str) -> Vec<(usize, String)> {
-    const HEADS: [&str; 5] = ["pub struct ", "pub enum ", "pub trait ", "pub type ", "pub mod "];
+    const HEADS: [&str; 5] = [
+        "pub struct ",
+        "pub enum ",
+        "pub trait ",
+        "pub type ",
+        "pub mod ",
+    ];
     text.lines()
         .enumerate()
         .map(|(i, l)| (i + 1, l.trim()))
@@ -197,7 +242,9 @@ fn camel_tokens(name: &str) -> Vec<String> {
 
 fn rust_files(dir: &Path) -> Vec<PathBuf> {
     let mut out = Vec::new();
-    let Ok(entries) = fs::read_dir(dir) else { return out };
+    let Ok(entries) = fs::read_dir(dir) else {
+        return out;
+    };
     for entry in entries.flatten() {
         let path = entry.path();
         if path.is_dir() {
@@ -300,22 +347,37 @@ mod rule_negative_samples {
         fs::write(noname.join("crates/foundation/src/lib.rs"), SEVEN).expect("写 lib.rs");
         fs::write(src.join("id/marker.rs"), "pub struct SalesOrder;\n").expect("回写夹具");
         let v = module_registry(&noname);
-        assert!(v.iter().any(|x| x.detail.contains("读不到基线")), "读不到即未覆盖，不是通过");
+        assert!(
+            v.iter().any(|x| x.detail.contains("读不到基线")),
+            "读不到即未覆盖，不是通过"
+        );
     }
 
     /// 负样例：在已有模块内塞带模块码词元的业务形状。
     #[test]
     fn negative_no_single_owner() {
         let ok = fixture("own-ok", SEVEN, &[("error.rs", "pub struct AppError;\n")]);
-        assert!(no_single_owner(&ok).is_empty(), "不含模块码词元的声明应通过");
+        assert!(
+            no_single_owner(&ok).is_empty(),
+            "不含模块码词元的声明应通过"
+        );
 
-        let bad = fixture("own-bad", SEVEN, &[("error.rs", "pub struct SalesOrderDto;\n")]);
+        let bad = fixture(
+            "own-bad",
+            SEVEN,
+            &[("error.rs", "pub struct SalesOrderDto;\n")],
+        );
         let v = no_single_owner(&bad);
-        assert!(v.iter().any(|x| x.detail.contains("sales")), "须点名命中的模块码词元");
+        assert!(
+            v.iter().any(|x| x.detail.contains("sales")),
+            "须点名命中的模块码词元"
+        );
 
         // marker.rs 是唯一例外面：SalesOrder 在那里合法。
         assert!(
-            !no_single_owner(&ok).iter().any(|x| x.package.contains("marker.rs")),
+            !no_single_owner(&ok)
+                .iter()
+                .any(|x| x.package.contains("marker.rs")),
             "标记类型模块不受本规则约束"
         );
     }

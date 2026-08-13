@@ -113,36 +113,36 @@ check_one_dropin() {
 	file=$(dropin_path "$slice")
 
 	if [ ! -r "$file" ]; then
-		mismatch "$slice　缺少 drop-in 文件 $file（配额表第 $row 行 $name 无承载物）"
+		mismatch "${slice}　缺少 drop-in 文件 ${file}（配额表第 $row 行 $name 无承载物）"
 		return
 	fi
 
 	if ! grep -q -E '^[[:space:]]*\[Slice\][[:space:]]*$' "$file"; then
-		mismatch "$slice　drop-in 缺少 [Slice] 节，systemd 会忽略其中全部取值"
+		mismatch "${slice}　drop-in 缺少 [Slice] 节，systemd 会忽略其中全部取值"
 		return
 	fi
 
 	# 先查有无越界的键，再查取值。
 	while IFS= read -r key; do
 		if ! allowed_key "$slice" "$key"; then
-			mismatch "$slice　出现四类取值之外的键 $key，首版不为该 slice 承载该列"
+			mismatch "${slice}　出现四类取值之外的键 ${key}，首版不为该 slice 承载该列"
 		fi
 	done < <(grep -E '^[[:space:]]*[A-Za-z][A-Za-z0-9]*=' "$file" | sed -E 's/^[[:space:]]*([A-Za-z][A-Za-z0-9]*)=.*/\1/')
 
 	if ! cpu=$(read_key "$file" CPUWeight); then
-		mismatch "$slice　CPUWeight 缺失或重复"
+		mismatch "${slice}　CPUWeight 缺失或重复"
 		cpu=
 	fi
 	if ! io=$(read_key "$file" IOWeight); then
-		mismatch "$slice　IOWeight 缺失或重复"
+		mismatch "${slice}　IOWeight 缺失或重复"
 		io=
 	fi
 	if ! mlow=$(read_key "$file" MemoryLow); then
-		mismatch "$slice　MemoryLow 缺失或重复"
+		mismatch "${slice}　MemoryLow 缺失或重复"
 		mlow=
 	fi
 	if ! mmax=$(read_key "$file" MemoryMax); then
-		mismatch "$slice　MemoryMax 缺失或重复"
+		mismatch "${slice}　MemoryMax 缺失或重复"
 		mmax=
 	fi
 
@@ -150,21 +150,21 @@ check_one_dropin() {
 
 	if [ -n "$cpu" ]; then
 		if [ "$cpu" != "$expect_cpu" ]; then
-			mismatch "$slice　CPUWeight=$cpu，规格第 13.1 章第 $row 行为 ${cpu_pct}%，应为 $expect_cpu"
+			mismatch "${slice}　CPUWeight=${cpu}，规格第 13.1 章第 $row 行为 ${cpu_pct}%，应为 $expect_cpu"
 		elif [ "$cpu" -lt 1 ] || [ "$cpu" -gt 10000 ]; then
-			mismatch "$slice　CPUWeight=$cpu 落在 systemd 取值域 1..10000 之外"
+			mismatch "${slice}　CPUWeight=$cpu 落在 systemd 取值域 1..10000 之外"
 		else
-			pass "$slice　CPUWeight=$cpu　＝ ${cpu_pct}% × 100"
+			pass "${slice}　CPUWeight=${cpu}　＝ ${cpu_pct}% × 100"
 		fi
 	fi
 
 	if [ -n "$io" ]; then
 		if [ "$io" != "$expect_io" ]; then
-			mismatch "$slice　IOWeight=$io，规格第 13.1 章第 $row 行为 ${io_pct}%，应为 $expect_io"
+			mismatch "${slice}　IOWeight=${io}，规格第 13.1 章第 $row 行为 ${io_pct}%，应为 $expect_io"
 		elif [ "$io" -lt 1 ] || [ "$io" -gt 10000 ]; then
-			mismatch "$slice　IOWeight=$io 落在 systemd 取值域 1..10000 之外"
+			mismatch "${slice}　IOWeight=$io 落在 systemd 取值域 1..10000 之外"
 		else
-			pass "$slice　IOWeight=$io　＝ ${io_pct}% × 100"
+			pass "${slice}　IOWeight=${io}　＝ ${io_pct}% × 100"
 		fi
 	fi
 
@@ -173,15 +173,15 @@ check_one_dropin() {
 	if [ -n "$mlow" ] && [ -n "$mmax" ]; then
 		local b_low b_max
 		if ! b_low=$(parse_size "$mlow"); then
-			mismatch "$slice　MemoryLow=$mlow 不是合法的字节取值"
+			mismatch "${slice}　MemoryLow=$mlow 不是合法的字节取值"
 		elif ! b_max=$(parse_size "$mmax"); then
-			mismatch "$slice　MemoryMax=$mmax 不是合法的字节取值"
+			mismatch "${slice}　MemoryMax=$mmax 不是合法的字节取值"
 		elif [ "$b_low" != "$b_max" ]; then
-			mismatch "$slice　MemoryLow=$mlow 与 MemoryMax=$mmax 不同值，规格第 13.1 章要求保底与上限同值"
+			mismatch "${slice}　MemoryLow=$mlow 与 MemoryMax=$mmax 不同值，规格第 13.1 章要求保底与上限同值"
 		elif [ "$b_low" -le 0 ]; then
-			mismatch "$slice　MemoryMax=$mmax 不是正数"
+			mismatch "${slice}　MemoryMax=$mmax 不是正数"
 		else
-			pass "$slice　MemoryLow＝MemoryMax＝$b_max 字节"
+			pass "${slice}　MemoryLow＝MemoryMax＝$b_max 字节"
 		fi
 	fi
 
@@ -194,11 +194,11 @@ check_one_dropin() {
 check_iomax_dropin() {
 	local slice=$1 file=$2 r w rdev wdev rval wval
 	if ! r=$(read_key "$file" IOReadBandwidthMax); then
-		mismatch "$slice　IOReadBandwidthMax 缺失或重复"
+		mismatch "${slice}　IOReadBandwidthMax 缺失或重复"
 		return
 	fi
 	if ! w=$(read_key "$file" IOWriteBandwidthMax); then
-		mismatch "$slice　IOWriteBandwidthMax 缺失或重复"
+		mismatch "${slice}　IOWriteBandwidthMax 缺失或重复"
 		return
 	fi
 	rdev=${r%% *}
@@ -206,27 +206,27 @@ check_iomax_dropin() {
 	rval=${r##* }
 	wval=${w##* }
 	if [ "$rdev" = "$r" ] || [ "$wdev" = "$w" ]; then
-		mismatch "$slice　IO 硬上限缺少设备路径，systemd 的 io.max 承载指令必须写成「路径 字节每秒」"
+		mismatch "${slice}　IO 硬上限缺少设备路径，systemd 的 io.max 承载指令必须写成「路径 字节每秒」"
 		return
 	fi
 	if [ "$rdev" != "$wdev" ]; then
-		mismatch "$slice　IO 硬上限读写两行设备不同：$rdev 与 $wdev"
+		mismatch "${slice}　IO 硬上限读写两行设备不同：$rdev 与 $wdev"
 		return
 	fi
 	local b_r b_w
 	if ! b_r=$(parse_size "$rval") || ! b_w=$(parse_size "$wval"); then
-		mismatch "$slice　IO 硬上限取值不是合法字节数：$rval 与 $wval"
+		mismatch "${slice}　IO 硬上限取值不是合法字节数：$rval 与 $wval"
 		return
 	fi
 	if [ "$b_r" != "$b_w" ]; then
-		mismatch "$slice　IO 硬上限读写两行取值不同：$b_r 与 $b_w，计划第 5.6 节只给一个数字"
+		mismatch "${slice}　IO 硬上限读写两行取值不同：$b_r 与 ${b_w}，计划第 5.6 节只给一个数字"
 		return
 	fi
 	if [ "$b_r" -le 0 ]; then
-		mismatch "$slice　IO 硬上限不是正数：$b_r"
+		mismatch "${slice}　IO 硬上限不是正数：$b_r"
 		return
 	fi
-	pass "$slice　IO 硬上限 $rdev $b_r 字节每秒（读写同值）"
+	pass "${slice}　IO 硬上限 $rdev $b_r 字节每秒（读写同值）"
 }
 
 # 多出来的 drop-in 目录同样要红：第 9 行内置搜索索引一旦被人补成第九个 slice，
@@ -244,7 +244,7 @@ check_no_extra_dropins() {
 $(spec_rows)
 EOF
 		if [ "$known" = "no" ]; then
-			mismatch "$slice　drop-in 目录不在规格第 13.1 章的八行之内"
+			mismatch "${slice}　drop-in 目录不在规格第 13.1 章的八行之内"
 		fi
 	done
 }
@@ -262,14 +262,14 @@ check_weight_sums() {
 $(spec_rows)
 EOF
 	if [ "$cpu_sum" != "$EXPECT_CPU_SUM" ]; then
-		mismatch "八行 CPUWeight 之和为 $cpu_sum，应为 $EXPECT_CPU_SUM（第 9 行不落值所致的既定缺口）"
+		mismatch "八行 CPUWeight 之和为 ${cpu_sum}，应为 ${EXPECT_CPU_SUM}（第 9 行不落值所致的既定缺口）"
 	else
-		pass "八行 CPUWeight 之和 $cpu_sum，低于满值 10000 是第 9 行未落 drop-in 的既定偏差"
+		pass "八行 CPUWeight 之和 ${cpu_sum}，低于满值 10000 是第 9 行未落 drop-in 的既定偏差"
 	fi
 	if [ "$io_sum" != "$EXPECT_IO_SUM" ]; then
-		mismatch "八行 IOWeight 之和为 $io_sum，应为 $EXPECT_IO_SUM（第 9 行不落值所致的既定缺口）"
+		mismatch "八行 IOWeight 之和为 ${io_sum}，应为 ${EXPECT_IO_SUM}（第 9 行不落值所致的既定缺口）"
 	else
-		pass "八行 IOWeight 之和 $io_sum，低于满值 10000 是第 9 行未落 drop-in 的既定偏差"
+		pass "八行 IOWeight 之和 ${io_sum}，低于满值 10000 是第 9 行未落 drop-in 的既定偏差"
 	fi
 }
 
@@ -301,9 +301,9 @@ read_cgroup_file() {
 compare_runtime_value() {
 	local slice=$1 attr=$2 actual=$3 expect=$4
 	if [ "$actual" = "$expect" ]; then
-		pass "$slice　$attr=$actual 与 drop-in 一致"
+		pass "${slice}　$attr=$actual 与 drop-in 一致"
 	else
-		mismatch "$slice　$attr 实际为 $actual，drop-in 为 $expect"
+		mismatch "${slice}　$attr 实际为 ${actual}，drop-in 为 $expect"
 	fi
 }
 
@@ -313,25 +313,25 @@ check_one_runtime() {
 	file=$(dropin_path "$slice")
 
 	if [ ! -r "$file" ]; then
-		uncovered "$slice　drop-in 读不到，运行期无从比对"
+		uncovered "${slice}　drop-in 读不到，运行期无从比对"
 		return
 	fi
 	if [ ! -d "$dir" ]; then
-		uncovered "$slice　cgroup 目录 $dir 不存在，该 slice 未在本机运行"
+		uncovered "${slice}　cgroup 目录 $dir 不存在，该 slice 未在本机运行"
 		return
 	fi
 
 	# drop-in 侧读不出取值时同样是未覆盖：这一半没有比过，不能因为没比而略过。
 	if ! expect=$(read_key "$file" CPUWeight); then
-		uncovered "$slice　drop-in 的 CPUWeight 读不出，cpu.weight 无从比对"
+		uncovered "${slice}　drop-in 的 CPUWeight 读不出，cpu.weight 无从比对"
 	elif actual=$(read_cgroup_file "$dir/cpu.weight"); then
 		compare_runtime_value "$slice" cpu.weight "$actual" "$expect"
 	else
-		uncovered "$slice　cpu.weight 读不到"
+		uncovered "${slice}　cpu.weight 读不到"
 	fi
 
 	if ! expect=$(read_key "$file" IOWeight); then
-		uncovered "$slice　drop-in 的 IOWeight 读不出，io.weight 无从比对"
+		uncovered "${slice}　drop-in 的 IOWeight 读不出，io.weight 无从比对"
 	else
 		if raw=$(read_cgroup_file "$dir/io.weight"); then
 			# io.weight 形如「default 100」，另可跟若干按设备的行。
@@ -340,10 +340,10 @@ check_one_runtime() {
 			if [ -n "$actual" ]; then
 				compare_runtime_value "$slice" io.weight "$actual" "$expect"
 			else
-				uncovered "$slice　io.weight 中没有 default 行，取值无从读出"
+				uncovered "${slice}　io.weight 中没有 default 行，取值无从读出"
 			fi
 		else
-			uncovered "$slice　io.weight 读不到，io 控制器可能未在该层启用"
+			uncovered "${slice}　io.weight 读不到，io 控制器可能未在该层启用"
 		fi
 	fi
 
@@ -359,17 +359,17 @@ check_one_runtime() {
 check_runtime_memory() {
 	local slice=$1 file=$2 dir=$3 key=$4 attr=$5 raw expect actual
 	if ! raw=$(read_key "$file" "$key"); then
-		uncovered "$slice　drop-in 的 $key 读不出，$attr 无从比对"
+		uncovered "${slice}　drop-in 的 $key 读不出，$attr 无从比对"
 		return
 	fi
 	if ! expect=$(parse_size "$raw"); then
-		uncovered "$slice　drop-in 的 $key=$raw 解析不出字节数，$attr 无从比对"
+		uncovered "${slice}　drop-in 的 $key=$raw 解析不出字节数，$attr 无从比对"
 		return
 	fi
 	if actual=$(read_cgroup_file "$dir/$attr"); then
 		compare_runtime_value "$slice" "$attr" "$actual" "$expect"
 	else
-		uncovered "$slice　$attr 读不到"
+		uncovered "${slice}　$attr 读不到"
 	fi
 }
 
@@ -396,26 +396,26 @@ resolve_devno() {
 check_iomax_runtime() {
 	local slice=$1 file=$2 dir=$3 r devpath expect devno line rbps wbps
 	if ! r=$(read_key "$file" IOReadBandwidthMax); then
-		uncovered "$slice　drop-in 的 IO 硬上限读不出，运行期无从比对"
+		uncovered "${slice}　drop-in 的 IO 硬上限读不出，运行期无从比对"
 		return
 	fi
 	devpath=${r%% *}
 	if ! expect=$(parse_size "${r##* }"); then
-		uncovered "$slice　drop-in 的 IO 硬上限取值读不出，运行期无从比对"
+		uncovered "${slice}　drop-in 的 IO 硬上限取值读不出，运行期无从比对"
 		return
 	fi
 	if ! devno=$(resolve_devno "$devpath"); then
-		uncovered "$slice　$devpath 的主次设备号解析不出，io.max 无从比对"
+		uncovered "${slice}　$devpath 的主次设备号解析不出，io.max 无从比对"
 		return
 	fi
 	local raw
 	if ! raw=$(read_cgroup_file "$dir/io.max"); then
-		uncovered "$slice　io.max 读不到"
+		uncovered "${slice}　io.max 读不到"
 		return
 	fi
 	line=$(printf '%s\n' "$raw" | awk -v d="$devno" '$1 == d { print; found = 1 } END { if (!found) exit 1 }') || line=
 	if [ -z "$line" ]; then
-		mismatch "$slice　io.max 中没有设备 $devno 的行，硬上限未生效"
+		mismatch "${slice}　io.max 中没有设备 $devno 的行，硬上限未生效"
 		return
 	fi
 	rbps=$(printf '%s\n' "$line" | tr ' ' '\n' | awk -F= '$1 == "rbps" { print $2 }')

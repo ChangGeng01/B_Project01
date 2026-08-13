@@ -87,7 +87,10 @@ impl DataScopeTag {
     pub fn new(raw: &str) -> Result<Self, AppError> {
         let err = |m: String| AppError::new(PLATFORM_REQUEST_INVALID_PAYLOAD, m);
         if raw.chars().count() > 128 {
-            return Err(err(format!("DataScopeTag 总长上限 128，实际 {}", raw.chars().count())));
+            return Err(err(format!(
+                "DataScopeTag 总长上限 128，实际 {}",
+                raw.chars().count()
+            )));
         }
         let (kind, value) = raw
             .split_once(':')
@@ -95,7 +98,8 @@ impl DataScopeTag {
         if kind.is_empty() || value.is_empty() {
             return Err(err("DataScopeTag 的 kind 与 value 均不可为空".to_string()));
         }
-        let kind_ok = |c: char| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '_' || c == '-';
+        let kind_ok =
+            |c: char| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '_' || c == '-';
         let value_ok = |c: char| c.is_ascii_alphanumeric() || c == '_' || c == '-';
         if let Some(bad) = kind.chars().find(|c| !kind_ok(*c)) {
             return Err(err(format!("DataScopeTag 的 kind 含非法字符 {bad:?}")));
@@ -347,10 +351,16 @@ mod tests {
         assert!(DataScopeTag::new("region:APAC").is_ok());
         assert!(DataScopeTag::new("region_1:A-b_9").is_ok());
         assert!(DataScopeTag::new("noseparator").is_err());
-        assert!(DataScopeTag::new("Region:APAC").is_err(), "kind 取 [a-z0-9_-]");
+        assert!(
+            DataScopeTag::new("Region:APAC").is_err(),
+            "kind 取 [a-z0-9_-]"
+        );
         assert!(DataScopeTag::new("region:").is_err());
         assert!(DataScopeTag::new(":APAC").is_err());
-        assert!(DataScopeTag::new(&format!("region:{}", "a".repeat(130))).is_err(), "总长上限 128");
+        assert!(
+            DataScopeTag::new(&format!("region:{}", "a".repeat(130))).is_err(),
+            "总长上限 128"
+        );
     }
 
     #[test]
@@ -400,14 +410,26 @@ mod client_kind_tests {
 
     #[test]
     fn rejects_the_camel_case_form() {
-        assert!(serde_json::from_str::<ClientKind>("\"Win\"").is_err(), "大驼峰不是合法取值");
-        assert_eq!(serde_json::from_str::<ClientKind>("\"win\"").expect("合法"), ClientKind::Win);
+        assert!(
+            serde_json::from_str::<ClientKind>("\"Win\"").is_err(),
+            "大驼峰不是合法取值"
+        );
+        assert_eq!(
+            serde_json::from_str::<ClientKind>("\"win\"").expect("合法"),
+            ClientKind::Win
+        );
     }
 
     /// DutyClass 的六个取值与 platform_authz.roles.duty_class 逐字一致。
     #[test]
     fn duty_class_matches_the_column() {
-        assert_eq!(serde_json::to_string(&DutyClass::System).expect("可序列化"), "\"SYSTEM\"");
-        assert_eq!(serde_json::to_string(&DutyClass::Config).expect("可序列化"), "\"CONFIG\"");
+        assert_eq!(
+            serde_json::to_string(&DutyClass::System).expect("可序列化"),
+            "\"SYSTEM\""
+        );
+        assert_eq!(
+            serde_json::to_string(&DutyClass::Config).expect("可序列化"),
+            "\"CONFIG\""
+        );
     }
 }

@@ -5,5 +5,9 @@
 //! 能力缺位一律以「不注入」表达，由自检项如实报未覆盖。
 
 pub mod db;
+pub mod identity;
+pub mod metrics;
+pub mod probes;
+pub mod release;
 
-pub use db::sql_probe;
+pub use db::{budget_check, build};

@@ -61,7 +61,9 @@ impl ClockSkewWithinLimit {
         if rc == libc::TIME_ERROR {
             return SkewReading::Unsynchronized;
         }
-        SkewReading::Synced { max_error_us: buf.maxerror }
+        SkewReading::Synced {
+            max_error_us: buf.maxerror,
+        }
     }
 
     #[cfg(not(target_os = "linux"))]
@@ -75,12 +77,18 @@ impl ClockSkewWithinLimit {
             SkewReading::Synced { max_error_us } => {
                 let limit_us = i64::from(max_ms) * 1_000;
                 if max_error_us.abs() <= limit_us {
-                    Verdict::Pass(format!("最大误差 {max_error_us} 微秒，上限 {limit_us} 微秒"))
+                    Verdict::Pass(format!(
+                        "最大误差 {max_error_us} 微秒，上限 {limit_us} 微秒"
+                    ))
                 } else {
-                    Verdict::Fail(format!("最大误差 {max_error_us} 微秒超过上限 {limit_us} 微秒"))
+                    Verdict::Fail(format!(
+                        "最大误差 {max_error_us} 微秒超过上限 {limit_us} 微秒"
+                    ))
                 }
             }
-            SkewReading::Unsynchronized => Verdict::Fail("内核报时钟未与授时源同步（STA_UNSYNC）".into()),
+            SkewReading::Unsynchronized => {
+                Verdict::Fail("内核报时钟未与授时源同步（STA_UNSYNC）".into())
+            }
             SkewReading::Unavailable(why) => Verdict::Pending(why.into()),
         }
     }
@@ -113,28 +121,46 @@ mod tests {
 
     #[test]
     fn skew_within_limit_passes() {
-        let v = ClockSkewWithinLimit::judge(1_000, SkewReading::Synced { max_error_us: 999_999 });
+        let v = ClockSkewWithinLimit::judge(
+            1_000,
+            SkewReading::Synced {
+                max_error_us: 999_999,
+            },
+        );
         assert!(matches!(v, Verdict::Pass(_)));
     }
 
     // 负样例断言的是判定规则本身：超限必须失败，而不是四舍五入放过。
     #[test]
     fn skew_over_limit_fails() {
-        let v = ClockSkewWithinLimit::judge(1_000, SkewReading::Synced { max_error_us: 1_000_001 });
+        let v = ClockSkewWithinLimit::judge(
+            1_000,
+            SkewReading::Synced {
+                max_error_us: 1_000_001,
+            },
+        );
         assert!(matches!(v, Verdict::Fail(_)), "超过 1 秒必须判失败");
     }
 
     #[test]
     fn negative_skew_uses_absolute_value() {
         assert!(matches!(
-            ClockSkewWithinLimit::judge(1_000, SkewReading::Synced { max_error_us: -1_000_001 }),
+            ClockSkewWithinLimit::judge(
+                1_000,
+                SkewReading::Synced {
+                    max_error_us: -1_000_001
+                }
+            ),
             Verdict::Fail(_)
         ));
     }
 
     #[test]
     fn unsynchronized_kernel_fails_rather_than_passes() {
-        assert!(matches!(ClockSkewWithinLimit::judge(1_000, SkewReading::Unsynchronized), Verdict::Fail(_)));
+        assert!(matches!(
+            ClockSkewWithinLimit::judge(1_000, SkewReading::Unsynchronized),
+            Verdict::Fail(_)
+        ));
     }
 
     #[test]
@@ -154,7 +180,11 @@ mod tests {
 
     #[tokio::test]
     async fn config_invalid_reports_the_key_path() {
-        let v = ConfigInvalid { detail: "未知键 db.hostt".into() }.run().await;
+        let v = ConfigInvalid {
+            detail: "未知键 db.hostt".into(),
+        }
+        .run()
+        .await;
         assert_eq!(v, Verdict::Fail("未知键 db.hostt".into()));
     }
 }

@@ -124,8 +124,19 @@ mod tests {
 
     #[test]
     fn exactly_four_processes_hold_sql_sessions() {
-        let holders: Vec<&str> =
-            ALL_PROCESSES.into_iter().filter(|p| p.holds_sql_session()).map(|p| p.name()).collect();
-        assert_eq!(holders, ["core-server", "job-worker", "integration-gateway", "ops-agent"]);
+        let holders: Vec<&str> = ALL_PROCESSES
+            .into_iter()
+            .filter(|p| p.holds_sql_session())
+            .map(|p| p.name())
+            .collect();
+        assert_eq!(
+            holders,
+            [
+                "core-server",
+                "job-worker",
+                "integration-gateway",
+                "ops-agent"
+            ]
+        );
     }
 }

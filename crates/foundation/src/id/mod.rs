@@ -15,7 +15,10 @@ pub struct Id<T> {
 
 impl<T> Id<T> {
     pub const fn from_uuid(value: uuid::Uuid) -> Self {
-        Self { value, _marker: PhantomData }
+        Self {
+            value,
+            _marker: PhantomData,
+        }
     }
 
     pub const fn as_uuid(&self) -> uuid::Uuid {

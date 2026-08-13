@@ -4,9 +4,7 @@
 //! `wasmtime` 与 `wasmtime-wasi` 两个依赖本阶段一律不登记，也不留默认关闭的
 //! feature 与编译缓存目录约定，由阶段 13b 在交付宿主时一次引入。
 
-use ep_platform_runtime::config::{
-    IpcCfg, LogCfg, RuntimeCfg, SecretsCfg, SelfcheckCfg, TraceCfg,
-};
+use ep_platform_runtime::config::{IpcCfg, LogCfg, RuntimeCfg, SecretsCfg, SelfcheckCfg, TraceCfg};
 use serde::Deserialize;
 
 pub const DEFAULTS: &str = r#"
@@ -36,7 +34,8 @@ mod tests {
 
     fn load(extra: &str) -> Result<PluginHostConfig, String> {
         let mut l = ConfigLoader::new();
-        l.layer_str("defaults", DEFAULTS).map_err(|e| e.to_string())?;
+        l.layer_str("defaults", DEFAULTS)
+            .map_err(|e| e.to_string())?;
         l.layer_str("test", extra).map_err(|e| e.to_string())?;
         l.finish().map_err(|e| e.to_string())
     }
@@ -44,14 +43,23 @@ mod tests {
     #[test]
     fn plugin_host_listens_only_on_its_socket() {
         let cfg = load("").expect("默认层必须自洽");
-        assert_eq!(cfg.ipc.socket_path.to_string_lossy(), "/run/ep/ipc/plugin.sock");
+        assert_eq!(
+            cfg.ipc.socket_path.to_string_lossy(),
+            "/run/ep/ipc/plugin.sock"
+        );
         assert_eq!(cfg.ipc.max_frame_bytes, 1_048_576);
     }
 
     // 负样例断言的是「零监听端口、零数据库连接」这条边界本身。
     #[test]
     fn http_and_db_sections_are_rejected() {
-        assert!(load("[http]\nbind_addr = \"127.0.0.1:9000\"\n").is_err(), "plugin-host 没有 http 段");
-        assert!(load("[db]\nhost = \"127.0.0.1\"\n").is_err(), "plugin-host 没有 db 段");
+        assert!(
+            load("[http]\nbind_addr = \"127.0.0.1:9000\"\n").is_err(),
+            "plugin-host 没有 http 段"
+        );
+        assert!(
+            load("[db]\nhost = \"127.0.0.1\"\n").is_err(),
+            "plugin-host 没有 db 段"
+        );
     }
 }

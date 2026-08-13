@@ -51,14 +51,20 @@ impl MethodTable {
             Err(e) => {
                 return IpcResponse::failed(
                     "",
-                    error_body(PLATFORM_REQUEST_INVALID_PAYLOAD, format!("报文不可解析：{e}")),
+                    error_body(
+                        PLATFORM_REQUEST_INVALID_PAYLOAD,
+                        format!("报文不可解析：{e}"),
+                    ),
                 )
             }
         };
         if req.v != PROTOCOL_VERSION {
             return IpcResponse::failed(
                 &req.id,
-                error_body(PLATFORM_REQUEST_INVALID_PAYLOAD, format!("协议版本 {} 不受支持", req.v)),
+                error_body(
+                    PLATFORM_REQUEST_INVALID_PAYLOAD,
+                    format!("协议版本 {} 不受支持", req.v),
+                ),
             );
         }
         let Some(method) = self.methods.get(req.method.as_str()) else {
@@ -69,7 +75,10 @@ impl MethodTable {
         };
         match method.call(req.payload).await {
             Ok(payload) => IpcResponse::ok(&req.id, payload),
-            Err(detail) => IpcResponse::failed(&req.id, error_body(PLATFORM_REQUEST_INVALID_PAYLOAD, detail)),
+            Err(detail) => IpcResponse::failed(
+                &req.id,
+                error_body(PLATFORM_REQUEST_INVALID_PAYLOAD, detail),
+            ),
         }
     }
 }
@@ -89,7 +98,9 @@ pub enum ServerError {
 impl std::fmt::Display for ServerError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            ServerError::Bind { path, detail } => write!(f, "绑定 {} 失败：{detail}", path.display()),
+            ServerError::Bind { path, detail } => {
+                write!(f, "绑定 {} 失败：{detail}", path.display())
+            }
             ServerError::Permissions { path, detail } => {
                 write!(f, "设置 {} 权限失败：{detail}", path.display())
             }
@@ -101,7 +112,11 @@ impl std::error::Error for ServerError {}
 
 impl IpcServer {
     pub fn new(path: impl Into<PathBuf>, max_frame_bytes: u32, methods: MethodTable) -> Self {
-        Self { path: path.into(), max_frame_bytes, methods }
+        Self {
+            path: path.into(),
+            max_frame_bytes,
+            methods,
+        }
     }
 
     pub fn path(&self) -> &Path {
@@ -112,19 +127,31 @@ impl IpcServer {
     /// 残留文件会让绑定报「地址已占用」，而实际上没有任何进程在听。
     pub fn bind(&self) -> Result<UnixListener, ServerError> {
         if let Some(parent) = self.path.parent() {
-            std::fs::create_dir_all(parent)
-                .map_err(|e| ServerError::Bind { path: self.path.clone(), detail: e.to_string() })?;
+            std::fs::create_dir_all(parent).map_err(|e| ServerError::Bind {
+                path: self.path.clone(),
+                detail: e.to_string(),
+            })?;
         }
         match std::fs::remove_file(&self.path) {
             Ok(()) => {}
             Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
-            Err(e) => return Err(ServerError::Bind { path: self.path.clone(), detail: e.to_string() }),
+            Err(e) => {
+                return Err(ServerError::Bind {
+                    path: self.path.clone(),
+                    detail: e.to_string(),
+                })
+            }
         }
-        let listener = UnixListener::bind(&self.path)
-            .map_err(|e| ServerError::Bind { path: self.path.clone(), detail: e.to_string() })?;
+        let listener = UnixListener::bind(&self.path).map_err(|e| ServerError::Bind {
+            path: self.path.clone(),
+            detail: e.to_string(),
+        })?;
         use std::os::unix::fs::PermissionsExt;
         std::fs::set_permissions(&self.path, std::fs::Permissions::from_mode(SOCKET_MODE))
-            .map_err(|e| ServerError::Permissions { path: self.path.clone(), detail: e.to_string() })?;
+            .map_err(|e| ServerError::Permissions {
+                path: self.path.clone(),
+                detail: e.to_string(),
+            })?;
         Ok(listener)
     }
 
@@ -162,7 +189,10 @@ async fn serve_conn(mut stream: UnixStream, methods: Arc<MethodTable>, max: u32)
             Err(FrameError::TooLarge { declared, limit }) => {
                 let resp = IpcResponse::failed(
                     "",
-                    error_body(PLATFORM_REQUEST_INVALID_PAYLOAD, format!("帧长 {declared} 超过上限 {limit}")),
+                    error_body(
+                        PLATFORM_REQUEST_INVALID_PAYLOAD,
+                        format!("帧长 {declared} 超过上限 {limit}"),
+                    ),
                 );
                 let text = serde_json::to_vec(&resp).unwrap_or_default();
                 let _ = write_frame(&mut stream, &text, max).await;

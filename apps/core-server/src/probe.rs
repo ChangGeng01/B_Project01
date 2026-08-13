@@ -30,7 +30,10 @@ pub struct EchoResponse {
     pub received_at: String,
 }
 
-async fn api_v1_system_echo(State(_st): State<Arc<SystemState>>, Json(req): Json<EchoRequest>) -> Response {
+async fn api_v1_system_echo(
+    State(_st): State<Arc<SystemState>>,
+    Json(req): Json<EchoRequest>,
+) -> Response {
     if req.text == PANIC_TRIGGER {
         panic!("探针端点按约定取值触发 panic，用于验证捕获路径");
     }
@@ -41,7 +44,11 @@ async fn api_v1_system_echo(State(_st): State<Arc<SystemState>>, Json(req): Json
         text: req.text,
         received_at: ep_platform_obs::log::now_rfc3339_micros(),
     };
-    Json(Envelope::ok(body, ep_platform_obs::TraceContext::new().trace_id().to_string())).into_response()
+    Json(Envelope::ok(
+        body,
+        ep_platform_obs::TraceContext::new().trace_id().to_string(),
+    ))
+    .into_response()
 }
 
 pub fn router(state: Arc<SystemState>) -> Router<Arc<SystemState>> {

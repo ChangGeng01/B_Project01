@@ -34,13 +34,42 @@ thiserror = "2"
 # domain 与 contract 层依赖 tokio 由 archcheck 的 domain-contract-no-io 拦。
 # HTTP 直接建在 axum/hyper 上：技术基线第 1.3 节写明工作区内既无也不新增 HTTP 系 ep-adapter-*。
 tokio = { version = "1", features = ["rt-multi-thread", "macros", "net", "signal", "time", "io-util", "sync", "fs"] }
-axum = { version = "0.8", default-features = false, features = ["http1", "json", "tokio", "matched-path"] }
+# 以下一项由阶段 4 任务 #22（ep-platform-authz）引入，只允许出现在 platform 与 apps 两层：
+# arc-swap 承接 AuthzSnapshot 的不可变整体替换（按法人分片、轮询重载）。
+arc-swap = "1.7"
+axum = { version = "0.8", default-features = false, features = ["http1", "json", "tokio", "matched-path", "query"] }
 hyper = { version = "1", features = ["client", "http1"] }
 hyper-util = { version = "0.1", features = ["tokio"] }
 http-body-util = "0.1"
 toml = "0.8"
 libc = "0.2"
 sha2 = "0.10"
+# 以下六项由阶段 2 任务 #12（ep-adapter-kms）引入，只允许出现在 adapter 层：
+# 密码学取 RustCrypto 系（AES-256-GCM / HKDF / HMAC / ECDSA P-256），
+# rand 承接信封 nonce 的随机源（foundation 尚无 Rng 端口），
+# unicode-normalization 承接盲索引归一化的 NFKC 形态。
+aes-gcm = "0.10"
+hkdf = "0.12"
+hmac = "0.12"
+p256 = { version = "0.13", default-features = false, features = ["ecdsa"] }
+rand = "0.8"
+unicode-normalization = "0.1"
+# 以下一项由阶段 2 任务 #11（ep-adapter-db-pg）引入，只允许出现在 adapter 层：
+# sqlx 承接五具名池与会话语义（runtime-tokio），关闭默认特性避免引入
+# migrate/macros/tls 等非必需组件；chrono 与 uuid 特征对齐编解码纪律。
+sqlx = { version = "0.8", default-features = false, features = ["runtime-tokio", "postgres", "chrono", "uuid"] }
+# 以下一项由阶段 2 任务 #13（tools/migrate 实现体）引入，只允许出现在 tools/migrate：
+# tokio-postgres 是迁移工具的唯一数据库通道（事务执行器、concurrent/ 执行器、
+# db/checks、窗口读写均经它），不得渗入 crates/ 下任何 crate（archcheck 把关）。
+# 计划 §3.3 原指定 refinery 0.8 Runner，但其版本号是 i32（历史表 DDL version INT4），
+# 装不下本项目 V<YYYYMMDDHHMMSS> 的 14 位时间戳版本号，属计划内部结构性矛盾；
+# 经 leader 批准，ep-migrate 自建 refinery 语义兼容 Runner，不引入 refinery 依赖。
+tokio-postgres = "0.7"
+
+# 以下两项由阶段 4 任务 #21（ep-platform-identity）引入，只允许出现在 platform 与 adapter 两层：
+# argon2 承接口令哈希（Argon2id PHC 串）；sha1 承接 TOTP 的 HMAC-SHA1 计时（RustCrypto 系最小面）。
+argon2 = "0.5"
+sha1 = "0.10"
 
 ep-foundation = { path = "crates/foundation" }
 ep-platform-tenancy = { path = "crates/platform/tenancy" }

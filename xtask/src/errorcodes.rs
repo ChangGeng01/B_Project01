@@ -40,11 +40,21 @@ pub fn run(root: &Path) -> Report {
 
     let doc = match read_doc(root) {
         Ok(v) => v,
-        Err(e) => return Report { problems: vec![e], compared: 0 },
+        Err(e) => {
+            return Report {
+                problems: vec![e],
+                compared: 0,
+            }
+        }
     };
     let code = match read_code(root) {
         Ok(v) => v,
-        Err(e) => return Report { problems: vec![e], compared: 0 },
+        Err(e) => {
+            return Report {
+                problems: vec![e],
+                compared: 0,
+            }
+        }
     };
 
     problems.extend(duplicates(&doc, DOC));
@@ -69,7 +79,10 @@ pub fn run(root: &Path) -> Report {
         }
     }
 
-    Report { problems, compared: doc_map.len().max(code_map.len()) }
+    Report {
+        problems,
+        compared: doc_map.len().max(code_map.len()),
+    }
 }
 
 fn duplicates(entries: &[Entry], where_: &str) -> Vec<String> {

@@ -23,8 +23,14 @@ mod tests {
         let p = ProcessKind::ArchiveWriter;
         assert!(!p.holds_sql_session());
         assert!(sql_probe().is_none());
-        let report = baseline_registry(p, String::new(), 1_000, None).run_all(p, "0.1.0").await;
-        let item = report.items.iter().find(|i| i.name == "database-reachable").unwrap();
+        let report = baseline_registry(p, String::new(), 1_000, None, None, None)
+            .run_all(p, "0.1.0")
+            .await;
+        let item = report
+            .items
+            .iter()
+            .find(|i| i.name == "database-reachable")
+            .unwrap();
         assert_eq!(item.outcome, Outcome::NotApplicable);
     }
 }

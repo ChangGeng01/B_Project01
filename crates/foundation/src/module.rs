@@ -37,10 +37,10 @@ impl ModuleCode {
         ModuleCode::Invoice,
         ModuleCode::Portal,
         ModuleCode::Reporting,
-];
+    ];
 
-pub const fn as_str(self) -> &'static str {
-    match self {
+    pub const fn as_str(self) -> &'static str {
+        match self {
             ModuleCode::Mdm => "mdm",
             ModuleCode::Crm => "crm",
             ModuleCode::Cpq => "cpq",

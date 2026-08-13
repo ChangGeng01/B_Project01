@@ -37,7 +37,8 @@ impl SqlContext {
         }
         self.probe.as_ref().ok_or_else(|| {
             Verdict::Pending(
-                "未装配 SQL 探针：判定逻辑已就位，取数实现由 ep-adapter-db-pg 提供，本项未覆盖".into(),
+                "未装配 SQL 探针：判定逻辑已就位，取数实现由 ep-adapter-db-pg 提供，本项未覆盖"
+                    .into(),
             )
         })
     }
@@ -70,10 +71,16 @@ impl SelfCheckRun for DatabaseReachable {
             bad.push(format!("timezone 为 {} 而非 UTC", s.timezone));
         }
         if s.max_connections < MIN_MAX_CONNECTIONS {
-            bad.push(format!("max_connections 为 {} 低于 {MIN_MAX_CONNECTIONS}", s.max_connections));
+            bad.push(format!(
+                "max_connections 为 {} 低于 {MIN_MAX_CONNECTIONS}",
+                s.max_connections
+            ));
         }
         if s.max_wal_senders < MIN_MAX_WAL_SENDERS {
-            bad.push(format!("max_wal_senders 为 {} 低于 {MIN_MAX_WAL_SENDERS}", s.max_wal_senders));
+            bad.push(format!(
+                "max_wal_senders 为 {} 低于 {MIN_MAX_WAL_SENDERS}",
+                s.max_wal_senders
+            ));
         }
         if s.max_replication_slots < MIN_MAX_REPLICATION_SLOTS {
             bad.push(format!(
@@ -113,7 +120,11 @@ impl SelfCheckRun for MigrationVersionMatched {
                 self.expected
             ));
         }
-        let note = if self.dir_present { "" } else { "（构建时 db/migrations/ 目录不存在，清单为空集）" };
+        let note = if self.dir_present {
+            ""
+        } else {
+            "（构建时 db/migrations/ 目录不存在，清单为空集）"
+        };
         Verdict::Pass(format!("迁移清单一致，库内 {} 条{note}", rows.len()))
     }
 }
@@ -132,7 +143,12 @@ impl SelfCheckRun for RlsEnabledAndForced {
             .legal_entity_tables
             .iter()
             .filter(|t| !t.enabled || !t.forced)
-            .map(|t| format!("{}.{} enabled={} forced={}", t.schema, t.table, t.enabled, t.forced))
+            .map(|t| {
+                format!(
+                    "{}.{} enabled={} forced={}",
+                    t.schema, t.table, t.enabled, t.forced
+                )
+            })
             .collect();
         if state.current_role_bypassrls {
             bad.push("当前角色具备 BYPASSRLS".into());
@@ -141,7 +157,10 @@ impl SelfCheckRun for RlsEnabledAndForced {
             bad.push("当前角色是 SUPERUSER".into());
         }
         if bad.is_empty() {
-            Verdict::Pass(format!("{} 张带法人列的表均已 ENABLE 且 FORCE", state.legal_entity_tables.len()))
+            Verdict::Pass(format!(
+                "{} 张带法人列的表均已 ENABLE 且 FORCE",
+                state.legal_entity_tables.len()
+            ))
         } else {
             Verdict::Fail(bad.join("；"))
         }
@@ -160,7 +179,10 @@ impl SelfCheckRun for RuntimeRolePrivilegesBounded {
         };
         let mut bad = Vec::new();
         if !p.schemas_with_create.is_empty() {
-            bad.push(format!("在 {} 上具备 CREATE", p.schemas_with_create.join("、")));
+            bad.push(format!(
+                "在 {} 上具备 CREATE",
+                p.schemas_with_create.join("、")
+            ));
         }
         if p.rolcreaterole {
             bad.push("具备 CREATEROLE".into());

@@ -67,6 +67,9 @@ impl MigrateExit {
 /// 台机器上不具备执行该动作的前提，这正是实现体缺席时的真实情形，因此本阶段
 /// 把「子命令实现体是否存在」登记成一个环境自检项 `subcommand-implemented`，
 /// 由它不通过而落 78，不是把 78 当兜底桶用。
+/// 把「子命令实现体是否存在」登记成环境自检项的历史登记常量；实现体补齐后
+/// 生产路径不再引用，仅由单测锁死「未交付不得映射为成功」的判据。
+#[cfg(test)]
 pub const NOT_DELIVERED: MigrateExit = MigrateExit::EnvSelfCheckFailed;
 
 /// 一次调用的判定结果。要么完成并留下一段给 stdout 的正文，要么带着一个非零

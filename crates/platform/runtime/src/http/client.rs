@@ -36,11 +36,15 @@ pub async fn get(url: &str, timeout: Duration) -> Result<FetchResponse, FetchErr
 }
 
 async fn get_inner(url: &str) -> Result<FetchResponse, FetchError> {
-    let uri: hyper::Uri = url.parse().map_err(|e| FetchError(format!("地址 {url} 不合法：{e}")))?;
+    let uri: hyper::Uri = url
+        .parse()
+        .map_err(|e| FetchError(format!("地址 {url} 不合法：{e}")))?;
     if uri.scheme_str() != Some("http") {
         return Err(FetchError(format!("只支持回环上的明文 http，实际 {url}")));
     }
-    let host = uri.host().ok_or_else(|| FetchError(format!("地址 {url} 缺主机段")))?;
+    let host = uri
+        .host()
+        .ok_or_else(|| FetchError(format!("地址 {url} 缺主机段")))?;
     let port = uri.port_u16().unwrap_or(80);
     let authority = format!("{host}:{port}");
 
@@ -62,7 +66,10 @@ async fn get_inner(url: &str) -> Result<FetchResponse, FetchError> {
         .body(String::new())
         .map_err(|e| FetchError(format!("构造请求失败：{e}")))?;
 
-    let resp = sender.send_request(req).await.map_err(|e| FetchError(format!("请求 {url} 失败：{e}")))?;
+    let resp = sender
+        .send_request(req)
+        .await
+        .map_err(|e| FetchError(format!("请求 {url} 失败：{e}")))?;
     let status = resp.status().as_u16();
     let bytes = resp
         .into_body()
@@ -70,7 +77,10 @@ async fn get_inner(url: &str) -> Result<FetchResponse, FetchError> {
         .await
         .map_err(|e| FetchError(format!("读取 {url} 响应体失败：{e}")))?
         .to_bytes();
-    Ok(FetchResponse { status, body: String::from_utf8_lossy(&bytes).to_string() })
+    Ok(FetchResponse {
+        status,
+        body: String::from_utf8_lossy(&bytes).to_string(),
+    })
 }
 
 #[cfg(test)]
@@ -79,7 +89,9 @@ mod tests {
 
     #[tokio::test]
     async fn non_http_scheme_is_rejected() {
-        let e = get("https://127.0.0.1:8080/x", Duration::from_millis(100)).await.unwrap_err();
+        let e = get("https://127.0.0.1:8080/x", Duration::from_millis(100))
+            .await
+            .unwrap_err();
         assert!(e.0.contains("只支持回环上的明文 http"));
     }
 
@@ -88,7 +100,9 @@ mod tests {
     #[tokio::test]
     async fn unreachable_target_is_an_error_not_an_empty_success() {
         // 端口 1 在回环上不会有监听者。
-        let e = get("http://127.0.0.1:1/metrics", Duration::from_millis(500)).await.unwrap_err();
+        let e = get("http://127.0.0.1:1/metrics", Duration::from_millis(500))
+            .await
+            .unwrap_err();
         assert!(e.0.contains("失败") || e.0.contains("超时"), "{}", e.0);
     }
 }

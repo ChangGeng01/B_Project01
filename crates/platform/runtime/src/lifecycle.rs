@@ -93,7 +93,11 @@ impl IllegalTransition {
 
 impl fmt::Display for IllegalTransition {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "非法状态迁移：{:?} 状态下不接受事件 {:?}", self.from, self.event)
+        write!(
+            f,
+            "非法状态迁移：{:?} 状态下不接受事件 {:?}",
+            self.from, self.event
+        )
     }
 }
 
@@ -133,7 +137,10 @@ pub struct Lifecycle {
 
 impl Lifecycle {
     pub fn new(process: ProcessKind) -> Self {
-        Self { process, state: State::Init }
+        Self {
+            process,
+            state: State::Init,
+        }
     }
 
     pub fn state(&self) -> State {
@@ -162,7 +169,11 @@ mod tests {
         (State::Configuring, Event::ConfigLoaded, State::SelfChecking),
         (State::Configuring, Event::ConfigInvalid, State::Failed),
         (State::SelfChecking, Event::AllPassed, State::Ready),
-        (State::SelfChecking, Event::PassedWithDegradation, State::Degraded),
+        (
+            State::SelfChecking,
+            Event::PassedWithDegradation,
+            State::Degraded,
+        ),
         (State::SelfChecking, Event::AnyFailed, State::Failed),
         (State::Ready, Event::DegradationDetected, State::Degraded),
         (State::Degraded, Event::DegradationCleared, State::Ready),
@@ -193,7 +204,8 @@ mod tests {
         let mut rejected = 0;
         for from in ALL_STATES {
             for event in ALL_EVENTS {
-                let legal = LEGAL.iter().any(|(f, e, _)| *f == from && *e == event) || event == Event::Panic;
+                let legal = LEGAL.iter().any(|(f, e, _)| *f == from && *e == event)
+                    || event == Event::Panic;
                 if legal {
                     continue;
                 }
@@ -217,7 +229,13 @@ mod tests {
     #[test]
     fn happy_path_reaches_stopped() {
         let mut lc = Lifecycle::new(ProcessKind::CoreServer);
-        for e in [Event::Start, Event::ConfigLoaded, Event::AllPassed, Event::Sigterm, Event::DrainComplete] {
+        for e in [
+            Event::Start,
+            Event::ConfigLoaded,
+            Event::AllPassed,
+            Event::Sigterm,
+            Event::DrainComplete,
+        ] {
             lc.fire(e).expect("正常路径逐步可达");
         }
         assert_eq!(lc.state(), State::Stopped);

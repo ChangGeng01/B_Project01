@@ -19,16 +19,34 @@ use std::path::{Path, PathBuf};
 /// 规则清单。左列是规则号，右列是判据一句话。
 /// SQL-001 至 SQL-011 判迁移文件，SQL-020 与 SQL-021 判引导目录，SQL-030 判迁移目录整体。
 pub const RULES: [(&str, &str); 13] = [
-    ("SQL-001", "业务 schema 上禁止 DELETE 语句，只放行 platform_msg 与 platform_ops"),
+    (
+        "SQL-001",
+        "业务 schema 上禁止 DELETE 语句，只放行 platform_msg 与 platform_ops",
+    ),
     ("SQL-002", "禁止 varchar(n)，一律 text 加 CHECK 长度约束"),
-    ("SQL-003", "禁止 PostgreSQL enum 类型，一律 text 加 CHECK 约束"),
-    ("SQL-004", "禁止 current_date，服务器自然日取 (now() AT TIME ZONE 'Asia/Shanghai')::date"),
-    ("SQL-005", "跨 schema 外键必须是 (legal_entity_id, <ref>_id) 复合形式并 ON DELETE RESTRICT"),
+    (
+        "SQL-003",
+        "禁止 PostgreSQL enum 类型，一律 text 加 CHECK 约束",
+    ),
+    (
+        "SQL-004",
+        "禁止 current_date，服务器自然日取 (now() AT TIME ZONE 'Asia/Shanghai')::date",
+    ),
+    (
+        "SQL-005",
+        "跨 schema 外键必须是 (legal_entity_id, <ref>_id) 复合形式并 ON DELETE RESTRICT",
+    ),
     ("SQL-006", "禁止 ON DELETE CASCADE"),
     ("SQL-007", "迁移文件必须以 -- rollback: 段开头"),
     ("SQL-008", "公共列齐备且按基线第 4 节的顺序排在列表最前"),
-    ("SQL-009", "命名规范：迁移文件名、约束与索引前缀、列名后缀与类型"),
-    ("SQL-010", "迁移单一职责：一个文件创建的对象只属一个 schema，且等于所在目录名"),
+    (
+        "SQL-009",
+        "命名规范：迁移文件名、约束与索引前缀、列名后缀与类型",
+    ),
+    (
+        "SQL-010",
+        "迁移单一职责：一个文件创建的对象只属一个 schema，且等于所在目录名",
+    ),
     ("SQL-011", "迁移版本号全局唯一且严格递增"),
     ("SQL-020", "引导脚本中不得出现口令字面量"),
     ("SQL-021", "引导目录中不得出现约定之外的文件名"),
@@ -40,14 +58,25 @@ const BOOTSTRAP: &str = "db/bootstrap";
 
 /// 引导目录的文件名白名单，出处是阶段 1 计划第 4.1 节，逐字五项加一份 README。
 const BOOTSTRAP_FILES: [&str; 6] = [
-    "00_database.sql", "01_roles.sql", "02_cluster_params.sql", "03_role_defaults.sql",
-    "04_pg_hba.fragment", "README.md",
+    "00_database.sql",
+    "01_roles.sql",
+    "02_cluster_params.sql",
+    "03_role_defaults.sql",
+    "04_pg_hba.fragment",
+    "README.md",
 ];
 
 /// 公共列与其顺序，出处是技术基线第 4 节。
 const COMMON_COLUMNS: [&str; 9] = [
-    "id", "legal_entity_id", "security_level", "data_scope_tags", "row_version",
-    "created_at", "created_by", "updated_at", "updated_by",
+    "id",
+    "legal_entity_id",
+    "security_level",
+    "data_scope_tags",
+    "row_version",
+    "created_at",
+    "created_by",
+    "updated_at",
+    "updated_by",
 ];
 
 /// 仅追加表不带的三列。三者同进同出：缺一即不是合法的仅追加表形态。
@@ -103,7 +132,9 @@ pub fn run(root: &Path) -> Report {
     if migrations.is_empty() {
         // RULES 的前 11 条与 SQL-030 判迁移文件；没有迁移文件就是这 12 条一律未覆盖。
         for (id, what) in RULES.iter().take(11).chain(std::iter::once(&RULES[12])) {
-            uncovered.push(format!("{id} 未覆盖：{MIGRATIONS} 下没有任何 .sql 文件，判据「{what}」本次无被测输入"));
+            uncovered.push(format!(
+                "{id} 未覆盖：{MIGRATIONS} 下没有任何 .sql 文件，判据「{what}」本次无被测输入"
+            ));
         }
     } else {
         checked.extend(RULES.iter().take(11).map(|(id, _)| *id));
@@ -127,7 +158,9 @@ pub fn run(root: &Path) -> Report {
 
     let bootstrap_dir = root.join(BOOTSTRAP);
     if !bootstrap_dir.is_dir() {
-        uncovered.push(format!("SQL-020 与 SQL-021 未覆盖：目录 {BOOTSTRAP} 不存在"));
+        uncovered.push(format!(
+            "SQL-020 与 SQL-021 未覆盖：目录 {BOOTSTRAP} 不存在"
+        ));
     } else {
         checked.push("SQL-021");
         violations.extend(check_bootstrap_names(&bootstrap_dir));
@@ -155,22 +188,36 @@ pub fn run(root: &Path) -> Report {
 }
 
 fn unreadable(rule: &'static str, file: String, e: &std::io::Error) -> Violation {
-    Violation { rule, file, line: 0, detail: format!("读不到该文件：{e}") }
+    Violation {
+        rule,
+        file,
+        line: 0,
+        detail: format!("读不到该文件：{e}"),
+    }
 }
 
 fn format_violation(v: &Violation) -> String {
-    let at = if v.line == 0 { String::new() } else { format!(":{}", v.line) };
+    let at = if v.line == 0 {
+        String::new()
+    } else {
+        format!(":{}", v.line)
+    };
     format!("[{}] {}{} — {}", v.rule, v.file, at, v.detail)
 }
 
 fn relative(root: &Path, path: &Path) -> String {
-    path.strip_prefix(root).unwrap_or(path).to_string_lossy().replace('\\', "/")
+    path.strip_prefix(root)
+        .unwrap_or(path)
+        .to_string_lossy()
+        .replace('\\', "/")
 }
 
 /// 递归收集 `.sql` 文件。目录不存在时返回空集，由调用方判「未覆盖」。
 fn sql_files(dir: &Path) -> Vec<PathBuf> {
     let mut out = Vec::new();
-    let Ok(entries) = fs::read_dir(dir) else { return out };
+    let Ok(entries) = fs::read_dir(dir) else {
+        return out;
+    };
     let mut entries: Vec<_> = entries.filter_map(Result::ok).map(|e| e.path()).collect();
     entries.sort();
     for path in entries {
@@ -213,7 +260,13 @@ fn strip_comments(text: &str) -> Vec<(usize, String)> {
         }
         // 连续空白归一并转小写：后面的规则一律按单空格形态匹配，
         // 免得同一条语句因为缩进不同而漏判。
-        out.push((i + 1, code.split_whitespace().collect::<Vec<_>>().join(" ").to_lowercase()));
+        out.push((
+            i + 1,
+            code.split_whitespace()
+                .collect::<Vec<_>>()
+                .join(" ")
+                .to_lowercase(),
+        ));
     }
     out
 }
@@ -336,25 +389,52 @@ pub fn scan_migration(rel: &str, text: &str) -> Vec<Violation> {
 }
 
 fn at(rule: &'static str, rel: &str, line: usize, detail: String) -> Violation {
-    Violation { rule, file: rel.to_string(), line, detail }
+    Violation {
+        rule,
+        file: rel.to_string(),
+        line,
+        detail,
+    }
 }
 
 /// 逐行谓词型规则的公共形态：命中一行即一条违反，文案固定。
-fn line_rule(rel: &str, lines: &[(usize, String)], rule: &'static str, hit: fn(&str) -> bool, detail: &str) -> Vec<Violation> {
-    lines.iter().filter(|(_, l)| hit(l)).map(|(no, _)| at(rule, rel, *no, detail.into())).collect()
+fn line_rule(
+    rel: &str,
+    lines: &[(usize, String)],
+    rule: &'static str,
+    hit: fn(&str) -> bool,
+    detail: &str,
+) -> Vec<Violation> {
+    lines
+        .iter()
+        .filter(|(_, l)| hit(l))
+        .map(|(no, _)| at(rule, rel, *no, detail.into()))
+        .collect()
 }
 
 fn rule_delete(rel: &str, lines: &[(usize, String)]) -> Vec<Violation> {
     let mut v = Vec::new();
     for (no, line) in lines {
-        let Some(idx) = line.find("delete from ") else { continue };
-        let word = line[idx + "delete from ".len()..].split_whitespace().next().unwrap_or("");
+        let Some(idx) = line.find("delete from ") else {
+            continue;
+        };
+        let word = line[idx + "delete from ".len()..]
+            .split_whitespace()
+            .next()
+            .unwrap_or("");
         let target = word.trim_matches(|c: char| !c.is_alphanumeric() && c != '_' && c != '.');
         if schema_of(target).is_some_and(|s| DELETE_ALLOWED_SCHEMAS.contains(&s)) {
             continue;
         }
         let allowed = DELETE_ALLOWED_SCHEMAS.join(" 与 ");
-        v.push(at("SQL-001", rel, *no, format!("DELETE 目标 {target} 不在 {allowed} 内；业务数据不做物理删除，走 status 状态机")));
+        v.push(at(
+            "SQL-001",
+            rel,
+            *no,
+            format!(
+                "DELETE 目标 {target} 不在 {allowed} 内；业务数据不做物理删除，走 status 状态机"
+            ),
+        ));
     }
     v
 }
@@ -392,7 +472,9 @@ fn rule_cross_schema_fk(rel: &str, dir_schema: &str, stmts: &[Stmt]) -> Vec<Viol
                 .split(|c: char| c.is_whitespace() || c == '(')
                 .next()
                 .unwrap_or("");
-            let Some(target_schema) = schema_of(target) else { continue };
+            let Some(target_schema) = schema_of(target) else {
+                continue;
+            };
             if target_schema == dir_schema {
                 continue;
             }
@@ -401,7 +483,12 @@ fn rule_cross_schema_fk(rel: &str, dir_schema: &str, stmts: &[Stmt]) -> Vec<Viol
             if !composite {
                 v.push(at("SQL-005", rel, s.line, format!("跨 schema 外键指向 {target}，但不是 (legal_entity_id, <ref>_id) 指向 (legal_entity_id, id) 的复合形式")));
             } else if !s.norm.contains("on delete restrict") {
-                v.push(at("SQL-005", rel, s.line, format!("跨 schema 外键指向 {target}，缺 ON DELETE RESTRICT")));
+                v.push(at(
+                    "SQL-005",
+                    rel,
+                    s.line,
+                    format!("跨 schema 外键指向 {target}，缺 ON DELETE RESTRICT"),
+                ));
             }
         }
     }
@@ -410,25 +497,47 @@ fn rule_cross_schema_fk(rel: &str, dir_schema: &str, stmts: &[Stmt]) -> Vec<Viol
 
 fn rule_cascade(rel: &str, lines: &[(usize, String)]) -> Vec<Violation> {
     let why = "出现 ON DELETE CASCADE；外键一律 ON DELETE RESTRICT";
-    line_rule(rel, lines, "SQL-006", |l| l.contains("on delete cascade"), why)
+    line_rule(
+        rel,
+        lines,
+        "SQL-006",
+        |l| l.contains("on delete cascade"),
+        why,
+    )
 }
 
 /// 回退说明段。判据是文件的第一行非空内容即 `-- rollback:`，不是「文件里某处有」。
 fn rule_rollback_header(rel: &str, text: &str) -> Vec<Violation> {
-    let first = text.lines().map(str::trim).find(|l| !l.is_empty()).unwrap_or("");
+    let first = text
+        .lines()
+        .map(str::trim)
+        .find(|l| !l.is_empty())
+        .unwrap_or("");
     if first.to_lowercase().starts_with("-- rollback:") {
         return Vec::new();
     }
-    vec![at("SQL-007", rel, 1, format!("首行非空内容是「{first}」，迁移文件必须以 -- rollback: 段开头"))]
+    vec![at(
+        "SQL-007",
+        rel,
+        1,
+        format!("首行非空内容是「{first}」，迁移文件必须以 -- rollback: 段开头"),
+    )]
 }
 
 fn rule_common_columns(rel: &str, stmts: &[Stmt]) -> Vec<Violation> {
     let mut v = Vec::new();
     for s in stmts {
-        let Some((name, body)) = create_table_parts(&s.norm) else { continue };
+        let Some((name, body)) = create_table_parts(&s.norm) else {
+            continue;
+        };
         let parts = top_level_parts(&body);
         if parts.is_empty() {
-            v.push(at("SQL-008", rel, s.line, format!("{name} 的列定义解析不出来，判不了公共列")));
+            v.push(at(
+                "SQL-008",
+                rel,
+                s.line,
+                format!("{name} 的列定义解析不出来，判不了公共列"),
+            ));
             continue;
         }
         let columns: Vec<&str> = parts
@@ -438,34 +547,63 @@ fn rule_common_columns(rel: &str, stmts: &[Stmt]) -> Vec<Violation> {
             .collect();
         let has = |c: &&str| columns.contains(c);
         let present: Vec<&str> = COMMON_COLUMNS.iter().copied().filter(has).collect();
-        let missing: Vec<&str> =
-            COMMON_COLUMNS.iter().copied().filter(|c| !present.contains(c) && !APPEND_ONLY_OMITTED.contains(c)).collect();
+        let missing: Vec<&str> = COMMON_COLUMNS
+            .iter()
+            .copied()
+            .filter(|c| !present.contains(c) && !APPEND_ONLY_OMITTED.contains(c))
+            .collect();
         if !missing.is_empty() {
-            v.push(at("SQL-008", rel, s.line, format!("{name} 缺公共列 {}", missing.join("、"))));
+            v.push(at(
+                "SQL-008",
+                rel,
+                s.line,
+                format!("{name} 缺公共列 {}", missing.join("、")),
+            ));
         }
-        let omitted: Vec<&str> =
-            APPEND_ONLY_OMITTED.iter().copied().filter(|c| !present.contains(c)).collect();
+        let omitted: Vec<&str> = APPEND_ONLY_OMITTED
+            .iter()
+            .copied()
+            .filter(|c| !present.contains(c))
+            .collect();
         if !omitted.is_empty() && omitted.len() != APPEND_ONLY_OMITTED.len() {
             let miss = omitted.join("、");
-            v.push(at("SQL-008", rel, s.line, format!("{name} 缺 {miss}；仅追加表必须三列同缺，不得只缺其一")));
+            v.push(at(
+                "SQL-008",
+                rel,
+                s.line,
+                format!("{name} 缺 {miss}；仅追加表必须三列同缺，不得只缺其一"),
+            ));
         }
         // 公共列必须占据列表最前且保持基线第 4 节的相对顺序。
         let head: Vec<&str> = columns.iter().take(present.len()).copied().collect();
         if head.len() == present.len() && head != present {
-            v.push(at("SQL-008", rel, s.line, format!(
-                "{name} 的公共列顺序或位置不符。期望前 {} 列依次为 {}，实际为 {}",
-                present.len(),
-                present.join("、"),
-                head.join("、")
-            )));
+            v.push(at(
+                "SQL-008",
+                rel,
+                s.line,
+                format!(
+                    "{name} 的公共列顺序或位置不符。期望前 {} 列依次为 {}，实际为 {}",
+                    present.len(),
+                    present.join("、"),
+                    head.join("、")
+                ),
+            ));
         }
     }
     v
 }
 
 fn starts_with_constraint(part: &str) -> bool {
-    const KEYWORDS: [&str; 8] =
-        ["constraint", "primary", "unique", "foreign", "check", "exclude", "like", "partition"];
+    const KEYWORDS: [&str; 8] = [
+        "constraint",
+        "primary",
+        "unique",
+        "foreign",
+        "check",
+        "exclude",
+        "like",
+        "partition",
+    ];
     KEYWORDS.iter().any(|k| part.starts_with(k))
 }
 
@@ -474,7 +612,12 @@ fn rule_naming(rel: &str, stmts: &[Stmt]) -> Vec<Violation> {
     let mut v = Vec::new();
     let file = rel.rsplit('/').next().unwrap_or(rel);
     if file_version(rel).is_none() {
-        v.push(at("SQL-009", rel, 0, format!("迁移文件名 {file} 不合 V<14 位时间戳>__<名字>.sql")));
+        v.push(at(
+            "SQL-009",
+            rel,
+            0,
+            format!("迁移文件名 {file} 不合 V<14 位时间戳>__<名字>.sql"),
+        ));
     }
 
     for s in stmts {
@@ -485,7 +628,12 @@ fn rule_naming(rel: &str, stmts: &[Stmt]) -> Vec<Violation> {
                     let cname = rest.split_whitespace().next().unwrap_or("");
                     if let Some(prefix) = constraint_prefix(rest) {
                         if !cname.starts_with(&format!("{prefix}{table}")) {
-                            v.push(at("SQL-009", rel, s.line, format!("约束名 {cname} 不合 {prefix}{table}… 的命名")));
+                            v.push(at(
+                                "SQL-009",
+                                rel,
+                                s.line,
+                                format!("约束名 {cname} 不合 {prefix}{table}… 的命名"),
+                            ));
                         }
                     }
                 } else if !starts_with_constraint(&part) {
@@ -499,15 +647,23 @@ fn rule_naming(rel: &str, stmts: &[Stmt]) -> Vec<Violation> {
 }
 
 fn constraint_prefix(rest: &str) -> Option<&'static str> {
-    const MAP: [(&str, &str); 4] =
-        [("primary key", "pk_"), ("unique", "ux_"), ("foreign key", "fk_"), ("check", "ck_")];
-    MAP.iter().find(|(kw, _)| rest.contains(kw)).map(|(_, p)| *p)
+    const MAP: [(&str, &str); 4] = [
+        ("primary key", "pk_"),
+        ("unique", "ux_"),
+        ("foreign key", "fk_"),
+        ("check", "ck_"),
+    ];
+    MAP.iter()
+        .find(|(kw, _)| rest.contains(kw))
+        .map(|(_, p)| *p)
 }
 
 fn column_naming(rel: &str, line: usize, part: &str) -> Vec<Violation> {
     let mut v = Vec::new();
     let mut it = part.split_whitespace();
-    let (Some(name), Some(ty)) = (it.next(), it.next()) else { return v };
+    let (Some(name), Some(ty)) = (it.next(), it.next()) else {
+        return v;
+    };
     let want = if name.ends_with("_at") {
         Some(("timestamptz", "_at"))
     } else if name.ends_with("_date") || name.ends_with("_on") {
@@ -519,7 +675,12 @@ fn column_naming(rel: &str, line: usize, part: &str) -> Vec<Violation> {
     };
     if let Some((expect, why)) = want {
         if !ty.starts_with(expect) {
-            v.push(at("SQL-009", rel, line, format!("列 {name} 以 {why} 命名，类型必须是 {expect}，实际是 {ty}")));
+            v.push(at(
+                "SQL-009",
+                rel,
+                line,
+                format!("列 {name} 以 {why} 命名，类型必须是 {expect}，实际是 {ty}"),
+            ));
         }
     }
     v
@@ -535,12 +696,19 @@ fn object_naming(rel: &str, s: &Stmt) -> Vec<Violation> {
         ("create sequence ", "sq_"),
     ];
     for (head, prefix) in specs {
-        let Some(rest) = s.norm.strip_prefix(head) else { continue };
+        let Some(rest) = s.norm.strip_prefix(head) else {
+            continue;
+        };
         let rest = rest.strip_prefix("concurrently ").unwrap_or(rest);
         let rest = rest.strip_prefix("if not exists ").unwrap_or(rest);
         let name = rest.split_whitespace().next().unwrap_or("");
         if !name.starts_with(prefix) {
-            v.push(at("SQL-009", rel, s.line, format!("对象名 {name} 必须以 {prefix} 开头")));
+            v.push(at(
+                "SQL-009",
+                rel,
+                s.line,
+                format!("对象名 {name} 必须以 {prefix} 开头"),
+            ));
         }
         break;
     }
@@ -555,8 +723,12 @@ fn rule_single_responsibility(rel: &str, dir_schema: &str, stmts: &[Stmt]) -> Ve
     let mut v = Vec::new();
     let mut seen: Vec<String> = Vec::new();
     for s in stmts {
-        let Some(target) = created_object(&s.norm) else { continue };
-        let Some(schema) = schema_of(&target) else { continue };
+        let Some(target) = created_object(&s.norm) else {
+            continue;
+        };
+        let Some(schema) = schema_of(&target) else {
+            continue;
+        };
         if !seen.iter().any(|x| x == schema) {
             seen.push(schema.to_string());
         }
@@ -565,7 +737,12 @@ fn rule_single_responsibility(rel: &str, dir_schema: &str, stmts: &[Stmt]) -> Ve
         }
     }
     if seen.len() > 1 {
-        v.push(at("SQL-010", rel, 0, format!("同一迁移创建了 {} 两个以上 schema 的对象", seen.join("、"))));
+        v.push(at(
+            "SQL-010",
+            rel,
+            0,
+            format!("同一迁移创建了 {} 两个以上 schema 的对象", seen.join("、")),
+        ));
     }
     v
 }
@@ -573,16 +750,31 @@ fn rule_single_responsibility(rel: &str, dir_schema: &str, stmts: &[Stmt]) -> Ve
 /// 取一条 DDL 创建的对象限定名。只认建表、建索引、建视图与建序列四类。
 fn created_object(norm: &str) -> Option<String> {
     const HEADS: [&str; 6] = [
-        "create table ", "create unique index ", "create index ", "create view ",
-        "create materialized view ", "create sequence ",
+        "create table ",
+        "create unique index ",
+        "create index ",
+        "create view ",
+        "create materialized view ",
+        "create sequence ",
     ];
     for head in HEADS {
-        let Some(rest) = norm.strip_prefix(head) else { continue };
+        let Some(rest) = norm.strip_prefix(head) else {
+            continue;
+        };
         let rest = rest.strip_prefix("concurrently ").unwrap_or(rest);
         let rest = rest.strip_prefix("if not exists ").unwrap_or(rest);
         // 索引名不带 schema，其归属看 on 子句的表。
-        let target = if head.contains("index") { rest.split(" on ").nth(1)? } else { rest };
-        return Some(target.split(|c: char| c.is_whitespace() || c == '(').next()?.to_string());
+        let target = if head.contains("index") {
+            rest.split(" on ").nth(1)?
+        } else {
+            rest
+        };
+        return Some(
+            target
+                .split(|c: char| c.is_whitespace() || c == '(')
+                .next()?
+                .to_string(),
+        );
     }
     None
 }
@@ -609,7 +801,10 @@ fn check_versions(versions: &BTreeMap<u64, Vec<String>>) -> Vec<Violation> {
         .iter()
         .filter(|(_, files)| files.len() > 1)
         .map(|(v, files)| {
-            let why = format!("版本号 {v} 被 {} 个文件占用；版本号必须全局唯一", files.len());
+            let why = format!(
+                "版本号 {v} 被 {} 个文件占用；版本号必须全局唯一",
+                files.len()
+            );
             at("SQL-011", &files.join(" 与 "), 0, why)
         })
         .collect()
@@ -626,13 +821,22 @@ pub fn scan_bootstrap(rel: &str, text: &str) -> Vec<Violation> {
 
 /// `password '…'` 形态即口令字面量。`password null` 与不带字面量的语法不算。
 fn password_literal(line: &str) -> bool {
-    let Some(idx) = line.find("password") else { return false };
-    line[idx + "password".len()..].trim_start().starts_with('\'')
+    let Some(idx) = line.find("password") else {
+        return false;
+    };
+    line[idx + "password".len()..]
+        .trim_start()
+        .starts_with('\'')
 }
 
 fn check_bootstrap_names(dir: &Path) -> Vec<Violation> {
     let Ok(entries) = fs::read_dir(dir) else {
-        return vec![at("SQL-021", BOOTSTRAP, 0, "目录读不出来，判不了文件名白名单".into())];
+        return vec![at(
+            "SQL-021",
+            BOOTSTRAP,
+            0,
+            "目录读不出来，判不了文件名白名单".into(),
+        )];
     };
     let mut names: Vec<String> = entries
         .filter_map(Result::ok)
@@ -644,7 +848,14 @@ fn check_bootstrap_names(dir: &Path) -> Vec<Violation> {
     names
         .iter()
         .filter(|n| !BOOTSTRAP_FILES.contains(&n.as_str()))
-        .map(|n| at("SQL-021", &format!("{BOOTSTRAP}/{n}"), 0, format!("不在约定文件名内。约定为 {convention}")))
+        .map(|n| {
+            at(
+                "SQL-021",
+                &format!("{BOOTSTRAP}/{n}"),
+                0,
+                format!("不在约定文件名内。约定为 {convention}"),
+            )
+        })
         .collect()
 }
 
@@ -672,7 +883,10 @@ create table sales.sales_orders (
     const PATH: &str = "db/migrations/sales/V20260810120000__sales_orders.sql";
 
     fn rules_hit(text: &str) -> Vec<&'static str> {
-        let mut r: Vec<&'static str> = scan_migration(PATH, text).into_iter().map(|v| v.rule).collect();
+        let mut r: Vec<&'static str> = scan_migration(PATH, text)
+            .into_iter()
+            .map(|v| v.rule)
+            .collect();
         r.sort_unstable();
         r.dedup();
         r
@@ -681,7 +895,11 @@ create table sales.sales_orders (
     /// 正样例：合规迁移一条都不触。没有这条，下面的负样例证明不了规则在判什么。
     #[test]
     fn a_compliant_migration_trips_nothing() {
-        assert_eq!(rules_hit(OK_TABLE), Vec::<&str>::new(), "合规样例不得报违反");
+        assert_eq!(
+            rules_hit(OK_TABLE),
+            Vec::<&str>::new(),
+            "合规样例不得报违反"
+        );
     }
 
     /// 十项负样例，逐条断言规则本身：每条只改 OK_TABLE 的一处，断言恰好触到该规则。
@@ -707,8 +925,12 @@ create table sales.sales_orders (
 
     #[test]
     fn negative_delete_is_allowed_only_on_two_schemas() {
-        let lines = strip_comments("delete from platform_msg.idempotency_keys where expires_at < now();");
-        assert!(rule_delete(PATH, &lines).is_empty(), "platform_msg 上的清理是放行项");
+        let lines =
+            strip_comments("delete from platform_msg.idempotency_keys where expires_at < now();");
+        assert!(
+            rule_delete(PATH, &lines).is_empty(),
+            "platform_msg 上的清理是放行项"
+        );
         let lines = strip_comments("delete from sales.sales_orders where id = '1';");
         assert_eq!(rule_delete(PATH, &lines).len(), 1);
         // 未限定名判不出 schema，不得当作放行。
@@ -720,7 +942,10 @@ create table sales.sales_orders (
     fn negative_cross_schema_fk_must_be_composite() {
         let composite = "create table sales.sales_orders (customer_id uuid, constraint fk_sales_orders_customers foreign key (legal_entity_id, customer_id) references mdm.customers (legal_entity_id, id) on delete restrict)";
         let stmts = statements(&strip_comments(composite));
-        assert!(rule_cross_schema_fk(PATH, "sales", &stmts).is_empty(), "复合形式合规");
+        assert!(
+            rule_cross_schema_fk(PATH, "sales", &stmts).is_empty(),
+            "复合形式合规"
+        );
         let no_restrict = composite.replace(" on delete restrict", "");
         let stmts = statements(&strip_comments(&no_restrict));
         let hit = rule_cross_schema_fk(PATH, "sales", &stmts);
@@ -738,31 +963,50 @@ create table sales.sales_orders (
             .replace("  row_version bigint not null default 1,\n", "")
             .replace("  updated_at timestamptz not null default now(),\n", "")
             .replace("  updated_by uuid not null,\n", "");
-        assert!(rules_hit(&base).is_empty(), "三列同缺是合法的仅追加表：{:?}", rules_hit(&base));
+        assert!(
+            rules_hit(&base).is_empty(),
+            "三列同缺是合法的仅追加表：{:?}",
+            rules_hit(&base)
+        );
         let half = OK_TABLE.replace("  row_version bigint not null default 1,\n", "");
-        assert!(rules_hit(&half).contains(&"SQL-008"), "只缺 row_version 必须报");
+        assert!(
+            rules_hit(&half).contains(&"SQL-008"),
+            "只缺 row_version 必须报"
+        );
     }
 
     #[test]
     fn negative_common_column_order_is_asserted_not_just_presence() {
-        let swapped = OK_TABLE
-            .replace("  id uuid not null,\n  legal_entity_id uuid not null,\n", "  legal_entity_id uuid not null,\n  id uuid not null,\n");
+        let swapped = OK_TABLE.replace(
+            "  id uuid not null,\n  legal_entity_id uuid not null,\n",
+            "  legal_entity_id uuid not null,\n  id uuid not null,\n",
+        );
         let v = scan_migration(PATH, &swapped);
         assert!(
-            v.iter().any(|x| x.rule == "SQL-008" && x.detail.contains("顺序")),
+            v.iter()
+                .any(|x| x.rule == "SQL-008" && x.detail.contains("顺序")),
             "换序必须报，不能只判齐备：{v:?}"
         );
     }
 
     #[test]
     fn negative_column_suffix_must_match_type() {
-        let bad = OK_TABLE.replace("  created_at timestamptz not null default now(),", "  created_at date not null,");
-        assert!(rules_hit(&bad).contains(&"SQL-009"), "_at 列必须是 timestamptz");
+        let bad = OK_TABLE.replace(
+            "  created_at timestamptz not null default now(),",
+            "  created_at date not null,",
+        );
+        assert!(
+            rules_hit(&bad).contains(&"SQL-009"),
+            "_at 列必须是 timestamptz"
+        );
     }
 
     #[test]
     fn negative_file_name_and_version_rules() {
-        assert_eq!(file_version("db/migrations/sales/V20260810120000__x.sql"), Some(20_260_810_120_000));
+        assert_eq!(
+            file_version("db/migrations/sales/V20260810120000__x.sql"),
+            Some(20_260_810_120_000)
+        );
         assert_eq!(file_version("db/migrations/sales/V202608__x.sql"), None);
         assert_eq!(file_version("db/migrations/sales/sales_orders.sql"), None);
         let mut m: BTreeMap<u64, Vec<String>> = BTreeMap::new();
@@ -774,17 +1018,25 @@ create table sales.sales_orders (
 
     #[test]
     fn negative_bootstrap_password_literal() {
-        let hit = scan_bootstrap("db/bootstrap/01_roles.sql", "alter role ep_app_rw password 'hunter2';");
+        let hit = scan_bootstrap(
+            "db/bootstrap/01_roles.sql",
+            "alter role ep_app_rw password 'hunter2';",
+        );
         assert_eq!(hit.len(), 1);
         assert_eq!(hit[0].rule, "SQL-020");
-        assert!(scan_bootstrap("db/bootstrap/01_roles.sql", "create role ep_app_rw login;").is_empty());
+        assert!(
+            scan_bootstrap("db/bootstrap/01_roles.sql", "create role ep_app_rw login;").is_empty()
+        );
         // 注释里的口令同样要被剥掉再判，不能因为在注释里就漏判或误判。
         assert!(scan_bootstrap("db/bootstrap/01_roles.sql", "-- password 'x'").is_empty());
     }
 
     #[test]
     fn negative_ci_probe_must_not_reach_production_migrations() {
-        assert!(rules_hit("-- rollback: x\ncreate table ci_probe.probe_records (id uuid);").contains(&"SQL-030"));
+        assert!(
+            rules_hit("-- rollback: x\ncreate table ci_probe.probe_records (id uuid);")
+                .contains(&"SQL-030")
+        );
     }
 
     /// 空扫描必须落进 uncovered 而不是 checked，这是本模块最重的一条纪律。

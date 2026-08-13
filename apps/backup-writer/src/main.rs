@@ -31,7 +31,8 @@ pub const HEARTBEAT_PERIOD: Duration = Duration::from_secs(86400);
 const CALL_TIMEOUT: Duration = Duration::from_secs(3);
 
 fn main() -> ExitCode {
-    let p = match boot::prepare::<BackupWriterConfig>(PROCESS, DEFAULTS, |c| &c.log, |c| &c.runtime) {
+    let p = match boot::prepare::<BackupWriterConfig>(PROCESS, DEFAULTS, |c| &c.log, |c| &c.runtime)
+    {
         Ok(p) => p,
         Err(code) => return code,
     };
@@ -39,18 +40,35 @@ fn main() -> ExitCode {
     p.runtime.block_on(serve(p.cfg, logger, p.layers, p.check))
 }
 
-async fn serve(cfg: BackupWriterConfig, logger: Arc<JsonLogger>, layers: String, check_only: bool) -> ExitCode {
+async fn serve(
+    cfg: BackupWriterConfig,
+    logger: Arc<JsonLogger>,
+    layers: String,
+    check_only: bool,
+) -> ExitCode {
     let mut lifecycle = Lifecycle::new(PROCESS);
     boot::enter_configuring(&mut lifecycle, &logger);
     boot::enter_selfchecking(&mut lifecycle, &logger);
 
     let metrics = boot::metrics(&logger);
     // 不持 SQL 会话：四项 SQL 自检对本进程一律 NotApplicable。
-    let registry = baseline_registry(PROCESS, layers, cfg.selfcheck.clock_skew_max_ms, wiring::sql_probe());
+    let registry = baseline_registry(
+        PROCESS,
+        layers,
+        cfg.selfcheck.clock_skew_max_ms,
+        wiring::sql_probe(),
+        None,
+        None,
+    );
     if check_only {
-        return boot::check_exit(&registry.run_all(PROCESS, BuildInfo::current().version).await);
+        return boot::check_exit(
+            &registry
+                .run_all(PROCESS, BuildInfo::current().version)
+                .await,
+        );
     }
-    let report = match boot::selfcheck(&registry, PROCESS, &mut lifecycle, &metrics, &logger).await {
+    let report = match boot::selfcheck(&registry, PROCESS, &mut lifecycle, &metrics, &logger).await
+    {
         Ok(r) => r,
         Err((report, code)) => {
             println!("{}", report.to_json());
@@ -58,7 +76,14 @@ async fn serve(cfg: BackupWriterConfig, logger: Arc<JsonLogger>, layers: String,
         }
     };
 
-    let state = SystemState::new(PROCESS, BuildInfo::current(), lifecycle, report, metrics, logger.clone());
+    let state = SystemState::new(
+        PROCESS,
+        BuildInfo::current(),
+        lifecycle,
+        report,
+        metrics,
+        logger.clone(),
+    );
     let mut serving = Serving::new();
 
     let spool = Spool::new(cfg.spool.dir.clone(), cfg.spool.max_bytes);
@@ -67,7 +92,11 @@ async fn serve(cfg: BackupWriterConfig, logger: Arc<JsonLogger>, layers: String,
         serving.mark_failed(format!("spool 目录不可用：{e}"));
     }
     let forwarder = Forwarder::new(
-        IpcClient::new(cfg.ipc.socket_path.clone(), cfg.ipc.max_frame_bytes, CALL_TIMEOUT),
+        IpcClient::new(
+            cfg.ipc.socket_path.clone(),
+            cfg.ipc.max_frame_bytes,
+            CALL_TIMEOUT,
+        ),
         spool,
     );
 
@@ -79,9 +108,14 @@ async fn serve(cfg: BackupWriterConfig, logger: Arc<JsonLogger>, layers: String,
 
     logger.log(
         Level::Info,
-        LogFields::msg("startup", format!("已就绪，心跳周期 {} 秒", HEARTBEAT_PERIOD.as_secs())),
+        LogFields::msg(
+            "startup",
+            format!("已就绪，心跳周期 {} 秒", HEARTBEAT_PERIOD.as_secs()),
+        ),
     );
-    serving.wait_and_drain(&state, &logger, SHUTDOWN_DRAIN_MS).await
+    serving
+        .wait_and_drain(&state, &logger, SHUTDOWN_DRAIN_MS)
+        .await
 }
 
 /// 心跳循环。首帧立即发一次，之后按周期发；停机信号到即返回。
@@ -105,13 +139,21 @@ async fn heartbeat(
                 Level::Info,
                 LogFields::msg("spool", format!("恢复后补写 {count} 条并截断")),
             ),
-            ReplayOutcome::Partial { ok, remaining, reason } => logger.log(
+            ReplayOutcome::Partial {
+                ok,
+                remaining,
+                reason,
+            } => logger.log(
                 Level::Warn,
-                LogFields::msg("spool", format!("补写 {ok} 条后中断，剩余 {remaining} 条：{reason}")),
+                LogFields::msg(
+                    "spool",
+                    format!("补写 {ok} 条后中断，剩余 {remaining} 条：{reason}"),
+                ),
             ),
-            ReplayOutcome::Broken { reason } => {
-                logger.log(Level::Error, LogFields::msg("spool", format!("spool 不可用：{reason}")))
-            }
+            ReplayOutcome::Broken { reason } => logger.log(
+                Level::Error,
+                LogFields::msg("spool", format!("spool 不可用：{reason}")),
+            ),
         }
         match forward {
             ForwardOutcome::Sent => {}
@@ -122,11 +164,15 @@ async fn heartbeat(
                         LogFields::msg("spool", format!("spool 超上限，丢弃最旧 {evicted} 条")),
                     );
                 }
-                logger.log(Level::Warn, LogFields::msg("spool", format!("心跳落盘：{reason}")));
+                logger.log(
+                    Level::Warn,
+                    LogFields::msg("spool", format!("心跳落盘：{reason}")),
+                );
             }
-            ForwardOutcome::Lost { reason } => {
-                logger.log(Level::Error, LogFields::msg("spool", format!("心跳既发不出也落不下：{reason}")))
-            }
+            ForwardOutcome::Lost { reason } => logger.log(
+                Level::Error,
+                LogFields::msg("spool", format!("心跳既发不出也落不下：{reason}")),
+            ),
         }
 
         tokio::select! {

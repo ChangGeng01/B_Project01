@@ -12,7 +12,10 @@ pub const DEFAULT_MAX_FRAME_BYTES: u32 = 1_048_576;
 pub enum FrameError {
     /// 对端正常关闭，且不在一帧的中间。
     Closed,
-    TooLarge { declared: u32, limit: u32 },
+    TooLarge {
+        declared: u32,
+        limit: u32,
+    },
     Io(std::io::Error),
 }
 
@@ -47,7 +50,10 @@ pub async fn write_frame<W: AsyncWrite + Unpin>(
 ) -> Result<(), FrameError> {
     let len = u32::try_from(body.len()).unwrap_or(u32::MAX);
     if len > max {
-        return Err(FrameError::TooLarge { declared: len, limit: max });
+        return Err(FrameError::TooLarge {
+            declared: len,
+            limit: max,
+        });
     }
     w.write_all(&len.to_be_bytes()).await?;
     w.write_all(body).await?;
@@ -65,7 +71,10 @@ pub async fn read_frame<R: AsyncRead + Unpin>(r: &mut R, max: u32) -> Result<Vec
     let declared = u32::from_be_bytes(head);
     if declared > max {
         // 不读取正文：超长帧一律断开，读完再拒等于替对端付了内存。
-        return Err(FrameError::TooLarge { declared, limit: max });
+        return Err(FrameError::TooLarge {
+            declared,
+            limit: max,
+        });
     }
     let mut body = vec![0u8; declared as usize];
     r.read_exact(&mut body).await?;
@@ -80,9 +89,13 @@ mod tests {
     #[tokio::test]
     async fn round_trip_preserves_bytes() {
         let mut buf = Vec::new();
-        write_frame(&mut buf, b"{\"v\":1}", DEFAULT_MAX_FRAME_BYTES).await.unwrap();
+        write_frame(&mut buf, b"{\"v\":1}", DEFAULT_MAX_FRAME_BYTES)
+            .await
+            .unwrap();
         let mut cursor = Cursor::new(buf);
-        let body = read_frame(&mut cursor, DEFAULT_MAX_FRAME_BYTES).await.unwrap();
+        let body = read_frame(&mut cursor, DEFAULT_MAX_FRAME_BYTES)
+            .await
+            .unwrap();
         assert_eq!(body, b"{\"v\":1}");
     }
 
@@ -101,24 +114,44 @@ mod tests {
         buf.extend_from_slice(&2_000_000u32.to_be_bytes());
         // 正文一个字节都不给：若实现先读正文，这里会挂住而不是立刻报错。
         let mut cursor = Cursor::new(buf);
-        let err = read_frame(&mut cursor, DEFAULT_MAX_FRAME_BYTES).await.unwrap_err();
-        assert!(matches!(err, FrameError::TooLarge { declared: 2_000_000, limit: 1_048_576 }));
+        let err = read_frame(&mut cursor, DEFAULT_MAX_FRAME_BYTES)
+            .await
+            .unwrap_err();
+        assert!(matches!(
+            err,
+            FrameError::TooLarge {
+                declared: 2_000_000,
+                limit: 1_048_576
+            }
+        ));
     }
 
     #[tokio::test]
     async fn oversized_write_is_rejected() {
         let mut buf = Vec::new();
-        let err = write_frame(&mut buf, &vec![0u8; 32], 16).await.unwrap_err();
-        assert!(matches!(err, FrameError::TooLarge { declared: 32, limit: 16 }));
+        let err = write_frame(&mut buf, &[0u8; 32], 16).await.unwrap_err();
+        assert!(matches!(
+            err,
+            FrameError::TooLarge {
+                declared: 32,
+                limit: 16
+            }
+        ));
         assert!(buf.is_empty(), "被拒的帧不得写出半截");
     }
 
     #[tokio::test]
     async fn clean_close_is_distinguished_from_a_truncated_frame() {
         let mut empty = Cursor::new(Vec::new());
-        assert!(matches!(read_frame(&mut empty, 16).await.unwrap_err(), FrameError::Closed));
+        assert!(matches!(
+            read_frame(&mut empty, 16).await.unwrap_err(),
+            FrameError::Closed
+        ));
 
         let mut half = Cursor::new(4u32.to_be_bytes().to_vec());
-        assert!(matches!(read_frame(&mut half, 16).await.unwrap_err(), FrameError::Closed));
+        assert!(matches!(
+            read_frame(&mut half, 16).await.unwrap_err(),
+            FrameError::Closed
+        ));
     }
 }

@@ -34,3 +34,7 @@
 
 - `SecretString` 未实现 `Debug` 与 `Display`，机密不可能被日志格式化出去；
 - 配置结构体中任何名字含 `password`、`secret`、`key`、`token` 的字段，类型必须是 `SecretString` 或 `SecretRef`。
+
+## 追加：同期四头临时披露已由阶段 4 关闭（任务 #23）
+
+本 ADR「后果」负面段披露的同期同类状态——四个请求头 `X-Legal-Entity-Id`、`X-Device-Id`、`X-Client`、`Authorization` 只校存在性与格式——已由阶段 4 关闭：真实校验经端口在 core-server 装配注入（认证层令牌摘要查 sessions，法人层对照授权集合），关闭说明见 ADR-0011 追加段与 `docs/config-reference.md` 第 5 节。本 ADR 自身的 `FileSecretProvider` 临时实现不受此影响，仍待密钥阶段替换。

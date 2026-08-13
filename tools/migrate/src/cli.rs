@@ -106,6 +106,14 @@ pub const DEFAULT_TTL_MINUTES: u32 = 60;
 pub const MAX_TTL_MINUTES: u32 = 240;
 /// 未在命令行给出连接串时读取的环境变量，与配置模型的双下划线映射同形。
 pub const DB_URL_ENV: &str = "EP__DB__URL";
+/// 计划 §7 的连接串配置键；只写机密引用，解析后注入 `EP__DB__URL`。
+/// 本工具兼容其直接给出直连串的形态，口径见 dbconn.rs 模块头。
+pub const DB_DSN_ENV: &str = "EP__DB__DSN";
+/// 库侧期望版本清单路径（计划 §7 表逐字），缺省 /etc/ep/migration-versions.toml。
+pub const EXPECTED_VERSIONS_PATH_ENV: &str = "EP__DB__MIGRATION__EXPECTED_VERSIONS_PATH";
+/// 开窗的双人审批引用（A-09：approval_ref 缺失不可开窗）。CLI 选项白名单已冻结，
+/// 故由环境变量出示。
+pub const APPROVAL_REF_ENV: &str = "EP__DB__MIGRATION__APPROVAL_REF";
 
 /// 解析出来的一次调用。
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -143,10 +151,7 @@ pub(crate) fn err<T>(msg: impl Into<String>) -> Result<T, ParseError> {
 }
 
 /// 把 `--k=v` 与 `--k v` 两种写法归一成 (键, 值)。
-fn take_option(
-    args: &[String],
-    idx: &mut usize,
-) -> Result<(String, String), ParseError> {
+fn take_option(args: &[String], idx: &mut usize) -> Result<(String, String), ParseError> {
     let raw = &args[*idx];
     let body = raw.strip_prefix("--").expect("调用方已确认以 -- 开头");
     if let Some((k, v)) = body.split_once('=') {
@@ -214,7 +219,9 @@ pub fn parse(args: &[String]) -> Result<Parsed, ParseError> {
     while idx < args.len() {
         let cur = &args[idx];
         if !cur.starts_with("--") {
-            return err(format!("多余的位置参数 {cur}；本工具只收 --key=value 形态。"));
+            return err(format!(
+                "多余的位置参数 {cur}；本工具只收 --key=value 形态。"
+            ));
         }
         let (key, value) = take_option(args, &mut idx)?;
         if !sub.options().contains(&key.as_str()) {
@@ -282,21 +289,34 @@ mod tests {
 
     #[test]
     fn status_format_manifest_parses() {
-        let inv = run(&["status", "--db-url=postgres://h/ep", "--format=manifest"]).expect("可解析");
+        let inv =
+            run(&["status", "--db-url=postgres://h/ep", "--format=manifest"]).expect("可解析");
         assert_eq!(inv.format, StatusFormat::Manifest);
     }
 
     #[test]
     fn space_separated_form_parses() {
-        let inv = run(&["open-window", "--db-url", "postgres://h/ep", "--ttl-minutes", "30"])
-            .expect("可解析");
+        let inv = run(&[
+            "open-window",
+            "--db-url",
+            "postgres://h/ep",
+            "--ttl-minutes",
+            "30",
+        ])
+        .expect("可解析");
         assert_eq!(inv.ttl_minutes, 30);
     }
 
     #[test]
     fn gen_rls_requires_schema_and_table() {
-        assert!(run(&["gen-rls", "--schema=mdm"]).is_err(), "缺 --table 必须报错");
-        assert!(run(&["gen-rls", "--table=t"]).is_err(), "缺 --schema 必须报错");
+        assert!(
+            run(&["gen-rls", "--schema=mdm"]).is_err(),
+            "缺 --table 必须报错"
+        );
+        assert!(
+            run(&["gen-rls", "--table=t"]).is_err(),
+            "缺 --schema 必须报错"
+        );
         let inv = run(&["gen-rls", "--schema=mdm", "--table=parties"]).expect("可解析");
         assert_eq!(inv.rls_schema.as_deref(), Some("mdm"));
         assert_eq!(inv.rls_table.as_deref(), Some("parties"));
@@ -306,7 +326,10 @@ mod tests {
 
     #[test]
     fn negative_unknown_subcommand() {
-        assert!(parse(&args(&["migrate"])).is_err(), "阶段 1 的旧名 migrate 已并入 apply，必须被拒");
+        assert!(
+            parse(&args(&["migrate"])).is_err(),
+            "阶段 1 的旧名 migrate 已并入 apply，必须被拒"
+        );
         assert!(parse(&args(&["verify"])).is_err());
         assert!(parse(&args(&["manifest"])).is_err());
     }
@@ -319,7 +342,13 @@ mod tests {
     #[test]
     fn negative_option_not_allowed_for_this_subcommand() {
         assert!(
-            run(&["gen-rls", "--schema=mdm", "--table=t", "--db-url=postgres://h/ep"]).is_err(),
+            run(&[
+                "gen-rls",
+                "--schema=mdm",
+                "--table=t",
+                "--db-url=postgres://h/ep"
+            ])
+            .is_err(),
             "gen-rls 不连库，不该接受 --db-url"
         );
         assert!(
@@ -345,15 +374,33 @@ mod tests {
 
     #[test]
     fn negative_bad_values() {
-        assert!(run(&["status", "--db-url=mysql://h/ep"]).is_err(), "非 pg 连接串");
-        assert!(run(&["status", "--db-url=postgres://h/ep", "--format=xml"]).is_err());
-        assert!(run(&["apply", "--db-url=postgres://h/ep", "--expect-manifest-sha256=dead"]).is_err());
         assert!(
-            run(&["apply", "--db-url=postgres://h/ep", "--history-table=Schema_History"]).is_err(),
+            run(&["status", "--db-url=mysql://h/ep"]).is_err(),
+            "非 pg 连接串"
+        );
+        assert!(run(&["status", "--db-url=postgres://h/ep", "--format=xml"]).is_err());
+        assert!(run(&[
+            "apply",
+            "--db-url=postgres://h/ep",
+            "--expect-manifest-sha256=dead"
+        ])
+        .is_err());
+        assert!(
+            run(&[
+                "apply",
+                "--db-url=postgres://h/ep",
+                "--history-table=Schema_History"
+            ])
+            .is_err(),
             "大写标识符必须被拒"
         );
         assert!(run(&["open-window", "--db-url=postgres://h/ep", "--ttl-minutes=0"]).is_err());
-        assert!(run(&["open-window", "--db-url=postgres://h/ep", "--ttl-minutes=241"]).is_err());
+        assert!(run(&[
+            "open-window",
+            "--db-url=postgres://h/ep",
+            "--ttl-minutes=241"
+        ])
+        .is_err());
         assert!(run(&["open-window", "--db-url=postgres://h/ep", "--ttl-minutes=x"]).is_err());
         assert!(run(&["apply", "--db-url=postgres://h/ep", "--window-id="]).is_err());
     }
@@ -361,7 +408,10 @@ mod tests {
     #[test]
     fn help_and_version_do_not_run_anything() {
         assert!(matches!(parse(&args(&["--help"])), Ok(Parsed::Print(_))));
-        assert!(matches!(parse(&args(&["apply", "--help"])), Ok(Parsed::Print(_))));
+        assert!(matches!(
+            parse(&args(&["apply", "--help"])),
+            Ok(Parsed::Print(_))
+        ));
         assert!(matches!(parse(&args(&["--version"])), Ok(Parsed::Print(_))));
     }
 }

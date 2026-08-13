@@ -16,7 +16,11 @@ pub struct Violation {
 
 impl Violation {
     fn new(rule: &'static str, package: &str, detail: impl Into<String>) -> Violation {
-        Violation { rule, package: package.to_string(), detail: detail.into() }
+        Violation {
+            rule,
+            package: package.to_string(),
+            detail: detail.into(),
+        }
     }
 }
 
@@ -47,6 +51,7 @@ pub fn check(ws: &Workspace) -> Vec<Violation> {
         found.extend(rule_adapter_no_peer_adapter(pkg));
         found.extend(rule_platform_no_adapter(pkg));
         found.extend(rule_foundation_no_business(pkg, &members));
+        found.extend(rule_postgres_driver_tooling_only(pkg));
     }
     found.extend(rule_platform_acyclic(ws));
     found
@@ -57,7 +62,9 @@ pub fn check(ws: &Workspace) -> Vec<Violation> {
 /// 跨模块只走 ep-app-A 依赖 ep-contract-B。
 fn rule_domain_no_cross_module(pkg: &Package, members: &[&str]) -> Vec<Violation> {
     const RULE: &str = "domain-no-cross-module";
-    let Layer::Domain(own) = &pkg.layer else { return Vec::new() };
+    let Layer::Domain(own) = &pkg.layer else {
+        return Vec::new();
+    };
     pkg.deps
         .iter()
         .filter(|d| members.contains(&d.as_str()))
@@ -86,7 +93,9 @@ fn rule_domain_no_cross_module(pkg: &Package, members: &[&str]) -> Vec<Violation
 /// 模块间同步调用只能通过 ep-contract-B 中的 trait，实现在 apps 装配时注入。
 fn rule_app_no_peer_app(pkg: &Package) -> Vec<Violation> {
     const RULE: &str = "app-no-peer-app";
-    let Layer::Application(own) = &pkg.layer else { return Vec::new() };
+    let Layer::Application(own) = &pkg.layer else {
+        return Vec::new();
+    };
     pkg.deps
         .iter()
         .filter_map(|dep| match Layer::of(dep, false) {
@@ -111,7 +120,11 @@ fn rule_domain_contract_no_io(pkg: &Package) -> Vec<Violation> {
         .iter()
         .filter_map(|dep| {
             if matches!(Layer::of(dep, false), Layer::Adapter(_)) {
-                return Some(Violation::new(RULE, &pkg.name, format!("依赖了适配层 {dep}")));
+                return Some(Violation::new(
+                    RULE,
+                    &pkg.name,
+                    format!("依赖了适配层 {dep}"),
+                ));
             }
             FORBIDDEN_THIRD_PARTY
                 .contains(&dep.as_str())
@@ -140,7 +153,9 @@ fn rule_platform_no_domain_or_app(pkg: &Package) -> Vec<Violation> {
 /// 禁止五：adapter 之间互相依赖，共用逻辑下沉到 ep-foundation。
 fn rule_adapter_no_peer_adapter(pkg: &Package) -> Vec<Violation> {
     const RULE: &str = "adapter-no-peer-adapter";
-    let Layer::Adapter(own) = &pkg.layer else { return Vec::new() };
+    let Layer::Adapter(own) = &pkg.layer else {
+        return Vec::new();
+    };
     pkg.deps
         .iter()
         .filter_map(|dep| match Layer::of(dep, false) {
@@ -168,7 +183,11 @@ fn rule_foundation_no_business(pkg: &Package, members: &[&str]) -> Vec<Violation
         .iter()
         .filter(|d| members.contains(&d.as_str()))
         .map(|dep| {
-            Violation::new(RULE, &pkg.name, format!("依赖了工作区内 crate {dep}；foundation 必须无内部依赖"))
+            Violation::new(
+                RULE,
+                &pkg.name,
+                format!("依赖了工作区内 crate {dep}；foundation 必须无内部依赖"),
+            )
         })
         .collect()
 }
@@ -192,6 +211,35 @@ fn rule_platform_no_adapter(pkg: &Package) -> Vec<Violation> {
                 RULE,
                 &pkg.name,
                 format!("依赖了适配层 {dep}；platform 只可依赖 ep-foundation 与其他 ep-platform-*，端口应下沉 ep_foundation::port::*"),
+            )
+        })
+        .collect()
+}
+
+/// 只许工具层引用的驱动 crate。`tokio-postgres` 是阶段 2 因 refinery 结构冲突
+/// （见 tools/migrate/src/history.rs 模块头逐字记录）经 leader 批准仅给
+/// tools/migrate 自建兼容 Runner 用的裸驱动；库访问的正道是 ep-adapter-db-pg，
+/// crates/ 下任何包再引它就是把工具层的临时通道变成业务层的常驻依赖。
+const TOOL_ONLY_DEPS: [&str; 1] = ["tokio-postgres"];
+
+/// 允许项：裸 Postgres 驱动只许出现在工具层（tools/）。
+///
+/// 与 `platform-no-adapter` 同款，不进 [`FORBIDDEN_RULES`]，禁止项仍是七条。
+fn rule_postgres_driver_tooling_only(pkg: &Package) -> Vec<Violation> {
+    const RULE: &str = "postgres-driver-tooling-only";
+    if matches!(pkg.layer, Layer::Tooling(_)) {
+        return Vec::new();
+    }
+    pkg.deps
+        .iter()
+        .filter(|dep| TOOL_ONLY_DEPS.contains(&dep.as_str()))
+        .map(|dep| {
+            Violation::new(
+                RULE,
+                &pkg.name,
+                format!(
+                    "依赖了裸驱动 {dep}；该驱动仅许 tools/migrate 使用，库访问一律走 ep-adapter-db-pg"
+                ),
             )
         })
         .collect()
@@ -238,7 +286,11 @@ fn rule_platform_acyclic(ws: &Workspace) -> Vec<Violation> {
 
     let mut state: BTreeMap<String, Mark> = BTreeMap::new();
     let mut found = Vec::new();
-    for pkg in ws.packages.iter().filter(|p| matches!(p.layer, Layer::Platform(_))) {
+    for pkg in ws
+        .packages
+        .iter()
+        .filter(|p| matches!(p.layer, Layer::Platform(_)))
+    {
         if !state.contains_key(&pkg.name) {
             visit(ws, &pkg.name, &mut state, &mut found);
         }
@@ -269,11 +321,17 @@ mod negative_samples {
     fn negative_domain_no_cross_module() {
         assert!(violated(
             "domain-no-cross-module",
-            vec![pkg("ep-domain-sales", &["ep-contract-mdm"]), pkg("ep-contract-mdm", &[])],
+            vec![
+                pkg("ep-domain-sales", &["ep-contract-mdm"]),
+                pkg("ep-contract-mdm", &[])
+            ],
         ));
         assert!(!violated(
             "domain-no-cross-module",
-            vec![pkg("ep-domain-sales", &["ep-contract-sales"]), pkg("ep-contract-sales", &[])],
+            vec![
+                pkg("ep-domain-sales", &["ep-contract-sales"]),
+                pkg("ep-contract-sales", &[])
+            ],
         ));
     }
 
@@ -282,14 +340,20 @@ mod negative_samples {
     fn negative_app_no_peer_app() {
         assert!(violated(
             "app-no-peer-app",
-            vec![pkg("ep-app-sales", &["ep-app-ledger"]), pkg("ep-app-ledger", &[])],
+            vec![
+                pkg("ep-app-sales", &["ep-app-ledger"]),
+                pkg("ep-app-ledger", &[])
+            ],
         ));
     }
 
     /// 负样例三：契约层依赖 IO。
     #[test]
     fn negative_domain_contract_no_io() {
-        assert!(violated("domain-contract-no-io", vec![pkg("ep-contract-sales", &["sqlx"])]));
+        assert!(violated(
+            "domain-contract-no-io",
+            vec![pkg("ep-contract-sales", &["sqlx"])]
+        ));
         assert!(violated(
             "domain-contract-no-io",
             vec![pkg("ep-domain-sales", &["ep-adapter-db-pg"])],
@@ -312,7 +376,10 @@ mod negative_samples {
             "adapter-no-peer-adapter",
             vec![pkg("ep-adapter-search", &["ep-adapter-db-pg"])],
         ));
-        assert!(!violated("adapter-no-peer-adapter", vec![pkg("ep-adapter-db-pg", &["ep-foundation"])]));
+        assert!(!violated(
+            "adapter-no-peer-adapter",
+            vec![pkg("ep-adapter-db-pg", &["ep-foundation"])]
+        ));
     }
 
     /// 负样例六：foundation 反向依赖工作区内 crate。
@@ -320,9 +387,15 @@ mod negative_samples {
     fn negative_foundation_no_business() {
         assert!(violated(
             "foundation-no-business",
-            vec![pkg("ep-foundation", &["ep-contract-sales"]), pkg("ep-contract-sales", &[])],
+            vec![
+                pkg("ep-foundation", &["ep-contract-sales"]),
+                pkg("ep-contract-sales", &[])
+            ],
         ));
-        assert!(!violated("foundation-no-business", vec![pkg("ep-foundation", &["uuid"])]));
+        assert!(!violated(
+            "foundation-no-business",
+            vec![pkg("ep-foundation", &["uuid"])]
+        ));
     }
 
     /// 附加负样例：platform 依赖 adapter。
@@ -334,7 +407,10 @@ mod negative_samples {
         ));
         assert!(!violated(
             "platform-no-adapter",
-            vec![pkg("ep-platform-release", &["ep-foundation", "ep-platform-audit"])],
+            vec![pkg(
+                "ep-platform-release",
+                &["ep-foundation", "ep-platform-audit"]
+            )],
         ));
     }
 
@@ -354,6 +430,23 @@ mod negative_samples {
                 pkg("ep-platform-authz", &["ep-platform-tenancy"]),
                 pkg("ep-platform-tenancy", &["ep-foundation"]),
             ],
+        ));
+    }
+
+    /// 附加负样例：裸 Postgres 驱动渗入非工具层即违规；工具层自己用则放行。
+    #[test]
+    fn negative_postgres_driver_tooling_only() {
+        assert!(violated(
+            "postgres-driver-tooling-only",
+            vec![pkg("ep-adapter-db-pg", &["tokio-postgres"])],
+        ));
+        assert!(violated(
+            "postgres-driver-tooling-only",
+            vec![pkg("ep-foundation", &["tokio-postgres"])],
+        ));
+        assert!(!violated(
+            "postgres-driver-tooling-only",
+            vec![pkg("ep-migrate", &["tokio-postgres"])],
         ));
     }
 }

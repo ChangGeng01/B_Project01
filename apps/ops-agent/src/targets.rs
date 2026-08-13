@@ -19,7 +19,10 @@ pub const TARGETS: [(&str, &str); 4] = [
     ("core-server", "http://127.0.0.1:8080/api/v1/system/metrics"),
     ("job-worker", "http://127.0.0.1:8081/metrics"),
     ("integration-gateway", "http://127.0.0.1:8082/metrics"),
-    ("portal-gateway", "http://127.0.0.1:8090/portal/v1/system/metrics"),
+    (
+        "portal-gateway",
+        "http://127.0.0.1:8090/portal/v1/system/metrics",
+    ),
 ];
 
 /// 一个目标的抓取结果。
@@ -33,9 +36,21 @@ pub async fn scrape_all() -> Vec<Scraped> {
     let mut out = Vec::with_capacity(TARGETS.len());
     for (job, url) in TARGETS {
         let scraped = match client::get(url, SCRAPE_TIMEOUT).await {
-            Ok(r) if r.status == 200 => Scraped { job, up: true, body: r.body },
-            Ok(r) => Scraped { job, up: false, body: format!("# 抓取返回 HTTP {}\n", r.status) },
-            Err(e) => Scraped { job, up: false, body: format!("# 抓取失败：{e}\n") },
+            Ok(r) if r.status == 200 => Scraped {
+                job,
+                up: true,
+                body: r.body,
+            },
+            Ok(r) => Scraped {
+                job,
+                up: false,
+                body: format!("# 抓取返回 HTTP {}\n", r.status),
+            },
+            Err(e) => Scraped {
+                job,
+                up: false,
+                body: format!("# 抓取失败：{e}\n"),
+            },
         };
         out.push(scraped);
     }
@@ -64,13 +79,20 @@ mod tests {
     #[test]
     fn every_target_is_a_loopback_address() {
         for (_, url) in TARGETS {
-            assert!(url.starts_with("http://127.0.0.1:"), "{url} 必须只在回环上抓");
+            assert!(
+                url.starts_with("http://127.0.0.1:"),
+                "{url} 必须只在回环上抓"
+            );
         }
     }
 
     #[test]
     fn up_is_one_for_reachable_targets() {
-        let scraped = [Scraped { job: "core-server", up: true, body: "ep_build_info 1\n".into() }];
+        let scraped = [Scraped {
+            job: "core-server",
+            up: true,
+            body: "ep_build_info 1\n".into(),
+        }];
         let text = render("", &scraped);
         assert!(text.contains("up{job=\"core-server\"} 1"));
         assert!(text.contains("ep_build_info 1"));
@@ -79,10 +101,17 @@ mod tests {
     // 负样例断言的是「抓取失败按 up=0 标记，不静默丢弃」这条规则本身。
     #[test]
     fn a_failed_target_is_marked_down_rather_than_omitted() {
-        let scraped = [Scraped { job: "job-worker", up: false, body: "# 抓取失败：连接被拒\n".into() }];
+        let scraped = [Scraped {
+            job: "job-worker",
+            up: false,
+            body: "# 抓取失败：连接被拒\n".into(),
+        }];
         let text = render("", &scraped);
         assert!(text.contains("up{job=\"job-worker\"} 0"), "{text}");
-        assert!(!text.contains("连接被拒"), "失败目标的正文不进聚合结果，只留 up=0");
+        assert!(
+            !text.contains("连接被拒"),
+            "失败目标的正文不进聚合结果，只留 up=0"
+        );
     }
 
     #[tokio::test]

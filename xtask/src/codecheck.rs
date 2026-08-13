@@ -63,7 +63,9 @@ pub fn run(root: &Path) -> Report {
 
     let crates = match app_crates(root) {
         Ok(v) if v.is_empty() => {
-            uncovered.push(format!("未覆盖：{APPS}/ 下没有任何 crate，四维对应无被测输入"));
+            uncovered.push(format!(
+                "未覆盖：{APPS}/ 下没有任何 crate，四维对应无被测输入"
+            ));
             Vec::new()
         }
         Ok(v) => v,
@@ -82,7 +84,11 @@ pub fn run(root: &Path) -> Report {
     };
 
     if crates.is_empty() || table.is_empty() {
-        return Report { problems, uncovered, checked: 0 };
+        return Report {
+            problems,
+            uncovered,
+            checked: 0,
+        };
     }
 
     if table.len() != EXPECTED_PROCESSES {
@@ -101,7 +107,10 @@ pub fn run(root: &Path) -> Report {
             ));
         }
         if !c.has_main {
-            problems.push(format!("{APPS}/{}/src/main.rs 不存在，它不是一个二进制 crate", c.dir));
+            problems.push(format!(
+                "{APPS}/{}/src/main.rs 不存在，它不是一个二进制 crate",
+                c.dir
+            ));
         }
         if let Some(bin) = &c.bin_name {
             if bin != &c.package {
@@ -112,7 +121,10 @@ pub fn run(root: &Path) -> Report {
             }
         }
         if !table.contains_key(&c.package) {
-            problems.push(format!("{BASELINE} 第 2 节进程表里没有 {} 这一行", c.package));
+            problems.push(format!(
+                "{BASELINE} 第 2 节进程表里没有 {} 这一行",
+                c.package
+            ));
         }
     }
     for name in table.keys() {
@@ -126,7 +138,9 @@ pub fn run(root: &Path) -> Report {
     for (name, want_slice) in &table {
         let unit = root.join(QUADLET).join(format!("{name}.container"));
         let Ok(text) = fs::read_to_string(&unit) else {
-            problems.push(format!("{QUADLET}/{name}.container 不存在，进程 {name} 没有对应的 systemd 单元"));
+            problems.push(format!(
+                "{QUADLET}/{name}.container 不存在，进程 {name} 没有对应的 systemd 单元"
+            ));
             continue;
         };
         match ini_value(&text, "Slice") {
@@ -168,16 +182,24 @@ pub fn run(root: &Path) -> Report {
         }
         let dropin = slice_dir.join(format!("{s}.d"));
         if !dropin.is_dir() {
-            problems.push(format!("{SYSTEMD}/{s}.d/ 不存在，该 slice 没有资源限额 drop-in"));
+            problems.push(format!(
+                "{SYSTEMD}/{s}.d/ 不存在，该 slice 没有资源限额 drop-in"
+            ));
         }
     }
     for s in &slices {
         if !claimed.contains(s) {
-            problems.push(format!("{SYSTEMD}/{s} 没有任何容器认领，它承载不了任何进程"));
+            problems.push(format!(
+                "{SYSTEMD}/{s} 没有任何容器认领，它承载不了任何进程"
+            ));
         }
     }
 
-    Report { problems, uncovered, checked: crates.len() }
+    Report {
+        problems,
+        uncovered,
+        checked: crates.len(),
+    }
 }
 
 #[derive(Clone, Debug)]
@@ -202,7 +224,11 @@ fn app_crates(root: &Path) -> Result<Vec<AppCrate>, String> {
         if !manifest.is_file() {
             continue;
         }
-        let name = p.file_name().unwrap_or_default().to_string_lossy().to_string();
+        let name = p
+            .file_name()
+            .unwrap_or_default()
+            .to_string_lossy()
+            .to_string();
         let text = fs::read_to_string(&manifest)
             .map_err(|_| format!("读不到 {APPS}/{name}/Cargo.toml"))?;
         out.push(AppCrate {
@@ -221,11 +247,13 @@ fn toml_string(text: &str, table: &str, key: &str) -> Option<String> {
     let body = text.split_once(table)?.1;
     let body = body.split("\n[").next().unwrap_or(body);
     for line in body.lines().map(str::trim) {
-        let Some((k, v)) = line.split_once('=') else { continue };
+        let Some((k, v)) = line.split_once('=') else {
+            continue;
+        };
         if k.trim() != key {
             continue;
         }
-        let v = v.trim().trim_end_matches(|c: char| c == ',');
+        let v = v.trim().trim_end_matches(',');
         return Some(v.trim_matches('"').to_string());
     }
     None
@@ -275,7 +303,9 @@ fn ini_value(text: &str, key: &str) -> Option<String> {
 
 fn container_names(root: &Path) -> Vec<String> {
     let mut out = Vec::new();
-    let Ok(entries) = fs::read_dir(root.join(QUADLET)) else { return out };
+    let Ok(entries) = fs::read_dir(root.join(QUADLET)) else {
+        return out;
+    };
     for p in entries.filter_map(Result::ok).map(|e| e.path()) {
         if p.extension().is_some_and(|e| e == "container") {
             if let Some(stem) = p.file_stem() {
@@ -288,7 +318,9 @@ fn container_names(root: &Path) -> Vec<String> {
 }
 
 fn slice_files(dir: &Path) -> Vec<String> {
-    let Ok(entries) = fs::read_dir(dir) else { return Vec::new() };
+    let Ok(entries) = fs::read_dir(dir) else {
+        return Vec::new();
+    };
     entries
         .filter_map(Result::ok)
         .map(|e| e.file_name().to_string_lossy().to_string())
@@ -326,16 +358,25 @@ mod negative_samples {
         let root = repo_root();
         let table = process_table(&root).expect("基线第 2 节可解析");
         assert_eq!(table.len(), EXPECTED_PROCESSES);
-        assert_eq!(table.get("core-server").map(String::as_str), Some("app-core.slice"));
+        assert_eq!(
+            table.get("core-server").map(String::as_str),
+            Some("app-core.slice")
+        );
         // 多对一是基线第 2 节的既定取值，不是缺陷：这两个进程同处一个 slice。
-        assert_eq!(table.get("integration-gateway").map(String::as_str), Some("app-core.slice"));
+        assert_eq!(
+            table.get("integration-gateway").map(String::as_str),
+            Some("app-core.slice")
+        );
     }
 
     /// 负样例断言 Slice= 比对这条规则：改一个字即报，且报的是这一条。
     #[test]
     fn negative_a_wrong_slice_value_is_caught() {
         let text = "[Service]\nSlice=app-worker.slice\nRestart=always\n";
-        assert_eq!(ini_value(text, "Slice").as_deref(), Some("app-worker.slice"));
+        assert_eq!(
+            ini_value(text, "Slice").as_deref(),
+            Some("app-worker.slice")
+        );
         assert_eq!(ini_value("[Service]\nRestart=always\n", "Slice"), None);
         // 注释掉的取值不算数，否则改一处漏一处时会读到已作废的值。
         assert_eq!(ini_value("# Slice=app-core.slice\n", "Slice"), None);
@@ -344,12 +385,24 @@ mod negative_samples {
     #[test]
     fn negative_bin_rename_breaks_the_correspondence() {
         let manifest = "[package]\nname = \"core-server\"\n\n[[bin]]\nname = \"epcore\"\n";
-        assert_eq!(toml_string(manifest, "[package]", "name").as_deref(), Some("core-server"));
-        assert_eq!(toml_string(manifest, "[[bin]]", "name").as_deref(), Some("epcore"));
-        assert_eq!(toml_string("[package]\nversion = \"0\"\n", "[package]", "name"), None);
+        assert_eq!(
+            toml_string(manifest, "[package]", "name").as_deref(),
+            Some("core-server")
+        );
+        assert_eq!(
+            toml_string(manifest, "[[bin]]", "name").as_deref(),
+            Some("epcore")
+        );
+        assert_eq!(
+            toml_string("[package]\nversion = \"0\"\n", "[package]", "name"),
+            None
+        );
     }
 
     fn repo_root() -> std::path::PathBuf {
-        Path::new(env!("CARGO_MANIFEST_DIR")).parent().expect("xtask 在工作区根之下").to_path_buf()
+        Path::new(env!("CARGO_MANIFEST_DIR"))
+            .parent()
+            .expect("xtask 在工作区根之下")
+            .to_path_buf()
     }
 }

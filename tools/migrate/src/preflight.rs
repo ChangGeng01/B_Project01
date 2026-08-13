@@ -1,18 +1,19 @@
-//! 前置判定阶梯。
+//! 前置判定阶梯（同步段）。
 //!
-//! 顺序是：环境段（78）→ 窗口闸（3）→ 版本闸（5）→ 清单闸（4）→ 能力段（78）。
+//! 顺序是：环境段（78）→ 窗口出示登记（未出示不再落 3，首装自举与非空库
+//! 窗口闸判据移入执行段，见 bootstrap.rs 与 apply.rs）→ 版本闸（5）→ 清单闸（4）。
+//! 库侧判据——连接可达、窗口真 OPEN、库侧版本比对、合规断言——都需要读库，
+//! 放在执行段（exec.rs 起）承接；本阶梯只判调用方出示的凭据与本机可读的文件。
 //!
-//! 能力段之所以排在三个闸之后而不是最前面，是因为本阶段五个子命令的实现体全部
-//! 归阶段 2，能力段一旦前置，3、4、5 三个码在本阶段就恒不可达——那正是基线第
-//! 12 节通则第六条禁止的「以恒不可满足的形态留下判据」。三个闸判的是调用方出
-//! 示的凭据，本来就先于「这台机器上能不能干这件事」。
-//!
-//! 凡是本阶段读不到被测对象的判据，一律在报告里写「未覆盖」，不写「通过」。
+//! 阶梯放行后返回 [`Stage::NeedsDb`]，由 main 交执行段连库执行；`gen-rls`
+//! 不连库，直接在阶梯内完成。凡是读不到被测对象的判据，报告里写「未覆盖」，
+//! 不写「通过」。
 
 use std::path::Path;
 
-use crate::cli::{Invocation, Subcommand, DB_URL_ENV};
-use crate::exit::{MigrateExit, Outcome, NOT_DELIVERED};
+use crate::cli::{Invocation, Subcommand};
+use crate::dbconn;
+use crate::exit::{MigrateExit, Outcome};
 use crate::manifest::manifest_sha256;
 
 /// 本制品自身的版本，用于版本闸比对。
@@ -35,7 +36,7 @@ impl Verdict {
     }
 }
 
-/// 环境段与三个闸逐条的结论，最后随未交付说明一起打印。
+/// 环境与各闸逐条的结论，随放行说明或失败说明一起打印。
 struct Ladder {
     lines: Vec<String>,
 }
@@ -55,49 +56,46 @@ impl Ladder {
     }
 }
 
-/// 解析连接串：命令行优先，其次环境变量。返回 None 表示两处都没有。
-fn resolve_db_url(inv: &Invocation, env_db_url: Option<&str>) -> Option<String> {
-    inv.db_url
-        .clone()
-        .or_else(|| env_db_url.map(|s| s.to_string()))
+/// 阶梯的两种结局：就地了结（失败或 gen-rls 完成），或放行去执行段。
+#[derive(Debug)]
+pub enum Stage {
+    Settled(Outcome),
+    /// 前置阶梯全部放行，括号内是解析出的连接串。
+    NeedsDb(String),
 }
 
-fn fail(exit: MigrateExit, msg: String) -> Outcome {
-    Outcome::Failed(exit, msg)
+impl Stage {
+    /// 供测试断言用的退出码视图：NeedsDb 没有退出码，返回 None。
+    #[cfg(test)]
+    pub fn exit(&self) -> Option<MigrateExit> {
+        match self {
+            Stage::Settled(o) => Some(o.exit()),
+            Stage::NeedsDb(_) => None,
+        }
+    }
 }
 
-/// 跑完整条阶梯。本阶段任何 `Run` 形态的调用都以非零码收尾：要么被某道闸拦下，
-/// 要么走到能力段被 `subcommand-implemented` 拦下。没有返回 0 的路径。
-pub fn run(inv: &Invocation, env_db_url: Option<&str>) -> Outcome {
+fn fail(exit: MigrateExit, msg: String) -> Stage {
+    Stage::Settled(Outcome::Failed(exit, msg))
+}
+
+/// 跑完整条同步阶梯。
+pub fn stage(inv: &Invocation, env_db_url: Option<&str>, env_db_dsn: Option<&str>) -> Stage {
     let mut ladder = Ladder::new();
 
-    // 环境段一：连接串可解析。
+    // 环境段一：连接串可解析（gen-rls 不需要）。
+    let mut url: Option<String> = None;
     if inv.sub.needs_db() {
-        match resolve_db_url(inv, env_db_url) {
-            None => {
-                return fail(
-                    MigrateExit::EnvSelfCheckFailed,
-                    format!(
-                        "环境自检项 db-url-resolvable 不通过：子命令 {} 需要数据库连接串，\
-                         命令行未给 --db-url，环境变量 {DB_URL_ENV} 也未设置。",
-                        inv.sub.name()
-                    ),
+        match dbconn::resolve_db_url(inv, env_db_url, env_db_dsn) {
+            Err(outcome) => return Stage::Settled(outcome),
+            Ok(resolved) => {
+                ladder.note(
+                    "db-url-resolvable",
+                    Verdict::Passed,
+                    "已取到连接串；连通性判定在执行段连库时做。",
                 );
+                url = Some(resolved);
             }
-            Some(url) if !url.starts_with("postgres") => {
-                return fail(
-                    MigrateExit::EnvSelfCheckFailed,
-                    format!(
-                        "环境自检项 db-url-resolvable 不通过：环境变量 {DB_URL_ENV} 的取值\
-                         不是 postgresql:// 或 postgres:// 开头的连接串。"
-                    ),
-                );
-            }
-            Some(_) => ladder.note(
-                "db-url-resolvable",
-                Verdict::Passed,
-                "已取到连接串；本阶段不建立连接，连通性判定归阶段 2。",
-            ),
         }
     }
 
@@ -129,26 +127,28 @@ pub fn run(inv: &Invocation, env_db_url: Option<&str>) -> Outcome {
         );
     }
 
-    // 窗口闸：只有 apply 受约束。
+    // 窗口出示闸：只有 apply 受约束；窗口是否真 OPEN 由执行段读库判定。
+    // 未出示窗口不再在本阶梯落 3：目标库无历史表时执行段进首装自举
+    // （bootstrap.rs，02 计划第 12 节偏离登记十四），非空库的窗口闸判据
+    // 同样移入执行段（无待执行退出码 0，有待执行落 3），因为是否首装
+    // 必须探测库后才能判定，未过闸前不触库的口径自此限缩为不探历史表。
     if inv.sub == Subcommand::Apply {
         match &inv.window_id {
-            None => {
-                return fail(
-                    MigrateExit::MigrationWindowClosed,
-                    "迁移窗口未打开：apply 必须以 --window-id 出示一个已打开的迁移窗口。\
-                     窗口由 open-window 开启，登记在 platform_core.migration_windows。"
-                        .to_string(),
-                );
-            }
-            Some(id) => ladder.note(
+            None => ladder.note(
                 "migration-window-presented",
                 Verdict::NotCovered,
-                &format!("已出示 {id}；该窗口是否真的处于 OPEN 需要读库，归阶段 2。"),
+                "未出示 --window-id：目标库无历史表时执行段进首装自举，\
+                 否则由执行段读库判窗口闸。",
+            ),
+            Some(id) => ladder.note(
+                "migration-window-presented",
+                Verdict::Passed,
+                &format!("已出示 {id}；执行段将读 migration_windows 判定 OPEN。"),
             ),
         }
     }
 
-    // 版本闸。
+    // 版本闸一：工具自身版本。
     match &inv.expect_tool_version {
         None => ladder.note(
             "tool-version-matched",
@@ -158,17 +158,16 @@ pub fn run(inv: &Invocation, env_db_url: Option<&str>) -> Outcome {
         Some(expected) if expected != TOOL_VERSION => {
             return fail(
                 MigrateExit::VersionMismatch,
-                format!(
-                    "版本不一致：调用方期望 {expected}，本制品自身版本为 {TOOL_VERSION}。"
-                ),
+                format!("版本不一致：调用方期望 {expected}，本制品自身版本为 {TOOL_VERSION}。"),
             );
         }
         Some(_) => ladder.note("tool-version-matched", Verdict::Passed, TOOL_VERSION),
     }
+    // 版本闸二：库侧 schema_history 与期望版本清单的比对需要读库，归执行段。
     ladder.note(
         "schema-history-version-matched",
         Verdict::NotCovered,
-        "库侧 schema_history 版本比对需要读库，归阶段 2。",
+        "库侧版本比对需要读库，在执行段执行。",
     );
 
     // 清单闸。
@@ -198,18 +197,24 @@ pub fn run(inv: &Invocation, env_db_url: Option<&str>) -> Outcome {
         },
     }
 
-    // 能力段。
-    fail(
-        NOT_DELIVERED,
-        format!(
-            "环境自检项 subcommand-implemented 不通过：子命令 {} 的实现体按裁定 C-01 与 C-02 \
-             由阶段 2 交付，本制品只含参数解析与退出码约定。\n\
-             前置阶梯逐条结论：\n{}\n\
-             注意：「未覆盖」不等于通过。本次调用没有执行任何迁移动作。",
-            inv.sub.name(),
-            ladder.render()
-        ),
-    )
+    // gen-rls 不连库，就地完成。
+    if inv.sub == Subcommand::GenRls {
+        let schema = inv.rls_schema.as_deref().expect("CLI 闸已保证 --schema");
+        let table = inv.rls_table.as_deref().expect("CLI 闸已保证 --table");
+        return Stage::Settled(crate::genrls::run(schema, table, inv.out.as_deref()));
+    }
+
+    // open-window 的 reason 必填是参数判据，提前拦，免得连库后才落 2。
+    if inv.sub == Subcommand::OpenWindow && inv.reason.is_none() {
+        return fail(
+            MigrateExit::UsageError,
+            "open-window 必须给出 --reason（A-09 请求要素 reason ≤ 2000）。".to_string(),
+        );
+    }
+
+    let url = url.expect("needs_db 的子命令在上面已解析出连接串");
+    let _ = ladder.render(); // 阶梯明细在失败路径带出；放行路径由执行段产出正文
+    Stage::NeedsDb(url)
 }
 
 #[cfg(test)]
@@ -248,54 +253,49 @@ mod tests {
 
     #[test]
     fn missing_db_url_fails_env_selfcheck() {
-        let out = run(&inv(&["status"]), None);
-        assert_eq!(out.exit(), MigrateExit::EnvSelfCheckFailed);
+        let out = stage(&inv(&["status"]), None, None);
+        assert_eq!(out.exit(), Some(MigrateExit::EnvSelfCheckFailed));
     }
 
     #[test]
-    fn env_var_supplies_db_url() {
-        // 负样例的对照面：环境变量给了连接串就不该再落 db-url-resolvable。
-        let out = run(&inv(&["status"]), Some("postgres://h/ep"));
-        assert_eq!(out.exit(), MigrateExit::EnvSelfCheckFailed);
-        match out {
-            Outcome::Failed(_, msg) => {
-                assert!(msg.contains("subcommand-implemented"), "应当走到能力段：{msg}");
-                assert!(!msg.contains("db-url-resolvable 不通过"));
-            }
-            Outcome::Done(_) => panic!("本阶段不得返回成功"),
-        }
+    fn env_var_supplies_db_url_and_stage_releases() {
+        // 环境变量给了连接串，阶梯放行去执行段（不再落 NOT_DELIVERED）。
+        let out = stage(&inv(&["status"]), Some("postgres://h/ep"), None);
+        assert!(matches!(out, Stage::NeedsDb(u) if u == "postgres://h/ep"));
     }
 
     #[test]
     fn missing_migrations_dir_fails_env_selfcheck() {
-        let out = run(&inv(&["check", "--db-url=postgres://h/ep"]), None);
+        let out = stage(&inv(&["check", "--db-url=postgres://h/ep"]), None, None);
         match out {
-            Outcome::Failed(e, msg) => {
+            Stage::Settled(Outcome::Failed(e, msg)) => {
                 assert_eq!(e, MigrateExit::EnvSelfCheckFailed);
                 assert!(msg.contains("migrations-dir-readable"), "{msg}");
             }
-            Outcome::Done(_) => panic!("默认迁移目录不存在时不得返回成功"),
+            other => panic!("默认迁移目录不存在时不得放行：{other:?}"),
         }
     }
 
     #[test]
-    fn apply_without_window_id_is_window_closed() {
+    fn apply_without_window_id_releases_to_exec_stage() {
+        // 首装自举口径（偏离登记十四）：未出示窗口不再在本阶梯落 3，
+        // 是否首装由执行段探历史表判定。
         let dir = probe_dir("window");
         let a = inv(&[
             "apply",
             "--db-url=postgres://h/ep",
             &format!("--migrations-dir={}", dir.display()),
         ]);
-        assert_eq!(run(&a, None).exit(), MigrateExit::MigrationWindowClosed);
+        assert!(matches!(stage(&a, None, None), Stage::NeedsDb(_)));
 
-        // 负样例的对照面：出示窗口后不再落 3，改由能力段拦下。
+        // 对照面：出示窗口后同样放行去执行段读库判 OPEN。
         let b = inv(&[
             "apply",
             "--db-url=postgres://h/ep",
             &format!("--migrations-dir={}", dir.display()),
             "--window-id=w-1",
         ]);
-        assert_eq!(run(&b, None).exit(), MigrateExit::EnvSelfCheckFailed);
+        assert!(matches!(stage(&b, None, None), Stage::NeedsDb(_)));
         fs::remove_dir_all(&dir).ok();
     }
 
@@ -308,7 +308,10 @@ mod tests {
             &format!("--migrations-dir={}", dir.display()),
             "--expect-tool-version=9.9.9",
         ]);
-        assert_eq!(run(&a, None).exit(), MigrateExit::VersionMismatch);
+        assert_eq!(
+            stage(&a, None, None).exit(),
+            Some(MigrateExit::VersionMismatch)
+        );
 
         let b = inv(&[
             "check",
@@ -316,7 +319,7 @@ mod tests {
             &format!("--migrations-dir={}", dir.display()),
             &format!("--expect-tool-version={TOOL_VERSION}"),
         ]);
-        assert_eq!(run(&b, None).exit(), MigrateExit::EnvSelfCheckFailed);
+        assert!(matches!(stage(&b, None, None), Stage::NeedsDb(_)));
         fs::remove_dir_all(&dir).ok();
     }
 
@@ -330,9 +333,8 @@ mod tests {
             &format!("--migrations-dir={}", dir.display()),
             &format!("--expect-manifest-sha256={good}"),
         ]);
-        assert_eq!(
-            run(&a, None).exit(),
-            MigrateExit::EnvSelfCheckFailed,
+        assert!(
+            matches!(stage(&a, None, None), Stage::NeedsDb(_)),
             "哈希相符时不得落 4"
         );
 
@@ -341,26 +343,35 @@ mod tests {
             "-- rollback: drop table ci_probe.probe_records;\ncreate table t2();\n",
         )
         .expect("篡改探针文件");
-        assert_eq!(run(&a, None).exit(), MigrateExit::ChecksumMismatch);
+        assert_eq!(
+            stage(&a, None, None).exit(),
+            Some(MigrateExit::ChecksumMismatch)
+        );
         fs::remove_dir_all(&dir).ok();
     }
 
     #[test]
-    fn ladder_never_reports_passed_for_uncovered_items() {
-        let dir = probe_dir("ladder");
-        let a = inv(&[
-            "check",
-            "--db-url=postgres://h/ep",
-            &format!("--migrations-dir={}", dir.display()),
-        ]);
-        match run(&a, None) {
-            Outcome::Failed(e, msg) => {
-                assert_eq!(e, MigrateExit::EnvSelfCheckFailed);
-                assert!(msg.contains("schema-history-version-matched 未覆盖"), "{msg}");
-                assert!(msg.contains("migration-manifest-matched 未覆盖"), "{msg}");
+    fn gen_rls_completes_without_db() {
+        let out = stage(
+            &inv(&["gen-rls", "--schema=mdm", "--table=parties"]),
+            None,
+            None,
+        );
+        match out {
+            Stage::Settled(Outcome::Done(text)) => {
+                assert!(text.contains("create policy"), "gen-rls 应直接产出策略语句");
             }
-            Outcome::Done(_) => panic!("本阶段不得返回成功"),
+            other => panic!("gen-rls 不连库，应就地完成：{other:?}"),
         }
-        fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn open_window_requires_reason_before_db() {
+        let out = stage(
+            &inv(&["open-window", "--db-url=postgres://h/ep"]),
+            None,
+            None,
+        );
+        assert_eq!(out.exit(), Some(MigrateExit::UsageError));
     }
 }

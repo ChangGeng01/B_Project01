@@ -29,7 +29,7 @@ passed=0
 unconstructible=0
 skip() {
     local name=$1 why=$2
-    echo "负样例本轮不可构造：$name　$why"
+    echo "负样例本轮不可构造：${name}　$why"
     unconstructible=$((unconstructible + 1))
 }
 
@@ -39,18 +39,18 @@ expect() {
     local out rc=0
     out=$("$@" 2>&1) || rc=$?
     if [[ $rc -ne $want_rc ]]; then
-        echo "负样例未按预期失败：$name　期望退出码 $want_rc，实得 $rc" >&2
+        echo "负样例未按预期失败：${name}　期望退出码 ${want_rc}，实得 $rc" >&2
         printf '%s\n' "$out" | sed 's/^/    /' >&2
         failed=$((failed + 1))
         return
     fi
     if [[ -n $want_msg && $out != *"$want_msg"* ]]; then
-        echo "负样例退出码对但报错文字不对：$name　期望含「$want_msg」" >&2
+        echo "负样例退出码对但报错文字不对：${name}　期望含「${want_msg}」" >&2
         printf '%s\n' "$out" | sed 's/^/    /' >&2
         failed=$((failed + 1))
         return
     fi
-    echo "负样例如期失败：$name（退出码 $rc）"
+    echo "负样例如期失败：${name}（退出码 ${rc}）"
     passed=$((passed + 1))
 }
 

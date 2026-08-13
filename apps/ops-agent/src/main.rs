@@ -43,20 +43,44 @@ fn main() -> ExitCode {
 async fn aggregated_metrics(State(st): State<Arc<SystemState>>) -> Response {
     let local = st.metrics().encode_text();
     let text = targets::render(&local, &targets::scrape_all().await);
-    ([(header::CONTENT_TYPE, "text/plain; version=0.0.4; charset=utf-8")], text).into_response()
+    (
+        [(
+            header::CONTENT_TYPE,
+            "text/plain; version=0.0.4; charset=utf-8",
+        )],
+        text,
+    )
+        .into_response()
 }
 
-async fn serve(cfg: OpsConfig, logger: Arc<JsonLogger>, layers: String, check_only: bool) -> ExitCode {
+async fn serve(
+    cfg: OpsConfig,
+    logger: Arc<JsonLogger>,
+    layers: String,
+    check_only: bool,
+) -> ExitCode {
     let mut lifecycle = Lifecycle::new(PROCESS);
     boot::enter_configuring(&mut lifecycle, &logger);
     boot::enter_selfchecking(&mut lifecycle, &logger);
 
     let metrics = boot::metrics(&logger);
-    let registry = baseline_registry(PROCESS, layers, cfg.selfcheck.clock_skew_max_ms, wiring::sql_probe());
+    let registry = baseline_registry(
+        PROCESS,
+        layers,
+        cfg.selfcheck.clock_skew_max_ms,
+        wiring::sql_probe(),
+        None,
+        None,
+    );
     if check_only {
-        return boot::check_exit(&registry.run_all(PROCESS, BuildInfo::current().version).await);
+        return boot::check_exit(
+            &registry
+                .run_all(PROCESS, BuildInfo::current().version)
+                .await,
+        );
     }
-    let report = match boot::selfcheck(&registry, PROCESS, &mut lifecycle, &metrics, &logger).await {
+    let report = match boot::selfcheck(&registry, PROCESS, &mut lifecycle, &metrics, &logger).await
+    {
         Ok(r) => r,
         Err((report, code)) => {
             println!("{}", report.to_json());
@@ -64,7 +88,14 @@ async fn serve(cfg: OpsConfig, logger: Arc<JsonLogger>, layers: String, check_on
         }
     };
 
-    let state = SystemState::new(PROCESS, BuildInfo::current(), lifecycle, report, metrics, logger.clone());
+    let state = SystemState::new(
+        PROCESS,
+        BuildInfo::current(),
+        lifecycle,
+        report,
+        metrics,
+        logger.clone(),
+    );
     let health_addr = match http::parse_addr(&cfg.http.bind_addr) {
         Ok(a) => a,
         Err(e) => {
@@ -97,7 +128,12 @@ async fn serve(cfg: OpsConfig, logger: Arc<JsonLogger>, layers: String, check_on
     serving.spawn_http(health_addr, health, &logger).await;
     logger.log(
         Level::Info,
-        LogFields::msg("startup", format!("已就绪，抓取目标 {} 个", targets::TARGETS.len())),
+        LogFields::msg(
+            "startup",
+            format!("已就绪，抓取目标 {} 个", targets::TARGETS.len()),
+        ),
     );
-    serving.wait_and_drain(&state, &logger, cfg.http.shutdown_drain_ms).await
+    serving
+        .wait_and_drain(&state, &logger, cfg.http.shutdown_drain_ms)
+        .await
 }

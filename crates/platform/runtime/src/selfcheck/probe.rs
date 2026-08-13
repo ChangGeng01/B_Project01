@@ -73,13 +73,20 @@ pub trait SqlProbe: Send + Sync {
     async fn role_privileges(&self) -> Result<RolePrivileges, ProbeError>;
 }
 
-/// 迁移清单哈希。与 build.rs 同一归一化与同一拼接规则，两处改一处必须改另一处。
+/// 迁移清单哈希。与 build.rs 同一拼接规则（四元组按 schema、version 排序，
+/// 逐字段 `\u{1F}` 分隔），两处改一处必须改另一处。checksum 列取库内原文，
+/// 与 build.rs 按同一算法（迁移工具的 SipHash-1-3）算出的取值对齐。
 pub fn manifest_sha256(rows: &[MigrationRow]) -> String {
     let mut sorted: Vec<&MigrationRow> = rows.iter().collect();
     sorted.sort_by(|a, b| (&a.schema, a.version).cmp(&(&b.schema, b.version)));
     let mut hasher = Sha256::new();
     for r in sorted {
-        for field in [r.schema.as_str(), &r.version.to_string(), r.name.as_str(), r.checksum.as_str()] {
+        for field in [
+            r.schema.as_str(),
+            &r.version.to_string(),
+            r.name.as_str(),
+            r.checksum.as_str(),
+        ] {
             hasher.update(field.as_bytes());
             hasher.update([0x1f]);
         }
