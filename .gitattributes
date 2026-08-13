@@ -1,0 +1,31 @@
+# 换行符护栏。
+#
+# 建这个文件的原因是一条实测出的缺陷（裁定 F-08 第三节第 3 条）：
+# tools/migrate 的 migration_checksum 直接对迁移 SQL 的正文求哈希，
+# 而本仓此前没有 .gitattributes。在把行尾转成 CRLF 的平台上 clone 一次，
+# 全部已应用迁移的校验和都会不符，ep-migrate apply 以退出码 4 拒绝启动。
+#
+# 因此下列扩展名一律钉死为 LF，不随平台变。凡是正文进入哈希、签名或
+# 逐字比对的文件类型，都必须列在这里；新增此类文件类型时同批加行。
+
+*.sql        text eol=lf
+*.rs         text eol=lf
+*.toml       text eol=lf
+*.md         text eol=lf
+*.sh         text eol=lf
+*.py         text eol=lf
+*.yml        text eol=lf
+*.yaml       text eol=lf
+*.tsv        text eol=lf
+*.json       text eol=lf
+*.fragment   text eol=lf
+*.container  text eol=lf
+*.volume     text eol=lf
+*.conf       text eol=lf
+
+# Windows 侧脚本反过来：这两类由 Windows 自己的解释器读，取 CRLF。
+# 目前仓库内尚无此类文件，本条为裁定 F-08 落地时新增的 PowerShell 与
+# 批处理脚本预留，避免届时再补一次。
+*.ps1        text eol=crlf
+*.bat        text eol=crlf
+*.cmd        text eol=crlf
