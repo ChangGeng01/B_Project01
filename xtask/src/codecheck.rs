@@ -14,6 +14,14 @@
 //!
 //! 代码侧一律文本解析，不 use 任何 ep-* crate，也不调 `cargo metadata`：
 //! 门禁工具不为一条判据增加依赖边，这与 archcheck 同纪律。
+//!
+//! 裁定 F-08 之后：基线第 2 节那一列已由 `cgroup slice` 改名为「资源单位」，
+//! 取值形态随之由 `app-core.slice` 变为 `资源单位 app-core`；单元名一维的被测串
+//! 也应由 systemd 单元名换成 Windows 服务名。第三、四维的被测对象
+//! （`deploy/podman/` 与 `deploy/systemd/`）按 F-08 第十节第 5 步才被取代，
+//! 在那之前它们仍在仓库里、仍应保持一致，故本模块暂不改判据形态，
+//! 只在 [`resource_unit`] 处归一两种列取值。第 5 步落地即自动转为未覆盖，
+//! 那时按 F-08 第八节重写——不需要任何人记得。
 
 use std::collections::BTreeMap;
 use std::fs;
@@ -259,7 +267,28 @@ fn toml_string(text: &str, table: &str, key: &str) -> Option<String> {
     None
 }
 
-/// 基线第 2 节进程表：进程名 -> cgroup slice 名。
+/// 基线第 2 节进程表最后一列 -> 该进程所属资源单位对应的 slice 文件名。
+///
+/// 该列有两种写法，都要认：裁定 F-08 之前是 `app-core.slice`，之后是 `资源单位 app-core`
+/// ——Windows 上没有 cgroup slice，基线已按裁定换了列名与取值形态。
+/// 本函数把两种写法归一到 slice 文件名，因为**下面第三、四维的被测对象仍是
+/// `deploy/podman/` 与 `deploy/systemd/`**：这两处按 F-08 第十节第 5 步才被服务注册脚本
+/// 与静态限额文件取代，在那之前它们仍在仓库里，仍应保持三处一致。
+///
+/// 第 5 步落地那一刻 `deploy/systemd/` 消失，第四维会自动转为「未覆盖」并以退出码 3
+/// 报出——那正是要求本模块按 F-08 第八节重写的时点，不需要任何人记得去改。
+fn resource_unit(cell: &str) -> Option<String> {
+    if cell.ends_with(".slice") {
+        return Some(cell.to_string());
+    }
+    let name = cell.strip_prefix("资源单位 ")?.trim();
+    if name.is_empty() {
+        return None;
+    }
+    Some(format!("{name}.slice"))
+}
+
+/// 基线第 2 节进程表：进程名 -> 资源单位（归一为 slice 文件名）。
 fn process_table(root: &Path) -> Result<BTreeMap<String, String>, String> {
     let text = fs::read_to_string(root.join(BASELINE)).map_err(|_| format!("读不到 {BASELINE}"))?;
     let section = text
@@ -276,10 +305,10 @@ fn process_table(root: &Path) -> Result<BTreeMap<String, String>, String> {
         if cells.len() != 6 || cells[0] == "进程" || cells[0].starts_with("---") {
             continue;
         }
-        if !cells[5].ends_with(".slice") {
+        let Some(unit) = resource_unit(cells[5]) else {
             continue;
-        }
-        out.insert(cells[0].to_string(), cells[5].to_string());
+        };
+        out.insert(cells[0].to_string(), unit);
     }
     if out.is_empty() {
         return Err(format!("{BASELINE} 第 2 节没有解析出任何进程行"));
@@ -404,5 +433,28 @@ mod negative_samples {
             .parent()
             .expect("xtask 在工作区根之下")
             .to_path_buf()
+    }
+}
+
+#[cfg(test)]
+mod resource_unit_tests {
+    use super::resource_unit;
+
+    /// 两种写法都要认：裁定 F-08 前后的列取值形态不同。
+    #[test]
+    fn both_forms_are_accepted() {
+        assert_eq!(resource_unit("app-core.slice").as_deref(), Some("app-core.slice"));
+        assert_eq!(resource_unit("资源单位 app-core").as_deref(), Some("app-core.slice"));
+        assert_eq!(resource_unit("资源单位 app-db").as_deref(), Some("app-db.slice"));
+    }
+
+    /// 负样例：认不出来必须返回 None 而不是猜一个，
+    /// 否则整张表会被解析成空表并静默退化为「未覆盖」。
+    #[test]
+    fn negative_unparsable_cells() {
+        assert_eq!(resource_unit("ep-core"), None);
+        assert_eq!(resource_unit("资源单位 "), None);
+        assert_eq!(resource_unit(""), None);
+        assert_eq!(resource_unit("Job Object app-core"), None);
     }
 }

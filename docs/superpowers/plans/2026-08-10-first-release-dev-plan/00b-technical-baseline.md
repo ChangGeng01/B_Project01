@@ -30,9 +30,9 @@
 /tools/<name>/                  工具 crate，tools/ep-migrate 随制品交付，tools/bench 与 tools/release-gate 按 B-11 排除出制品
 ```
 
-非 workspace 成员的仓库顶层目录固定如下：`/db/bootstrap/` 数据库引导脚本，`/db/checks/` SQL 断言脚本，`/scripts/` 运维与校验脚本，`/deploy/` 单机编排文件与 systemd slice drop-in，`/clients/desktop/` 与 `/clients/mobile/` 四端客户端源码。以上两段合起来即全部顶层目录，新增顶层目录必须先改本节。
+非 workspace 成员的仓库顶层目录固定如下：`/db/bootstrap/` 数据库引导脚本，`/db/checks/` SQL 断言脚本，`/scripts/` 运维与校验脚本，`/deploy/` 服务注册脚本与服务宿主层读取的静态限额文件，`/clients/desktop/` 与 `/clients/mobile/` 四端客户端源码。以上两段合起来即全部顶层目录，新增顶层目录必须先改本节。
 
-crate 命名前缀统一为 `ep-`，crate 目录名不带前缀，`Cargo.toml` 中的 `name` 带前缀。二进制 crate 不带前缀，名字与进程名、systemd 单元名、cgroup slice 名一一对应。edition 固定 2021。禁止 nightly，禁止在成员 crate 中写版本号，成员一律 `dep.workspace = true`。
+crate 命名前缀统一为 `ep-`，crate 目录名不带前缀，`Cargo.toml` 中的 `name` 带前缀。二进制 crate 不带前缀，名字与进程名、Windows 服务名一一对应；与资源单位不构成一一对应，八个二进制落在七个资源单位内，对应关系见第 2 节。edition 固定 2021。禁止 nightly，禁止在成员 crate 中写版本号，成员一律 `dep.workspace = true`。
 
 ### 1.2 crate 清单与职责
 
@@ -93,7 +93,7 @@ crate 命名前缀统一为 `ep-`，crate 目录名不带前缀，`Cargo.toml` �
 | ep-adapter-doc | Excel 导入导出、文档模板套用、PDF 渲染与批注、像素级打印排版。 |
 | ep-adapter-esign | 电子签章外部出口，首版唯一的外部系统适配。 |
 | ep-adapter-wasm | 受限 WASM 计算与服务端插件的宿主接口。 |
-| ep-adapter-ipc | 进程间接口的客户端与服务端，Unix domain socket 承载。 |
+| ep-adapter-ipc | 进程间接口的客户端与服务端，Windows 命名管道承载。 |
 
 ### 1.3 依赖方向与禁止项
 
@@ -242,28 +242,28 @@ pub enum ActionClass { Read, Write, Submit, Approve, Export }
 
 八个进程，与规格第 4.3 章的 apps 清单一一对应。新增或合并进程须先修订本节并写明其信任边界或资源理由，不设不得新增也不得合并的封条。
 
-本节的八个进程是规格第 4.3 章 apps 清单的固定项。其中 plugin-host 承载规格第 9.3 章首版服务端唯一的扩展形态，即签名 WASM Component，并与第 9.1 章复杂计算调用受限 WASM 函数一项对应，规格第 5.7 章延期目录不含服务端 WASM 插件。任何阶段计划不得删除该进程及其系统账户 ep-plugin、其 cgroup 分片 app-plugin.slice、其套接字 `/run/ep/ipc/plugin.sock` 与第 1.2 节的 ep-adapter-wasm crate；删除须先修订规格第 4.3、7.7、9.3、13.1 四章与附录 A.4 并经产品负责人批准，在此之前七进程是被禁止的第二套取值。
+本节的八个进程是规格第 4.3 章 apps 清单的固定项。其中 plugin-host 承载规格第 9.3 章首版服务端唯一的扩展形态，即签名 WASM Component，并与第 9.1 章复杂计算调用受限 WASM 函数一项对应，规格第 5.7 章延期目录不含服务端 WASM 插件。任何阶段计划不得删除该进程及其系统账户 ep-plugin、其资源单位 app-plugin、其套接字 `\\.\pipe\ep-plugin` 与第 1.2 节的 ep-adapter-wasm crate；删除须先修订规格第 4.3、7.7、9.3、13.1 四章与附录 A.4 并经产品负责人批准，在此之前七进程是被禁止的第二套取值。
 
-| 进程 | 职责 | 监听 | 数据库连接 | 系统账户 | cgroup slice |
+| 进程 | 职责 | 监听 | 数据库连接 | 服务虚拟账户 | 资源单位 |
 |---|---|---|---|---|---|
-| core-server | 全部领域命令与查询、事务、规则与工作流协调、四端 API、供应商门户的受控能力 API、交易路径上的附件正文读写、对写出进程上报内容的审计落库。 | 127.0.0.1:8080 HTTP，`/run/ep/ipc/core.sock` | 运行期读写池上限 20，只读分析池上限 10，合计不超过 30 | ep-core | app-core.slice |
-| job-worker | Outbox 消费、站内通知与推送投递、报表与文档渲染、批处理、归档与派生存储传播、内部对账与不变量校验、死信重投。 | 127.0.0.1:8081 仅健康与指标 | 独立池上限 5，使用同一运行期读写账号 | ep-worker | app-worker.slice |
-| portal-gateway | 承载公网供应商门户站点，做会话、限流、脱敏投影的呈现层，所有取数一律经 core-server 的受控能力 API。 | 127.0.0.1:8090 HTTP | 0，不建立事务数据库连接 | ep-portal | app-portal.slice |
-| integration-gateway | 首版唯一的对外出网进程，只承载电子签章一类出口，含超时、退避、熔断与证据固化。 | 127.0.0.1:8082 仅本机 | 独立池上限 5，同一运行期读写账号 | ep-integ | app-core.slice |
-| plugin-host | 服务端签名 WASM Component 的受控宿主，按声明的能力与资源限额执行。 | `/run/ep/ipc/plugin.sock` | 0 | ep-plugin | app-plugin.slice |
-| ops-agent | 运维中心的采集与暴露：指标端点、健康端点、降级与暴露窗口台账的读取。 | 127.0.0.1:9101 指标，127.0.0.1:9102 健康 | 专用只读角色池上限 2 | ep-ops | app-edge.slice |
-| archive-writer | 事务日志连续归档、附件正文向服务器之外落点的增量写出、审计证据存储的写出，三项各自不超过 15 分钟周期。 | 无 | 1 个常驻流复制连接与 1 个复制槽，不建常规连接 | ep-archive | app-archive.slice |
-| backup-writer | 每日全量备份、附件正文存量引导搬运与每日全量写出、备份自动校验、归档链断裂后的重建基线备份。 | 无 | 备份窗口内不超过 1 个流复制连接，窗口外为 0 | ep-backup | app-backup.slice |
+| core-server | 全部领域命令与查询、事务、规则与工作流协调、四端 API、供应商门户的受控能力 API、交易路径上的附件正文读写、对写出进程上报内容的审计落库。 | 127.0.0.1:8080 HTTP，`\\.\pipe\ep-core` | 运行期读写池上限 20，只读分析池上限 10，合计不超过 30 | NT SERVICE\ep-core | 资源单位 app-core |
+| job-worker | Outbox 消费、站内通知与推送投递、报表与文档渲染、批处理、归档与派生存储传播、内部对账与不变量校验、死信重投。 | 127.0.0.1:8081 仅健康与指标 | 独立池上限 5，使用同一运行期读写账号 | NT SERVICE\ep-worker | 资源单位 app-worker |
+| portal-gateway | 承载公网供应商门户站点，做会话、限流、脱敏投影的呈现层，所有取数一律经 core-server 的受控能力 API。 | 127.0.0.1:8090 HTTP | 0，不建立事务数据库连接 | NT SERVICE\ep-portal | 资源单位 app-portal |
+| integration-gateway | 首版唯一的对外出网进程，只承载电子签章一类出口，含超时、退避、熔断与证据固化。 | 127.0.0.1:8082 仅本机 | 独立池上限 5，同一运行期读写账号 | NT SERVICE\ep-integ | 资源单位 app-core |
+| plugin-host | 服务端签名 WASM Component 的受控宿主，按声明的能力与资源限额执行。 | `\\.\pipe\ep-plugin` | 0 | NT SERVICE\ep-plugin | 资源单位 app-plugin |
+| ops-agent | 运维中心的采集与暴露：指标端点、健康端点、降级与暴露窗口台账的读取。 | 127.0.0.1:9101 指标，127.0.0.1:9102 健康 | 专用只读角色池上限 2 | NT SERVICE\ep-ops | 资源单位 app-edge |
+| archive-writer | 事务日志连续归档、附件正文向服务器之外落点的增量写出、审计证据存储的写出，三项各自不超过 15 分钟周期。 | 无 | 1 个常驻流复制连接与 1 个复制槽，不建常规连接 | NT SERVICE\ep-archive | 资源单位 app-archive |
+| backup-writer | 每日全量备份、附件正文存量引导搬运与每日全量写出、备份自动校验、归档链断裂后的重建基线备份。 | 无 | 备份窗口内不超过 1 个流复制连接，窗口外为 0 | NT SERVICE\ep-backup | 资源单位 app-backup |
 
 进程侧的固定约束，照抄规格。
 
 - 常驻常规连接合计不超过 42，迁移与应急临时连接另计不超过 10，并发连接峰值不超过 52，`max_wal_senders` 不低于 4，`max_replication_slots` 不低于 3。
-- core-server 与 integration-gateway 是两个进程，但同处 app-core.slice，slice 内不再细分配额。
-- archive-writer 与 backup-writer 各自独立进程与独立 cgroup，不共享 CPU、内存与磁盘 IO 预算，不持有运行期应用账号，不读业务表。
-- 各进程以标准 OCI 容器交付，由 Docker Compose 或 Podman 加 systemd 编排。cgroup 取四类值，以 `deploy/` 下随八个 slice 一并交付的静态 drop-in 承载规格第 13.1 章的配额表；八个 slice 与该表除第 9 行外的八行一一对应，其中 app-core.slice 取「Rust 核心与集成网关」一行、app-edge.slice 取「反向代理与运维代理」一行。取值随附录 A.4 认证报告记录的服务器规格一并冻结，客户不得在部署时单方调高单一组件的份额、保底值或突发上限。第一类，每个 slice 一个 `CPUWeight`，逐行取该行 CPU 份额百分数乘以 100。第二类，每个 slice 一个 `IOWeight`，逐行取该行磁盘 IO 份额百分数乘以 100；这两列是相对份额，与机器规格无关，不参与任何折算。第三类，每个 slice 一个 `MemoryMax` 与取同一数值的 `MemoryLow`，按附录 D.2 的 BC-1 基线组合以同一算定式由该行内存百分数与可分配量算出绝对字节后写死。第四类，backup-writer 另有一个 `IOMax` 硬上限，压住每晚的全量窗口。核对由 `/scripts/` 下的部署校验脚本在部署与升级时各断言一次，不做配额生成算法，也不做每进程启动自检。两处偏差如实披露。其一，配额表第 9 行「内置搜索索引」在首版既无独立进程也无独立 slice，其检索与索引写入分别落在 core-server 与 job-worker 之内，该行份额不落 drop-in、不加和到任何一行、也不按比例拆分到多行，因此八行 `CPUWeight` 之和为 9000、八行 `IOWeight` 之和为 9200，均低于满值 10000；权重是比例分配，分母缩小意味着实际承载搜索负载的 app-core.slice 与 app-worker.slice 相对规格意图欠配，其余六个 slice 相对超配，该偏差按附录 A.4 实测记录，首版不消除。内存列是硬上限不是权重，第 9 行不落值只在可分配量中留下约一成未指派余量，不构成对其余八行的相对超配。其二，规格第 13.1 章的突发上限一列，即其余各行取份额三倍并以可分配量 40% 封顶的取值，除 backup-writer 的 `IOMax` 之外在首版无承载。八级让路次序不构成运行期保证，规格第 7.5 章那句诚实披露保留，即单机同机部署下备份与报表在极端情况下仍可能影响交易时延、无隔离保证。
-- 八个系统账户互不复用，同属组 `ep`，落点写出凭据只由 archive-writer 与 backup-writer 的系统账户持有。`tools/ep-migrate` 另有独立系统账户 `ep-migrate`，与上述八个不复用，同属组 `ep`，只在迁移窗口内使用。
+- core-server 与 integration-gateway 是两个进程，但同处资源单位 app-core，单位内不再细分配额；八个自研二进制因此落在七个资源单位内，加 PostgreSQL 一个共八个。
+- archive-writer 与 backup-writer 是两个独立进程与两个独立资源单位，其内存硬上限各自独立；CPU 侧是否构成预算隔离随规格第 13.1 章 CPU 一列的实测结论确定，磁盘 IO 一列在本平台无运行期承载，二者之间不构成磁盘 IO 预算隔离。两者不持有运行期应用账号，不读业务表。
+- 八个进程各注册一个 Windows 服务，由 Windows 服务控制管理器承载启停、依赖顺序与崩溃重启，八个二进制共用一层服务宿主；全部组件以同一份安装包（MSI 或压缩包）加服务注册脚本交付，同一制品覆盖 Windows Server 2019 至 2022 两个版本。资源单位为具名 Job Object，取值以 `deploy/` 下交付的静态限额文件承载规格第 13.1 章的配额表；承载物由服务宿主层落实，不由编排层落实。该落实分两类，不得混为一谈：八个自研二进制由服务宿主层在 `ServiceMain` 早期读取该文件后创建或打开具名 Job Object 并自我指派；PostgreSQL 16 与反向代理不链接该层，两者由 ops-agent（规格第 13.1 章所称运维代理）创建具名资源单位后指派，该条路径的可行性与其对数据库的后果均待实测，实测结论出具前这两行按待实测处置，不得写成已覆盖。具名 Job Object 的名字取值本基线不取，随静态限额文件在阶段 1 一并定，定后按第 0 节回写本节。八个资源单位与该表除「内置搜索索引」一行外的八行一一对应，其中「Rust 核心与集成网关」一行由 core-server 与 integration-gateway 共用一个资源单位，「反向代理与运维代理」一行含 ops-agent 与第三方反向代理，因此八个二进制落在七个资源单位内。取值随附录 A.4 认证报告记录的服务器规格一并冻结，客户不得在部署时单方调高单一组件的份额、保底值或突发上限；配额取值必须在本平台重新实测标定，不得沿用原为 cgroup 标定的数字。四类取值逐类判。第一类，八个自研二进制各自所属的资源单位各有一个内存硬上限，落 `JOB_OBJECT_LIMIT_JOB_MEMORY`；PostgreSQL 16 一行与反向代理按上文由 ops-agent 指派，其内存承载待实测，实测结论出具前不计入本类，按附录 D.2 的 BC-1 基线组合以同一算定式由该行内存百分数与可分配量算出绝对字节后写死，这是配额表唯一在本平台有运行期承载的一列。第二类，原与内存硬上限取同一数值的内存保底值删除，本平台没有内存压力下优先不回收的软保底，不得以工作集下限冒充；触限行为随之不同，是分配失败返回错误，不是内核终止进程。第三类，磁盘 IO 份额一列删除，本平台不提供按权重的磁盘 IO 比例分配，不得把绝对预留或绝对带宽上限写成份额。第四类，CPU 份额一列的运行期承载待实测，实测结论出具前只作硬件规格标定与认证实测的意图声明，不落运行期取值；全量备份写出的磁盘 IO 绝对突发上限保留但不进配额表，其落点是部署侧静态限额文件与部署记录，运行期承载同样待实测。核对由 `/scripts/` 下的部署校验脚本在部署与升级时各断言一次，不做配额生成算法，也不做每进程启动自检；该核对的被测对象是静态限额文件与经 DACL 授予 `JOB_OBJECT_QUERY` 后从具名 Job Object 读回的限额，读回能力待实测，磁盘 IO 一列已无被测对象、该维判据撤下，CPU 一列在实测出结论前不设判据。两处偏差如实披露。其一，配额表「内置搜索索引」一行在首版既无独立进程也无独立资源单位，其检索与索引写入分别落在 core-server 与 job-worker 之内，该行份额不落静态限额文件、不加和到任何一行、也不按比例拆分到多行，因此八行 CPU 份额之和为 90%，低于满值 100%。该缺口只影响硬件标定与认证意图声明，不得据以推出任何级间次序或资源侧结论——规格第 13.1 章三处逐字禁止此推论，且其所依据的按权重归一化分配在本平台没有承载物。本平台的内存承载是各自独立的绝对硬上限，不是按权重归一化的比例分配。内存列是硬上限不是权重，该行不落值只在可分配量中留下约一成未指派余量，不构成对其余八行的相对超配。其二，规格第 13.1 章其余各行的突发上限折算规则，即取份额三倍并以可分配量 40% 封顶，在本平台无被乘数、无承载，已随规格改写整条删除，不得复活折算。八级让路次序不构成运行期保证，规格第 7.5 章那句诚实披露保留，即单机同机部署下备份与报表在极端情况下仍可能影响交易时延、无隔离保证。
+- 八个进程各以自己的服务虚拟账户 `NT SERVICE\<服务名>` 运行，互不复用，各自带每服务 SID；不设共用本地组，进程之间的授权一律在对象的 NTFS ACL 与命名管道 DACL 上逐账户列 ACE。落点写出凭据只由 archive-writer 与 backup-writer 的虚拟账户持有。`tools/ep-migrate` 不注册为 Windows 服务，另有一个独立的普通本地账户 `ep-migrate`，与上述八个不复用，只在迁移窗口内使用。
 
-进程间接口，本基线取值。承载方式为 Unix domain socket，帧格式为 4 字节大端长度前缀加 JSON 体，路径 `/run/ep/ipc/<name>.sock`，权限 0660，属主为对应系统账户，组为 `ep`。不使用本机 TCP，理由是避免任何一个接口意外可从网络到达。archive-writer 与 backup-writer 经该接口向 core-server 上报的内容固定为四类：写出结果、校验结论、失败事件、连接与复制槽与基础备份的起止；core-server 不可用期间在写出进程本地 `/var/lib/ep/<proc>/spool/` 暂存并在恢复后补写，暂存不阻塞写出。
+进程间接口，本基线取值。承载方式为 Windows 命名管道（`tokio::net::windows::named_pipe`），帧格式为 4 字节大端长度前缀加 JSON 体不变，管道名 `\\.\pipe\ep-<name>`，访问控制由创建时显式构造的 DACL 表达，逐账户只授予需要连接的虚拟账户，不用默认安全描述符，也不设共用本地组；该表达力强于原先的 0660 加组，并消掉原实现里先绑定再设权限之间的竞态窗口。服务端一律取 `first_pipe_instance(true)`；客户端每次调用一条新连接的口径不变，但必须处理 `ERROR_PIPE_BUSY` 并重试，不得把「core-server 在但忙」误报成「core-server 不可用」而落 spool。不使用本机 TCP，理由是避免任何一个接口意外可从网络到达；该理由在本平台比原先更强，一并写实：命名管道的 `reject_remote_clients` 默认取真，本机可达性是内核层的，而回环 TCP 端口没有访问控制表，本机任何用户的任何进程都能连接，要恢复同等隔离须另加 mTLS 或共享口令，即新增一套机制与一套密钥管理，明确不取；本平台上的 AF_UNIX 同样不取，`tokio` 在 Windows 目标上不存在 `UnixStream` 符号，与操作系统是否支持 AF_UNIX 无关。一条本平台新增的残余风险如实写在这里：`\\.\pipe\` 是平坦名字空间，没有受支持的创建侧准入控制，非特权本地用户可在服务启动前占住管道名，上述 `first_pipe_instance(true)` 只使服务启动失败，是 fail-closed 不是防护，客户端连上后经 `GetNamedPipeServerProcessId` 核对服务端账户是先连后核、有时序窗口；其门槛低于规格第 21.18 章与第 7.7 章所称「持有该服务器操作系统权限者」，须与第 21.18 章并列登记为一条新增残余风险，不得并入，并写入交付说明。archive-writer 与 backup-writer 经该接口向 core-server 上报的内容固定为四类：写出结果、校验结论、失败事件、连接与复制槽与基础备份的起止；core-server 不可用期间在写出进程本地 `%ProgramData%\EP\<proc>\spool\` 暂存并在恢复后补写，暂存不阻塞写出。
 
 ## 3. 数据库约定
 
@@ -568,8 +568,8 @@ create policy rls_<table>_le on <schema>.<table>
 
 1. 命令行参数，只接受 `--config <path>`、`--check`、`--version` 三个，不接受任何业务参数。
 2. 环境变量，前缀 `EP__`，层级用双下划线，如 `EP__DB__POOL__RW_MAX=20`。
-3. 部署片段目录 `/etc/ep/config.d/*.toml`，按文件名字典序加载。
-4. 主配置 `/etc/ep/config.toml`。
+3. 部署片段目录 `%ProgramData%\EP\config\config.d\*.toml`，按文件名字典序加载。
+4. 主配置 `%ProgramData%\EP\config\config.toml`。
 5. 二进制内置默认值。
 
 配置结构体用 serde 反序列化并开启 `deny_unknown_fields`，未知键一律拒绝启动，理由是拼错的配置键静默失效是私有化交付里最难排查的一类故障。
@@ -579,7 +579,7 @@ create policy rls_<table>_le on <schema>.<table>
 ### 7.2 敏感配置的载体
 
 - 数据库口令、备份加密密钥、审计签名私钥、TLS 私钥、电子签章凭据一律不出现在配置文件与环境变量中。配置里只写引用，形如 `secret://db/app_rw#3`，井号后为版本。
-- 引用解析到内置机密库，路径 `/var/lib/ep/secrets/`，权限 0600，属主为对应进程系统账户，内容以内置 KMS 主密钥信封加密；客户使用自有硬件密码机时改由 HSM 载体解封，两种载体的接口相同，即 `ep_foundation::port::kms::KmsBackend`，其 `BuiltinKmsBackend` 与 `HsmKmsBackend` 两个载体实现在 `ep-adapter-kms`，照抄规格第 12.3 章。云 KMS 首版不支持。
+- 引用解析到内置机密库，路径 `%ProgramData%\EP\secrets\`，权限位换 NTFS ACL：该目录须断继承并显式设 DACL，只授予对应进程的虚拟账户，不保留 `BUILTIN\Users` 一类的继承 ACE，进程启动时须核对该目录的 DACL，不得只建不查（`%ProgramData%` 的默认继承 ACL 对本机 `BUILTIN\Users` 可读，不断继承即等于把机密库对全机可读），内容以内置 KMS 主密钥信封加密；客户使用自有硬件密码机时改由 HSM 载体解封，两种载体的接口相同，即 `ep_foundation::port::kms::KmsBackend`，其 `BuiltinKmsBackend` 与 `HsmKmsBackend` 两个载体实现在 `ep-adapter-kms`，照抄规格第 12.3 章。云 KMS 首版不支持。
 - 内存中一律用 `secrecy::SecretString` 包装，禁止实现 Debug 与 Display，禁止进入日志、错误消息与指标标签。
 - 机密轮换不需要重启：进程监听机密库的版本变更并在下次取用时使用新版本，旧版本保留一个轮换窗口。
 
@@ -638,7 +638,7 @@ create policy rls_<table>_le on <schema>.<table>
 
 ### 9.1 日志
 
-- 格式为 JSON Lines，一行一事件，输出到 stdout，由 systemd 收集。不自建日志平台。
+- 格式为 JSON Lines，一行一事件，写本地文件并自轮转。原取值「输出到 stdout，由 systemd 收集」在本平台没有承载物：Windows 服务控制管理器起的服务不继承控制台，stdout 没有采集方。本条是「不自建日志平台」一句的降级，不是换个词把那句留着：本平台自建的是日志落地与轮转一层，它带来轮转、磁盘配额与并发写入三个新失效面；不自建的只剩检索、聚合与告警三项，这三项仍不自建。不取 Windows 事件日志一支，理由是下一条的 18 个固定字段在该载体上只能塞进消息字符串，其机检性质变弱。落点在 `%ProgramData%\EP\` 之下，具体子目录、轮转策略与保留量本基线不取值，随日志落地与轮转一层在阶段 1 一并定，定后按第 0 节回写本节。
 - 字段固定集合，缺失即视为实现缺陷：`ts`（RFC3339 UTC 微秒）、`level`、`target`、`msg`、`process`、`version`、`trace_id`、`span_id`、`request_id`、`legal_entity_id`、`user_id`、`device_id`、`module`、`operation`、`duration_ms`、`outcome`（`ok` 或 `error`）、`error_code`、`error_category`。
 - 级别语义：ERROR 表示需要人工介入；WARN 表示已降级或已重试；INFO 表示关键状态迁移与每请求一条访问日志；DEBUG 默认关闭，只能由运维临时开启且自动 30 分钟后关闭。
 - 禁止进入日志的内容：会话令牌、密钥与机密、口令、银行账号、身份证号、税号、附件正文、行内敏感字段明文、完整 SQL 参数。敏感值一律经 `foundation::Redacted<T>` 包装并序列化为 `"***"`。
@@ -662,7 +662,7 @@ create policy rls_<table>_le on <schema>.<table>
 这是硬边界，各阶段不得自行放宽。
 
 - 审计事件是法律与合规证据：与业务变更同一数据库事务写入 `platform_audit.audit_events`，进入按法人与自然日的哈希链，每 5 分钟或每 1000 条对段根哈希做一次非对称签名并立即写入审计证据存储，只追加不覆盖，按 15 分钟周期写出到服务器之外落点。
-- 运行日志是排障材料：写 stdout，可轮转可丢弃，不构成证据，不得用于替代审计。
+- 运行日志是排障材料：按第 9.1 章写本地文件并自轮转，可丢弃，不构成证据，不得用于替代审计。
 - 判定规则：凡属于“谁在何时对哪条记录做了什么”，以及审批、授权变更、重新认证、敏感导出、配置发布、密钥使用、应急账号启用、迁移账号启用与回收、两个写出进程的连接与复制槽与基础备份起止，一律写审计。其余写日志。同一事实不得只落日志。
 - `platform_audit.audit_events` 的固定列：`event_id`、`legal_entity_id`、`event_day`（Asia/Shanghai 自然日，分段键）、`seq`（数据库 bigserial，段内链序的唯一串行化点，核心不持有链状态）、`prev_hash`、`hash`（SHA-256）、`actor_user_id`、`actor_device_id`、`action`、`object_type`、`object_id`、`object_version`、`before`（jsonb，敏感字段掩码）、`after`、`reason`、`approval_ref`、`reauth_ref`、`client`、`occurred_at`。客户端不建本地分段链，其事件提交到中心后由中心按同一序列写入。
 
