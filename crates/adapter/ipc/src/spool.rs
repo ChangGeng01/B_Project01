@@ -359,7 +359,10 @@ mod f08_defect_tests {
         s.drop_first(2).expect("丢弃前两条");
         let rest = s.read_lines().expect("读回");
         assert_eq!(rest.len(), 3, "应剩三条");
-        assert!(rest[0].contains("\"n\":2"), "剩下的应是后三条，实际 {rest:?}");
+        assert!(
+            rest[0].contains("\"n\":2"),
+            "剩下的应是后三条，实际 {rest:?}"
+        );
         let tmp_left: Vec<_> = std::fs::read_dir(&d)
             .expect("读目录")
             .filter_map(Result::ok)

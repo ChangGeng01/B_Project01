@@ -6,8 +6,8 @@
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 
-use serde_json::Value;
 use crate::transport::{connect, TransportError};
+use serde_json::Value;
 
 use crate::frame::{read_frame, write_frame, FrameError};
 use crate::message::{IpcRequest, IpcResponse};

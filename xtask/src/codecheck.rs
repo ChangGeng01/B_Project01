@@ -443,9 +443,18 @@ mod resource_unit_tests {
     /// 两种写法都要认：裁定 F-08 前后的列取值形态不同。
     #[test]
     fn both_forms_are_accepted() {
-        assert_eq!(resource_unit("app-core.slice").as_deref(), Some("app-core.slice"));
-        assert_eq!(resource_unit("资源单位 app-core").as_deref(), Some("app-core.slice"));
-        assert_eq!(resource_unit("资源单位 app-db").as_deref(), Some("app-db.slice"));
+        assert_eq!(
+            resource_unit("app-core.slice").as_deref(),
+            Some("app-core.slice")
+        );
+        assert_eq!(
+            resource_unit("资源单位 app-core").as_deref(),
+            Some("app-core.slice")
+        );
+        assert_eq!(
+            resource_unit("资源单位 app-db").as_deref(),
+            Some("app-db.slice")
+        );
     }
 
     /// 负样例：认不出来必须返回 None 而不是猜一个，

@@ -86,10 +86,11 @@ mod imp {
                     })
                 }
             }
-            let inner = tokio::net::UnixListener::bind(path).map_err(|e| TransportError::Listen {
-                path: path.to_path_buf(),
-                detail: e.to_string(),
-            })?;
+            let inner =
+                tokio::net::UnixListener::bind(path).map_err(|e| TransportError::Listen {
+                    path: path.to_path_buf(),
+                    detail: e.to_string(),
+                })?;
             use std::os::unix::fs::PermissionsExt;
             std::fs::set_permissions(path, std::fs::Permissions::from_mode(ACCESS_MODE)).map_err(
                 |e| TransportError::Access {
@@ -173,7 +174,10 @@ mod imp {
             server.connect().await?;
             // 先把下一个实例建好再交出当前实例；建不出来就把当前实例还回去，
             // 让下一次 accept 重试，而不是把已连上的这一条也丢掉。
-            match ServerOptions::new().reject_remote_clients(true).create(&self.name) {
+            match ServerOptions::new()
+                .reject_remote_clients(true)
+                .create(&self.name)
+            {
                 Ok(next) => {
                     self.pending = Some(next);
                     Ok(server)
