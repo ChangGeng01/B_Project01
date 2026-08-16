@@ -1,6 +1,31 @@
-//! ep-platform-flow — 阶段 1 只建骨架，实质内容由后续阶段补齐。
+//! ep-platform-flow —— 持久化工作流引擎。
 //!
-//! 职责：持久化流程引擎、任务、定时器、SLA、补偿、流程定义版本。
+//! 职责（阶段 3 计划第 3.4.8 节）：流程定义版本、实例、步骤、人工任务、
+//! 定时器、SLA、补偿、运行约束、版本迁移与模拟。
 //!
-//! 编译期断言：本 crate 的依赖方向由 `xtask archcheck` 逐条断言，
-//! 允许的上游见技术基线第 1.3 节。骨架期不留 `todo!()`。
+//! 本轮交付其中**可以脱库判定的那一半**：
+//! [`state`] 实例状态机与其守卫、[`compensation`] 补偿的选取与次序、
+//! [`step`] 步骤幂等键与运行约束。
+//! 调度取件、行锁、一步一事务的落库、定时器扫描都在适配层与 job-worker，
+//! 本 crate 不碰数据库。
+//!
+//! 为什么这三块值得先做：它们是**错了不会当场报错**的地方。
+//! 状态机少一条守卫，非法迁移会照常提交；补偿次序反了，撤销会先拆依赖再拆前提；
+//! 幂等键形状变一点，重放就会把副作用做第二遍。三者都要到出事那天才显形，
+//! 而那时现场早已不在。脱库可测，就能在写完当天把它们测穿。
+//!
+//! 本轮**未交付**的是守卫条件表达式求值器（计划同节要求的最小求值器：
+//! 字段引用、六种比较、与或非、集合成员、空判定，加一个不超过 12 个函数的白名单）。
+//! 它是一件独立且不小的东西，塞进本轮只会做得潦草——留作下一件，
+//! 这里不留 `todo!()`，也不留半个实现。
+
+pub mod compensation;
+pub mod state;
+pub mod step;
+
+pub use compensation::{
+    judge as judge_compensation, plan as plan_compensation, CompensationStep, StepOutcome,
+    StepRecord,
+};
+pub use state::{allowed_transitions, transition, Guards, InstanceState, TransitionError, Trigger};
+pub use step::{check_limits, execution_no, idempotency_key, LimitBreach, RunFacts, RunLimits};
