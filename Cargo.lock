@@ -1090,6 +1090,7 @@ dependencies = [
 name = "ep-platform-license"
 version = "0.1.0"
 dependencies = [
+ "chrono",
  "ep-foundation",
 ]
 

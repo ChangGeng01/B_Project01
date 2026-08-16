@@ -1,7 +1,8 @@
 //! 错误码全集：阶段 1 十三条，加阶段 2 任务 #12（ep-adapter-kms）登记的八条，
 //! 加阶段 2 任务 #11（ep-adapter-db-pg）登记的三条，加阶段 2 任务 #14
 //! （集成 B）登记的十条，加阶段 3a 任务 #18 登记的一条，加阶段 4 任务 #22
-//! 登记的二十三条，加阶段 3a 任务 #3（ep-platform-sequence）登记的一条，共五十九条。
+//! 登记的二十三条，加阶段 3a 任务 #3（ep-platform-sequence）登记的一条，
+//! 加阶段 3b 任务 #21（ep-platform-license）登记的一条，共六十条。
 //!
 //! 取值、分类、HTTP 码与可重试性的唯一出处是阶段 1 计划第 6 节的登记表，
 //! 与 `docs/error-codes.md` 由 `xtask errorcodes` 逐项比对，重复码或缺失码即构建失败。
@@ -33,6 +34,12 @@
 //! 段三条；`RATE_LIMITED` 归类 INFRASTRUCTURE 取其登记的 503（限流 429
 //! 的运行时映射在封套层，登记口径与第 1 节分类表一致）。
 //! 裁定 C-24 点名的七码由阶段 1 独家登记，本批不重复登记。
+//!
+//! 阶段 3b 任务 #21 新增一条的出处：03 计划第 3.4.11 节逐字「每次迁移写
+//! `state_changed_at` 与一条审计事件，非法迁移返回 `BUSINESS_CONFLICT`」——
+//! 该处只给了分类没给码名，本批按本文件「先登记后实现」的次序补登
+//! `MODULE.TRANSITION_INVALID`。与 `KEY_DOMAIN.TRANSITION_INVALID` 同形不同物：
+//! 后者已登记的语义是密钥域状态机，复用它是误用不是复用。
 
 use super::ErrorCode;
 
@@ -96,6 +103,7 @@ codes! {
     PLATFORM_AUTHZ_OBJECT_FORBIDDEN => "PLATFORM.AUTHZ.OBJECT_FORBIDDEN", PermissionDenied, 403, false;
     PLATFORM_DB_MIGRATION_WINDOW_CLOSED => "PLATFORM.DB.MIGRATION_WINDOW_CLOSED", BusinessConflict, 409, false;
     PLATFORM_SEQUENCE_TYPE_CODE_NOT_REGISTERED => "PLATFORM.SEQUENCE.TYPE_CODE_NOT_REGISTERED", Validation, 400, false;
+    PLATFORM_MODULE_TRANSITION_INVALID => "PLATFORM.MODULE.TRANSITION_INVALID", BusinessConflict, 409, false;
     PLATFORM_KEY_DOMAIN_NOT_PROVISIONED => "PLATFORM.KEY_DOMAIN.NOT_PROVISIONED", Infrastructure, 503, true;
     PLATFORM_KEY_DOMAIN_KEY_UNAVAILABLE => "PLATFORM.KEY_DOMAIN.KEY_UNAVAILABLE", Infrastructure, 503, true;
     PLATFORM_KEY_DOMAIN_ROTATION_IN_PROGRESS => "PLATFORM.KEY_DOMAIN.ROTATION_IN_PROGRESS", BusinessConflict, 409, false;
@@ -152,7 +160,7 @@ mod tests {
         // 阶段 1 十三条 + 阶段 2 任务 #12 八条 + 阶段 2 任务 #11 三条
         // + 阶段 2 任务 #14 十条 + 阶段 3a 任务 #18 一条 + 阶段 4 任务 #22
         // 二十三条 + 阶段 3a 任务 #3 一条，共五十九条。
-        assert_eq!(REGISTERED.len(), 59, "计数与登记批次不符");
+        assert_eq!(REGISTERED.len(), 60, "计数与登记批次不符");
         let mut seen: Vec<&str> = REGISTERED.iter().map(|r| r.code.0).collect();
         seen.sort_unstable();
         let before = seen.len();

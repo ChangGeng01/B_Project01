@@ -22,7 +22,7 @@
 
 ## 2. PLATFORM 段
 
-本段共 59 条：阶段 1 登记 13 条，阶段 2 任务 #12（ep-adapter-kms）登记 8 条，阶段 2 任务 #11（ep-adapter-db-pg）登记 3 条，阶段 2 任务 #14（集成 B）登记 10 条，阶段 3a 任务 #18 登记 1 条，阶段 4 任务 #20 与任务 #22 登记 23 条（AUTHN 段 9 条、AUTHZ 段 6 条、SOD 段 2 条、REAUTH 段 1 条、APPROVAL 段 1 条、HIGH_RISK_REQUEST 段 1 条、USER_ACCOUNT 段 3 条）。「返回方」一列写的是第一个真正会返回该码的阶段；标注为阶段 1 之后的，阶段 1 只登记不返回，任何阶段不得因为「还没人返回」而删除该行。
+本段共 60 条：阶段 1 登记 13 条，阶段 2 任务 #12（ep-adapter-kms）登记 8 条，阶段 2 任务 #11（ep-adapter-db-pg）登记 3 条，阶段 2 任务 #14（集成 B）登记 10 条，阶段 3a 任务 #18 登记 1 条，阶段 4 任务 #20 与任务 #22 登记 23 条（AUTHN 段 9 条、AUTHZ 段 6 条、SOD 段 2 条、REAUTH 段 1 条、APPROVAL 段 1 条、HIGH_RISK_REQUEST 段 1 条、USER_ACCOUNT 段 3 条），阶段 3b 任务 #21（ep-platform-license）登记 1 条。「返回方」一列写的是第一个真正会返回该码的阶段；标注为阶段 1 之后的，阶段 1 只登记不返回，任何阶段不得因为「还没人返回」而删除该行。
 
 | 错误码 | category | HTTP | retryable | 触发条件 | 返回方 |
 |---|---|---|---|---|---|
@@ -40,6 +40,7 @@
 | PLATFORM.AUTHZ.OBJECT_FORBIDDEN | PERMISSION_DENIED | 403 | false | 对象已对当前主体可见但该动作被拒 | 阶段 4 |
 | PLATFORM.DB.MIGRATION_WINDOW_CLOSED | BUSINESS_CONFLICT | 409 | false | 未持有迁移窗口即执行在线变更 | 阶段 13b |
 | PLATFORM.SEQUENCE.TYPE_CODE_NOT_REGISTERED | VALIDATION | 400 | false | 取号时给出的类型码不在本节第 5 章的登记表内 | 阶段 3a |
+| PLATFORM.MODULE.TRANSITION_INVALID | BUSINESS_CONFLICT | 409 | false | 模块安装态状态机上的非法迁移，四条合法边见阶段 3 计划第 3.4.11 节 | 阶段 3b |
 | PLATFORM.KEY_DOMAIN.NOT_PROVISIONED | INFRASTRUCTURE | 503 | true | 密钥域尚未建立或 KMS 载体不可用 | 阶段 2 |
 | PLATFORM.KEY_DOMAIN.KEY_UNAVAILABLE | INFRASTRUCTURE | 503 | true | 所需数据密钥缺失或无法解封 | 阶段 2 |
 | PLATFORM.KEY_DOMAIN.ROTATION_IN_PROGRESS | BUSINESS_CONFLICT | 409 | false | 同一域同一 purpose 已有轮换在途 | 阶段 2 |
@@ -122,6 +123,7 @@
 | PLATFORM.AUTHZ.OBJECT_FORBIDDEN | 您无权对该对象执行此操作。 | 如确需执行，请联系管理员申请相应权限。 |
 | PLATFORM.DB.MIGRATION_WINDOW_CLOSED | 当前不在允许结构变更的时间窗口内。 | 请在维护窗口内重试，或联系管理员打开迁移窗口。 |
 | PLATFORM.SEQUENCE.TYPE_CODE_NOT_REGISTERED | 该单据或档案的类型未登记，无法取号。 | 请联系管理员在类型码登记表中登记该类型后重试。 |
+| PLATFORM.MODULE.TRANSITION_INVALID | 该模块的当前状态不允许此操作。 | 请刷新模块状态后按其当前状态选择可用操作。 |
 | PLATFORM.KEY_DOMAIN.NOT_PROVISIONED | 所需的安全服务尚未就绪。 | 请稍后重试；持续出现时联系管理员检查安全服务配置。 |
 | PLATFORM.KEY_DOMAIN.KEY_UNAVAILABLE | 所需的安全材料暂时不可用。 | 请稍后重试；持续出现时联系管理员。 |
 | PLATFORM.KEY_DOMAIN.ROTATION_IN_PROGRESS | 同一对象上已有一项轮换操作在途。 | 请等待在途操作完成后重试。 |

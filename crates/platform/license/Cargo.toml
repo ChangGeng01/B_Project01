@@ -9,3 +9,6 @@ workspace = true
 
 [dependencies]
 ep-foundation.workspace = true
+# 许可判定要算日期差（临期窗口与宽限期），需要真正的日期类型。
+# audit 的 SegmentKey 与 sequence 的期间键用 String 只做相等与前缀取用，此处不适用。
+chrono.workspace = true
