@@ -14,12 +14,13 @@
 //! 幂等键形状变一点，重放就会把副作用做第二遍。三者都要到出事那天才显形，
 //! 而那时现场早已不在。脱库可测，就能在写完当天把它们测穿。
 //!
-//! 本轮**未交付**的是守卫条件表达式求值器（计划同节要求的最小求值器：
-//! 字段引用、六种比较、与或非、集合成员、空判定，加一个不超过 12 个函数的白名单）。
-//! 它是一件独立且不小的东西，塞进本轮只会做得潦草——留作下一件，
-//! 这里不留 `todo!()`，也不留半个实现。
+//! 守卫条件表达式的最小求值器由 [`expr`] 交付（上一轮留的那一件）：
+//! 字段引用、六种比较、与或非、集合成员、空判定，加一个不超过 12 个函数的白名单。
+//! 它的三处要害都在值语义而不在解析——数字不用 `f64`、空一律报错、
+//! 深度闸门在解析期而不靠求值步数——逐条理由见该模块的文档。
 
 pub mod compensation;
+pub mod expr;
 pub mod state;
 pub mod step;
 
@@ -27,5 +28,6 @@ pub use compensation::{
     judge as judge_compensation, plan as plan_compensation, CompensationStep, StepOutcome,
     StepRecord,
 };
+pub use expr::{evaluate, EvalCtx, Guard, GuardError, GuardValue, VarLookup, DEFAULT_MAX_STEPS};
 pub use state::{allowed_transitions, transition, Guards, InstanceState, TransitionError, Trigger};
 pub use step::{check_limits, execution_no, idempotency_key, LimitBreach, RunFacts, RunLimits};

@@ -2,7 +2,8 @@
 //! 加阶段 2 任务 #11（ep-adapter-db-pg）登记的三条，加阶段 2 任务 #14
 //! （集成 B）登记的十条，加阶段 3a 任务 #18 登记的一条，加阶段 4 任务 #22
 //! 登记的二十三条，加阶段 3a 任务 #3（ep-platform-sequence）登记的一条，
-//! 加阶段 3b 任务 #21（ep-platform-license）登记的一条，共六十条。
+//! 加阶段 3b 任务 #21（ep-platform-license）登记的一条，
+//! 加阶段 3b 任务 #14（ep-platform-flow 守卫求值器）登记的一条，共六十一条。
 //!
 //! 取值、分类、HTTP 码与可重试性的唯一出处是阶段 1 计划第 6 节的登记表，
 //! 与 `docs/error-codes.md` 由 `xtask errorcodes` 逐项比对，重复码或缺失码即构建失败。
@@ -40,6 +41,11 @@
 //! 该处只给了分类没给码名，本批按本文件「先登记后实现」的次序补登
 //! `MODULE.TRANSITION_INVALID`。与 `KEY_DOMAIN.TRANSITION_INVALID` 同形不同物：
 //! 后者已登记的语义是密钥域状态机，复用它是误用不是复用。
+//!
+//! 阶段 3b 任务 #14 新增一条的出处：03 计划第 3.4.8 节逐字「表达式无副作用、无循环、
+//! 求值步数上限 1000，超限返回 `VALIDATION`」——同样只给分类没给码名。
+//! 一个码覆盖解析期与求值期的全部拒绝理由，具体理由由
+//! `ep_platform_flow::expr::GuardError` 的变体承载，不为每一种拒绝各登记一个码。
 
 use super::ErrorCode;
 
@@ -104,6 +110,7 @@ codes! {
     PLATFORM_DB_MIGRATION_WINDOW_CLOSED => "PLATFORM.DB.MIGRATION_WINDOW_CLOSED", BusinessConflict, 409, false;
     PLATFORM_SEQUENCE_TYPE_CODE_NOT_REGISTERED => "PLATFORM.SEQUENCE.TYPE_CODE_NOT_REGISTERED", Validation, 400, false;
     PLATFORM_MODULE_TRANSITION_INVALID => "PLATFORM.MODULE.TRANSITION_INVALID", BusinessConflict, 409, false;
+    PLATFORM_FLOW_GUARD_EXPRESSION_INVALID => "PLATFORM.FLOW.GUARD_EXPRESSION_INVALID", Validation, 400, false;
     PLATFORM_KEY_DOMAIN_NOT_PROVISIONED => "PLATFORM.KEY_DOMAIN.NOT_PROVISIONED", Infrastructure, 503, true;
     PLATFORM_KEY_DOMAIN_KEY_UNAVAILABLE => "PLATFORM.KEY_DOMAIN.KEY_UNAVAILABLE", Infrastructure, 503, true;
     PLATFORM_KEY_DOMAIN_ROTATION_IN_PROGRESS => "PLATFORM.KEY_DOMAIN.ROTATION_IN_PROGRESS", BusinessConflict, 409, false;
@@ -160,7 +167,7 @@ mod tests {
         // 阶段 1 十三条 + 阶段 2 任务 #12 八条 + 阶段 2 任务 #11 三条
         // + 阶段 2 任务 #14 十条 + 阶段 3a 任务 #18 一条 + 阶段 4 任务 #22
         // 二十三条 + 阶段 3a 任务 #3 一条，共五十九条。
-        assert_eq!(REGISTERED.len(), 60, "计数与登记批次不符");
+        assert_eq!(REGISTERED.len(), 61, "计数与登记批次不符");
         let mut seen: Vec<&str> = REGISTERED.iter().map(|r| r.code.0).collect();
         seen.sort_unstable();
         let before = seen.len();

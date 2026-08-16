@@ -4,7 +4,11 @@
 //! 本身可断言——本卷已因「凭记忆复述一张表而不回去数」在计数与枚举上栽过多次。
 //! 表在这里，用例逐行对，改一行就得同时改用例，漏改即红。
 
-/// 实例状态。九个取值，与计划第 3.4.8 节那张表的「状态」列一致。
+/// 实例状态。八个取值，与计划第 3.4.8 节那张表的「状态」列一致。
+///
+/// 数过：`Created`、`Running`、`Waiting`、`Completed`、`Compensating`、
+/// `Failed`、`ManualIntervention`、`Cancelled`。**原注释写的是九个**——
+/// 本卷已多次因「凭记忆复述一个数而不回去数」栽跟头，这一处是自己也栽了一次。
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Debug, Hash)]
 pub enum InstanceState {
     Created,
@@ -18,6 +22,23 @@ pub enum InstanceState {
 }
 
 impl InstanceState {
+    /// 全部取值。
+    ///
+    /// 新增一个变体时，下面的 `as_db_value` 是穷尽 `match`，**编译会先在那里拦住**——
+    /// 请同批把新变体加进本表。Rust 不强制 `ALL` 覆盖全部变体，
+    /// 这一条只能靠那个编译错误加这句话；用例守得住的是重复，不是遗漏，
+    /// 见 `db_values_are_distinct`。
+    pub const ALL: [InstanceState; 8] = [
+        InstanceState::Created,
+        InstanceState::Running,
+        InstanceState::Waiting,
+        InstanceState::Completed,
+        InstanceState::Compensating,
+        InstanceState::Failed,
+        InstanceState::ManualIntervention,
+        InstanceState::Cancelled,
+    ];
+
     pub fn as_db_value(self) -> &'static str {
         match self {
             InstanceState::Created => "CREATED",
@@ -330,6 +351,16 @@ mod tests {
 
     /// 表的行数固定。原表 12 行，其中两行是多目标，展开后为 16 行。
     /// 这条守的是「有人往表里加一行却没人发现」。
+    /// `ALL` 要既够数又互异。只断长度守不住——写重一个变体时长度仍是 8，
+    /// 而被顶掉的那个从此在任何遍历型用例里消失。
+    #[test]
+    fn db_values_are_distinct() {
+        assert_eq!(InstanceState::ALL.len(), 8);
+        let mut v: Vec<&str> = InstanceState::ALL.iter().map(|s| s.as_db_value()).collect();
+        v.sort_unstable();
+        v.dedup();
+        assert_eq!(v.len(), 8, "八个 DB 取值必须互异");
+    }
     #[test]
     fn transition_table_has_the_expected_shape() {
         assert_eq!(TRANSITIONS.len(), 16, "改表必须同批改本用例，不许只改一边");
@@ -338,7 +369,10 @@ mod tests {
         let mut keys: Vec<(InstanceState, Trigger)> =
             TRANSITIONS.iter().map(|r| (r.from, r.trigger)).collect();
         let before = keys.len();
-        keys.sort_by_key(|(s, _)| *s as u8);
+        // 排序键必须**同时含 from 与 trigger**。只按 from 排的话，
+        // 同一个 from 下的若干行次序未定，`dedup_by` 只消相邻重复，
+        // 隔着一行的重复一个都去不掉——那样这条断言近乎恒真。
+        keys.sort_by_key(|(s, t)| (*s as u8, format!("{t:?}")));
         keys.dedup_by(|a, b| a.0 == b.0 && format!("{:?}", a.1) == format!("{:?}", b.1));
         assert_eq!(before, keys.len(), "(from, trigger) 必须唯一");
     }

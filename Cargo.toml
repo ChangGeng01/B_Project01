@@ -26,6 +26,10 @@ warnings = "deny"
 [workspace.dependencies]
 uuid = { version = "1", features = ["v7", "serde"] }
 chrono = { version = "0.4", features = ["serde", "clock"], default-features = false }
+# 十进制定点。基线第 3.5 节逐字把账面金额的 Rust 类型定为
+# 「`foundation::Money`，内含 `rust_decimal::Decimal`」——守卫表达式要拿金额做比较，
+# 只能与它同源，另起一套定点表示就是第二个金额语义。关闭默认特性以免引入 serde。
+rust_decimal = { version = "1", default-features = false, features = ["std"] }
 async-trait = "0.1"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
