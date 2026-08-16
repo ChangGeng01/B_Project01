@@ -1,4 +1,5 @@
-//! ep-adapter-ipc — 进程间接口的客户端与服务端，Unix domain socket 承载。
+//! ep-adapter-ipc — 进程间接口的客户端与服务端。承载物由 `transport` 模块提供：
+//! Unix 侧是域套接字，Windows 侧是命名管道（裁定 F-08 第 4.3 节）。
 //!
 //! 帧格式为 4 字节大端长度前缀加 JSON 体，单帧上限 1 MiB（阶段 1 计划第 6.3 节）。
 //! 本阶段只实现 `system.ping` 与 `system.version` 两个方法，方法本体由 apps 注入；
@@ -13,6 +14,7 @@ pub mod frame;
 pub mod message;
 pub mod server;
 pub mod spool;
+pub mod transport;
 
 pub use client::{ClientError, IpcClient};
 pub use forward::{ForwardOutcome, Forwarder, Pending, ReplayOutcome};
@@ -20,3 +22,4 @@ pub use frame::{FrameError, DEFAULT_MAX_FRAME_BYTES};
 pub use message::{error_body, IpcErrorBody, IpcRequest, IpcResponse, PROTOCOL_VERSION};
 pub use server::{IpcMethod, IpcServer, MethodTable, ServerError, SOCKET_MODE};
 pub use spool::{AppendOutcome, Spool, SpoolError};
+pub use transport::{IpcListener, IpcStream, TransportError};

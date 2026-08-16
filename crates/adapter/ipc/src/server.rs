@@ -1,4 +1,5 @@
-//! IPC 服务端。Unix domain socket 承载，权限 0660。
+//! IPC 服务端。承载物由 [`crate::transport`] 提供：Unix 侧是域套接字，
+//! Windows 侧是命名管道（裁定 F-08 第 4.3 节）。本模块只管协议面。
 //!
 //! 未实现的方法一律返回统一的未知方法错误而不是 panic：这条断言与方法名无关，
 //! 后续阶段新增方法不需要改它。
@@ -9,14 +10,17 @@ use std::sync::Arc;
 
 use ep_foundation::error::codes::{PLATFORM_REQUEST_INVALID_PAYLOAD, PLATFORM_ROUTE_NOT_FOUND};
 use serde_json::Value;
-use tokio::net::{UnixListener, UnixStream};
+use tokio::io::{AsyncRead, AsyncWrite};
+
+use crate::transport::{IpcListener, TransportError};
 
 use crate::frame::{read_frame, write_frame, FrameError};
 use crate::message::{error_body, IpcRequest, IpcResponse, PROTOCOL_VERSION};
 
-/// socket 文件权限。属主与属组由部署方（systemd 单元）设定，
-/// 进程自身不做 chown：能 chown 的进程等于要以特权身份运行。
-pub const SOCKET_MODE: u32 = 0o660;
+/// 承载物的访问控制取值。取自传输层，各平台语义不同：
+/// Unix 是 socket 文件权限位，Windows 由安全描述符承担、该常量无语义。
+/// 保留这个名字是为了不改既有引用点。
+pub const SOCKET_MODE: u32 = crate::transport::ACCESS_MODE;
 
 #[async_trait::async_trait]
 pub trait IpcMethod: Send + Sync {
@@ -123,40 +127,20 @@ impl IpcServer {
         &self.path
     }
 
-    /// 绑定并设置权限。上一次进程留下的 socket 文件要先删：
-    /// 残留文件会让绑定报「地址已占用」，而实际上没有任何进程在听。
-    pub fn bind(&self) -> Result<UnixListener, ServerError> {
-        if let Some(parent) = self.path.parent() {
-            std::fs::create_dir_all(parent).map_err(|e| ServerError::Bind {
-                path: self.path.clone(),
-                detail: e.to_string(),
-            })?;
-        }
-        match std::fs::remove_file(&self.path) {
-            Ok(()) => {}
-            Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
-            Err(e) => {
-                return Err(ServerError::Bind {
-                    path: self.path.clone(),
-                    detail: e.to_string(),
-                })
+    /// 建立监听。返回的是**不透明类型**——按裁定 F-08 第八节，
+    /// 该类型不得泄露到 apps，否则换平台时装配层要跟着改。
+    /// 残留清理、权限设置与平台差异全在传输层，本函数只做错误归类。
+    pub fn bind(&self) -> Result<IpcListener, ServerError> {
+        IpcListener::bind(&self.path).map_err(|e| match e {
+            TransportError::Access { path, detail } => ServerError::Permissions { path, detail },
+            TransportError::Listen { path, detail } | TransportError::Connect { path, detail } => {
+                ServerError::Bind { path, detail }
             }
-        }
-        let listener = UnixListener::bind(&self.path).map_err(|e| ServerError::Bind {
-            path: self.path.clone(),
-            detail: e.to_string(),
-        })?;
-        use std::os::unix::fs::PermissionsExt;
-        std::fs::set_permissions(&self.path, std::fs::Permissions::from_mode(SOCKET_MODE))
-            .map_err(|e| ServerError::Permissions {
-                path: self.path.clone(),
-                detail: e.to_string(),
-            })?;
-        Ok(listener)
+        })
     }
 
     /// 接受连接直到 `shutdown` 完成。停机时删除 socket 文件，不留残留。
-    pub async fn serve<F>(self, listener: UnixListener, shutdown: F)
+    pub async fn serve<F>(self, mut listener: IpcListener, shutdown: F)
     where
         F: std::future::Future<Output = ()> + Send,
     {
@@ -167,7 +151,7 @@ impl IpcServer {
             tokio::select! {
                 _ = &mut shutdown => break,
                 accepted = listener.accept() => match accepted {
-                    Ok((stream, _)) => {
+                    Ok(stream) => {
                         let methods = methods.clone();
                         tokio::spawn(async move { serve_conn(stream, methods, max).await });
                     }
@@ -178,11 +162,14 @@ impl IpcServer {
                 },
             }
         }
-        let _ = std::fs::remove_file(&self.path);
+        listener.cleanup();
     }
 }
 
-async fn serve_conn(mut stream: UnixStream, methods: Arc<MethodTable>, max: u32) {
+async fn serve_conn<S>(mut stream: S, methods: Arc<MethodTable>, max: u32)
+where
+    S: AsyncRead + AsyncWrite + Unpin,
+{
     loop {
         let body = match read_frame(&mut stream, max).await {
             Ok(b) => b,
@@ -262,6 +249,11 @@ mod tests {
         assert!(!resp.ok);
     }
 
+    /// 该用例判的是 Unix 侧承载物的权限位与残留清理，被测对象只在该平台存在。
+    /// 按裁定 F-09-2 第三条（零 Linux 开发的效力范围），不为 Unix 分支新增测试，
+    /// 但既有的这一条保留——删它等于在还没有 Windows 侧替代用例之前先把覆盖面砍掉。
+    /// Windows 侧的对应判据（管道 DACL 与名字被占时 fail-closed）随服务宿主层一并落。
+    #[cfg(unix)]
     #[tokio::test]
     async fn socket_is_created_with_mode_0660_and_removed_on_stop() {
         use std::os::unix::fs::PermissionsExt;

@@ -7,7 +7,7 @@ use std::path::{Path, PathBuf};
 use std::time::Duration;
 
 use serde_json::Value;
-use tokio::net::UnixStream;
+use crate::transport::{connect, TransportError};
 
 use crate::frame::{read_frame, write_frame, FrameError};
 use crate::message::{IpcRequest, IpcResponse};
@@ -80,13 +80,13 @@ impl IpcClient {
     }
 
     async fn exchange(&self, id: &str, body: Vec<u8>) -> Result<Value, ClientError> {
-        let mut stream =
-            UnixStream::connect(&self.path)
-                .await
-                .map_err(|e| ClientError::Connect {
-                    path: self.path.clone(),
-                    detail: e.to_string(),
-                })?;
+        // 连接由传输层承担：Unix 侧一次 connect，Windows 侧另含 ERROR_PIPE_BUSY 重试
+        // ——不重试会把「服务端在但当前没有空闲实例」误报成「服务端不可用」并落 spool。
+        let mut stream = connect(&self.path).await.map_err(|e| match e {
+            TransportError::Connect { path, detail }
+            | TransportError::Listen { path, detail }
+            | TransportError::Access { path, detail } => ClientError::Connect { path, detail },
+        })?;
         write_frame(&mut stream, &body, self.max_frame_bytes)
             .await
             .map_err(ClientError::Frame)?;

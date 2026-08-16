@@ -55,8 +55,18 @@ impl Shutdown {
     }
 }
 
-/// 监听 SIGTERM 与 SIGINT。安装失败是致命的：装不上信号处理器的进程
-/// 无法优雅停机，必须让调用方知道，而不是静默地永远等下去。
+/// 等一个外部停机请求。安装失败是致命的：装不上处理器的进程无法优雅停机，
+/// 必须让调用方知道，而不是静默地永远等下去。
+///
+/// 平台分叉按裁定 F-08 第 4.2 节配套第 1 条。**这是平台分叉，不是双平台维护**
+/// （F-09-2 第三条：零 Linux 开发的效力范围）——Unix 分支保留其现有实现即可，
+/// 不为它新增测试、不为它跑 CI、不因它阻塞任何 Windows 侧改动。
+///
+/// 两侧返回的 [`StopReason`] 取值刻意保持不变：`Sigterm` 与 `Sigint` 两个名字
+/// 在本平台已无信号可指，但它们是**状态机的取值**，改名会连带改
+/// `lifecycle.rs` 的状态机与其全部用例，而语义（外部要求停机／用户中断）两平台一致。
+/// 裁定 F-08 第八节把该改名单列为「纯改名」一项，不在本次传输边界抽出的范围内。
+#[cfg(unix)]
 pub async fn wait_for_signal() -> Result<StopReason, std::io::Error> {
     use tokio::signal::unix::{signal, SignalKind};
     let mut term = signal(SignalKind::terminate())?;
@@ -64,6 +74,37 @@ pub async fn wait_for_signal() -> Result<StopReason, std::io::Error> {
     tokio::select! {
         _ = term.recv() => Ok(StopReason::Sigterm),
         _ = int.recv() => Ok(StopReason::Sigint),
+    }
+}
+
+/// Windows 侧：本平台没有 SIGTERM 与 SIGINT。
+///
+/// 本函数只承接**控制台直跑模式**——按 F-08 第 4.2 节配套第 1 条，
+/// 该模式为开发与集成测试保留。服务模式下的停机请求走另一条路：
+/// 由服务宿主层的 `HandlerEx` 收到服务控制管理器的停止控制码后，
+/// 经 [`ShutdownTx`] 投递，**不经过本函数**。
+///
+/// 两个事件的对应关系逐条记明，不含糊：
+/// `ctrl_c` 与 `ctrl_break` 都表示用户在控制台中断，映射到 [`StopReason::Sigint`]；
+/// `ctrl_close`（控制台窗口被关闭）与 `ctrl_shutdown`（系统关机）表示外部要求停机，
+/// 映射到 [`StopReason::Sigterm`]。
+///
+/// **一处如实登记**：`ctrl_close` 与 `ctrl_shutdown` 之后系统给的排空时间由操作系统决定，
+/// 远短于配置的 30 秒——这正是 F-08 做不到四登记的那条降级，不在本函数内可解。
+///
+/// 本分支**未在目标平台跑过**，按 F-08 的纪律记明：它是按接口面写的，不是实测过的。
+#[cfg(windows)]
+pub async fn wait_for_signal() -> Result<StopReason, std::io::Error> {
+    use tokio::signal::windows;
+    let mut ctrl_c = windows::ctrl_c()?;
+    let mut ctrl_break = windows::ctrl_break()?;
+    let mut ctrl_close = windows::ctrl_close()?;
+    let mut ctrl_shutdown = windows::ctrl_shutdown()?;
+    tokio::select! {
+        _ = ctrl_c.recv() => Ok(StopReason::Sigint),
+        _ = ctrl_break.recv() => Ok(StopReason::Sigint),
+        _ = ctrl_close.recv() => Ok(StopReason::Sigterm),
+        _ = ctrl_shutdown.recv() => Ok(StopReason::Sigterm),
     }
 }
 
