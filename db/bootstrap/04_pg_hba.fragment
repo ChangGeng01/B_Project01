@@ -11,6 +11,11 @@
 # 安装器自己的后续连接会被尚未建成的角色规则一并拒掉，引导中途断在无法重连的状态。
 # 排在末位使「引导脚本执行完毕」与「新认证规则开始生效」两个时点重合。
 #
+# 连接类型一律取 host，不取 local：本平台的 PostgreSQL 没有 Unix 域套接字，
+# local 记录匹配不到任何连接（裁定 F-08 第 4.5 节第 1 条与第三节现存缺陷第 1、2 条）。
+# 引导脚本据此必须显式带 -h：不带 -h 时 libpq 在本平台默认走 TCP localhost，
+# 而 localhost 优先解析为 ::1，故每个角色的 127.0.0.1/32 与 ::1/128 两行缺一不可。
+#
 # 为什么不写口令：本目录任何文件中出现口令字面量即违反 xtask sqlcheck 规则 SQL-020。
 # scram-sha-256 只是认证方法名，不是口令。
 #
@@ -18,17 +23,26 @@
 # 专用角色的限定规则必须排在宽泛规则之前）。重复合入前先按本片段首列类型与角色名
 # 清理旧行，即可重复执行。
 
-# --- 复制角色 ep_archiver：只放行 local 与回环地址，其余地址一律 reject ---
-local   replication   ep_archiver                              scram-sha-256
+# --- 复制角色 ep_archiver：只放行本机回环，其余地址一律 reject ---
+# 本平台没有 Unix 域套接字，local 记录一律匹配不到任何连接，故不写 local 行。
+# IPv6 回环必须显式放行：本机名 localhost 优先解析为 ::1，缺这一行会被下方
+# ::/0 的 reject 行拒掉——那是一条自己拒绝自己的规则。
 host    replication   ep_archiver         127.0.0.1/32         scram-sha-256
+host    replication   ep_archiver         ::1/128              scram-sha-256
 host    replication   ep_archiver         0.0.0.0/0            reject
 host    replication   ep_archiver         ::/0                 reject
 
-# --- 复制角色 ep_backuper：只放行 local 与回环地址，其余地址一律 reject ---
-local   replication   ep_backuper                              scram-sha-256
+# --- 复制角色 ep_backuper：只放行本机回环，其余地址一律 reject ---
 host    replication   ep_backuper         127.0.0.1/32         scram-sha-256
+host    replication   ep_backuper         ::1/128              scram-sha-256
 host    replication   ep_backuper         0.0.0.0/0            reject
 host    replication   ep_backuper         ::/0                 reject
 
-# --- 应急账号 ep_breakglass：只放行 local ---
-local   all           ep_breakglass                            scram-sha-256
+# --- 应急账号 ep_breakglass：只放行本机回环 ---
+# 原文只有一行 local。本平台无 Unix 域套接字，那一行匹配不到任何连接，
+# 该账号将完全无法登录——而它存在的全部意义，就是别的路都断了的时候还能进去。
+# 两行 host 都要有，理由同上：localhost 优先解析为 ::1。
+host    all           ep_breakglass       127.0.0.1/32         scram-sha-256
+host    all           ep_breakglass       ::1/128              scram-sha-256
+host    all           ep_breakglass       0.0.0.0/0            reject
+host    all           ep_breakglass       ::/0                 reject

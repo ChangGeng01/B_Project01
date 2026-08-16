@@ -23,6 +23,19 @@ alter system set max_wal_senders = 4;
 alter system set max_replication_slots = 3;
 alter system set wal_level = replica;
 
+-- 事务日志落盘方式。本平台的默认值为 open_datasync，官方文档明确该默认值配合
+-- 磁盘写缓存不安全；而第 13.3 章 RPO 不超过 15 分钟在本平台已按裁定 F-08 做不到一
+-- 失去机制侧保证，再叠一个不安全的落盘默认值不可接受。
+--
+-- 本行是显式登记而不是取值：具体取 fsync 还是 fsync_writethrough，
+-- 以及各自的代价，按裁定 F-08 第十二节实测清单第 14 项（已并入附录庚五）待实测，
+-- 并按第三节现存缺陷第 4 条在附录 A.4 实测其代价。
+-- 实测结论出具前不得留用平台默认值，也不得先写死一个值再回改——
+-- 本平台可选值只有三支，现在选一个就是猜。
+-- 本项的重新生效谓词是机器可观测的事实：一旦本文件出现 alter system set wal_sync_method
+-- 的取值语句，本登记行即可删除。
+-- EP-PENDING: wal_sync_method 待实测（庚五第 14 项）
+
 -- 复制槽的本机事务日志保留上限：等于附录 A.3 连续归档本机保留子项，不得高于。
 -- 按 R-07，该取值做成单一变量；实测回填由归档阶段执行，回填只改本行。
 alter system set max_slot_wal_keep_size = '350GB';
