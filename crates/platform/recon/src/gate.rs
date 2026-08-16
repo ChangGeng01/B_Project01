@@ -9,6 +9,7 @@
 //! 因此本模块的每一条判定都取**保守的那一侧**，并在下面逐条写明取的是哪一侧。
 
 use crate::model::{DiscrepancyState, ReconRunStatus};
+use crate::registry::EXPECTED_REGISTERED_CHECK_COUNT;
 
 /// 关账受理被拒的原因。**逐条分开，不合成一个布尔**：
 /// 运维要知道的是「卡在哪一项、还差几条」，「不满足前提」五个字帮不上忙。
@@ -27,6 +28,17 @@ pub enum CloseBlocker {
     OpenDiscrepancies { count: u32 },
     /// 还有未了结的死信。规格第 10.2 章的另一项前提。
     UnsettledDeadLetters { count: u32 },
+    /// 注册表里的阻断性校验项不足裁定 A-06 冻结的十五项。
+    ///
+    /// **这一条的期望值来自 A-06 的十五，不来自注册表自己。** 这是要害：
+    /// 拿注册表的内容当期望值，期望与实际必然相等、差集恒空，
+    /// 那样的覆盖面判定是恒真的。
+    ReconRosterIncomplete { registered: usize, expected: usize },
+    /// 注册在册、但这次运行没跑到的阻断性校验项。
+    ///
+    /// 与上一条不是重复：上一条判「该有的项有没有注册」，这一条判
+    /// 「注册了的项这次有没有跑」——一次中途断掉的运行会让后者非空而前者干净。
+    ReconNotCovered { missing_check_codes: Vec<String> },
 }
 
 impl std::fmt::Display for CloseBlocker {
@@ -47,6 +59,21 @@ impl std::fmt::Display for CloseBlocker {
             CloseBlocker::UnsettledDeadLetters { count } => {
                 write!(f, "尚有 {count} 条未了结的死信")
             }
+            CloseBlocker::ReconRosterIncomplete {
+                registered,
+                expected,
+            } => write!(
+                f,
+                "关账前强制校验只注册了 {registered} 项，应为 {expected} 项；缺的那些从未跑过，不等于无差异"
+            ),
+            CloseBlocker::ReconNotCovered {
+                missing_check_codes,
+            } => write!(
+                f,
+                "有 {} 个已注册的校验项本次未跑到：{}",
+                missing_check_codes.len(),
+                missing_check_codes.join("、")
+            ),
         }
     }
 }
@@ -62,6 +89,10 @@ pub struct CloseFacts {
     pub discrepancies: Vec<DiscrepancyState>,
     /// 该法人该记账日期范围内未了结的死信条数。
     pub unsettled_dead_letters: u32,
+    /// 受理时注册表里全部阻断性校验项的 code，取自 `ReconRegistry::blocking_codes`。
+    pub registered_blocking_check_codes: Vec<String>,
+    /// 最近一次运行真正跑到结论的检查项，取自 `ReconRunOutcome::executed_check_codes`。
+    pub executed_check_codes: Vec<String>,
 }
 
 /// 判定关账能否受理。返回全部阻断项，**不在第一项就短路**。
@@ -105,6 +136,27 @@ pub fn check_close_admission(facts: &CloseFacts) -> Vec<CloseBlocker> {
         });
     }
 
+    // 名册齐备与覆盖面两条，期望值来自两个**互相独立**的源：
+    // 前者来自 A-06 冻结的十五，后者来自注册表与运行结果的差。
+    // 若两者同源，差集恒空，这两条就都是恒真的。
+    if facts.registered_blocking_check_codes.len() != EXPECTED_REGISTERED_CHECK_COUNT {
+        blockers.push(CloseBlocker::ReconRosterIncomplete {
+            registered: facts.registered_blocking_check_codes.len(),
+            expected: EXPECTED_REGISTERED_CHECK_COUNT,
+        });
+    }
+    let missing: Vec<String> = facts
+        .registered_blocking_check_codes
+        .iter()
+        .filter(|c| !facts.executed_check_codes.contains(c))
+        .cloned()
+        .collect();
+    if !missing.is_empty() {
+        blockers.push(CloseBlocker::ReconNotCovered {
+            missing_check_codes: missing,
+        });
+    }
+
     blockers
 }
 
@@ -112,12 +164,21 @@ pub fn check_close_admission(facts: &CloseFacts) -> Vec<CloseBlocker> {
 mod tests {
     use super::*;
 
+    /// 十五个互异的码，凑齐 A-06 冻结的名册规模。
+    fn roster() -> Vec<String> {
+        (0..EXPECTED_REGISTERED_CHECK_COUNT)
+            .map(|i| format!("C{i:02}"))
+            .collect()
+    }
+
     fn clean() -> CloseFacts {
         CloseFacts {
             latest_run: Some(ReconRunStatus::Completed),
             unfinished_check_codes: Vec::new(),
             discrepancies: vec![DiscrepancyState::Repaired, DiscrepancyState::Waived],
             unsettled_dead_letters: 0,
+            registered_blocking_check_codes: roster(),
+            executed_check_codes: roster(),
         }
     }
 
@@ -176,15 +237,65 @@ mod tests {
     fn all_blockers_are_reported_at_once() {
         let facts = CloseFacts {
             latest_run: Some(ReconRunStatus::Failed),
-            unfinished_check_codes: Vec::new(),
             discrepancies: vec![DiscrepancyState::Open, DiscrepancyState::Open],
             unsettled_dead_letters: 3,
+            ..clean()
         };
         let blockers = check_close_admission(&facts);
         assert_eq!(blockers.len(), 3, "三项都要报出来，实为 {blockers:?}");
         assert!(blockers.contains(&CloseBlocker::ReconFailed));
         assert!(blockers.contains(&CloseBlocker::OpenDiscrepancies { count: 2 }));
         assert!(blockers.contains(&CloseBlocker::UnsettledDeadLetters { count: 3 }));
+    }
+
+    /// 名册不齐即拒。**期望值来自 A-06 冻结的十五，不来自注册表自己**——
+    /// 拿注册表的内容当期望值，期望与实际必然相等、差集恒空，判定就是恒真的。
+    ///
+    /// 这不是假想的边界：阶段 9a 交付本体那一刻，十五项里有十一项还不存在，
+    /// 一次关账前校验会跑完、无差异，而那十一项从没跑过。
+    #[test]
+    fn an_incomplete_roster_blocks_even_when_everything_else_is_clean() {
+        let four: Vec<String> = roster().into_iter().take(4).collect();
+        let facts = CloseFacts {
+            registered_blocking_check_codes: four.clone(),
+            executed_check_codes: four,
+            ..clean()
+        };
+        let blockers = check_close_admission(&facts);
+        assert_eq!(
+            blockers,
+            vec![CloseBlocker::ReconRosterIncomplete {
+                registered: 4,
+                expected: EXPECTED_REGISTERED_CHECK_COUNT,
+            }],
+            "只注册了四项却判成可关账——那十一项从没跑过"
+        );
+    }
+
+    /// 一个注册在册却没跑到的校验项即拒，并列出是哪几个。
+    /// 与名册那条不是重复：这一条在名册齐备时仍可能非空（运行中途断掉）。
+    #[test]
+    fn a_registered_check_that_never_ran_blocks_and_is_named() {
+        let mut executed = roster();
+        let dropped = executed.pop().expect("名册非空");
+        let facts = CloseFacts {
+            executed_check_codes: executed,
+            ..clean()
+        };
+        assert_eq!(
+            check_close_admission(&facts),
+            vec![CloseBlocker::ReconNotCovered {
+                missing_check_codes: vec![dropped],
+            }]
+        );
+    }
+
+    /// 反向锁：两条新阻断项不得变成「无脑拒绝」。
+    /// 一份名册齐备、逐项跑到、零差异的事实必须返回空阻断——
+    /// 少了这一条，把两条判定写成恒真也没人发现。
+    #[test]
+    fn the_two_new_blockers_are_not_always_on() {
+        assert!(check_close_admission(&clean()).is_empty());
     }
 
     /// 对账正在跑也不放行——跑到一半的结论不是结论。

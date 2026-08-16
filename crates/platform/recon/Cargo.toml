@@ -9,3 +9,7 @@ workspace = true
 
 [dependencies]
 ep-foundation.workspace = true
+# 三个契约 trait 里有 async 方法，且要能做成 trait 对象。
+async-trait.workspace = true
+# `ReconRunOutcome.run_id` 是 `Id<ReconRun>`，构造它要 uuid。
+uuid.workspace = true

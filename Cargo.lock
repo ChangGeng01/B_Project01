@@ -1213,7 +1213,9 @@ dependencies = [
 name = "ep-platform-recon"
 version = "0.1.0"
 dependencies = [
+ "async-trait",
  "ep-foundation",
+ "uuid",
 ]
 
 [[package]]

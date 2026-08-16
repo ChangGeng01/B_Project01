@@ -4,6 +4,9 @@
 //! `ReconCategory` 的 `CROSS_MODULE_LINK` 撤销（跨 schema 单目标引用改建真实外键），
 //! 因此该枚举**恰两个取值**，不是三个。
 
+use crate::ReconRun;
+use ep_foundation::id::Id;
+
 /// 对账检查的类别。**恰两个取值**——A-06 撤销了原第三个 `CROSS_MODULE_LINK`。
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum ReconCategory {
@@ -175,10 +178,41 @@ impl BatchWindow {
 /// 一次对账运行的结果。
 #[derive(Clone, PartialEq, Eq, Debug)]
 pub struct ReconRunOutcome {
+    /// 本次运行的标识。**上一轮把这个字段静默删掉了**，与 A-06 逐字不一致
+    /// 且没留下任何说明；本轮补回。标记类型 [`crate::ReconRun`] 落在本 crate 内，
+    /// 不进 foundation——那张标记表是冻结的，且它收的是跨模块引用的标记。
+    pub run_id: Id<ReconRun>,
     pub status: ReconRunStatus,
     pub discrepancy_count: u32,
+    /// **本次运行真正跑到结论的检查项。** A-06 没有这个字段，本轮加。
+    ///
+    /// 没有它，`Completed` 不蕴含「该跑的都跑了」：一个根本没注册的校验项
+    /// 既不在未完成清单里、也不产生差异行，于是 `Completed` 加空差异加闸门放行。
+    /// 这是「未覆盖 ≠ 通过」最直接的破口，而它在阶段 9a 交付本体那一刻**必然发生**——
+    /// 那时十五项里有十一项还不存在。
+    pub executed_check_codes: Vec<String>,
     /// 没跑到底的检查项。`Unfinished` 时非空，这是它与 `Failed` 的区别所在。
     pub unfinished_check_codes: Vec<String>,
+}
+
+impl ReconRunOutcome {
+    /// 运行刚开始那一刻的结果。
+    ///
+    /// **`Running` 这个取值在生产上大概率取不到**：`platform_core.recon_runs`
+    /// 按裁定 B-02 登记为仅追加表且可变列白名单为空数组，而仅追加表的
+    /// `BEFORE UPDATE OR DELETE` 触发器一律 raise——`RUNNING` 到终态的那次更新
+    /// 上线即被无条件拒绝，实现方只能绕过 `RUNNING` 直插终态。
+    /// 这一处矛盾已登记入裁定文件附录辛，本构造函数留着是因为 A-06 的取值域里有它、
+    /// 且关账闸门对它有一条分支；**不要据此认为它是一条活路径**。
+    pub fn running(run_id: Id<ReconRun>) -> Self {
+        Self {
+            run_id,
+            status: ReconRunStatus::Running,
+            discrepancy_count: 0,
+            executed_check_codes: Vec::new(),
+            unfinished_check_codes: Vec::new(),
+        }
+    }
 }
 
 #[cfg(test)]
