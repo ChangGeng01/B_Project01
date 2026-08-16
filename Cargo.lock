@@ -1029,7 +1029,10 @@ dependencies = [
 name = "ep-platform-audit"
 version = "0.1.0"
 dependencies = [
+ "chrono",
  "ep-foundation",
+ "serde_json",
+ "sha2 0.10.9",
 ]
 
 [[package]]

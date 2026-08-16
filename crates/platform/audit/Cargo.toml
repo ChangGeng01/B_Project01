@@ -9,3 +9,6 @@ workspace = true
 
 [dependencies]
 ep-foundation.workspace = true
+chrono.workspace = true
+serde_json.workspace = true
+sha2.workspace = true
