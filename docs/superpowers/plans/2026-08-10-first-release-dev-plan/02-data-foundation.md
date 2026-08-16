@@ -82,11 +82,11 @@
 | `ep_backuper` | LOGIN REPLICATION NOSUPERUSER NOBYPASSRLS | 同上 |
 | `ep_mod_<module>` × 24 | NOLOGIN | 各 schema 与其对象的属主，仅归属与 DDL 边界 |
 
-`db/bootstrap/02_cluster_params.sql`：`max_connections = 64`（下限假设 52，留 12 为超级用户预留与波动，`superuser_reserved_connections = 3`）；`max_wal_senders = 4`；`max_replication_slots = 3`；`wal_level = replica`；`max_slot_wal_keep_size = '350GB'`（等于附录 A.3 连续归档本机保留子项，不得高于）；`wal_keep_size = 0`；`shared_preload_libraries = 'pg_stat_statements'`；`lock_timeout = 0` 全局默认由各池覆盖。
+`db/bootstrap/02_cluster_params.sql`：`max_connections = 64`（下限假设 52，留 12 为超级用户预留与波动，`superuser_reserved_connections = 3`）；`max_wal_senders = 4`；`max_replication_slots = 3`；`wal_level = replica`；`max_slot_wal_keep_size = '350GB'`（等于附录 A.3 连续归档本机保留子项，不得高于）；`wal_keep_size = 0`；`shared_preload_libraries = 'pg_stat_statements'`；`lock_timeout = 0` 全局默认由各池覆盖；`wal_sync_method` 必须在本文件显式取值，不得留用本平台的默认值 `open_datasync`——按裁定 F-08 第三节现存缺陷第 4 条，官方文档明确该默认值配合磁盘写缓存不安全，而第 13.3 章 RPO 不超过 15 分钟在本平台已按该裁定做不到一失去机制侧保证，再叠一个不安全的落盘默认值不可接受。本阶段的可判部分是：该文件中对 `wal_sync_method` 存在**显式登记行**——或是一个已定取值，或是一行写明「本项待实测，实测前不得留用平台默认值」的登记；两者都算可判。**不要求本阶段就写死一个非默认取值**：本平台可选值只有 `open_datasync`、`fsync`、`fsync_writethrough` 三支，要求现在就选一个又同时禁止「先写死再回改」，会构成一条只能恒假的判据。具体取哪一支及其代价按该裁定第十二节实测清单第 14 项（并入附录庚五）待实测，并按第三节第 4 条在附录 A.4 实测其代价，实测结论出具前不得以默认值充数、也不得先写死一个值再回改。同批按该裁定第 4.5 节第 7 条：`effective_io_concurrency` 依赖 `posix_fadvise`，在本平台是被忽略还是设非零即报错未确证，本阶段不取该参数，实测一条 `SET` 即可判定；`huge_pages` 若取用须先授予服务账户「锁定内存中的页」用户权限，属部署步骤新增，本阶段不取。
 
 `db/bootstrap/03_role_defaults.sql`：按角色固化超时。`ALTER ROLE ep_app_rw SET statement_timeout='10s'`、`lock_timeout='3s'`、`idle_in_transaction_session_timeout='15s'`；`ep_analyst_ro` 取 `statement_timeout='60s'`、`work_mem='64MB'`、`temp_file_limit='2GB'`；`ep_ops_ro` 取 `5s`；`ep_migrator` 取 `statement_timeout='30min'`、`lock_timeout='5s'`。角色级取值是兜底，池级 `after_connect` 再设一次，两处一致由集成测试断言。
 
-`db/bootstrap/04_pg_hba.fragment`：`ep_archiver` 与 `ep_backuper` 只放行 `local replication` 与 `host replication ... 127.0.0.1/32 scram-sha-256`，其余地址一律 reject；`ep_breakglass` 只放行 `local`。
+`db/bootstrap/04_pg_hba.fragment`：Windows 版 PostgreSQL 16 没有 Unix 域套接字，`local` 记录在本平台不匹配任何连接，本机放行一律走 `host`，且 IPv4 与 IPv6 两条必须成对给出——Windows 把 `localhost` 优先解析为 `::1`，只放行 `127.0.0.1/32` 会被紧随其后的 `::/0` reject 行把以主机名发起的本机连接拒掉；这一条在 Linux 上同样是缺陷，只是 Linux 侧默认走 Unix 套接字把它盖住了。据此按裁定 F-08 第三节现存缺陷第 1 条与第 2 条本批即改，不等该裁定其余部分落地：`ep_archiver` 与 `ep_backuper` 各放行 `host replication ... 127.0.0.1/32 scram-sha-256` 与 `host replication ... ::1/128 scram-sha-256`，原 `local replication` 一行删除；`ep_breakglass` 改放行 `host all ep_breakglass 127.0.0.1/32 scram-sha-256` 与 `host all ep_breakglass ::1/128 scram-sha-256`，原只放行 `local` 一行在本平台不匹配任何连接、等于把应急账号锁死在门外，而它存在的全部意义就是别的路都断了的时候还能进去；上述放行行一律排在对应的 reject 行之前，其余地址一律 reject。规格第 7.7 章「只允许从本机建立复制连接」措辞平台中立、结论不变，本行是其平台口径，须显式披露：该章三项遏制手段之一的载体由「Unix 域套接字加本机地址」收窄为纯本机地址放行。`local` 记录在本平台不可用这一点，以及上述 `host` 写法能否完整表达本节三个角色的放行口径，按该裁定第十二节实测清单第 13 项（并入附录庚五）待实测；本行不因待实测而缓改——`local` 在本平台不匹配任何连接是确定事实，待实测的只是替代写法的覆盖面。
 
 #### 3.2 schema 与角色映射
 
@@ -669,9 +669,9 @@ pub trait IdempotencyStore: Send + Sync {
 | `EP__DB__RO__TEMP_FILE_LIMIT` | string | `2GB` | 重启生效 |
 | `EP__DB__RETRY__MAX_ATTEMPTS` | u32 | 3 | 热生效 |
 | `EP__DB__RETRY__BACKOFF_MS` | 数组 | `[50,150,450]` | 热生效 |
-| `EP__DB__MIGRATION__EXPECTED_VERSIONS_PATH` | string | `/etc/ep/migration-versions.toml` | 重启生效，二进制期望版本清单 |
+| `EP__DB__MIGRATION__EXPECTED_VERSIONS_PATH` | string | `C:\EP\config\migration-versions.toml` | 重启生效，二进制期望版本清单 |
 | `EP__KMS__BACKEND` | 枚举 | `builtin` | 取 `builtin` 或 `hsm`；重启生效 |
-| `EP__KMS__BUILTIN__MASTER_KEY_PATH` | string | `/var/lib/ep/kms/master.key` | 重启生效，权限必须 0400 且属主为本进程账户，否则拒绝启动 |
+| `EP__KMS__BUILTIN__MASTER_KEY_PATH` | string | `C:\EP\kms\master.key` | 重启生效；权限位换 NTFS ACL，判据由「三位八进制等于 0400 且属主为本进程账户」改为「该文件已断继承，且除 core-server 与 job-worker 两个服务虚拟账户、SYSTEM 与 Administrators 外不存在其他授权 ACE（该文件由这两个进程共同读取，判据写成「本进程的账户」会使两者互相判否、双双拒绝启动）」，不合规即拒绝启动。这是判据锐利度下降不是防护下降 |
 | `EP__KMS__HSM__PKCS11_MODULE` | string | 空 | `hsm` 时必填 |
 | `EP__KMS__HSM__SLOT` | u32 | 0 | |
 | `EP__KMS__HSM__PIN_REF` | string | `secret://kms/hsm_pin#1` | 只写引用 |
@@ -680,7 +680,7 @@ pub trait IdempotencyStore: Send + Sync {
 | `EP__CRYPTO__BLIND_INDEX__BYTES` | u32 | 16 | 重启生效，取值 16 或 32，是全库默认截断长度；按第 4.4 节走确需唯一例外路径的列在 `derive_blind_key` 调用点显式取完整 32 字节而不受该键影响，首版该例外只有 `finance.cash_accounts.bank_account_no` 一列 |
 | `EP__MIGRATION__WINDOW_TTL_MAX_MIN` | u32 | 240 | 热生效 |
 
-机密不进配置：数据库口令、KMS 主密钥、HSM PIN 一律写引用，解析到 `/var/lib/ep/secrets/`，内存中用 `secrecy::SecretString` 包装。机密轮换不需重启，进程在下次取用时使用新版本，旧版本保留一个轮换窗口。
+机密不进配置：数据库口令、KMS 主密钥、HSM PIN 一律写引用，解析到 `C:\EP\secrets\`，即工程基线阶段 1 配置键 `secrets.dir` 的同一取值，内存中用 `secrecy::SecretString` 包装。机密轮换不需重启，进程在下次取用时使用新版本，旧版本保留一个轮换窗口。
 
 #### 7.1 启动自检项
 
@@ -852,7 +852,7 @@ R-02 `numeric(18,2)` 在插入更高精度时静默舍入。PostgreSQL 的舍入
 
 R-03 法人枚举与行级策略的张力。内部对账、启动自检与密钥域巡检都需要枚举全部法人，而策略以单一法人为判据。本阶段的解法是 `legal_entities` 不建策略并按第 3.5 节表十三登记，准入判据取隔离机制自身的元数据，代价是任一持有运行期账号的会话都能读到 2 个法人的名称与编码。该残余风险登记在第 12 节，并在越权测试集中以明确用例固化其边界，即除该表的清单元数据外不得读到对方法人的任何业务数据。备选解法是 `SECURITY DEFINER` 函数，本阶段不采用，理由是它等价于引入一个受限的 BYPASSRLS 路径，与规格第 7.7 章不设绕过的口径冲突。
 
-R-04 内置 KMS 主密钥的保护只到操作系统层。持有该服务器操作系统权限者可读取主密钥并解开全部法人密钥域。该结论与规格第 21.18 章对同类主体的口径一致，写入交付说明，不得表述为等效于硬件密码机。缓解是文件权限 0400、属主校验、启动自检拒绝不合规权限，以及主密钥使用记入审计。
+R-04 内置 KMS 主密钥的保护只到操作系统层。持有该服务器操作系统权限者可读取主密钥并解开全部法人密钥域。该结论与规格第 21.18 章对同类主体的口径一致，写入交付说明，不得表述为等效于硬件密码机。缓解是主密钥文件的 NTFS ACL 断继承并只授 core-server 与 job-worker 两个服务虚拟账户与 SYSTEM 与 Administrators、启动自检以「除这四者外不存在其他授权 ACE」判否并拒绝不合规 ACL，以及主密钥使用记入审计。原「文件权限 0400」与「属主校验」两项随权限位换 NTFS ACL 一并改写：判据由三位八进制相等降为 ACL 集合判否，这是判据锐利度下降不是防护下降，与本条正文「持有该服务器操作系统权限者可读取主密钥」这一防护面结论不得混为一谈——本条逐字已承认后者，两者不是同一件事。
 
 R-05 盲索引的信息泄漏。等值盲索引会泄漏取值的相等关系与频次分布，持有数据库读权限者可据此做频次分析。该性质是可检索与保密的固有取舍，规格第 7.8 章已要求盲索引受治理，本阶段的治理手段是逐列登记与批准；残余风险写入 ADR 并在敏感字段清单的批准流程中向产品负责人明示。
 
@@ -882,7 +882,7 @@ R-08 幂等键的三段职责按 C-07 已经拆定，本阶段只定义端口，
 
 二、标识符超过 63 字节时按列序缩写并在数据字典登记全称，理由是 PostgreSQL 的硬性限制会静默截断从而产生两个同名对象。回写基线第 3.10 节。
 
-三、迁移执行器为独立 CLI `tools/ep-migrate` 而不是八进程之一，理由是它不常驻、无 systemd 单元、无 cgroup slice、只在迁移窗口内以 `ep_migrator` 运行，因此不构成基线第 12 节所禁止的新增进程。回写基线第 1.1 节的目录布局。
+三、迁移执行器为独立 CLI `tools/ep-migrate` 而不是八进程之一，理由是它不常驻、不注册为 Windows 服务、不占用任何资源单位、只在迁移窗口内以 `ep_migrator` 运行，因此不构成基线第 12 节所禁止的新增进程。回写基线第 1.1 节的目录布局。
 
 四、密文自带信封头且以 `legal_entity_id`、`schema.table.column`、行标识三段作为 AAD，理由是把密文与其所在行绑定，使数据库层的整列复制无法产生可解密结果。回写基线第 7.2 节。
 
@@ -892,7 +892,7 @@ R-08 幂等键的三段职责按 C-07 已经拆定，本阶段只定义端口，
 
 显式假设四条，规格与 PRD 均未定义。
 
-假设一，内置 KMS 主密钥以 32 字节随机内容存放于 `/var/lib/ep/kms/master.key`，权限 0400，属主为使用它的进程系统账户，其自身不再二次加密，保护依赖操作系统层访问控制。理由是单机形态下不存在第二个可托管该密钥的可信部件，规格第 12.3 章的两种载体中内置 KMS 本身即是最终信任根。该假设写入交付说明。
+假设一，内置 KMS 主密钥以 32 字节随机内容存放于 `C:\EP\kms\master.key`，该文件的 NTFS ACL 断继承并只授使用它的两个进程（core-server 与 job-worker）的服务虚拟账户与 SYSTEM 与 Administrators，不保留 `BUILTIN\Users` 一类的继承 ACE，其自身不再二次加密，保护依赖操作系统层访问控制。理由是单机形态下不存在第二个可托管该密钥的可信部件，规格第 12.3 章的两种载体中内置 KMS 本身即是最终信任根。该假设写入交付说明。
 
 假设二，DEK 按 `(密钥域, 用途, 密级子域)` 三元组划分，四个用途取 `FIELD`、`BLIND_INDEX`、`ATTACHMENT`、`ARCHIVE`。规格第 7.8 章只说密级、附件与归档可在法人密钥域内使用子密钥，未给划分维度。理由是这四类的轮换与销毁节奏不同，合并会使任一类的轮换牵动全部。
 

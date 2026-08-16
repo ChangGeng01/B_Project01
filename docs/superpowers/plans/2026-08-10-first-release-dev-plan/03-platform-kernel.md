@@ -55,7 +55,7 @@
 
 按归属裁定前移到本阶段的能力，四项。第 19 项属 3a 段，其余三项属 3b 段。
 
-18. 全文检索索引与查询（3b 段）：`ep-adapter-search` 实现 `ep_foundation::port::search::SearchIndexPort` 与 `SearchQueryPort`，索引按法人分区，物理路径 `/var/lib/ep/search/<legal_entity_id>/`。`SearchDocument`、`SearchQuery`、`SearchHit` 三个类型与两个 trait 由阶段 1 在 `crates/foundation/src/port/search.rs` 建空文件、本阶段补齐。写入一律经 job-worker 消费 Outbox 事件触发，不在业务事务内调用。本阶段不交付任何业务对象的检索文档投影函数，投影由各业务阶段按 `SearchDocument` 结构提供，见第 3.4.10 节。
+18. 全文检索索引与查询（3b 段）：`ep-adapter-search` 实现 `ep_foundation::port::search::SearchIndexPort` 与 `SearchQueryPort`，索引按法人分区，物理路径 `C:\EP\search\<legal_entity_id>\`。`SearchDocument`、`SearchQuery`、`SearchHit` 三个类型与两个 trait 由阶段 1 在 `crates/foundation/src/port/search.rs` 建空文件、本阶段补齐。写入一律经 job-worker 消费 Outbox 事件触发，不在业务事务内调用。本阶段不交付任何业务对象的检索文档投影函数，投影由各业务阶段按 `SearchDocument` 结构提供，见第 3.4.10 节。
 19. 配置发布的内容项落地端口（3a 段）：`crates/platform/release/src/port/config_item.rs`，内容为 `ConfigItemApplier` trait、`ItemKind` 枚举 15 项、`ConfigPackageItem` DTO 与 `ConfigItemApplierRegistry`，其中 `Tx` 取自 `ep_foundation::port::tx`。本项无表、无用例、不依赖身份与授权，因此排在阶段 4 之前，使阶段 4 的三个授权类 applier 不再倒挂，见第 3.4.12 节。
 20. 最小配置发布通道（3b 段）：`platform_meta.config_packages`、`platform_meta.config_package_items`、`platform_meta.config_release_orders` 三张表，六态发布状态机，ECDSA P-256 签名与逐项 `item_hash` 校验，发布与回退用例，`ConfigItemApplierRegistry` 的运行期装配，以及 `FlowDefinitionApplier` 与 `NotifyRuleApplier` 两个 applier。本阶段不建 `config_release_steps` 与 `config_edit_locks`，十一态生命周期、自动测试编排与编辑锁由阶段 13b 扩展。
 21. 模块许可与生命周期（3b-2 批）：`platform_core.module_registrations`、`platform_core.license_grants`、`platform_core.feature_flags` 三张表与 `ep-platform-license` 的 `ModuleLicenseQuery`。定时器扫描与 Outbox 投递按 `ModuleLicenseQuery::module_state` 过滤，落实规格第 5.6 章模块停用后停止定时任务与对外事件。许可到期与吊销的后果由 `LicenseStatus` 四态与规格第 3.4 章的受限运行承接，不进启动自检，基线第 7.3 节的 `license-and-modules-consistent` 整项删除，见第 3.4.11 节。模块停用再启用的端到端验收按裁定 A-05 顺延到阶段 13b。
@@ -883,7 +883,7 @@ returning next_value as serial_value, width as effective_width;
 
 阶段 B，无锁。以 `key_ref` 指向的签名私钥对 `SHA-256(JCS({segment_id, legal_entity_id, event_day, anchor_seq, root_hash, event_count}))` 做 ECDSA P-256 签名。算法取值来自规格第 12.3 章“摘要使用 SHA-256，签名使用 RSA 或 ECDSA”，本阶段取 ECDSA P-256，理由是签名长度短、验签快，且首版不含商用密码档位。`UPDATE ... SET signature = $1, signed_at = now(), state = 'SIGNED' WHERE id = $2 AND state = 'PENDING_SIGN'`，受影响行数为 0 即已被并发处理，直接跳过。
 
-阶段 C，写证据。经 `ep-adapter-file` 的 `evidence` 命名空间以 `create_new` 写入 `<legal_entity_id>/<event_day>/<anchor_seq>-<anchor_id>.json`，内容为 JCS 规范化的锚定记录。`create_new` 遇到同名文件返回已存在，视为幂等成功。写成功后 `UPDATE ... SET state = 'EVIDENCED', evidence_path, evidence_written_at`。按裁定 C-27，审计证据目录为 `/var/lib/ep/audit-evidence`，属主 `ep-worker`，组 `ep`，权限 0750；证据文件与段根签名一律由 job-worker 产生，archive-writer 以组 `ep` 的只读权限读取并写出到服务器之外落点，本进程不承担写出，也不授予 archive-writer 任何写入与删除权限。
+阶段 C，写证据。经 `ep-adapter-file` 的 `evidence` 命名空间以 `create_new` 写入 `<legal_entity_id>/<event_day>/<anchor_seq>-<anchor_id>.json`，内容为 JCS 规范化的锚定记录。`create_new` 遇到同名文件返回已存在，视为幂等成功。写成功后 `UPDATE ... SET state = 'EVIDENCED', evidence_path, evidence_written_at`。按裁定 C-27，审计证据目录为 `C:\EP\audit-evidence`，权限位换 NTFS ACL：该目录断继承并显式设 DACL，不保留 `BUILTIN\Users` 一类的继承 ACE，不设共用本地组，进程之间的授权逐账户列 ACE——job-worker 的服务虚拟账户 `NT SERVICE\ep-worker` 授读写，archive-writer 的服务虚拟账户 `NT SERVICE\ep-archive` 只授读取，并对该账户显式 Deny `DELETE` 与 `FILE_WRITE_DATA`。C-27 的结论一字不变，载体换 NTFS ACL 之后表达力增强，这一处是净改善且要写出来：原 0750 加组 `ep` 只能靠组权限位凑出「只读」，而 Deny ACE 是对该账户逐权限的否定，比靠组权限位凑更贴合 C-27 原文「不授予 archive-writer 任何写入与删除权限」。证据文件与段根签名一律由 job-worker 产生，archive-writer 只读取并写出到服务器之外落点，本进程不承担写出。
 
 失败处理：阶段 B 或 C 失败时 `state` 保持不变、`last_error` 记录，由下一轮扫描重试；连续失败超过 8 次置 `FAILED` 并写死信与站内通知，指标 `ep_audit_evidence_write_failures_total` 上升。规格第 12.5 章要求“最近一次成功锚定时间在运维中心可见，超过约定间隔告警”，本阶段以 `ep_audit_anchor_age_seconds` 指标与 `platform_audit.v_anchor_lag` 视图承载，台账条目的登记由运维中心所在阶段实现，本阶段提供数据源。
 
@@ -967,11 +967,11 @@ select ... from platform_msg.outbox_events
 
 第一段，事务 A：写 `attachment_versions` 一行，`state = 'PENDING'`，`storage_path` 预先由 `<legal_entity_id>/<security_level>/<yyyy>/<mm>/<version_id>` 确定，`dek_ref` 与 `key_domain_ref` 由 `ep_foundation::port::kms::KmsBackend` 的载体实现派生，载体实现在 `ep-adapter-kms`，`ep-platform-file` 不依赖该 crate。事务提交。
 
-第二段，事务外：从 staging 流式读取分片，用会话级临时密钥解密，边解密边计算明文 SHA-256，边用该版本的数据密钥以 AES-256-GCM 加密，经 `ep-adapter-file` 的 `published` 命名空间以 `create_new`（`O_CREAT | O_EXCL`）写入目标路径，写完 `fsync`。若目标路径已存在，判为前次崩溃后的重入，跳过写入直接进入第三段。
+第二段，事务外：从 staging 流式读取分片，用会话级临时密钥解密，边解密边计算明文 SHA-256，边用该版本的数据密钥以 AES-256-GCM 加密，经 `ep-adapter-file` 的 `published` 命名空间以 `create_new` 写入目标路径，写完把该文件的缓冲刷盘。`create_new` 的语义不变——目标已存在即失败——原括注的 POSIX 标志名 `O_CREAT | O_EXCL` 在本平台不是被测对象，随之删去，本平台由 `CREATE_NEW` 创建处置承接；文件一级的刷盘同样有对应物（`FlushFileBuffers`）。有一层没有等价物，如实写下：Linux 侧「再对父目录 `fsync` 一次以把目录项落盘」这一层在本平台不存在，本节因此不承诺目录项在崩溃后必定可见。该差别不新增机制去补，其后果由下文的崩溃收敛任务承接——收敛任务按「路径上文件是否存在」判定，目录项未落盘即等同于文件不存在，走置 `FAILED` 一支，不会产生半截可见的已发布版本。若目标路径已存在，判为前次崩溃后的重入，跳过写入直接进入第三段。
 
 第三段，事务 B：校验明文哈希等于声明哈希，把 `attachment_versions.state` 由 `PENDING` 置 `AVAILABLE` 并写 `available_at`，更新 `attachment_objects.current_version_no`，把 `upload_sessions.state` 置 `COMMITTED`，写 `platform.attachment.published.v1` 到 Outbox，最后写审计事件。写入次序按判定二，审计是本事务的最后一次数据库写入。提交后异步删除 staging 分片。
 
-staging 的加密取舍：分片以会话级临时密钥加密后落盘，而不是明文落盘。理由是恶意内容检查需要明文，若明文落盘则在检查与加密之间存在一段明文驻留窗口，规格第 6.5 章要求“附件在所属法人密钥域内加密存储”，明文窗口虽不在正式路径上但仍是同一台服务器上的可读副本。采用会话级密钥后，扫描路径改为流式解密到管道，明文不落盘。staging 目录权限 0700，属主 ep-core，会话终态后立即删除；staging 不进入任何写出与备份范围。
+staging 的加密取舍：分片以会话级临时密钥加密后落盘，而不是明文落盘。理由是恶意内容检查需要明文，若明文落盘则在检查与加密之间存在一段明文驻留窗口，规格第 6.5 章要求“附件在所属法人密钥域内加密存储”，明文窗口虽不在正式路径上但仍是同一台服务器上的可读副本。采用会话级密钥后，扫描路径改为流式解密到管道，明文不落盘。staging 目录的权限位换 NTFS ACL：断继承并显式设 DACL，只授 core-server 的服务虚拟账户 `NT SERVICE\ep-core`，不保留 `BUILTIN\Users` 一类的继承 ACE，也不设共用本地组；原 0700 在 ACL 上可精确表达，判据由三位八进制相等降为 ACL 集合判否，这是判据锐利度下降不是防护下降。删除路径按裁定 F-08 第 4.3 节第 3 条改写：本节的删除，含本节第三段提交后异步删除分片在内，在 NTFS 上不保证成功——他人持有该文件句柄且未带 `FILE_SHARE_DELETE` 时返回拒绝访问，而 Linux 的 unlink 总能成功——因此删除路径须带有限重试，重试用尽仍失败即登记一条失败记录并告警，不得静默吞掉，也不得把「会话终态后立即删除」写成必然成功。同一成因下，staging 目录与附件存储根目录必须列入杀毒排除，该项进部署记录。staging 不进入任何写出与备份范围。
 
 崩溃收敛：job-worker 内的幂等收敛任务按周期扫描 `state = 'PENDING'` 且 `created_at` 早于 `now() - 30 分钟` 的版本行，路径上文件存在则补做事务 B，不存在则置 `FAILED`。`version_id` 唯一且不复用，故失败的 `storage_path` 永不重用，不会与后续写入冲突。按裁定 A-06，该任务不是对账：它只按“路径上文件是否存在”做幂等收敛，不产生对账差异事项，不实现 `ep_platform_recon::ReconCheck`，也不依赖阶段 9a 交付的 `ep-platform-recon` 框架。
 
@@ -1001,7 +1001,7 @@ pub trait DisposalPort: Send + Sync {
 
 本阶段只交付上述 trait 与两个 DTO，`apps/core-server/src/wiring/` 与 `apps/job-worker/src/wiring/` 两个目录下的全部文件中都不出现该端口的注入行，实现类型 `OpsDisposalService`（位于 `crates/platform/obs/src/disposal.rs`，只由 ops 专用路径与专用账号触发）由阶段 14 交付并与注入行同批落地。原空实现连同 `// TODO(stage-14)` 注释一并删除，理由是一个返回成功的空壳会把一次未接线的物理删除记成一次已完成的处置，而处置回执是对外可出具的凭证。`DisposalPort` 是裁定通则第三条列明的三项例外之一，因此按例外档处理而不是整条推迟：本阶段注册处置受理路由 `POST /api/v1/platform/disposals`，该路由随附件上传流水线属 3b-2 批；本阶段至阶段 13 之间的物理删除请求一律以 `PLATFORM.DISPOSAL.NOT_DELIVERED` 直接拒绝，分类 `BUSINESS_CONFLICT`，HTTP 409，`retryable` 为假，该码由本阶段登记进 `docs/error-codes.md` 的 `PLATFORM` 段；拒绝的同时经阶段 2 的 `DegradationLedger` 开一条 `kind` 取 `PORT_NOT_IMPLEMENTED`、`subject` 取 `DisposalPort` 的降级窗口，界面与健康端点显式呈现该能力未交付，指标 `ep_degradation_windows_open` 自动计数，阶段 14 注入 `OpsDisposalService` 后关窗。不以不注册路由返回 404 替代该降级窗口的理由是规格第 12.4 章要求处置请求的传播与结论生成可验证的处置清单，404 会使本阶段至阶段 13 之间的处置请求没有任何登记与留痕。
 
-恶意内容检查：`ContentInspector` 端口，三个内置实现。`TYPE_SNIFF` 按魔数识别真实类型并与声明类型比对，不一致且不在允许的等价集合内即 REJECT。`STRUCTURE` 检查可执行文件头、OOXML 与 ODF 中的宏与外部引用、PDF 中的 JavaScript 与自动动作、归档炸弹（压缩比与展开深度上限）。`CLAMD` 是可选实现，经本机 Unix socket 调用 clamd，未配置时返回 SKIPPED。
+恶意内容检查：`ContentInspector` 端口，三个内置实现。`TYPE_SNIFF` 按魔数识别真实类型并与声明类型比对，不一致且不在允许的等价集合内即 REJECT。`STRUCTURE` 检查可执行文件头、OOXML 与 ODF 中的宏与外部引用、PDF 中的 JavaScript 与自动动作、归档炸弹（压缩比与展开深度上限）。`CLAMD` 是可选实现，其原承载「经本机 Unix socket 调用 clamd」在本平台不存在：Windows 版 PostgreSQL 一节已述本平台无 Unix 域套接字，同一事实对 clamd 同样成立。本轮不为它另取承载——裁定 F-08 第七节点了这一处却没有给出替代承载物，按本卷「写不出依据的改动不做」的纪律，clamd 的本机调用承载就此登记为待裁，不发明一个卷宗里没有的承载物充数；首版 `SCAN__MODE` 取默认值 `builtin_only`，该实现不参与首版任何判据，未配置时返回 SKIPPED。本项的重新生效谓词是机器可观测的事实——一旦配置键 `EP__PLATFORM__FILE__SCAN__CLAMD_SOCKET` 出现非空取值，该实现与其相关判据自动转为真判定，不需要任何人翻牌。
 
 假设：规格第 6.5 章的措辞是“适用的病毒扫描”，本阶段据此假定病毒扫描引擎是客户环境可选组件而非平台必备交付项，平台交付的是接入点与三个内置检查器；该假设的理由是引入病毒库需要持续更新通道，与单机不出网形态冲突，且引擎的许可条款会影响私有化分发。该假设与其后果写入交付说明。若产品负责人判定必须内置引擎，本阶段只需增加一个 `ContentInspector` 实现，不影响其余结构。
 
@@ -1121,7 +1121,7 @@ pub trait SearchQueryPort: Send + Sync {
 
 写入路径只有一条：job-worker 的索引消费者按法人轮转消费 Outbox 事件，在业务事务提交之后调用 `upsert` 与 `remove`。业务事务内不得出现这两个方法的调用，理由是基线第 10.3 节禁止事务内做文件正文读写，索引写入是文件写入。`xtask archcheck` 断言 `SearchIndexPort` 的调用点只出现在 job-worker 装配的消费者模块中，core-server 的用例路径上出现即构建失败。消费失败按 Outbox 的八段退避重试，第 8 次转死信，不影响业务事务。
 
-索引按法人分区，物理路径 `/var/lib/ep/search/<legal_entity_id>/`。分区是行级安全在索引侧的等价物：查询必须带 `legal_entity_id`，跨法人查询按法人逐轮发起，不做跨分区合并查询。`SearchQuery.max_security_level` 取自 `SecurityContext.clearance_level`，不接受调用方传参；命中结果仍按数据库侧的可见性复核一次，索引不作为授权判据，与规格第 7.9 章派生存储安全继承一致。
+索引按法人分区，物理路径 `C:\EP\search\<legal_entity_id>\`，落在按裁定 F-08 第 4.3 节第 4 条取短名的安装根之下（默认 `C:\EP`），不放在深层路径下。同条要求的最坏路径长度留证由本阶段出具一次并记入部署记录，被算的是两条路径：本目录，与第 3.4.7 节附件三段式的 `<legal_entity_id>/<security_level>/<yyyy>/<mm>/<version_id>`，各段按其最大取值宽度在该根下实算最坏长度。理由是 `LongPathsEnabled` 是全机注册表值，按该裁定第零节授权边界第 2 条不得要求改客户机器的系统设置；本仓自己的文件访问由 Rust 标准库对绝对路径的 `\\?\` 前缀转换兜住，但随产品交付的 `pg_*.exe` 与客户侧的备份代理不保证如此。分区是行级安全在索引侧的等价物：查询必须带 `legal_entity_id`，跨法人查询按法人逐轮发起，不做跨分区合并查询。`SearchQuery.max_security_level` 取自 `SecurityContext.clearance_level`，不接受调用方传参；命中结果仍按数据库侧的可见性复核一次，索引不作为授权判据，与规格第 7.9 章派生存储安全继承一致。
 
 本阶段不交付任何业务对象的检索文档投影函数。投影由各业务阶段按 `SearchDocument` 结构提供，本阶段只提供合成对象的投影用于自测。
 
@@ -1371,11 +1371,11 @@ pub trait ConfigItemApplier: Send + Sync {
 | EP__PLATFORM__AUDIT__SEGMENT_LOCK_TIMEOUT_MS | u32 | 3000 | core-server |
 | EP__PLATFORM__AUDIT__SIGNATURE_ALGORITHM | enum | ECDSA_P256_SHA256 | job-worker |
 | EP__PLATFORM__AUDIT__SIGNING_KEY_REF | string | secret://audit/segment_signing#1 | job-worker |
-| EP__PLATFORM__AUDIT__EVIDENCE_DIR | path | /var/lib/ep/audit-evidence | job-worker |
+| EP__PLATFORM__AUDIT__EVIDENCE_DIR | path | C:\EP\audit-evidence | job-worker |
 | EP__PLATFORM__AUDIT__VERIFY_MAX_DAYS | u16 | 92 | core-server, job-worker |
 | EP__PLATFORM__AUDIT__QUERY_MAX_DAYS | u16 | 366 | core-server |
-| EP__PLATFORM__FILE__ROOT_DIR | path | /var/lib/ep/files/published | core-server, job-worker |
-| EP__PLATFORM__FILE__STAGING_DIR | path | /var/lib/ep/files/staging | core-server |
+| EP__PLATFORM__FILE__ROOT_DIR | path | C:\EP\files\published | core-server, job-worker |
+| EP__PLATFORM__FILE__STAGING_DIR | path | C:\EP\files\staging | core-server |
 | EP__PLATFORM__FILE__MAX_OBJECT_BYTES | u64 | 5368709120 | core-server |
 | EP__PLATFORM__FILE__PART_BYTES | u32 | 8388608 | core-server |
 | EP__PLATFORM__FILE__SESSION_TTL_HOURS | u16 | 24 | core-server, job-worker |
@@ -1385,7 +1385,7 @@ pub trait ConfigItemApplier: Send + Sync {
 | EP__PLATFORM__FILE__DOWNLOAD_BANDWIDTH_BYTES_PER_SEC | u64 | 52428800 | core-server |
 | EP__PLATFORM__FILE__FREE_SPACE_MIN_BYTES | u64 | 107374182400 | core-server |
 | EP__PLATFORM__FILE__SCAN__MODE | enum | builtin_only | core-server |
-| EP__PLATFORM__FILE__SCAN__CLAMD_SOCKET | path | /run/clamav/clamd.ctl | core-server |
+| EP__PLATFORM__FILE__SCAN__CLAMD_SOCKET | path | 空；本平台没有 Unix 域套接字，原默认值 `/run/clamav/clamd.ctl` 无对应物，clamd 的本机调用承载按第 3.4.7 节登记为待裁，首版不取值 | core-server |
 | EP__PLATFORM__FILE__SCAN__TIMEOUT_SECONDS | u32 | 120 | core-server |
 | EP__PLATFORM__FILE__SCAN__MAX_ARCHIVE_RATIO | u32 | 200 | core-server |
 | EP__PLATFORM__FILE__SCAN__MAX_ARCHIVE_DEPTH | u8 | 4 | core-server |
@@ -1412,7 +1412,7 @@ pub trait ConfigItemApplier: Send + Sync {
 | EP__PLATFORM__FLOW__COMPENSATION_MAX_ATTEMPTS | u8 | 5 | job-worker |
 | EP__PLATFORM__FLOW__INSTANCE_RETENTION_DAYS | u16 | 730 | job-worker |
 | EP__PLATFORM__FLOW__EXPRESSION_MAX_STEPS | u16 | 1000 | core-server, job-worker |
-| EP__PLATFORM__SEARCH__ROOT_DIR | path | /var/lib/ep/search | core-server, job-worker |
+| EP__PLATFORM__SEARCH__ROOT_DIR | path | C:\EP\search | core-server, job-worker |
 | EP__PLATFORM__RETRY__SERIALIZATION_MAX_ATTEMPTS | u8 | 3 | 全部持库进程 |
 | EP__PLATFORM__RETRY__SERIALIZATION_BACKOFF_MS | Vec\<u32\> | [50,150,450] | 全部持库进程 |
 | EP__PLATFORM__RETRY__CIRCUIT_FAILURE_THRESHOLD | u8 | 5 | job-worker, integration-gateway |
@@ -1421,7 +1421,7 @@ pub trait ConfigItemApplier: Send + Sync {
 
 运行期可变的业务参数不进配置文件，按基线第 7.1 节：提醒规则的触发对象、触发日期字段、提前量、重复策略与接收人解析方式，通知模板的标题与正文，流程定义，全部存事务数据库并经配置发布通道签名发布。发布通道按裁定 A-27 由本阶段 3b 段交付，见第 3.4.12 节；流程定义与提醒规则、通知模板的落地分别经 `FlowDefinitionApplier` 与 `NotifyRuleApplier`。
 
-启动自检增量：按裁定 C-25，自检项一律以注册名标识，不用序号，注册表为阶段 1 的 `SelfCheckRegistry`，报告按注册顺序输出且基线项在前。自检项分阻断与降级两级，`severity` 取值域固定为 `Blocking` 与 `Degrading`，登记为本阶段新增决定第九项的一部分；阻断级失败以退出码 78 退出，降级级失败不阻止启动，改为登记一条 `platform_ops.degradation_windows` 并经阶段 2 的 `DegradationLedger` 出降级信号与告警。`--check` 模式对两级一律严格，任一项 FAILED 或 DEGRADED 均非零退出，闸门落在部署与升级前置，不落在进程启动。本阶段在基线第 7.3 节的命名项之外追加四项：`audit-evidence-store-writable`，审计证据存储目录可写且不具备覆盖与删除权限，剩余空间不低于阈值，阻断级；`audit-signing-key-usable`，签名私钥可解引用且可完成一次自签自验，阻断级；`attachment-store-ready`，附件存储根目录、staging 目录与检索索引根目录存在、权限位正确、剩余空间不低于 `FREE_SPACE_MIN_BYTES`，阻断级；`event-catalog-consistent`，事件目录中登记的事件类型与代码中注册的处理器无缺漏无多余，降级级，检出不一致时停止派发未登记的事件类型并持续告警，其余投递照常。前三项判读的是目录、权限位、剩余空间与密钥，不判读任何业务数据行，故留在阻断级；三项属 3b-1 批。基线项 `license-and-modules-consistent` 由本阶段整项删除而不是换成实现，见第 3.4.11 节与第 3.12.1 节偏离五。第 3.11.1 节风险九的保留期大小关系是两个配置键的比较，折叠进 `config-parsed` 的配置校验，不另设自检项。
+启动自检增量：按裁定 C-25，自检项一律以注册名标识，不用序号，注册表为阶段 1 的 `SelfCheckRegistry`，报告按注册顺序输出且基线项在前。自检项分阻断与降级两级，`severity` 取值域固定为 `Blocking` 与 `Degrading`，登记为本阶段新增决定第九项的一部分；阻断级失败以退出码 78 退出，降级级失败不阻止启动，改为登记一条 `platform_ops.degradation_windows` 并经阶段 2 的 `DegradationLedger` 出降级信号与告警。`--check` 模式对两级一律严格，任一项 FAILED 或 DEGRADED 均非零退出，闸门落在部署与升级前置，不落在进程启动。本阶段在基线第 7.3 节的命名项之外追加四项：`audit-evidence-store-writable`，审计证据存储目录可写——按裁定 F-08 第 4.3 节第 2 条，可写一项以实建探针文件再删判定，不得以「能否建子目录」代替「能否建文件」，在本平台两者是不同的权限位，以建子目录代判会假阳性——且其 NTFS ACL 不对本进程之外的账户授予覆盖与删除、对 archive-writer 的服务虚拟账户存在显式 Deny `DELETE` 与 `FILE_WRITE_DATA` 两条 ACE，剩余空间不低于阈值，阻断级；`audit-signing-key-usable`，签名私钥可解引用且可完成一次自签自验，阻断级；`attachment-store-ready`，附件存储根目录、staging 目录与检索索引根目录存在、三者的 NTFS ACL 已断继承、且除本进程的服务虚拟账户与 SYSTEM 与 Administrators 外不存在其他授权 ACE（原「权限位正确」随权限位换 NTFS ACL 改写，判据由三位八进制相等降为 ACL 集合判否，这是判据锐利度下降不是防护下降）。**判据只取本进程可自行读出的 ACL 事实，不引用部署记录**——`platform_ops.deployment_records` 由阶段 14 的迁移建立，本阶段运行时该表不存在，引用它会使这条阻断级自检在本阶段恒假、剩余空间不低于 `FREE_SPACE_MIN_BYTES`，阻断级；`event-catalog-consistent`，事件目录中登记的事件类型与代码中注册的处理器无缺漏无多余，降级级，检出不一致时停止派发未登记的事件类型并持续告警，其余投递照常。前三项判读的是目录、NTFS ACL、剩余空间与密钥，不判读任何业务数据行，故留在阻断级；三项属 3b-1 批。基线项 `license-and-modules-consistent` 由本阶段整项删除而不是换成实现，见第 3.4.11 节与第 3.12.1 节偏离五。第 3.11.1 节风险九的保留期大小关系是两个配置键的比较，折叠进 `config-parsed` 的配置校验，不另设自检项。
 
 ---
 
@@ -1463,7 +1463,7 @@ Outbox 可靠投递，对应规格第 7.3 章必含项：至少一次投递、�
 
 死信：转死信、重投成功、重投再失败、丢弃需双人审批、丢弃时申请人不可自审、按法人与会计期间的可枚举统计。
 
-混沌与故障注入，五类：依赖服务超时（KMS 与 clamd 各注入超时）、连接池与内存资源耗尽（把读写池打满并验证 job-worker 池不被挤占）、消息积压（灌入 50 万条 Outbox 条目并验证取件不退化为顺序扫描）、磁盘写满（附件写入与证据写出各触发一次并验证按 `INFRASTRUCTURE` 返回且不产生半截元数据）、进程崩溃后重启恢复（core-server 与 job-worker 各强制终止 20 次）。预期行为一律为按规格第 15.1 章返回可重试或明确失败、不产生数据不一致、故障移除后 5 分钟内自愈。
+混沌与故障注入，五类：依赖服务超时（KMS 注入超时；clamd 一支的本机调用承载在本平台按第 3.4.7 节待裁，其超时注入没有被测对象，本轮撤下、不换替身，承载定下后按同一类补回。重新生效谓词是机器可观测的事实——一旦 `EP__PLATFORM__FILE__SCAN__CLAMD_SOCKET` 出现非空取值，该注入自动转为真判定）、连接池与内存资源耗尽（把读写池打满并验证 job-worker 池不被挤占）、消息积压（灌入 50 万条 Outbox 条目并验证取件不退化为顺序扫描）、磁盘写满（附件写入与证据写出各触发一次并验证按 `INFRASTRUCTURE` 返回且不产生半截元数据）、进程崩溃后重启恢复（core-server 与 job-worker 各强制终止 20 次）。预期行为一律为按规格第 15.1 章返回可重试或明确失败、不产生数据不一致、故障移除后 5 分钟内自愈。
 
 契约测试：流程实例状态的 `same_transaction` 与 `outbox_eventual` 两条路径，各自验证业务状态、审计与 Outbox 仍在同一事务内提交。
 端口缺位的降级窗口：`DisposalPort`、`RuleEvaluator` 与 `WasmComputePort` 三个端口在两个 wiring 目录下无任何注入行时，一次物理删除请求以 `PLATFORM.DISPOSAL.NOT_DELIVERED` 被拒且 HTTP 状态为 409、不可重试，一次命中规则求值与一次命中受限 WASM 计算的流程守卫各按可重试错误或直接拒绝返回；三种情形各产生一条 `kind` 取 `PORT_NOT_IMPLEMENTED`、`subject` 分别取三个端口完整类型名的降级窗口，三条窗口在同一 `kind` 下同时打开且互不覆盖，`ep_degradation_windows_open` 计数为三，健康端点逐项呈现该能力未交付。
@@ -1543,7 +1543,7 @@ E2E-6 配置发布最小通道（3b 段）：创建含一个 `FLOW_DEFINITION` �
 22. 本阶段的五项偏离与十二项新增决定已回写共享技术基线，并经平台架构负责人签字。
 23. 模块许可：三张许可表建立，`ModuleLicenseQuery` 可用，模块置 `INSTALLED_DISABLED` 后其定时器停止触发、其事件停止投递且条目不累加 `attempts`，再启用后自动恢复；停用再启用的端到端验收按裁定 A-05 顺延到阶段 13b，本阶段以集成测试判定。
 24. 最小配置发布通道：三张配置表建立，六态状态机的全部合法与非法迁移有测试，ECDSA P-256 签名与逐项 `item_hash` 重算校验通过，`FlowDefinitionApplier` 与 `NotifyRuleApplier` 两个 applier 已实现并在两个 wiring 注册，未注册 `ItemKind` 的内容项整包拒绝发布。
-25. 全文检索：`SearchIndexPort` 与 `SearchQueryPort` 在 `ep-adapter-search` 上实现，索引按法人分区落在 `/var/lib/ep/search/<legal_entity_id>/`，`xtask archcheck` 断言业务事务路径上不出现索引写调用，两个法人的分区互不可见。
+25. 全文检索：`SearchIndexPort` 与 `SearchQueryPort` 在 `ep-adapter-search` 上实现，索引按法人分区落在 `C:\EP\search\<legal_entity_id>\`，`xtask archcheck` 断言业务事务路径上不出现索引写调用，两个法人的分区互不可见。
 26. 本阶段全部 `/api/v1/` 路由，即 `/api/v1/platform/` 各段与第 3.5.2 节三个 `/api/v1/portal/` 端点，其能力域码与动作类别已按裁定 A-20 与第 3.5 节的取值规则以 `(CapabilityDomain, ActionClass)` 元组形态声明在路由注册处，取值取自 `ep_foundation::CapabilityDomain` 与 `ep_foundation::ActionClass`，`crates/platform/flow/src/capability.rs` 中不存在按用例命名的成对常量；`POST /internal/v1/push/dispatch` 按基线第 12 节不参与判定、不声明元组，`xtask configdoc` 通过。
 27. `DisposalPort` 的 trait 与两个 DTO 已定义在 `crates/platform/file/src/port/disposal.rs`，`RuleEvaluator` 与 `WasmComputePort` 两个 trait 已定义在 `ep-platform-flow`，三者在 `apps/core-server/src/wiring/` 与 `apps/job-worker/src/wiring/` 两个目录下的全部文件中都不出现注入行；阶段 1 随 xtask 交付的 archcheck 规则 `unwired-absent` 在这两个目录上零命中，其前缀集合为 `Noop`、`Stub`、`Fake`、`Dummy` 四类，负样例由阶段 1 提供，本阶段只调用不重复定义；处置受理路由已注册，本阶段至阶段 13 之间的物理删除请求以 `PLATFORM.DISPOSAL.NOT_DELIVERED` 拒绝并开一条 `subject` 取 `DisposalPort` 的 `PORT_NOT_IMPLEMENTED` 降级窗口，`RuleEvaluator` 与 `WasmComputePort` 的能力缺位各开一条 `subject` 取该端口名的同类窗口，三条窗口可同时打开；三者的实现与注入行分别由阶段 13b 与阶段 14 交付并在注入后关窗。
 28. 附件的幂等收敛任务在四个崩溃点上收敛，且不产生任何对账差异事项、不实现 `ReconCheck`、不依赖 `ep-platform-recon`。
@@ -1664,14 +1664,14 @@ E2E-6 配置发布最小通道（3b 段）：创建含一个 `FLOW_DEFINITION` �
 
 #### 3.12.1 偏离项，共五项，需同步修订基线
 
-偏离一，移动推送出口的进程归属。基线第 2 节把 integration-gateway 定为“首版唯一的对外出网进程，只承载电子签章一类出口”，同时把“站内通知与推送投递”列为 job-worker 职责。规格第 5.1 章明确移动推送“依赖客户环境到外部推送服务的出网通道”，因此推送必然需要出网，而 job-worker 不应成为第二个出网进程。本阶段的处理是：推送的编排与载荷组装留在 job-worker，出网动作交由 integration-gateway 执行。影响范围为 integration-gateway 新增一个内部端点与一个出口适配器，其 cgroup、系统账户、数据库池上限均不变。提议基线第 2 节的 integration-gateway 职责描述修订为“承载电子签章与移动推送两类出口”，并同时明确：规格第 15.1 章的 `EXTERNAL_SYSTEM` 错误分类首版仍仅指电子签章，推送失败不进入该分类、不进入错误率口径，因为推送不是任何提醒的保证渠道。
+偏离一，移动推送出口的进程归属。基线第 2 节把 integration-gateway 定为“首版唯一的对外出网进程，只承载电子签章一类出口”，同时把“站内通知与推送投递”列为 job-worker 职责。规格第 5.1 章明确移动推送“依赖客户环境到外部推送服务的出网通道”，因此推送必然需要出网，而 job-worker 不应成为第二个出网进程。本阶段的处理是：推送的编排与载荷组装留在 job-worker，出网动作交由 integration-gateway 执行。影响范围为 integration-gateway 新增一个内部端点与一个出口适配器，其资源单位、系统账户、数据库池上限均不变。提议基线第 2 节的 integration-gateway 职责描述修订为“承载电子签章与移动推送两类出口”，并同时明确：规格第 15.1 章的 `EXTERNAL_SYSTEM` 错误分类首版仍仅指电子签章，推送失败不进入该分类、不进入错误率口径，因为推送不是任何提醒的保证渠道。
 
 偏离二，二进制正文通道。基线第 5.1 节规定载荷为 `application/json`。附件正文的上传与下载无法用 JSON 承载。提议基线第 5.1 节增列一条例外：附件正文的分片上传与下载使用 `application/octet-stream`，路径限于 `/api/v1/platform/attachments/uploads/{session_id}/parts/{part_no}` 与 `/api/v1/platform/attachments/{id}/versions/{version_no}/content` 两类，其余一律 JSON。影响范围仅限这两条路径。
 
 偏离三，分片上传的幂等键落库豁免。基线第 5.4 节要求全部写请求的幂等键写入 `platform_msg.idempotency_keys`。分片 PUT 单次上传可产生 640 次写请求，为每次写一行幂等键在 7 天保留期内产生无谓膨胀，且分片具备 `(session_id, part_no, part_hash)` 这一自然幂等键。提议基线第 5.4 节增列：以自然幂等键判等的端点可豁免落库，豁免端点必须在基线中逐条登记，当前只有分片 PUT 一条。
 
 偏离四，保留期清理的 `DELETE` 范围。基线第 3.6 节只允许在 `platform_msg` 的过期幂等键与 `platform_ops` 的过期指标快照上执行按期清理。本阶段需要清理 `outbox_events` 的 `DONE` 条目、`inbox_consumptions`、超过保留期的已读 `notifications` 与其 `notification_deliveries`、超过保留期的已结束 `process_instances` 及其 `process_steps` 与 `process_timers`、终态 `upload_sessions` 与 `upload_parts`。提议基线第 3.6 节把允许清理的清单扩展为上述七类，并同时明确永不清理的清单：`audit_events`、`audit_segments`、`audit_anchors`、`dead_letters`、`attachment_objects`、`attachment_versions`、`scan_results`、`process_compensations`。清理任务必须保证 `inbox_consumptions` 保留期严格长于 `outbox_events` 的 `DONE` 保留期，该断言进启动自检。
-偏离五，删除基线第 7.3 节的自检项 `license-and-modules-consistent`，并为自检项引入两级取值域。该项的三条判据判读的是 `module_registrations`、`license_grants`、`feature_flags` 三张表的行与当前启用命名用户数，属运行期可变的业务数据；而规格第 3.4 章明写许可到期后进入宽限期与受限运行、平台不因许可状态停机、用量超过上限时不阻断业务、身份四项处置在任何许可状态下均可用。两者直接冲突：这台服务器没有备节点，该项失败即全部进程拒绝启动，规格设计的受限运行态与四项身份处置全部不可达，而此时唯一可行的恢复动作恰是手工改库。提议基线第 7.3 节把该项整项删去；该提议已并入裁定 C-25 的整体处置，基线现行为十项，三条判据按第 3.4.11 节改由 `ModuleLicenseQuery` 的运行期判定、受限运行与超用事件承接。同时提议基线第 7.3 节为 `SelfCheckItem.severity` 定义取值域 `Blocking` 与 `Degrading`：判读配置、目录、权限位、密钥与数据库可达性的项取 `Blocking`；判读登记一致性且有明确运行期后果的项取 `Degrading`，失败时写 `platform_ops.degradation_windows` 并告警而不阻止启动；`--check` 对两级一律非零退出，把闸门放在部署与升级前置而不是进程启动。
+偏离五，删除基线第 7.3 节的自检项 `license-and-modules-consistent`，并为自检项引入两级取值域。该项的三条判据判读的是 `module_registrations`、`license_grants`、`feature_flags` 三张表的行与当前启用命名用户数，属运行期可变的业务数据；而规格第 3.4 章明写许可到期后进入宽限期与受限运行、平台不因许可状态停机、用量超过上限时不阻断业务、身份四项处置在任何许可状态下均可用。两者直接冲突：这台服务器没有备节点，该项失败即全部进程拒绝启动，规格设计的受限运行态与四项身份处置全部不可达，而此时唯一可行的恢复动作恰是手工改库。提议基线第 7.3 节把该项整项删去；该提议已并入裁定 C-25 的整体处置，基线现行为十项，三条判据按第 3.4.11 节改由 `ModuleLicenseQuery` 的运行期判定、受限运行与超用事件承接。同时提议基线第 7.3 节为 `SelfCheckItem.severity` 定义取值域 `Blocking` 与 `Degrading`：判读配置、目录、NTFS ACL、密钥与数据库可达性的项取 `Blocking`；判读登记一致性且有明确运行期后果的项取 `Degrading`，失败时写 `platform_ops.degradation_windows` 并告警而不阻止启动；`--check` 对两级一律非零退出，把闸门放在部署与升级前置而不是进程启动。
 
 #### 3.12.2 澄清项，共三项，属基线内部张力，本阶段按下列口径执行
 

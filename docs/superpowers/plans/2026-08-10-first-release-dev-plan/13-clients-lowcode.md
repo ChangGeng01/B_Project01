@@ -16,7 +16,7 @@
 
 1. core-server 内新增的低代码建模 API、扩展登记 API、客户端引导 API 与能力闸中间件，以及在阶段 3b 最小发布通道之上扩展的配置发布 API，全部经 `/api/v1/platform/...` 暴露，可用 `curl` 完成第 5 节全部端点的往返。
 2. job-worker 内在阶段 3b 发布执行器之上扩展的 DDL 段编排、在线 DDL 执行器、派生存储重新打标任务、扩展自动停用巡检，可由 Outbox 事件驱动跑通一次含 DDL 的发布与一次回退。
-3. plugin-host 进程从空壳变为可用宿主：可加载签名 WASM Component、按能力清单裁剪输入、按资源限额中止执行、把结果经 `/run/ep/ipc/plugin.sock` 返回给 core-server 与 job-worker，且该进程的数据库连接数恒为 0。
+3. plugin-host 进程从空壳变为可用宿主：可加载签名 WASM Component、按能力清单裁剪输入、按资源限额中止执行、把结果经 `\\.\pipe\ep-plugin` 命名管道返回给 core-server 与 job-worker，且该进程的数据库连接数恒为 0。
 4. `platform_meta` 下 19 张新表与其迁移文件、回退说明、种子数据（能力等价矩阵 18 行乘 4 端共 72 行），以及对阶段 3b 已建的 `config_packages`、`config_package_items`、`config_release_orders` 三张表的列扩展与状态扩展。
 5. `docs/error-codes.md` 新增 37 条错误码、`docs/event-catalog.md` 新增 10 个事件类型、`docs/data-dictionary.md` 新增 19 张表条目，三处与代码常量表由 CI 校验一致。本阶段引用但由阶段 1 登记的 `PLATFORM.CONCURRENCY.STALE_VERSION`、`PLATFORM.AUTHZ.NOT_FOUND_OR_DENIED` 与 `PLATFORM.DB.MIGRATION_WINDOW_CLOSED` 三条不计入本阶段条数，见裁定 C-24。
 
@@ -61,7 +61,7 @@ T0 不要求本阶段的下列各项，它们一律排在阶段 11 之后：白�
 | ep-platform-meta | core-server、job-worker | 自定义对象与字段与关系与索引与视图的建模、在线 DDL 计划与影响分析、界面布局、能力等价矩阵判定、声明式规则 AST 与解释器实现 `AstRuleEvaluator`、自定义对象向权限与流程与搜索与报表的注册端口、六个 CUSTOM_ 与 UI_LAYOUT 类 `ConfigItemApplier` 实现 | 只依赖 ep-foundation 与其他 ep-platform-*，无 sqlx、无 reqwest |
 | ep-platform-release | core-server、job-worker | 本 crate 由阶段 3b 按裁定 A-27 交付最小发布通道，`ConfigItemApplier` 端口与 `ConfigItemApplierRegistry` 由阶段 3a 按裁定 A-19 交付；本阶段在其上扩展内容项差异算法、把发布状态机由阶段 3b 的六态补齐为十一态、段二按 `sort_no` 升序的 applier 调用与回退时的逆序 `revert` 编排、自动测试结论的记录与守卫判定（判据只读 `platform_meta.config_autotest_runs` 的 `outcome` 列，本 crate 不执行任何 suite）；DDL 段编排与在线 DDL 执行落在 job-worker，见第 1.1 节第 2 项与裁定 B-03 | 依赖 ep-foundation、ep-platform-audit、ep-platform-outbox 三项，与阶段 3 计划为 3b 段所定的边集逐项相等，本阶段不为本 crate 新增任何依赖；本 crate 一律不反向依赖任何 `ConfigItemApplier` 属主 crate，含 ep-platform-meta、ep-platform-flow、ep-platform-notify、ep-platform-authz 与 ep-app-reporting |
 | ep-adapter-wasm | plugin-host | wasmtime Component 宿主、能力清单裁剪、燃料与内存与时限限额、编译缓存、宿主导入函数四件套；实现类型 `WasmtimeComponentCompute` 是阶段 3b 定义的 `ep_platform_flow::port::WasmComputePort` 的进程内执行实现，装配进 `apps/plugin-host`，见裁定 B-05 与 H-02 | adapter 层，不依赖 application，也不依赖任何其他 ep-adapter-*；其余依赖按基线第 1.3 节允许项第六条，本 crate 取 ep-foundation、`ep_platform_flow::port` 的端口 trait 与第三方 wasmtime |
-| ep-adapter-ipc | plugin-host、core-server、job-worker | 复用基线第 2 节已定的帧格式，新增 plugin 通道的服务端与客户端；实现类型 `PluginHostWasmCompute` 是 `ep_platform_flow::port::WasmComputePort` 的跨进程实现，经 `/run/ep/ipc/plugin.sock` 转发至 plugin-host，装配进 `apps/core-server/src/wiring/` 与 `apps/job-worker/src/wiring/` 两个目录，见裁定 B-05 与 H-02；plugin 通道的请求体与响应体即该端口的入参与出参类型，取自 `ep_platform_flow::port`，本 crate 不另立第二套 DTO | adapter 层，不依赖 application，也不依赖任何其他 ep-adapter-*；其余依赖按基线第 1.3 节允许项第六条，本 crate 依赖 ep-platform-runtime 以实现基线第 1.2 节所定的 IPC 服务端接口，依赖 ep-platform-flow 以实现 `WasmComputePort` |
+| ep-adapter-ipc | plugin-host、core-server、job-worker | 复用基线第 2 节已定的帧格式，新增 plugin 通道的服务端与客户端；实现类型 `PluginHostWasmCompute` 是 `ep_platform_flow::port::WasmComputePort` 的跨进程实现，经 `\\.\pipe\ep-plugin` 命名管道转发至 plugin-host，装配进 `apps/core-server/src/wiring/` 与 `apps/job-worker/src/wiring/` 两个目录，见裁定 B-05 与 H-02；plugin 通道的请求体与响应体即该端口的入参与出参类型，取自 `ep_platform_flow::port`，本 crate 不另立第二套 DTO | adapter 层，不依赖 application，也不依赖任何其他 ep-adapter-*；其余依赖按基线第 1.3 节允许项第六条，本 crate 依赖 ep-platform-runtime 以实现基线第 1.2 节所定的 IPC 服务端接口，依赖 ep-platform-flow 以实现 `WasmComputePort` |
 | ep-foundation | 全部 | 本阶段不新增也不改动 foundation 类型：`Tx`、`SnapshotCtx`、`UnitOfWork` 由阶段 1 按裁定 A-01 在 `port::tx` 中冻结，`SecurityContext` 与 `ClientKind` 按裁定 A-03 冻结，`ModuleCode`、`CapabilityDomain`、`ActionClass` 按裁定 A-20 冻结，`Redacted<T>` 同由阶段 1 提供，本阶段只引用 | 不依赖工作区内任何 crate |
 | ep-platform-obs | ops-agent | 注册本阶段 9 个新指标 | 只登记，不改结构 |
 
@@ -528,7 +528,7 @@ pub enum ChangeKind { Add, Modify, Remove }
 4. 移动端遇到 `requires_wasm` 为真的规则时不求值，单据保存为本地草稿并置 `pending_central_validation`，不产生正式业务记录也不产生正式会计分录，照抄规格第 6.2 章与第 6.3 章。恢复连接后按该业务模块的正常提交端点提交，中心执行全部规则并把“该单据曾以待中心校验草稿提交”写入审计。
 5. 联网状态下客户端可调用 `POST /api/v1/platform/rule-evaluations/actions/evaluate` 获得与中心一致的预校验结果，该端点只读不写，不建立业务记录。
 6. 桌面端同样不在本地执行 WASM 计算，首版 WASM 宿主只在服务端 plugin-host 中存在，照抄规格第 9.3 章“首版服务端只有这一种扩展形态”。
-7. 实现类型按裁定 B-05 固定：规则求值实现类型为 `AstRuleEvaluator`，位于 `crates/platform/meta/src/rule/`，装配进 core-server，实现阶段 3b 定义的 `ep_platform_flow::port::RuleEvaluator`；WASM 计算的跨进程实现类型为 `PluginHostWasmCompute`，位于 `crates/adapter/ipc/`，装配进 `apps/core-server/src/wiring/` 与 `apps/job-worker/src/wiring/` 两个目录，实现阶段 3b 定义的 `ep_platform_flow::port::WasmComputePort`，其调用经 `/run/ep/ipc/plugin.sock` 转发至 plugin-host；plugin-host 侧的进程内执行实现类型为 `WasmtimeComponentCompute`，位于 `crates/adapter/wasm/`，装配进 `apps/plugin-host`，实现同一端口；`ep-adapter-wasm` 与 `ep-adapter-ipc` 互不依赖，见裁定 H-02。`POST /api/v1/platform/rule-evaluations/actions/evaluate` 只调用 `AstRuleEvaluator`，本阶段不新建第二条求值路径。
+7. 实现类型按裁定 B-05 固定：规则求值实现类型为 `AstRuleEvaluator`，位于 `crates/platform/meta/src/rule/`，装配进 core-server，实现阶段 3b 定义的 `ep_platform_flow::port::RuleEvaluator`；WASM 计算的跨进程实现类型为 `PluginHostWasmCompute`，位于 `crates/adapter/ipc/`，装配进 `apps/core-server/src/wiring/` 与 `apps/job-worker/src/wiring/` 两个目录，实现阶段 3b 定义的 `ep_platform_flow::port::WasmComputePort`，其调用经 `\\.\pipe\ep-plugin` 命名管道转发至 plugin-host；plugin-host 侧的进程内执行实现类型为 `WasmtimeComponentCompute`，位于 `crates/adapter/wasm/`，装配进 `apps/plugin-host`，实现同一端口；`ep-adapter-wasm` 与 `ep-adapter-ipc` 互不依赖，见裁定 H-02。`POST /api/v1/platform/rule-evaluations/actions/evaluate` 只调用 `AstRuleEvaluator`，本阶段不新建第二条求值路径。
 
 #### 4.6 配置发布执行与回退算法
 
@@ -825,7 +825,7 @@ pub trait ConfigItemApplier: Send + Sync {
 | EP__PLUGIN__EPOCH_TICK_MS | u32 | 100 | 启动时生效 |
 | EP__PLUGIN__CALL_TIMEOUT_MS__TRANSACTIONAL | u32 | 2000 | 启动时生效 |
 | EP__PLUGIN__CALL_TIMEOUT_MS__WORKER | u32 | 30000 | 启动时生效 |
-| EP__PLUGIN__COMPILE_CACHE_DIR | path | "/var/lib/ep/plugin-host/cache" | 启动时生效 |
+| EP__PLUGIN__COMPILE_CACHE_DIR | path | "C:\EP\plugin-host\cache" | 启动时生效 |
 | EP__PLUGIN__AUTO_DISABLE_FAILURE_THRESHOLD | u8 | 3 | 启动时生效 |
 | EP__PLUGIN__TRUSTED_SIGNER_SUBJECTS | list of string | 空 | 启动时生效，为空时不加载任何扩展 |
 | EP__BRAND__ACTIVE_PROFILE_CODE | string | "default" | 下次引导生效 |
@@ -1021,8 +1021,8 @@ pub trait ConfigItemApplier: Send + Sync {
 | 9.2 配置发布 | 开发测试与生产隔离；配置进入 Git 经差异审查、自动测试、审批与签名；验证失败阻止生产发布 |
 | 9.3 模块与插件 | 签名 WASM Component；SDK 以 Rust 为主；插件默认无网络、文件、密钥与业务数据权限；必须声明能力、对象、字段与资源限额；权限经审批后最小授予；不能直连核心数据库也不能读取明文机密；扩展运行时三种形态；桌面端原生插件的九项安全边界 |
 | 12.4 DLP 与隐私 | 桌面端与移动端的强制控制；关闭原生插件或设备不合规时的降级为门户端口径与只读预览禁止下载；降级事件与范围记入审计 |
-| 13.1 正式拓扑 | plugin-host 与核心同机，按第 9.3 章承载服务端签名 WASM 组件；原列的插件运行时份额一项按己-1 的裁定恢复，plugin-host slice 由阶段 1 的 drop-in 承载规格第 13.1 章插件运行时一行的 `CPUWeight`、`IOWeight`、`MemoryLow` 与 `MemoryMax` 四项；该行的突发上限外壳在首版无承载，插件运行时的过载处置仍由第 4.8 节的燃料上限、内存上限、实例数上限与执行时限承担，两者不构成同一件事的两个闸门 |
-| 15.3 运维中心 | 本阶段 9 个指标进入运维中心；插件调用被限流与被资源上限中止的事件记入运维中心，原列的配额触发限流一项保留删除，但理由不再是总览第 6.3 节 R10：己-1 的裁定所恢复的四类取值是两个相对权重与内存的保底值和上限，权重列只在争用时按比例分配、不产生「配额触发限流」这一被测量，突发上限一列在首版无承载，故该判据的 cgroup 侧在首版取值集合下不存在 |
+| 13.1 正式拓扑 | plugin-host 与核心同机，按第 9.3 章承载服务端签名 WASM 组件；原列的插件运行时份额一项按己-1 的裁定恢复，其承载物按裁定 F-08 第 4.1 节改为具名 Job Object，即基线第 2 节所载 plugin-host 的资源单位 app-plugin，由服务宿主层在 `ServiceMain` 早期读取阶段 1 交付的 `deploy/` 下静态限额文件后自我指派；plugin-host 是八个自研二进制之一，走自我指派一路，不走运维代理指派一路。规格第 13.1 章插件运行时一行的四类取值逐类判：内存硬上限一列保留并落 `JOB_OBJECT_LIMIT_JOB_MEMORY`；原与之同值的内存保底一列按做不到二删除，不得以最小工作集冒充，触限行为为分配失败返回错误而不是内核终止进程；磁盘 IO 份额一列按做不到一删除，不得把绝对预留或绝对带宽上限写成份额；CPU 份额一列暂降为硬件标定与认证实测的意图声明、不落运行期取值，待该裁定第十二节实测清单第 2 项（并入附录庚五）出结论后重开，其重新生效谓词取机器可观测的事实——一旦该静态限额文件出现插件运行时一行的 CPU 取值行即自动转为有运行期承载。该行的突发上限外壳在首版无承载，其折算规则按补裁甲在本平台被乘数消失、整条不成立；插件运行时的过载处置仍由第 4.8 节的燃料上限、内存上限、实例数上限与执行时限承担，两者不构成同一件事的两个闸门，且按补裁丑第 4.8 节各项是应用层闸门、不依赖操作系统机制，一字不动 |
+| 15.3 运维中心 | 本阶段 9 个指标进入运维中心；插件调用被限流与被资源上限中止的事件记入运维中心，原列的配额触发限流一项保留删除，但理由不再是总览第 6.3 节 R10：己-1 的裁定所恢复的四类取值按裁定 F-08 第 4.1 节在本平台只剩内存硬上限一列有运行期承载——内存保底与磁盘 IO 份额两列删除、CPU 份额一列暂降为意图声明不落运行期取值、突发上限一列无承载——而内存硬上限触限的表现是分配失败返回错误、不是节流，同样不产生「配额触发限流」这一被测量，故该判据的资源单位侧在首版取值集合下不存在；结论不变，理由由「权重列只在争用时按比例分配」换成本平台四类取值的实际存活情况。另按该裁定做不到三，「保底份额被击穿」一类事件的三个被测量（节流计数、内存 low 事件、IO 排队时延）在本平台全无对应物，该类事件整体删除，本阶段不得换一组看似对应的 Windows 计数器凑数 |
 | 17.2 自动化测试 | 四端端到端测试；数据库适配认证的自定义对象测试项与在线变更实测；派生存储越权与传播测试；模块生命周期测试 |
 | 17.3 强制不变量 | 权限不能跨法人、字段或密级越权；审计链可验证 |
 | 18 升级、版本与生命周期 | 客户端支持分批发布与强制安全更新 |
@@ -1064,7 +1064,7 @@ pub trait ConfigItemApplier: Send + Sync {
 | Tauri 2 移动端成熟度不足，附录 C.2 门槛在本阶段未通过 | 四端等价验收不成立 | 本阶段的 UI 层与 Rust 核心之间只有 Tauri IPC 一层桥；Rust 核心接口语义由阶段 1 冻结的 `ep-foundation` 服务端类型与本阶段第一批的 `ep-client-core` 共同确定。PoC 首测的承接批次按己-3 的裁定二选一，在使用方表态之前本格没有前置判定控制，敞口全部落在处置列 | 按规格第 6.1 章切换 Flutter UI。返工范围为规格第 6.1 章列明的 IPC 桥改 FFI 桥、移动端生命周期与后台任务适配、推送、深链、平台插件与外设适配层，再加裁定 A-23 下沉到阶段 5 至阶段 12 的 `clients/mobile/src/modules/<module>/` 模块目录及其 XCUITest 与 Espresso 用例；规格第 6.1 章那份返工清单成文于 A-23 之前，不含后一项。Rust 核心九个 crate 不动 |
 | `create index concurrently` 在基准数据集上超过 30 分钟 | 新增索引失去在线变更能力，触及规格第 7.4 章的在线能力底线 | 影响分析的性能项在计划阶段外推并给出预警；单次计划语句数上限 200 | 该操作登记入停机窗口操作清单；若新增索引整体无法达到底线，按规格第 7.4 章交付说明必须明确降级为停机窗口变更，不得以在线 DDL 能力通过认证 |
 | DDL 与元数据无法同事务导致的中间态 | 出现 ACTIVE 元数据而物理表缺失，或物理表存在而未开启行级安全 | 两阶段写入加启动自检项 `custom-object-ddl-consistent`；集成测试 6 专测该场景 | 进程照常启动，把相关对象置 DDL_FAILED 并隔离其全部入口，开一个 kind 取 `CUSTOM_OBJECT_DDL_INCONSISTENT` 的降级窗口并给出具体对象清单，由修复用例补建策略后关窗 |
-| 插件执行占用同机资源影响交易时延 | 规格第 16 章 3 秒通过线受损 | plugin-host 独立 slice 按基线第 2 节带 `CPUWeight`、`IOWeight`、`MemoryLow` 与 `MemoryMax` 四项，不设突发上限；单次调用按第 4.8 节设燃料上限、内存上限与实例数上限；交易路径调用时限 2000 毫秒；调用在事务外 | 并发实例数达到 `EP__PLUGIN__MAX_INSTANCES` 时限流其调用并记入运维中心；按第 4.8 节以 outcome `THROTTLED` 落一行 `platform_meta.extension_invocations`，向调用方返回 `PLATFORM.EXTENSION.HOST_UNAVAILABLE`（category `INFRASTRUCTURE`、HTTP 429、retryable 为真），事件记入运维中心并计入附录 A.2 的错误率口径；本阶段不为限流开降级窗口，也不新增任何 `DegradationKind` 取值，见裁定 F-06 |
+| 插件执行占用同机资源影响交易时延 | 规格第 16 章 3 秒通过线受损 | plugin-host 独立资源单位 app-plugin 按基线第 2 节承载，本平台只有内存硬上限一列落运行期取值（`JOB_OBJECT_LIMIT_JOB_MEMORY`），内存保底与磁盘 IO 份额两列按裁定 F-08 做不到二与做不到一删除、CPU 一列暂降为硬件标定与认证意图声明待实测，不设突发上限；据此本格的资源侧控制在实测出结论前只剩内存一维，CPU 与磁盘 IO 两维不再对插件执行构成任何运行期约束，本阶段与交付材料不得表述为已覆盖；单次调用按第 4.8 节设燃料上限、内存上限与实例数上限，第 4.8 节各项是应用层闸门、不受本平台变更影响；交易路径调用时限 2000 毫秒；调用在事务外 | 并发实例数达到 `EP__PLUGIN__MAX_INSTANCES` 时限流其调用并记入运维中心；按第 4.8 节以 outcome `THROTTLED` 落一行 `platform_meta.extension_invocations`，向调用方返回 `PLATFORM.EXTENSION.HOST_UNAVAILABLE`（category `INFRASTRUCTURE`、HTTP 429、retryable 为真），事件记入运维中心并计入附录 A.2 的错误率口径；本阶段不为限流开降级窗口，也不新增任何 `DegradationKind` 取值，见裁定 F-06 |
 | WASM 宿主自身的漏洞成为越权入口 | 对应规格第 21.7 章风险 | 宿主导入函数只有四个且无网络、文件、密钥与数据库；能力清单与最小权限授予；输入按字段权限裁剪后才进入 IPC；plugin-host 数据库连接数为 0 | 按规格第 3.3 章在本实例内停用该扩展，停用决定、影响范围与恢复条件记入审计 |
 | 桌面端原生插件的子进程成为越权入口 | 对应规格第 21.7 章风险 | 子进程不共享客户端进程内存、不接收本地缓存密钥与会话令牌；传入报文按字段权限裁剪；签名主体、版本与哈希三项核对不通过即不加载 | 按规格第 3.3 章在本实例内停用该插件，停用决定、影响范围与恢复条件记入审计 |
 | 白标维护矩阵膨胀 | 对应规格第 21.8 章风险 | 单一核心加配置化品牌；客户不维护长期核心代码分支；构建、签名、灰度全流水线化；可复现构建使制品哈希可核对 | 品牌配置项清单冻结在 `brand_profiles` 的列集内，新增可配置项必须先改该表并回写 U-K-07 决策 |
@@ -1103,7 +1103,7 @@ pub trait ConfigItemApplier: Send + Sync {
 按基线第 0 节，下列各项在基线中未覆盖或需要追加，本阶段显式登记，阶段结束时回写基线。
 
 1. 客户端代码位置与 crate 命名。基线第 1.1 节只覆盖服务端 workspace。本阶段新增 `/clients/` 为独立 Cargo workspace，crate 前缀 `ep-client-`，通过路径依赖复用 `ep-foundation`、`ep-contract-*` 与 `ep-platform-meta`，禁止依赖 `ep-app-*` 与 `ep-adapter-db*`。edition 2021，禁止 nightly，与基线一致。桌面壳与移动壳分别位于 `/clients/desktop` 与 `/clients/mobile`，其 `src/modules/<module>/` 为业务模块界面目录，按裁定 A-23 由阶段 5 至阶段 12 各自交付，本阶段只建立目录约定与路由注册表。
-2. 非常驻工具目录。基线第 2 节的八个进程是常驻进程清单。本阶段新增 `/tools/` 目录承载 `epcfg`、`epbrand`、`epplug` 三个一次性命令行工具，不属于进程清单，不占用系统账户与 cgroup。
+2. 非常驻工具目录。基线第 2 节的八个进程是常驻进程清单。本阶段新增 `/tools/` 目录承载 `epcfg`、`epbrand`、`epplug` 三个一次性命令行工具，不属于进程清单，不占用系统账户与资源单位。
 3. 客户端本地加密缓存库选型。取 SQLCipher，经 rusqlite 的 bundled-sqlcipher 特性引入。理由是附录 C.2 要求本地加密数据库随机读写吞吐不低于 20 MB/s、10 万行查询 P95 不超过 1 秒，纯 Rust 的嵌入式库在加密路径上尚无同等实测证据。该选型只作用于客户端，不触及基线第 3 节的服务端数据库约定。
 4. 服务端 WASM 宿主选型。取 wasmtime 与 wasmtime-wasi，主版本在 workspace 根 `[workspace.dependencies]` 中锁定为 26 系列，只启用 Component Model，不启用任何 WASI 网络与文件能力。
 5. 部署级配置表的登记。本阶段涉及的 20 张部署级表不带 `legal_entity_id` 与 `data_scope_tags`，不建行级策略，其余公共列齐备，按基线第 3.8 节的正向登记制逐表在 `platform_core.unpoliced_table_registry` 登记一行，`admission_basis` 一律取 `SAME_FOR_ALL_ENTITIES`。其中 17 张由本阶段建立，其登记行由第 3.4 节第 14 号迁移 `V202704061005__platform_core_backfill_unpoliced_table_registry.sql` 一次写入；`config_packages`、`config_package_items` 与 `config_release_orders` 三张由阶段 3b 按裁定 A-27 建立，其登记行按同一正向登记制随阶段 3b 的建表迁移插入，本阶段不重复登记。理由见第 3.1 节。
