@@ -8,7 +8,7 @@
 //! 判紧了只是关不了账，运维会来问；判松了是不可逆的。两种错的代价不对称，
 //! 因此本模块的每一条判定都取**保守的那一侧**，并在下面逐条写明取的是哪一侧。
 
-use crate::model::{DiscrepancyState, ReconRunStatus};
+use crate::model::ReconRunStatus;
 use crate::registry::EXPECTED_REGISTERED_CHECK_COUNT;
 
 /// 关账受理被拒的原因。**逐条分开，不合成一个布尔**：
@@ -24,7 +24,10 @@ pub enum CloseBlocker {
     /// 对账跑完了但有检查项没跑到底。列出是哪几项——
     /// 与「有差异」是两回事：没跑到底意味着**那部分账实相符与否根本不知道**。
     ReconUnfinished { check_codes: Vec<String> },
-    /// 还有未了结的差异。
+    /// 本次校验检出了阻断性差异。
+    ///
+    /// **不叫「未了结」**：按裁定 F-13 没有「了结」这个动作，
+    /// 差异是修数据修掉的，不是标状态标掉的。
     OpenDiscrepancies { count: u32 },
     /// 还有未了结的死信。规格第 10.2 章的另一项前提。
     UnsettledDeadLetters { count: u32 },
@@ -54,7 +57,7 @@ impl std::fmt::Display for CloseBlocker {
                 check_codes.join("、")
             ),
             CloseBlocker::OpenDiscrepancies { count } => {
-                write!(f, "尚有 {count} 条未了结的对账差异")
+                write!(f, "本次校验检出 {count} 条阻断性差异；修复来源数据后重新发起关账")
             }
             CloseBlocker::UnsettledDeadLetters { count } => {
                 write!(f, "尚有 {count} 条未了结的死信")
@@ -85,8 +88,21 @@ pub struct CloseFacts {
     pub latest_run: Option<ReconRunStatus>,
     /// 该次运行里没跑到底的检查项。
     pub unfinished_check_codes: Vec<String>,
-    /// 该期间全部差异事项的状态。
-    pub discrepancies: Vec<DiscrepancyState>,
+    /// **本次 `PERIOD_CLOSE` 运行产出的、阻断性校验项的差异条数。**
+    ///
+    /// 按裁定 F-13：关账拦截的判据是**本次校验的校验项结论**，
+    /// 不是 `recon_discrepancies` 的累计行集。历史差异行是台账，不参与判定。
+    ///
+    /// 上一版这里是「该期间全部差异事项的状态」`Vec<DiscrepancyState>`，
+    /// 配 `!is_settled()` 过滤计数。那是错的，而且错得不显眼：
+    /// 三个已了结取值在首版**没有生产者**（F-13 结论四），`is_settled()` 因此恒假、
+    /// 过滤恒真，于是那个计数**一旦非零就再也减不回零**——
+    /// 一个期间只要出过一条差异就永远关不上账。附录辛第 14 条观察到的死锁，
+    /// 在代码里就是这一行。
+    ///
+    /// 现在的形状让「修数据、重跑、本次校验通过」这条规格逐字的解除路径能走通：
+    /// 新的一次运行不再检出差异，这个数就是零。
+    pub blocking_discrepancy_count: u32,
     /// 该法人该记账日期范围内未了结的死信条数。
     pub unsettled_dead_letters: u32,
     /// 受理时注册表里全部阻断性校验项的 code，取自 `ReconRegistry::blocking_codes`。
@@ -119,14 +135,9 @@ pub fn check_close_admission(facts: &CloseFacts) -> Vec<CloseBlocker> {
         Some(ReconRunStatus::Completed) => {}
     }
 
-    let open = facts
-        .discrepancies
-        .iter()
-        .filter(|s| !s.is_settled())
-        .count();
-    if open > 0 {
+    if facts.blocking_discrepancy_count > 0 {
         blockers.push(CloseBlocker::OpenDiscrepancies {
-            count: u32::try_from(open).unwrap_or(u32::MAX),
+            count: facts.blocking_discrepancy_count,
         });
     }
 
@@ -175,7 +186,7 @@ mod tests {
         CloseFacts {
             latest_run: Some(ReconRunStatus::Completed),
             unfinished_check_codes: Vec::new(),
-            discrepancies: vec![DiscrepancyState::Repaired, DiscrepancyState::Waived],
+            blocking_discrepancy_count: 0,
             unsettled_dead_letters: 0,
             registered_blocking_check_codes: roster(),
             executed_check_codes: roster(),
@@ -194,7 +205,6 @@ mod tests {
     fn never_reconciled_is_not_the_same_as_no_discrepancy() {
         let facts = CloseFacts {
             latest_run: None,
-            discrepancies: Vec::new(),
             ..clean()
         };
         let blockers = check_close_admission(&facts);
@@ -207,7 +217,6 @@ mod tests {
         let facts = CloseFacts {
             latest_run: Some(ReconRunStatus::Unfinished),
             unfinished_check_codes: vec!["SUB_VS_LED_AR".into(), "INV_QTY_VALUE".into()],
-            discrepancies: Vec::new(),
             ..clean()
         };
         match &check_close_admission(&facts)[..] {
@@ -218,16 +227,43 @@ mod tests {
         }
     }
 
-    /// 修复中的差异不算了结。
+    /// 本次校验检出的阻断性差异即拦关账。
+    ///
+    /// 按裁定 F-13 这个数只统计**本次运行**的差异，历史行不进来——
+    /// 于是「修数据、重跑、本次不再检出」这条规格逐字的解除路径能走通。
+    /// 上一版这里统计的是该期间全部差异事项里「未了结」的那些，
+    /// 而三个已了结取值首版没有生产者，那个过滤恒真、计数只增不减。
     #[test]
-    fn repairing_discrepancy_still_blocks() {
+    fn discrepancies_found_by_this_run_block_the_close() {
         let facts = CloseFacts {
-            discrepancies: vec![DiscrepancyState::Repairing, DiscrepancyState::Repaired],
+            blocking_discrepancy_count: 1,
             ..clean()
         };
         assert_eq!(
             check_close_admission(&facts),
             vec![CloseBlocker::OpenDiscrepancies { count: 1 }]
+        );
+    }
+
+    /// 解除路径必须走得通：同一个期间，上一次跑出过差异、这一次没跑出，
+    /// 就该放行。**不需要任何人给历史差异行改状态。**
+    /// 这一条是 F-13 结论二在代码里的被测对象——
+    /// 累计口径的实现过不了它，因为历史行永远在。
+    #[test]
+    fn a_rerun_with_no_discrepancy_releases_the_close() {
+        let blocked = CloseFacts {
+            blocking_discrepancy_count: 3,
+            ..clean()
+        };
+        assert!(!check_close_admission(&blocked).is_empty());
+
+        let after_repair = CloseFacts {
+            blocking_discrepancy_count: 0,
+            ..clean()
+        };
+        assert!(
+            check_close_admission(&after_repair).is_empty(),
+            "修好数据重跑之后必须能关账，否则「差异清零前不得关账」就是死锁"
         );
     }
 
@@ -237,7 +273,7 @@ mod tests {
     fn all_blockers_are_reported_at_once() {
         let facts = CloseFacts {
             latest_run: Some(ReconRunStatus::Failed),
-            discrepancies: vec![DiscrepancyState::Open, DiscrepancyState::Open],
+            blocking_discrepancy_count: 2,
             unsettled_dead_letters: 3,
             ..clean()
         };
