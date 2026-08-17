@@ -4229,6 +4229,171 @@ F-20 结论六已判它为第二类缺陷删除，且它是两段码、撞 docs/
 | 辛-22 | `object_scope_bindings` 只在阶段 4 出现，阶段 5–14 无一登记，而口径是「未登记一律拒绝」 | 须走裁定 |
 | 辛-23 | 三个例外端口的 trait 不存在，而三条 `PORT_NOT_IMPLEMENTED` 降级窗口的 subject 要取其类型名 | 须走裁定 |
 
+### F-22　裁定附录辛第 22 条：`object_scope_bindings` 无生产方
+
+候选稿五条要点**全部被对抗性核查打掉**。更要紧的是，**辛-22 登记稿本身有三处夸大、
+一处方向说反了**。本裁定先更正登记，再作判。
+
+#### 结论零　登记稿四处更正，其中一处是方向反了
+
+登记稿逐字「后果与辛-16 同形而覆盖面是**全部业务模块的全部对象：所有列表与详情端点的
+记录级判定恒为拒绝**。这是「取不到的取值」在本卷最大的一处。」——四处都要改：
+
+**一、「所有列表与详情端点」今天一个都没有。** 16 个业务 schema 的迁移目录**各只有 1 个
+文件**，业务表一张未建。这句在将来为真、在今天为假。
+
+**二、方向反了，而且实情更严重。** 今天在线的 `/api/v1/platform/` 路由共 **33 条**，
+经 `apps/core-server/src/main.rs` 的 `platform::middleware::authenticate` 层之后
+**没有任何授权层**：`AccessDecider` 全仓命中 **5** 处、**全部在 `crates/platform/authz/`
+crate 内部**（`lib.rs:25` 的 `pub use` 与 `decider.rs` 的定义、impl、两处测试夹具），
+**零个生产调用点**；反向依赖复核同向——依赖 `ep-platform-authz` 的三个 crate 取的是
+`AdmissionGate`、`sod::check_duty_exclusion`、`types::hex_*`、`applier::*`，**无一处取
+`AccessDecider`**。
+**所以今天的形态不是「未登记 → 一律拒绝」，是「根本不判」。** 登记稿把一个 fail-open 的
+现状写成了 fail-closed 的现状。
+
+**三、判定层级说错了。** 登记稿说是「记录级判定」。实现把它放在**阶段一之前的前置硬条件**：
+`crates/platform/authz/src/decider.rs:76-83` 逐字
+「// 前置硬条件：无角色直接拒；未登记对象类型拒范围绑定缺失。」
+该检查只吃 `object_type` 一个入参，早于取法人分片、早于任何仓储取行。
+这处夸大同时误导了半径：它让人以为拒绝逐条记录发生，实际是**整个对象类型一次性挡掉**。
+
+**四、「本卷最大的一处」量级说反了。** 同一个 crate 里有一处更大且方向相反的：
+`crates/platform/authz/src/field.rs:43-46` 的 `NoSensitiveFields` 是
+`SensitiveFieldLookup` 的**唯一实现**，逐字恒返回 `None`；配 `field.rs:92-97` 逐字
+「// 无授权行：非敏感字段原样透传；加密列不得透传密文。」——
+**字段级在空登记表下是 fail-open 原样透传**。
+**一个 fail-closed 的空登记表比一个 fail-open 的空登记表安全一个数量级。
+登记稿把较安全的那一个封为「最大的一处」。**
+
+#### 结论一　今天唯一可复算的实体缺陷，在阶段 4 自己的交付物内部
+
+`db/migrations/platform_authz/` 下两份种子实测：`permission_items` 种子有 **9** 个
+`object_type` 取值，`object_scope_bindings` 种子只有 **3** 行
+（`platform.user_accounts`／`platform.roles`／`platform.high_risk_requests`）。
+差集六个：`contract_effective`、`payment`、`invoice_issue`、`ledger_posting`、
+`period_close`、`sensitive_export`。`permission_items.object_type` 上既无外键也无 CHECK。
+
+登记稿只说「阶段 5–14 无一登记」，**没查出阶段 4 自己已经差 6 行**。这是低估，一并记。
+
+#### 结论二　但这 6 行差集**不能当判据**，因为两侧同源
+
+候选稿把 `permission_items.object_type` 立为「不由登记方产生的独立期望名册」，
+以它为左集合做双向反连接。**该支点被那份迁移自己的注释逐字打掉**：
+`V20261012112000__platform_authz_backfill_permission_item_seed.sql:13-14` 逐字
+「六类操作对应的业务对象尚未登记 object_scope_bindings，其 object_type
+**暂取操作码自身**保持自洽，业务对象登记与其权限项细化**归其所属阶段**」。
+
+两层同时塌：其一，**两张表的生产权在同一句话里判给同一方**，不是独立来源；
+其二，那 6 个 `object_type` 是**作者自陈的占位值**，不是任何权威点名的名册——
+所谓「6 行差值」实为同一作者在同一批里给自己留的占位。
+加上左集合自己也没有生产者（辛-21 已裁），该判据在两种情形下探测力都归零：
+阶段 5–14 什么都不写 → 两侧同为空、差集空；要写 → 权限项行与 binding 行是**同一次编写动作**。
+
+对照本卷唯一被证明有效的独立名册形态——`crates/platform/recon/src/registry.rs` 那条
+逐字「这个数是**独立于注册表本身**的一个来源，正因如此它才有用：
+注册表只装得下已经注册进来的东西，拿它自己的内容当期望值，**期望与实际必然相等、
+差集恒空——那样的覆盖面判定是恒真的**」。**本条正是那种恒真。**
+
+#### 结论三　计划与实现对判定分期的说法冲突，先裁这个
+
+- **计划**：04:346 逐字「3. **阶段三**。按 object_type 从 object_scope_bindings 取范围锚列；
+  未登记直接 Deny(ScopeBindingMissing)」，而 04:330 把阶段三定名为**记录级**。
+- **实现**：`decider.rs:76-83` 把它提到**阶段一之前**，逐字注释「前置硬条件」。
+
+**两种读法给出相反的对外形态**：按计划它是记录级判定的产物，落进 04:529
+「用例把 None 与记录级判定失败映射到**同一个错误分支**，两条路径共用同一段构造代码，
+**禁止分别构造**」的射程；按实现它不落进。
+
+**判：以实现为准，同批改 04:346 的分期措辞。**
+理由：前置位对同一未登记类型，存在的 id 与不存在的 id 输出**同一分支、同一构造、
+同一短路深度**，记录存在性信号恒为零——**这正是 04:529 想保护的东西，前置位比记录级位
+保护得更彻底**。
+
+同批修一处已有互斥：docs/error-codes.md:21 逐字把 403 给「对该对象类型**完全无权**」，
+而同文件 :40 该码的触发条件逐字写「对象**已对当前主体可见**但该动作被拒」。
+以 :21 为准，:40 改写为覆盖两种形态。
+**并明写：改 :40 是静默的**——`xtask/src/errorcodes.rs` 只比 `code`/`category`/`http`/
+`retryable` 四列，触发条件是散文列，不在比对面内。
+
+#### 结论四　承接方：三条候选否掉两条，第三条今天也没有消费方
+
+**（甲）`ep-migrate check` 第 14 号脚本——否，三层静默。**
+（a）加文件不改常量数组则**脚本永不执行**：`tools/migrate/src/checks.rs` 的
+`numbered_checks_are_the_frozen_thirteen` 只断言常量自身，**从不读目录**；
+（b）改数组撞 D-04 冻结物，要独立裁定；
+（c）**决定性的一条：`ep-migrate` 在 `.github/`、`deploy/`、`scripts/` 全部零命中**，
+唯一两处是 `scripts/verify-release.sh` 的二进制名单——**没有任何自动化会调用它**。
+
+**（乙）启动期 Blocking 自检——否，但候选稿给的理由是错的。**
+候选稿引 01:201／00b:588 说「禁止判读业务数据行的 Blocking 项」。
+**那条禁令读错了**：01:201 的白名单逐字含「**数据库元数据**」，禁的是「业务数据行」；
+而且**反例已在库里**——`apps/core-server/src/main.rs:141-146` 今天就注册了一个
+`Severity::Blocking` 的 `authz-snapshot-loadable`，其 run 体读的正是 `object_bindings`。
+**真正的两条理由是别的**：
+一、`ext.*` 自定义对象由用户在**运行期**建出，其 `object_type` 在任何启动时刻**不可穷举**；
+二、今天差 6 行，Blocking 一旦生效 **T0 起不来**。
+
+**（丙）路由能力元组 + `configdoc`——形状对，但今天没有消费方。**
+00b:751 逐字「各阶段在本阶段的路由注册处一次性给出 `(CapabilityDomain, ActionClass)` 元组……
+`xtask configdoc` 断言每个 `/api/v1/` 路由都能解析到一个元组，**缺失即构建失败**」，
+而 `configdoc` 是 CI 第 6 阶段的 `delivered` 项——**这是全卷唯一一条已在跑的覆盖面门禁**。
+**但实测该元组今天被丢弃**：`apps/core-server/src/platform/identity.rs:526/530/534` 与
+`identity_admin.rs:679` 四处逐字 `for (path, handler, _capability) in …`——
+**下划线丢参**，全仓无消费方。
+
+#### 结论五　因此本裁定**不给出一条今天就能红的承接方**，如实说
+
+这不是判据可以推迟，是**承接方基础设施本身缺位**：全卷今天只有 CI 十一个阶段是自动的，
+而部署期闸门（`db/checks` 十三项、八个二进制的 `--check`）**一条都不在其内**。
+
+**处置：辛-22 的当事人换人。** 今天该裁的不是「登记表空」——
+登记表空在判定层未接线之前**不产生任何后果**。
+辛-22 降为**阶段 5 判定面接入时的前置条件**，并明写三条必须同批完成：
+一、六行差集补齐（或明写那六个 `object_type` 是占位、不进判定链）；
+二、`(CapabilityDomain, ActionClass)` 元组**停止用 `_` 丢弃**，接上 00b:751 的断言；
+三、`DenyReason` 到错误码的映射同批交付——今天**九个变体全部无对外映射**，
+`ScopeBindingMissing` 只有 `types.rs` 的指标标签 `"scope_binding_missing"` 一条线，
+而该线的填充路径自陈未接（`wiring/authz.rs` 逐字「判定面接入时／（阶段 5+）经此端到端填充」）。
+
+#### 结论六　普查查出一处**比辛-22 更彻底的缺陷：承接方是幻影**
+
+`db/checks/append_only_consistency.sql` 有**七处文档逐字指名**由 `xtask sqlcheck` 执行
+（db/README.md、db/checks/README.md、02:394、03:821、08:294、10:633，以及本文件 :1070
+逐字「检查脚本名固定为 `db/checks/append_only_consistency.sql`，由 `xtask sqlcheck` 执行」）。
+
+**实测：`xtask/Cargo.toml` 的 `[dependencies]` 只有 `serde` 与 `serde_json` 两条，
+没有任何 postgres 客户端——它物理上不可能执行一条活库 SQL 断言。**
+`append_only_consistency` 在 `xtask/` 下命中数为 **0**；
+`xtask/src/sqlcheck.rs` 的判定面逐字只有 `db/migrations` 与 `db/bootstrap`，不含 `db/checks`。
+
+**生产方齐全（阶段 3b/7/8/9a/10 各有 backfill 与退出条件）、消费方齐全（触发器）、
+门禁是幻影。** 它证明「登记了承接方」与「承接方存在」在本卷已经脱钩过一次，无人发现。
+登记为**辛-24**。
+
+#### 残余
+
+- **A** 部署期闸门**没有自动调用方**，这比辛-22 大——`db/checks` 十三项、
+  `append_only_consistency`、八个二进制的 `--check` 全挂在它下面。登记为**辛-27**
+- **B** `DenyReason` 九个变体全部无对外映射，本裁定只处理其中一个
+- **C** `ScopePredicateRenderer` 在 `crates/` 零实现，`object_scope_bindings` 八个业务列里
+  六个今天零读者——「登记值真伪」这类判据在渲染器交付前只能验列存在、验不了列语义
+- **D** `ext.*` 自定义对象在任何静态判据下都不可穷举，三条候选路径全覆盖不到
+- **E** 生产方形态与交付物已不一致：04:139 与该表迁移**两处逐字都写「各业务模块在其阶段的
+  wiring 中登记」**，而那三行实际由迁移自己 insert
+- **F** 辛-21 与辛-22 须同批，但依据要换——不是因为 `permission_items` 是判据
+  （那条已由结论二打掉），而是因为**两者的生产方在同一句迁移注释里被判给同一方**，
+  拆开裁会让两边各自等对方
+
+#### 新登记的附录辛条目
+
+| 编号 | 缺口 | 类 |
+|---|---|---|
+| 辛-24 | `append_only_consistency.sql` 的承接方是幻影：七处文档指名 `xtask sqlcheck`，而 xtask 无任何 postgres 客户端 | 须走裁定 |
+| 辛-25 | 字段级在空登记表下 fail-open 原样透传；敏感字段则静默 `continue`（无错误、无日志、无指标） | 须走裁定 |
+| 辛-26 | 路由能力元组被 `_capability` 丢弃，33 条在线端点今天无能力判定且无任何东西会报出来 | 须走裁定 |
+| 辛-27 | 部署期闸门无自动调用方：`ep-migrate` 与 `--check` 在 CI、deploy、scripts 全部零命中 | 须走裁定 |
+
 ## 附录丙　阶段 1 实测引出的同类缺陷登记
 
 本附录登记裁定 F-01 与 F-03 落地过程中，由三次同类缺陷普查查出的 22 条。
