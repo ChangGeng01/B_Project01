@@ -55,15 +55,15 @@ impl ReconRunKind {
 
 /// 一次对账运行的状态。
 ///
-/// `Unfinished` 与 `Failed` 是两回事，**不得合并**：前者是跑完了但有检查项没跑到底
-/// （例如单批超时终止），后者是运行本身出错。关账受理时前者要列出没跑到底的检查项、
-/// 后者要看错误——处置路径不同。
+/// **三个取值，`FAILED` 已由裁定 F-14 撤销。** 规格第 10.2 章把五类终止成因
+/// 全部归入「未完成」，阶段 14 的降级 kind 也只有对应未完成的一项；
+/// 保留 `FAILED` 就要一次配齐产生条件、关账状态机的新出边、降级承接方与改规格四件，
+/// 四件今天一件都没有。归因改由 [`TerminationCause`] 承担。
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum ReconRunStatus {
     Running,
     Completed,
     Unfinished,
-    Failed,
 }
 
 impl ReconRunStatus {
@@ -72,25 +72,71 @@ impl ReconRunStatus {
             ReconRunStatus::Running => "RUNNING",
             ReconRunStatus::Completed => "COMPLETED",
             ReconRunStatus::Unfinished => "UNFINISHED",
-            ReconRunStatus::Failed => "FAILED",
         }
     }
 
-    pub const ALL: [ReconRunStatus; 4] = [
+    pub const ALL: [ReconRunStatus; 3] = [
         ReconRunStatus::Running,
         ReconRunStatus::Completed,
         ReconRunStatus::Unfinished,
-        ReconRunStatus::Failed,
     ];
 }
 
-/// 差异事项的状态。四态，与 `platform_core.recon_discrepancies.state` 的 CHECK 一致。
+/// 一次运行未跑完的终止成因。五个取值取阶段 9 计划逐字，
+/// 由裁定 F-14 补为 `platform_core.recon_runs` 的一列。
+///
+/// 补这一列有两条理由。其一，`FAILED` 撤销之后，「运行本身出了什么事」
+/// 需要一个能写的地方——否则「无从归因的中断」并进 `UNFINISHED` 之后就没了归因。
+/// 其二，规格要求台账条目载明「已完成批次与**终止原因**」，
+/// 而 `termination_cause` 今天只长在 `ledger.period_close_requests` 上，
+/// `DAILY` 与 `RECOVERY_ACCEPTANCE` 两类运行无处可写。
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum TerminationCause {
+    BatchTimeout,
+    ResourceLimit,
+    /// 执行进程异常退出。
+    ///
+    /// **谁替死掉的进程写这一值，卷内没有答案**——没有看门狗、没有超时清理。
+    /// 裁定 F-14 明写这是卷内既有缺口（`ledger.period_close_requests` 上同样存在），
+    /// 不是本 crate 能补的。留着这个取值是因为规格逐字把它列为五类成因之一。
+    ProcessExit,
+    ConnectionRecycled,
+    /// 快照不可用，含建立失败与建立后失效。
+    SnapshotInvalid,
+}
+
+impl TerminationCause {
+    pub fn as_db_value(self) -> &'static str {
+        match self {
+            TerminationCause::BatchTimeout => "BATCH_TIMEOUT",
+            TerminationCause::ResourceLimit => "RESOURCE_LIMIT",
+            TerminationCause::ProcessExit => "PROCESS_EXIT",
+            TerminationCause::ConnectionRecycled => "CONNECTION_RECYCLED",
+            TerminationCause::SnapshotInvalid => "SNAPSHOT_INVALID",
+        }
+    }
+
+    pub const ALL: [TerminationCause; 5] = [
+        TerminationCause::BatchTimeout,
+        TerminationCause::ResourceLimit,
+        TerminationCause::ProcessExit,
+        TerminationCause::ConnectionRecycled,
+        TerminationCause::SnapshotInvalid,
+    ];
+}
+
+/// 差异事项的状态。**三态，`WAIVED` 已由裁定 F-14 撤销**。
+///
+/// 规格与 PRD 对对账差异全文没有「豁免」语义——差异是修数据修掉的，
+/// 不是标状态标掉的（见裁定 F-13 结论二）。裁定 F-10 已在另一张表上判过同形，
+/// 理由是那样的取值「落地后只能靠测试代码手工塞一个 UUID」。
+/// `REPAIRING` 与 `REPAIRED` 保留，它们在规格里有语义依据；首版仍无生产者，
+/// 由建表迁移把 CHECK 的取值域收为 `OPEN` 一值，次版开处置流时再放开。
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum DiscrepancyState {
     Open,
     Repairing,
     Repaired,
-    Waived,
 }
 
 impl DiscrepancyState {
@@ -99,18 +145,16 @@ impl DiscrepancyState {
             DiscrepancyState::Open => "OPEN",
             DiscrepancyState::Repairing => "REPAIRING",
             DiscrepancyState::Repaired => "REPAIRED",
-            DiscrepancyState::Waived => "WAIVED",
         }
     }
 
-    pub const ALL: [DiscrepancyState; 4] = [
+    pub const ALL: [DiscrepancyState; 3] = [
         DiscrepancyState::Open,
         DiscrepancyState::Repairing,
         DiscrepancyState::Repaired,
-        DiscrepancyState::Waived,
     ];
 
-    /// 是否已了结。**只有 `Repaired` 与 `Waived` 算了结。**
+    /// 是否已了结。**只有 `Repaired` 算了结**（`WAIVED` 已由 F-14 撤销）。
     ///
     /// # 首版恒假，因此不得拿它当闸门
     ///
@@ -123,7 +167,7 @@ impl DiscrepancyState {
     /// 把 `Repairing` 误判成已了结，会让一个正在修、还没修完的差异放行关账——
     /// 而关账之后那个期间就不再接受任何凭证写入，差异就永远修不掉了。
     pub fn is_settled(self) -> bool {
-        matches!(self, DiscrepancyState::Repaired | DiscrepancyState::Waived)
+        matches!(self, DiscrepancyState::Repaired)
     }
 }
 
@@ -142,20 +186,6 @@ pub struct ReconDiscrepancy {
     pub actual_amount: String,
     pub difference_amount: String,
     pub state: DiscrepancyState,
-    /// 豁免凭据。`Waived` 时必须非空——见 [`validate_waiver`]。
-    pub approval_ref: Option<String>,
-}
-
-/// 豁免必须带审批凭据。
-///
-/// 这条在库层有 CHECK 兜底，这里再判一次不是重复：库层的 CHECK 只在写入那一刻拦，
-/// 而调用方在构造这条记录、决定要不要豁免的时候就该被拦住——
-/// 让一个注定写不进去的记录一路走到数据库才被拒，错误信息离出错的地方太远。
-pub fn validate_waiver(d: &ReconDiscrepancy) -> Result<(), &'static str> {
-    if d.state == DiscrepancyState::Waived && d.approval_ref.as_deref().is_none_or(str::is_empty) {
-        return Err("豁免差异必须带审批凭据（approval_ref），不得空豁免");
-    }
-    Ok(())
 }
 
 /// 分批窗口。
@@ -198,19 +228,20 @@ pub struct ReconRunOutcome {
     /// 这是「未覆盖 ≠ 通过」最直接的破口，而它在阶段 9a 交付本体那一刻**必然发生**——
     /// 那时十五项里有十一项还不存在。
     pub executed_check_codes: Vec<String>,
-    /// 没跑到底的检查项。`Unfinished` 时非空，这是它与 `Failed` 的区别所在。
+    /// 没跑到底的检查项。`Unfinished` 时与 `termination_cause` 至少其一非空。
     pub unfinished_check_codes: Vec<String>,
+    /// 运行本身的终止成因。裁定 F-14 撤销 `FAILED` 之后由它承担归因。
+    pub termination_cause: Option<TerminationCause>,
 }
 
 impl ReconRunOutcome {
     /// 运行刚开始那一刻的结果。
     ///
-    /// **`Running` 这个取值在生产上大概率取不到**：`platform_core.recon_runs`
-    /// 按裁定 B-02 登记为仅追加表且可变列白名单为空数组，而仅追加表的
-    /// `BEFORE UPDATE OR DELETE` 触发器一律 raise——`RUNNING` 到终态的那次更新
-    /// 上线即被无条件拒绝，实现方只能绕过 `RUNNING` 直插终态。
-    /// 这一处矛盾已登记入裁定文件附录辛，本构造函数留着是因为 A-06 的取值域里有它、
-    /// 且关账闸门对它有一条分支；**不要据此认为它是一条活路径**。
+    /// **`Running` 是一条活路径**——裁定 F-14 已把 `recon_runs` 的登记
+    /// 由 `APPEND_ONLY` 改为 `IMMUTABLE_COLUMNS`，可变列取
+    /// `status`、`batch_done`、`finished_at`、`termination_cause` 四列，
+    /// 于是 `RUNNING` 到终态的更新走得通，而证据列（法人、运行类别、期间、
+    /// 快照标识、开始时刻与制品标识两列）仍不可改。
     pub fn running(run_id: Id<ReconRun>) -> Self {
         Self {
             run_id,
@@ -218,6 +249,7 @@ impl ReconRunOutcome {
             discrepancy_count: 0,
             executed_check_codes: Vec::new(),
             unfinished_check_codes: Vec::new(),
+            termination_cause: None,
         }
     }
 }
@@ -236,8 +268,13 @@ mod tests {
             "A-06 撤销了 CROSS_MODULE_LINK，跨 schema 单目标引用改建真实外键"
         );
         assert_eq!(ReconRunKind::ALL.len(), 3);
-        assert_eq!(ReconRunStatus::ALL.len(), 4);
-        assert_eq!(DiscrepancyState::ALL.len(), 4);
+        assert_eq!(ReconRunStatus::ALL.len(), 3, "FAILED 已由裁定 F-14 撤销");
+        assert_eq!(DiscrepancyState::ALL.len(), 3, "WAIVED 已由裁定 F-14 撤销");
+        assert_eq!(
+            TerminationCause::ALL.len(),
+            5,
+            "规格第 10.2 章逐字五类终止成因"
+        );
     }
 
     #[test]
@@ -251,50 +288,44 @@ mod tests {
             "RECOVERY_ACCEPTANCE"
         );
         assert_eq!(ReconRunStatus::Unfinished.as_db_value(), "UNFINISHED");
-        assert_eq!(DiscrepancyState::Waived.as_db_value(), "WAIVED");
+        assert_eq!(DiscrepancyState::Repaired.as_db_value(), "REPAIRED");
+        assert_eq!(TerminationCause::ProcessExit.as_db_value(), "PROCESS_EXIT");
     }
 
-    /// 只有已修复与已豁免算了结。把 REPAIRING 当成了结会放行关账，
+    /// 只有已修复算了结。把 `REPAIRING` 当成了结会放行关账，
     /// 而关账之后那个期间不再接受凭证写入，差异就永远修不掉了。
+    ///
+    /// **首版三个取值里只有 `OPEN` 有生产者**（裁定 F-13 结论四），
+    /// 因此这个方法在首版恒假；关账拦截不走它，走的是本次校验的校验项结论。
     #[test]
-    fn only_repaired_and_waived_are_settled() {
+    fn only_repaired_is_settled() {
         assert!(!DiscrepancyState::Open.is_settled());
         assert!(!DiscrepancyState::Repairing.is_settled());
         assert!(DiscrepancyState::Repaired.is_settled());
-        assert!(DiscrepancyState::Waived.is_settled());
     }
 
-    fn discrepancy(state: DiscrepancyState, approval: Option<&str>) -> ReconDiscrepancy {
-        ReconDiscrepancy {
-            check_code: "SUB_VS_LED_AR".to_string(),
-            subject_ref: "{}".to_string(),
-            expected_amount: "100.00".to_string(),
-            actual_amount: "90.00".to_string(),
-            difference_amount: "10.00".to_string(),
-            state,
-            approval_ref: approval.map(str::to_string),
-        }
-    }
-
-    /// 空豁免必须被拒：既不给凭据、又要豁免，等于无人负责地抹掉一条差异。
+    /// `WAIVED` 撤销之后，取值域里不得再出现它——包括 DB 取值这一侧。
+    /// 规格与 PRD 对对账差异全文没有「豁免」语义，一个没有语义依据的取值
+    /// 落地后只能靠测试代码手工塞一个凭据，那是裁定 F-10 判过的形态。
     #[test]
-    fn waiver_without_approval_is_rejected() {
-        assert!(validate_waiver(&discrepancy(DiscrepancyState::Waived, None)).is_err());
-        // 空串同样不算凭据——这是最容易漏的一种「有值但没用」。
-        assert!(validate_waiver(&discrepancy(DiscrepancyState::Waived, Some(""))).is_err());
-        assert!(validate_waiver(&discrepancy(DiscrepancyState::Waived, Some("appr-1"))).is_ok());
+    fn no_waived_value_survives_anywhere() {
+        let vals: Vec<&str> = DiscrepancyState::ALL
+            .iter()
+            .map(|s| s.as_db_value())
+            .collect();
+        assert!(!vals.contains(&"WAIVED"), "取值域里仍有 WAIVED：{vals:?}");
     }
 
-    /// 非豁免态不要求凭据。
+    /// 五个终止成因的 DB 取值互异且齐备。
     #[test]
-    fn non_waived_states_do_not_need_approval() {
-        for s in [
-            DiscrepancyState::Open,
-            DiscrepancyState::Repairing,
-            DiscrepancyState::Repaired,
-        ] {
-            assert!(validate_waiver(&discrepancy(s, None)).is_ok(), "{s:?}");
-        }
+    fn termination_causes_are_distinct() {
+        let mut v: Vec<&str> = TerminationCause::ALL
+            .iter()
+            .map(|c| c.as_db_value())
+            .collect();
+        v.sort_unstable();
+        v.dedup();
+        assert_eq!(v.len(), 5);
     }
 
     #[test]

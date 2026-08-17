@@ -70,9 +70,8 @@ pub trait ReconCheck: Send + Sync {
 
     /// 跑一批。
     ///
-    /// 返回的差异**一律取 [`DiscrepancyState::Open`]、`approval_ref` 为空**——
-    /// 见 [`validate_fresh_discrepancy`]。一条新检出就带着「已豁免」的差异
-    /// 会直接从关账闸门下穿过去，而闸门那一侧看不出它是刚生出来的。
+    /// 返回的差异**一律取 [`DiscrepancyState::Open`]**——见 [`validate_fresh_discrepancy`]。
+    /// 另外两个取值是处置之后的态，由处置路径写入，不由校验项产出。
     async fn run_batch(
         &self,
         snapshot: &dyn SnapshotCtx,
@@ -91,18 +90,13 @@ const _: fn(std::sync::Arc<dyn ReconCheck>) = |_| {};
 
 /// 校验一条**刚检出**的差异事项。
 ///
-/// 新检出的差异只能是 [`DiscrepancyState::Open`] 且不带审批引用。
-/// 三个非 `Open` 的取值是运维处置**之后**的态，由处置路径写入，不由校验项产出。
+/// 新检出的差异只能是 [`DiscrepancyState::Open`]。
+/// 另两个取值是处置之后的态，由处置路径写入，不由校验项产出。
 ///
-/// **判错方向的代价不对称**：一条带 `Waived` 进来的新差异会被关账闸门的
-/// 「未了结差异」计数直接跳过（`is_settled` 含 `Repaired` 与 `Waived`），
-/// 于是账实不符的期间照常关掉；反过来只是拒收一条差异、当场报错。
+/// `WAIVED` 已由裁定 F-14 撤销——规格与 PRD 对对账差异全文没有「豁免」语义。
 pub fn validate_fresh_discrepancy(d: &ReconDiscrepancy) -> Result<(), &'static str> {
     if d.state != DiscrepancyState::Open {
         return Err("新检出的差异事项必须是 OPEN；三个已处置的取值由处置路径写入，不由校验项产出");
-    }
-    if d.approval_ref.is_some() {
-        return Err("新检出的差异事项不得带审批引用");
     }
     Ok(())
 }
@@ -120,15 +114,13 @@ mod tests {
             actual_amount: "99.00".to_string(),
             difference_amount: "1.00".to_string(),
             state: DiscrepancyState::Open,
-            approval_ref: None,
         }
     }
 
     /// 新检出的差异必须是 OPEN。
     ///
-    /// 逐个取值走一遍，而不是只测 `Waived`：只判 `Waived` 或只判
-    /// `is_settled()` 的实现会在 `Repairing` 那一条漏过去，
-    /// 而 `Repairing` 同样不该由校验项产出。
+    /// 逐个取值走一遍，而不是只测其中一个：只判 `is_settled()` 的实现
+    /// 会在 `Repairing` 那一条漏过去，而 `Repairing` 同样不该由校验项产出。
     #[test]
     fn only_open_is_a_fresh_discrepancy() {
         assert_eq!(validate_fresh_discrepancy(&fresh()), Ok(()));
@@ -139,16 +131,8 @@ mod tests {
             assert_eq!(
                 got.is_ok(),
                 s == DiscrepancyState::Open,
-                "{s:?} 的判定不对；只判 Waived 或只判 is_settled 的实现会在 Repairing 上漏"
+                "{s:?} 的判定不对；只判 is_settled 的实现会在 Repairing 上漏"
             );
         }
-    }
-
-    /// 带审批引用的「新」差异要拒——即便状态写的是 OPEN。
-    #[test]
-    fn a_fresh_discrepancy_carries_no_approval_ref() {
-        let mut d = fresh();
-        d.approval_ref = Some("APV-1".to_string());
-        assert!(validate_fresh_discrepancy(&d).is_err());
     }
 }

@@ -3132,6 +3132,117 @@ PRD 逐字「差额不为零时，视图展示对应的对账差异事项及其�
 其唯一可清路径要求一张登不进去的退货单。那一类不由本裁定解决，
 它的成因在业务规则不在对账框架。
 
+### F-14　`recon_runs` 的仅追加登记与 `FAILED` 取值（裁附录辛第 12、13 条，并了结 F-13 挂来的 `WAIVED`）
+
+**两条争了半天的路都是错的，正解是裁定 B-02 自己的第三个取值。**
+
+#### 结论一　登记 `mode` 由 `APPEND_ONLY` 改 `IMMUTABLE_COLUMNS`，可变列取三列
+
+B-02 逐字：「`mode` 取 `APPEND_ONLY` 或 `IMMUTABLE_COLUMNS`」。同一张登记表里，
+**凡带状态机的表用的都是后者**：`platform_msg.outbox_events` 的可变列取
+`status`、`attempts`、`available_at`、`locked_by`、`locked_until`、`last_error`；
+`platform_msg.dead_letters` 取 `state`、`repaired_by`、`repaired_at`、
+`approval_ref`、`discard_reason`。
+
+`recon_runs` 有 `RUNNING` 到终态的迁移加两个要推进的计数器，形状与 `outbox_events` 同族，
+却被登记成 `APPEND_ONLY | '{}'`。**这是 B-02 内部的一处误用，不是 B-02 与 A-06 打架**——
+辛-12 把它记成两条裁定互斥，记错了。
+
+**据此改判**：该行 `mode` 取 `IMMUTABLE_COLUMNS`，
+`mutable_columns` 取 `status`、`batch_done`、`finished_at`、`termination_cause` 四列。
+
+这条改判的代价小到可以逐项数完：**十四行的行数不变**，
+第 16 号迁移的三行登记与三次 `attach_table_guards` 调用一字不动，
+`db/checks/append_only_consistency.sql` 的兜底计数不动，
+`db/checks/01_common_columns.sql` 的三列同缺口径不受影响
+（那条豁免只对 `APPEND_ONLY` 生效，`IMMUTABLE_COLUMNS` 的表照带公共列）。
+改的是登记表**一行的两个取值**。
+
+证据性不受损：`legal_entity_id`、`run_kind`、`accounting_period_id`、`snapshot_id`、
+`started_at` 与制品标识两列都**不在**白名单里，`assert_immutable_columns` 会拒改。
+A-06 逐字「外部审计问某次关账跑的是哪一版校验由这两项唯一回答」照旧成立。
+
+**否掉的两条路，各自的死因**：
+
+**(a) 保留 `APPEND_ONLY`、撤销 `RUNNING`、行在运行结束时一次插入——自伤。**
+规格第 10.2 章把「**执行进程异常退出**」列为五类终止成因之一。
+崩掉的进程写不了自己的终态行，于是 `PROCESS_EXIT` 成为取不到的取值——
+**与用来判 `RUNNING` 死刑的是同一条罪名**。更糟的是崩溃不留行：
+闸门读到的会是上一次 `DAILY` 运行的 `COMPLETED` 而放行，
+一次崩掉的关账前校验被读成跑完了，这是「错了不会当场报错」。
+
+**(b) 照 `audit_segments` 先例把该表从登记里撤出——留下一个更隐蔽的洞。**
+`platform_core.attach_table_guards` 的三个分支依次判 `APPEND_ONLY`、
+`IMMUTABLE_COLUMNS`、有无 `row_version`。撤登记之后前两个落空，
+而 `recon_runs` 按 A-06 不带 `row_version`，第三个也落空——**该表一个守卫都没挂**，
+`UPDATE` 与 `DELETE` 全放行。而 `append_only_consistency.sql` 判的是
+「登记↔同名触发器」双向一致，**无登记无触发器恰好一致、返回零行绿灯**。
+一张给关账当证据的表就这么变成谁都能改的表，而门禁是绿的。
+
+`audit_segments` 那条先例也不可比：它一行等于一法人一自然日，
+被当天每一条审计写入反复取锁推进，是可变游标，而证据另落在
+`audit_events`、`audit_anchors` 与证据文件上；`recon_runs` 一行只由执行器写一次，
+且它自己就是那个证据。
+
+#### 结论二　撤销 `FAILED`，`status` 收为 `RUNNING`、`COMPLETED`、`UNFINISHED` 三值
+
+规格第 10.2 章把五类终止成因**全部**归入「未完成」，
+阶段 14 的十八个降级 kind 只有 `RECON_RUN_UNFINISHED`，
+全卷 `FAILED` 只在 A-06 那一行 CHECK 里出现过。保留它就要一次配齐四件：
+逐字的产生条件、关账请求状态机的一条新出边、降级承接方、以及改规格的
+「只有四种结束方式」。四件今天一件都没有。
+
+**归因改由新列 `termination_cause` 承担**：取值域同阶段 9 计划的五值
+（`BATCH_TIMEOUT`、`RESOURCE_LIMIT`、`PROCESS_EXIT`、`CONNECTION_RECYCLED`、
+`SNAPSHOT_INVALID`），`COMPLETED` 时必须为空、`UNFINISHED` 时必须非空。
+补这一列另有一条独立理由：规格要求台账条目载明「已完成批次与终止原因」，
+而 `termination_cause` 今天只长在 `ledger.period_close_requests` 上，
+`DAILY` 与 `RECOVERY_ACCEPTANCE` 两类运行**无处可写终止原因**。
+
+已落码的 `summarize_run` 那两条 `Failed` 产生条件的去处：
+一、「注册表的阻断性校验项不足十五」**前移为起跑前闸门**——不起跑、不落行、
+`run` 返回 `Err`。此时闸门侧 `latest_run` 为空报「尚未执行过对账」，
+同时 `ReconRosterIncomplete` 报差几项，两条一起给出，比一个 `FAILED` 具体。
+二、「一批都没派发出去就断了」并入 `UNFINISHED`，`unfinished_check_codes` 仍为空、
+`termination_cause` 非空——已落码的那句「无从归因时不得把期望集整个当成未完成项」因此保住。
+`validate_run_outcome` 的第一条不变量同批改为「`UNFINISHED` 要么列出没跑到底的检查项、
+要么给出 `termination_cause`，二者至少其一，皆空即拒」。
+
+#### 结论三　撤销 `WAIVED` 与 `approval_ref`（了结 F-13 挂来的一条）
+
+规格与 PRD 对对账差异全文没有「豁免」语义，F-13 已查实；
+裁定 F-10 已在另一张表上判过同形，理由逐字「落地后只能靠测试代码手工塞一个 UUID」。
+
+F-13 当时不撤列给的三条理由，本裁定逐条处置：
+理由一「本表已落地」——**撤回**，那是一条恒真判据：`db/` 下十四张登记表无一有迁移文件，
+它区分不出标的；
+理由二「撤列必然连带改仅追加」——不成立，撤的只是一个取值与一列，
+`state` 仍留三值、表仍是可更新表；
+理由三「会与辛-12 抢同一张 backfill 迁移」——**因本结论一取 `IMMUTABLE_COLUMNS` 而消失**，
+第 16 号迁移一字不动。
+
+**形式照 `key_domains.domain_kind` 的先例**：**收既有 CHECK 的取值域**，
+不在旁边另加一条 CHECK。另加一条会让 A-06 段同一列一处写四值、一处只放行一值，
+那正是附录丁 D-04 判过的「本文件 A-06 段自身打架」。
+
+`REPAIRING`、`REPAIRED` 与 `repaired_by` **保留**：这两态在规格里有语义依据
+（「按事项载明的内容修复后可重新发起关账」、「由数据责任人按修复路径补登或冲正来源事件」），
+F-13 结论二的解除路径走的就是「修复」。`WAIVED` 是唯一一个在规格里连词都找不到的。
+
+`recon_discrepancies` **不进登记**，维持 A-06 逐字「可更新表，带 `row_version`」：
+次版要开的正是 `OPEN → REPAIRING → REPAIRED` 的置态路径，
+登记为仅追加会在那一天拒绝它——与 B-02 删掉五张往来台账的理由同形。
+
+#### 未了结的一件，明写
+
+**崩掉的进程谁替它写终态行**，本裁定给不出答案。
+`PROCESS_EXIT` 这一值要求有人在进程死后把那行 `RUNNING` 推到 `UNFINISHED`，
+而全卷没有看门狗、没有超时清理。这一条在 `ledger.period_close_requests` 上同样存在
+（阶段 9 计划要求五类之一发生时写 `termination_cause`，同样没说谁写），
+**是卷内既有的缺口，不是本裁定新造的**，故不在此处强行指派承接方。
+本裁定只保证：那行留着（结论一），归因有列可写（结论二），
+而闸门读到 `RUNNING` 会拦住关账而不是放行。
+
 ## 附录丙　阶段 1 实测引出的同类缺陷登记
 
 本附录登记裁定 F-01 与 F-03 落地过程中，由三次同类缺陷普查查出的 22 条。
@@ -3595,7 +3706,7 @@ crate 职责表这一格把「对 ep_foundation 三个 trait 的实现」的声�
 
 两条均已在 `crates/platform/flow/src/expr/mod.rs` 的未覆盖段逐条明写。
 
-### 辛-12　`recon_runs` 既是仅追加表，又有 RUNNING 到终态的状态机
+### 辛-12　`recon_runs` 既是仅追加表，又有 RUNNING 到终态的状态机　**已由裁定 F-14 处置**
 
 **两处原文，都在本文件内。** 裁定 A-06 给这张表的列定义逐字含
 「`status` text CHECK in RUNNING, COMPLETED, UNFINISHED, FAILED、`batch_total` int、
@@ -3627,7 +3738,7 @@ APPEND_ONLY | `'{}'` |」，而同一条 B-02 逐字规定「`mutable_columns` �
 要么把 `RUNNING` 从 A-06 的 CHECK 里去掉（动取值域与闸门的一条分支）。
 **须走裁定**，两条路各自的连带面在裁定时一并给出。
 
-### 辛-13　`FAILED` 全卷没有产生条件，下游也没有接收方
+### 辛-13　`FAILED` 全卷没有产生条件，下游也没有接收方　**已由裁定 F-14 处置**
 
 规格第 10.2 章逐字把五类终止成因——「单批执行时限触发终止、单查询内存或临时空间
 上限触发终止、执行进程异常退出、连接被回收与快照失效五类」——**全部**归入未完成；

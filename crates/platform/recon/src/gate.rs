@@ -18,9 +18,12 @@ pub enum CloseBlocker {
     /// 对账压根没跑过。
     NoReconRun,
     /// 对账还在跑。
+    ///
+    /// **这是一条活路径**：裁定 F-14 把 `recon_runs` 的登记改为 `IMMUTABLE_COLUMNS`，
+    /// `RUNNING` 到终态的更新走得通，因而运行中确实读得到这个状态。
+    /// 一次崩掉的运行会把行留在 `RUNNING` 上，届时闸门拦住关账而不是放行——
+    /// 方向是保守的。谁替死掉的进程把它推到终态，见裁定 F-14 末节的未了结项。
     ReconRunning,
-    /// 对账运行本身失败了。
-    ReconFailed,
     /// 对账跑完了但有检查项没跑到底。列出是哪几项——
     /// 与「有差异」是两回事：没跑到底意味着**那部分账实相符与否根本不知道**。
     ReconUnfinished { check_codes: Vec<String> },
@@ -49,7 +52,6 @@ impl std::fmt::Display for CloseBlocker {
         match self {
             CloseBlocker::NoReconRun => f.write_str("该法人该期间尚未执行过对账"),
             CloseBlocker::ReconRunning => f.write_str("对账正在执行中，请等其结束"),
-            CloseBlocker::ReconFailed => f.write_str("最近一次对账运行失败，需先排除故障并重跑"),
             CloseBlocker::ReconUnfinished { check_codes } => write!(
                 f,
                 "对账有 {} 个检查项未跑到底：{}；未跑到底不等于无差异",
@@ -126,7 +128,6 @@ pub fn check_close_admission(facts: &CloseFacts) -> Vec<CloseBlocker> {
         // 若只看差异不看运行状态，一个从没对过账的期间会一路放行。
         None => blockers.push(CloseBlocker::NoReconRun),
         Some(ReconRunStatus::Running) => blockers.push(CloseBlocker::ReconRunning),
-        Some(ReconRunStatus::Failed) => blockers.push(CloseBlocker::ReconFailed),
         Some(ReconRunStatus::Unfinished) => {
             blockers.push(CloseBlocker::ReconUnfinished {
                 check_codes: facts.unfinished_check_codes.clone(),
@@ -272,14 +273,17 @@ mod tests {
     #[test]
     fn all_blockers_are_reported_at_once() {
         let facts = CloseFacts {
-            latest_run: Some(ReconRunStatus::Failed),
+            latest_run: Some(ReconRunStatus::Unfinished),
+            unfinished_check_codes: vec!["SUB_VS_LED_AR".into()],
             blocking_discrepancy_count: 2,
             unsettled_dead_letters: 3,
             ..clean()
         };
         let blockers = check_close_admission(&facts);
         assert_eq!(blockers.len(), 3, "三项都要报出来，实为 {blockers:?}");
-        assert!(blockers.contains(&CloseBlocker::ReconFailed));
+        assert!(blockers
+            .iter()
+            .any(|b| matches!(b, CloseBlocker::ReconUnfinished { .. })));
         assert!(blockers.contains(&CloseBlocker::OpenDiscrepancies { count: 2 }));
         assert!(blockers.contains(&CloseBlocker::UnsettledDeadLetters { count: 3 }));
     }

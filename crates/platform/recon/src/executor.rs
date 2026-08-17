@@ -25,7 +25,7 @@
 //! 它使四个取值全部可达，且两者的处置路径确实不同：前者有名单可查、可按项重跑，
 //! 后者只能查运行本身。**该分界与 `FAILED` 的降级承接方一并登记为待裁定。**
 
-use crate::model::{ReconRunKind, ReconRunOutcome, ReconRunStatus};
+use crate::model::{ReconRunKind, ReconRunOutcome, ReconRunStatus, TerminationCause};
 use crate::ReconRun;
 use ep_foundation::error::AppError;
 use ep_foundation::id::marker::{AccountingPeriod, LegalEntity};
@@ -64,29 +64,65 @@ pub struct RunTally {
     pub inconclusive_codes: Vec<String>,
     /// 本次运行检出的差异条数。
     pub discrepancy_count: u32,
-    /// 运行在任何一批派发出去之前就断了（建快照失败、法人或期间解析失败、
-    /// 连接在第一批之前被回收）。此时「哪一项没跑」无从归因。
-    pub aborted_before_any_check: bool,
+    /// 运行本身的终止成因。`None` 表示运行没有被外因打断。
+    ///
+    /// 裁定 F-14 撤销 `FAILED` 之后，「运行本身出了什么事」由这一列承担——
+    /// 否则「无从归因的中断」并进 `UNFINISHED` 之后就没有了归因，
+    /// 运维只知道有事没跑完、不知道该去查快照还是去查某一项。
+    pub termination_cause: Option<TerminationCause>,
 }
+
+/// 起跑前闸门没过的原因。
+///
+/// 裁定 F-14 结论二把「注册表的阻断性校验项不足十五」从**运行结论**前移为
+/// **起跑前闸门**：不起跑、不落 `recon_runs` 行、`run` 返回 `Err`。
+///
+/// 前移的理由：那不是一次运行的结果，是这次运行**不该开始**。
+/// 落一行 `FAILED` 反而制造一条没有终止成因、`batch_done` 恒零的空壳记录，
+/// 而闸门侧读到「最近一次运行失败」也不如读到「压根没跑过 + 名册差几项」具体。
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum NotReady {
+    /// 注册表里一个阻断性校验项都没有，或不足 A-06 冻结的十五项。
+    RosterIncomplete { registered: usize, expected: usize },
+}
+
+impl std::fmt::Display for NotReady {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            NotReady::RosterIncomplete {
+                registered,
+                expected,
+            } => write!(
+                f,
+                "关账前强制校验只注册了 {registered} 项、应为 {expected} 项，本次对账不起跑"
+            ),
+        }
+    }
+}
+
+impl std::error::Error for NotReady {}
 
 /// 把一次运行的观测汇总成结果。
 ///
-/// 四个分支**有序且互斥**，每一个都可达：
+/// 三个 status，`FAILED` 已由裁定 F-14 撤销：
 ///
-/// 一、`Failed`：期望集为空。注册表里一个阻断性校验项都没有——
-///    这不是「没有差异」，是「这次运行根本判不出任何东西」。
-///    **它今天就会发生**：阶段 9a 交付本体时，十五项里有十一项还不存在。
+/// 一、`Unfinished`：有归因得到的未完成项、或期望集没被结论集覆盖、
+///    或运行本身被外因打断（`termination_cause` 非空）。
+/// 二、`Completed`：期望集非空、无未完成项、无终止成因，且期望集⊆结论集。
+///    **四条缺一不可**——只判「没有报错」就是恒真判据。
+/// 三、`Running` **永不由本函数产出**，见 [`ReconRunOutcome::running`]。
 ///
-/// 二、`Failed`：在任何一批之前就断了，且什么结论和归因都没有。
-///
-/// 三、`Unfinished`：有归因得到的未完成项，或期望集没被结论集覆盖。
-///    未完成清单由构造保证非空。
-///
-/// 四、`Completed`：期望集非空、无未完成项、且期望集⊆结论集。
-///    **三条缺一不可**——只判「没有报错」就是恒真判据。
-///
-/// `Running` **永不由本函数产出**，见 [`ReconRunOutcome::running`]。
-pub fn summarize_run(tally: &RunTally, run_id: Id<ReconRun>) -> ReconRunOutcome {
+/// 期望集为空时返回 `Err`：那种局面该由起跑前闸门拦下，走不到这里。
+/// 返回 `Err` 而不是造一个结论，是为了让「不该开始」与「开始了没跑完」
+/// 在类型上分得开——前者不落行，后者要落行。
+pub fn summarize_run(tally: &RunTally, run_id: Id<ReconRun>) -> Result<ReconRunOutcome, NotReady> {
+    if tally.expected_codes.is_empty() {
+        return Err(NotReady::RosterIncomplete {
+            registered: 0,
+            expected: crate::registry::EXPECTED_REGISTERED_CHECK_COUNT,
+        });
+    }
+
     let missing: Vec<String> = tally
         .expected_codes
         .iter()
@@ -101,39 +137,20 @@ pub fn summarize_run(tally: &RunTally, run_id: Id<ReconRun>) -> ReconRunOutcome 
         }
     }
 
-    let executed = tally.concluded_codes.clone();
-
-    // 两条 `Failed` 的次序不能颠倒。**先判「一批都没派发出去」**：
-    // 那一刻期望集通常非空，若先算未完成清单，期望集会整个落进未完成，
-    // 这条分支就永远走不到——一个列在取值域里却取不到的取值，正是本卷在清的乙类。
-    // 落进未完成也是误报：那十五项不是「没跑到底」，是运行本身没起来，
-    // 运维要查的是快照与连接，不是逐项重跑。
-    let aborted_with_nothing_to_attribute = tally.aborted_before_any_check
-        && tally.concluded_codes.is_empty()
-        && tally.inconclusive_codes.is_empty();
-    if aborted_with_nothing_to_attribute || tally.expected_codes.is_empty() {
-        return ReconRunOutcome {
-            run_id,
-            status: ReconRunStatus::Failed,
-            discrepancy_count: tally.discrepancy_count,
-            executed_check_codes: executed,
-            unfinished_check_codes: Vec::new(),
-        };
-    }
-
-    let status = if unfinished.is_empty() {
+    let status = if unfinished.is_empty() && tally.termination_cause.is_none() {
         ReconRunStatus::Completed
     } else {
         ReconRunStatus::Unfinished
     };
 
-    ReconRunOutcome {
+    Ok(ReconRunOutcome {
         run_id,
         status,
         discrepancy_count: tally.discrepancy_count,
-        executed_check_codes: executed,
+        executed_check_codes: tally.concluded_codes.clone(),
         unfinished_check_codes: unfinished,
-    }
+        termination_cause: tally.termination_cause,
+    })
 }
 
 /// 校验一个 [`ReconRunOutcome`] 自身是否自洽。
@@ -144,8 +161,16 @@ pub fn summarize_run(tally: &RunTally, run_id: Id<ReconRun>) -> ReconRunOutcome 
 /// 关账闸门只在 `Unfinished` 那一臂读未完成清单，于是这条证据被静默丢掉、
 /// 期间照常关掉。这个函数是那一处的第二道锁。
 pub fn validate_run_outcome(o: &ReconRunOutcome) -> Result<(), &'static str> {
-    if o.status == ReconRunStatus::Unfinished && o.unfinished_check_codes.is_empty() {
-        return Err("UNFINISHED 必须列出没跑到底的检查项，否则运维无从下手");
+    // 裁定 F-14：`UNFINISHED` 要么列出没跑到底的检查项、要么给出终止成因，
+    // 二者至少其一。皆空即拒——那样的记录说「有事没干完」却说不出是什么事。
+    if o.status == ReconRunStatus::Unfinished
+        && o.unfinished_check_codes.is_empty()
+        && o.termination_cause.is_none()
+    {
+        return Err("UNFINISHED 必须给出没跑到底的检查项或终止成因，二者至少其一");
+    }
+    if o.status == ReconRunStatus::Completed && o.termination_cause.is_some() {
+        return Err("COMPLETED 不得带终止成因——被打断过就不是跑完了");
     }
     if o.status != ReconRunStatus::Unfinished && !o.unfinished_check_codes.is_empty() {
         return Err("只有 UNFINISHED 才带未完成清单；别的状态带着它意味着证据会被闸门丢掉");
@@ -174,6 +199,7 @@ pub fn validate_run_outcome(o: &ReconRunOutcome) -> Result<(), &'static str> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::registry::EXPECTED_REGISTERED_CHECK_COUNT;
 
     fn rid() -> Id<ReconRun> {
         Id::from_uuid(uuid::Uuid::from_u128(1))
@@ -183,129 +209,107 @@ mod tests {
         items.iter().map(|s| (*s).to_string()).collect()
     }
 
-    /// 四个 status 各要有一组观测能取到它——**除了 `Running`**，
-    /// 它按设计不由本函数产出。一个取不到的取值是本卷在清的乙类缺陷。
+    fn ok(t: &RunTally) -> ReconRunOutcome {
+        summarize_run(t, rid()).expect("该组观测应能汇总")
+    }
+
+    /// 两个 status 各要有一组观测能取到它。`Running` 按设计不由本函数产出。
     #[test]
-    fn every_status_summarize_can_produce_is_reachable() {
-        // Failed 分支一：注册表空。
-        let empty = RunTally::default();
-        assert_eq!(summarize_run(&empty, rid()).status, ReconRunStatus::Failed);
-
-        // Failed 分支二：期望集非空，但一批都没派发出去就断了。
-        // 这一条**必须与分支一分开测**：若两条分支的判定次序写反，
-        // 期望集会整个落进未完成清单，本分支就永远走不到。
-        let aborted = RunTally {
-            expected_codes: v(&["A"]),
-            aborted_before_any_check: true,
-            ..RunTally::default()
-        };
-        let o = summarize_run(&aborted, rid());
-        assert_eq!(
-            o.status,
-            ReconRunStatus::Failed,
-            "运行本身没起来，不该报成「这些项没跑到底」"
-        );
-        assert!(
-            o.unfinished_check_codes.is_empty(),
-            "无从归因时不得把期望集整个当成未完成项"
-        );
-
+    fn both_terminal_statuses_are_reachable() {
         let unfinished = RunTally {
             expected_codes: v(&["A", "B"]),
             concluded_codes: v(&["A"]),
             ..RunTally::default()
         };
-        assert_eq!(
-            summarize_run(&unfinished, rid()).status,
-            ReconRunStatus::Unfinished
-        );
+        assert_eq!(ok(&unfinished).status, ReconRunStatus::Unfinished);
 
         let completed = RunTally {
             expected_codes: v(&["A", "B"]),
             concluded_codes: v(&["A", "B"]),
             ..RunTally::default()
         };
-        assert_eq!(
-            summarize_run(&completed, rid()).status,
-            ReconRunStatus::Completed
-        );
+        assert_eq!(ok(&completed).status, ReconRunStatus::Completed);
     }
 
-    /// 本模块最要紧的一条：**注册表为空时不得判成通过**。
+    /// 名册不足不是一次运行的结论，是这次运行**不该开始**。
     ///
-    /// 这不是假想的边界——阶段 9a 交付本体那一刻，十五项里有十一项还不存在，
-    /// 一次 PERIOD_CLOSE 运行会跑完、无差异。若判成 `Completed`，
-    /// 关账闸门放行，那个期间就被永久关掉了，而十一项校验从没跑过。
+    /// 裁定 F-14 把它从 `FAILED` 前移为起跑前闸门：不起跑、不落行。
+    /// 落一行 `FAILED` 反而制造一条没有终止成因、批数恒零的空壳记录。
     #[test]
-    fn an_empty_expectation_set_is_never_a_pass() {
-        let o = summarize_run(&RunTally::default(), rid());
-        assert_eq!(o.status, ReconRunStatus::Failed);
-        assert!(o.executed_check_codes.is_empty());
-        assert_ne!(
-            o.status,
-            ReconRunStatus::Completed,
-            "「一项都没跑」不是「跑完且无差异」"
+    fn an_empty_roster_is_refused_before_the_run_not_after() {
+        assert_eq!(
+            summarize_run(&RunTally::default(), rid()),
+            Err(NotReady::RosterIncomplete {
+                registered: 0,
+                expected: EXPECTED_REGISTERED_CHECK_COUNT,
+            })
         );
     }
 
-    /// 期望集没被结论集覆盖即 UNFINISHED，且缺的那些要列出名字。
-    /// 只判「有没有报错」的实现会在这里判成 COMPLETED。
+    /// 运行被外因打断即 `UNFINISHED`，且归因落在 `termination_cause` 上。
+    ///
+    /// **`unfinished_check_codes` 仍为空**——一批都没派发出去时，
+    /// 那十五项不是「没跑到底」，是运行本身没起来；
+    /// 把期望集整个当成未完成项是误报，运维要查的是快照与连接，不是逐项重跑。
+    #[test]
+    fn an_aborted_run_is_unfinished_with_a_cause_and_no_blame_on_the_checks() {
+        let t = RunTally {
+            expected_codes: v(&["A", "B"]),
+            termination_cause: Some(TerminationCause::SnapshotInvalid),
+            ..RunTally::default()
+        };
+        let o = ok(&t);
+        assert_eq!(o.status, ReconRunStatus::Unfinished);
+        assert_eq!(o.termination_cause, Some(TerminationCause::SnapshotInvalid));
+        assert_eq!(
+            o.unfinished_check_codes,
+            v(&["A", "B"]),
+            "期望集没被覆盖仍要列名——这一条与「无从归因」是两件事"
+        );
+    }
+
+    /// 期望集没被结论集覆盖即未完成，缺的那些要列出名字。
+    /// 只判「有没有报错」的实现会在这里判成 `COMPLETED`。
     #[test]
     fn checks_that_never_reported_a_conclusion_are_named() {
-        let o = summarize_run(
-            &RunTally {
-                expected_codes: v(&["A", "B", "C"]),
-                concluded_codes: v(&["A"]),
-                inconclusive_codes: v(&["B"]),
-                ..RunTally::default()
-            },
-            rid(),
-        );
+        let o = ok(&RunTally {
+            expected_codes: v(&["A", "B", "C"]),
+            concluded_codes: v(&["A"]),
+            inconclusive_codes: v(&["B"]),
+            ..RunTally::default()
+        });
         assert_eq!(o.status, ReconRunStatus::Unfinished);
         assert_eq!(o.unfinished_check_codes, v(&["B", "C"]), "C 从未产生结论");
         assert_eq!(o.executed_check_codes, v(&["A"]));
     }
 
-    /// 归因项与「从未产生结论」的项去重合并，不重复列名。
     #[test]
     fn the_unfinished_list_is_deduplicated() {
-        let o = summarize_run(
-            &RunTally {
-                expected_codes: v(&["A"]),
-                inconclusive_codes: v(&["A"]),
-                ..RunTally::default()
-            },
-            rid(),
-        );
+        let o = ok(&RunTally {
+            expected_codes: v(&["A"]),
+            inconclusive_codes: v(&["A"]),
+            ..RunTally::default()
+        });
         assert_eq!(o.unfinished_check_codes, v(&["A"]));
     }
 
-    /// `Failed` 与 `Completed` 都不得带未完成清单——
-    /// 带着它意味着那份证据会被关账闸门丢掉（闸门只在 UNFINISHED 那一臂读它）。
+    /// `COMPLETED` 的四个条件缺一不可。**带终止成因的运行不算跑完**——
+    /// 只判「没有未完成项」的实现会把一次被打断、但恰好没漏项的运行判成通过。
     #[test]
-    fn only_unfinished_carries_the_unfinished_list() {
-        let failed = summarize_run(&RunTally::default(), rid());
-        assert!(failed.unfinished_check_codes.is_empty());
-        assert_eq!(validate_run_outcome(&failed), Ok(()));
-
-        let completed = summarize_run(
-            &RunTally {
-                expected_codes: v(&["A"]),
-                concluded_codes: v(&["A"]),
-                ..RunTally::default()
-            },
-            rid(),
-        );
-        assert!(completed.unfinished_check_codes.is_empty());
-        assert_eq!(validate_run_outcome(&completed), Ok(()));
+    fn a_run_that_was_interrupted_is_never_completed() {
+        let t = RunTally {
+            expected_codes: v(&["A"]),
+            concluded_codes: v(&["A"]),
+            termination_cause: Some(TerminationCause::BatchTimeout),
+            ..RunTally::default()
+        };
+        assert_eq!(ok(&t).status, ReconRunStatus::Unfinished);
     }
 
-    /// `summarize_run` 在任何输入下都不产出 `Running`。
-    /// 这条钉住两个生产者的边界：`Running` 只能由 [`ReconRunOutcome::running`] 给。
+    /// `summarize_run` 在任何可汇总的输入下都不产出 `Running`。
     #[test]
     fn summarize_never_produces_running() {
         let inputs = [
-            RunTally::default(),
             RunTally {
                 expected_codes: v(&["A"]),
                 ..RunTally::default()
@@ -313,68 +317,83 @@ mod tests {
             RunTally {
                 expected_codes: v(&["A"]),
                 concluded_codes: v(&["A"]),
-                aborted_before_any_check: true,
                 discrepancy_count: 3,
+                termination_cause: Some(TerminationCause::ProcessExit),
                 ..RunTally::default()
             },
         ];
         for t in inputs {
-            assert_ne!(summarize_run(&t, rid()).status, ReconRunStatus::Running);
+            assert_ne!(ok(&t).status, ReconRunStatus::Running);
         }
     }
 
-    /// 手搓的坏值要被 `validate_run_outcome` 拦住。
-    /// 头一个是最要紧的：`Completed` 配非空未完成清单——今天类型上构造得出。
+    /// 手搓的坏值要被拦住。头一个最要紧：`Completed` 配非空未完成清单——
+    /// 关账闸门只在未完成那一臂读那份清单，证据会被静默丢掉。
     #[test]
     fn hand_built_inconsistent_outcomes_are_caught() {
-        let bad = ReconRunOutcome {
+        let base = ReconRunOutcome {
             run_id: rid(),
             status: ReconRunStatus::Completed,
             discrepancy_count: 0,
             executed_check_codes: v(&["A"]),
-            unfinished_check_codes: v(&["B"]),
+            unfinished_check_codes: Vec::new(),
+            termination_cause: None,
         };
+        assert_eq!(validate_run_outcome(&base), Ok(()));
+
+        let mut bad = base.clone();
+        bad.unfinished_check_codes = v(&["B"]);
         assert!(validate_run_outcome(&bad).is_err(), "证据会被闸门静默丢掉");
 
-        let empty_unfinished = ReconRunOutcome {
-            run_id: rid(),
-            status: ReconRunStatus::Unfinished,
-            discrepancy_count: 0,
-            executed_check_codes: Vec::new(),
-            unfinished_check_codes: Vec::new(),
-        };
-        assert!(validate_run_outcome(&empty_unfinished).is_err());
+        let mut interrupted_but_completed = base.clone();
+        interrupted_but_completed.termination_cause = Some(TerminationCause::ProcessExit);
+        assert!(
+            validate_run_outcome(&interrupted_but_completed).is_err(),
+            "被打断过就不是跑完了"
+        );
 
-        let empty_completed = ReconRunOutcome {
-            run_id: rid(),
-            status: ReconRunStatus::Completed,
-            discrepancy_count: 0,
-            executed_check_codes: Vec::new(),
-            unfinished_check_codes: Vec::new(),
-        };
+        let mut silent_unfinished = base.clone();
+        silent_unfinished.status = ReconRunStatus::Unfinished;
+        assert!(
+            validate_run_outcome(&silent_unfinished).is_err(),
+            "既说不出哪一项、也说不出什么原因的未完成，运维无从下手"
+        );
+
+        let mut empty_completed = base.clone();
+        empty_completed.executed_check_codes = Vec::new();
         assert!(
             validate_run_outcome(&empty_completed).is_err(),
             "一项都没跑过不是「通过」"
         );
 
-        let both = ReconRunOutcome {
-            run_id: rid(),
-            status: ReconRunStatus::Unfinished,
-            discrepancy_count: 0,
-            executed_check_codes: v(&["A"]),
-            unfinished_check_codes: v(&["A"]),
-        };
+        let mut both = base;
+        both.status = ReconRunStatus::Unfinished;
+        both.unfinished_check_codes = v(&["A"]);
         assert!(
             validate_run_outcome(&both).is_err(),
             "同一项不能既跑完又没跑完"
         );
     }
 
+    /// 只给终止成因、不给未完成项的未完成，是合法的——
+    /// 那正是「运行本身没起来」的形态。这一条与上一条的最后一格互为反例。
+    #[test]
+    fn a_cause_alone_satisfies_the_unfinished_invariant() {
+        let o = ReconRunOutcome {
+            run_id: rid(),
+            status: ReconRunStatus::Unfinished,
+            discrepancy_count: 0,
+            executed_check_codes: Vec::new(),
+            unfinished_check_codes: Vec::new(),
+            termination_cause: Some(TerminationCause::SnapshotInvalid),
+        };
+        assert_eq!(validate_run_outcome(&o), Ok(()));
+    }
+
     /// `summarize_run` 产出的东西一律自洽——两个函数不能各说各话。
     #[test]
     fn everything_summarize_produces_validates() {
         let cases = [
-            RunTally::default(),
             RunTally {
                 expected_codes: v(&["A", "B"]),
                 concluded_codes: v(&["A"]),
@@ -386,9 +405,14 @@ mod tests {
                 discrepancy_count: 9,
                 ..RunTally::default()
             },
+            RunTally {
+                expected_codes: v(&["A"]),
+                termination_cause: Some(TerminationCause::ConnectionRecycled),
+                ..RunTally::default()
+            },
         ];
         for t in cases {
-            let o = summarize_run(&t, rid());
+            let o = ok(&t);
             assert_eq!(validate_run_outcome(&o), Ok(()), "自产的结果不自洽：{o:?}");
         }
     }
@@ -396,15 +420,12 @@ mod tests {
     /// 差异条数原样带出，不因状态被抹掉。
     #[test]
     fn the_discrepancy_count_survives_every_branch() {
-        let o = summarize_run(
-            &RunTally {
-                expected_codes: v(&["A", "B"]),
-                concluded_codes: v(&["A"]),
-                discrepancy_count: 7,
-                ..RunTally::default()
-            },
-            rid(),
-        );
+        let o = ok(&RunTally {
+            expected_codes: v(&["A", "B"]),
+            concluded_codes: v(&["A"]),
+            discrepancy_count: 7,
+            ..RunTally::default()
+        });
         assert_eq!(o.status, ReconRunStatus::Unfinished);
         assert_eq!(o.discrepancy_count, 7, "没跑完不代表已查到的差异不算数");
     }

@@ -35,14 +35,18 @@
 //! 本 crate 内一个都没有；卷内只找得到其中九个的具名码。[`registry`] 因此只提供
 //! 按**项数**的谓词，真名册断言的落点在 job-worker 的 wiring。
 //!
-//! 二、**`UNFINISHED` 与 `FAILED` 的分界是本实现自定的。** 规格把五类终止成因
-//! 全部归入「未完成」，全卷 `FAILED` 只在 A-06 那一行 CHECK 里出现过，
-//! 阶段 14 的降级 kind 里也只有对应 `UNFINISHED` 的一项。见 [`executor`]。
+//! 二、**`FAILED` 已由裁定 F-14 撤销**，`status` 收为 `RUNNING`、`COMPLETED`、
+//! `UNFINISHED` 三值。规格把五类终止成因全部归入「未完成」，
+//! 阶段 14 的降级 kind 也只有对应 `UNFINISHED` 的一项；归因改由
+//! [`model::TerminationCause`] 承担。原「名册不足」那条产生条件前移为起跑前闸门
+//! （[`NotReady`]）——那不是一次运行的结果，是这次运行不该开始。
 //!
-//! 三、**`ReconRunStatus::Running` 在生产上大概率取不到。** `recon_runs` 按裁定 B-02
-//! 登记为仅追加表且可变列白名单为空，而仅追加表的 `BEFORE UPDATE` 触发器一律 raise，
-//! `RUNNING` 到终态的更新上线即被拒。连带 [`gate::CloseBlocker::ReconRunning`]
-//! 整条是死路径。
+//! 三、**`ReconRunStatus::Running` 是一条活路径**——裁定 F-14 把 `recon_runs`
+//! 的登记由 `APPEND_ONLY` 改为 `IMMUTABLE_COLUMNS`（B-02 的 `mode` 本就有这个取值，
+//! 带状态机的 `outbox_events` 与 `dead_letters` 用的都是它），
+//! 可变列取 `status`、`batch_done`、`finished_at`、`termination_cause` 四列，
+//! 证据列仍不可改。**未了结的一件**：谁替崩掉的进程把行推到终态，卷内没有答案，
+//! 那是既有缺口（`ledger.period_close_requests` 上同样存在），见 F-14 末节。
 //!
 //! 四、**`DiscrepancyState` 的三个非 `Open` 取值首版没有生产者**——已由裁定 F-13 处置。
 //! 该裁定推翻了「无解除路径」这个说法的前提：关账拦截读的是**本次校验的校验项结论**，
@@ -78,11 +82,11 @@ pub mod subject_ref;
 pub struct ReconRun;
 
 pub use check::{validate_fresh_discrepancy, BatchOutcome, ReconCheck};
-pub use executor::{summarize_run, validate_run_outcome, ReconExecutor, RunTally};
+pub use executor::{summarize_run, validate_run_outcome, NotReady, ReconExecutor, RunTally};
 pub use gate::{check_close_admission, CloseBlocker, CloseFacts};
 pub use model::{
-    validate_waiver, BatchWindow, DiscrepancyState, ReconCategory, ReconDiscrepancy, ReconRunKind,
-    ReconRunOutcome, ReconRunStatus,
+    BatchWindow, DiscrepancyState, ReconCategory, ReconDiscrepancy, ReconRunKind, ReconRunOutcome,
+    ReconRunStatus, TerminationCause,
 };
 pub use registry::{ReconRegistry, RegisterCheckError, EXPECTED_REGISTERED_CHECK_COUNT};
 pub use subject_ref::{is_allowed, validate_keys, SubjectRefError, ALLOWED_KEYS};
