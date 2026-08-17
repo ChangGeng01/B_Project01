@@ -113,10 +113,13 @@ pub const GRACE_PERIOD_DAYS: i64 = 30;
 /// 第 3.5 章逐字「永久授权部分继续可用：**平台不因维护订阅到期而停机**，
 /// 已交付功能保持可用」。
 ///
-/// **`license_grants` 表上没有区分二者的列**，因此本函数无法自己判断
-/// 传进来的是哪一种。把一份永久授权喂进来会得到 `Expired`，
-/// 而按规格那份授权本该继续可用。名字带上范围是本轮唯一诚实的做法：
-/// 说清它判不了什么，而不是替它判。该缺口登记在 crate 文档的未覆盖段。
+/// **该缺口已由裁定 F-17 处置：永久授权与年度维护订阅两项首版不交付**，
+/// 本部署为自有企业内部使用、两项不存在，故不建 `grant_type` 列
+/// （按裁定 F-15 的判别式，`PERPETUAL` 的凭证载体、状态机出边与后果承接方三样全缺，
+/// 该撤不该预留；落码形式另照 `adapter/kms` 的先例——预留值不建枚举变体）。
+///
+/// 名字里的 `subscription` 因此不再是「两种里的一种」，
+/// 而是**本部署唯一存在的授权形态**。
 pub fn classify_subscription(f: &LicenseFacts) -> LicenseStatus {
     if f.revoked_at.is_some() {
         return LicenseStatus::Revoked;
