@@ -113,6 +113,13 @@ pub enum DeadLetterState {
 }
 
 impl DeadLetterState {
+    pub const ALL: [DeadLetterState; 4] = [
+        DeadLetterState::Open,
+        DeadLetterState::Repairing,
+        DeadLetterState::Repaired,
+        DeadLetterState::Discarded,
+    ];
+
     pub fn as_db_value(self) -> &'static str {
         match self {
             DeadLetterState::Open => "OPEN",
@@ -127,14 +134,233 @@ impl DeadLetterState {
     /// 直接支撑规格第 10.2 章关账受理的两项前提判定」）。
     ///
     /// `Discarded` 算了结，但它要求双人审批——那一层在流程侧，不在这里。
+    ///
+    /// `Repaired` 的**生产者**由裁定 F-15 定为那次做成副作用的消费事务，
+    /// 不是任何端点。见 [`DEAD_LETTER_TRANSITIONS`]。
     pub fn is_settled(self) -> bool {
         matches!(self, DeadLetterState::Repaired | DeadLetterState::Discarded)
     }
 }
 
+/// 对一条死信发起的动作。
+///
+/// **只有三个是人工动作。** `Repaired` 不在其中——见 [`DEAD_LETTER_TRANSITIONS`]。
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum DeadLetterAction {
+    /// 认领。端点 `actions/start-repair`，写 `repaired_by`。
+    Claim,
+    /// 丢弃。端点 `actions/discard`，必带 `approval_ref`，另写 `discard_reason`。
+    Discard,
+    /// **不是端点动作。** 那次真正把副作用做成的消费事务，写 `repaired_at`。
+    SideEffectSucceeded,
+}
+
+impl DeadLetterAction {
+    pub const ALL: [DeadLetterAction; 3] = [
+        DeadLetterAction::Claim,
+        DeadLetterAction::Discard,
+        DeadLetterAction::SideEffectSucceeded,
+    ];
+
+    /// 该动作是不是由平台端点触发。
+    ///
+    /// **`SideEffectSucceeded` 返假,这是本表最要紧的一条。** 见
+    /// [`DEAD_LETTER_TRANSITIONS`] 的文档:重投可以失败,
+    /// 端点同步置「已修复」会让「重投仍失败、双人审批后丢弃」这条验收走不通。
+    pub fn is_endpoint_action(self) -> bool {
+        !matches!(self, DeadLetterAction::SideEffectSucceeded)
+    }
+}
+
+/// 死信状态机的合法边。裁定 F-15 结论一。
+///
+/// # 一条不对称:丢弃是决定,修复是结果
+///
+/// **丢弃**当场生效——人做了决定,`discard` 端点在自己的事务里置 `Discarded`。
+/// **修复**不是任何人能宣称的——它由那次**真正把副作用做成的事务**置入。
+///
+/// 定这条的是阶段 3 计划 E2E-5 逐字:「注入一个恒失败的消费处理器,
+/// 事件走完八段退避进死信,站内通知送达责任人,**重投仍失败**,双人审批后丢弃」。
+/// 重投可以失败。若 `actions/replay` 端点同步置 `Repaired`,
+/// 这条验收的后半就无从发生——`Repaired` 出发没有任何合法边。
+///
+/// 判错方向的代价也指向同一侧:一条被误置 `Repaired` 的死信会从关账受理前提下
+/// 穿过去（裁定 C-28 把未了结定义为 `Open` 或 `Repairing`,`Repaired` 已出局）,
+/// 而那次过账其实从没成功——账上少一笔、关账照过、不当场报错。
+/// 反过来把一条真修好的死信留在 `Repairing`,只是关不成账、运维再点一次。
+///
+/// **`Repairing → Open` 不是合法边**:自动解除认领会把「谁在管这条」丢掉,
+/// 而 E2E-5 从 `Repairing` 直接走到 `Discarded` 不需要它。
+pub const DEAD_LETTER_TRANSITIONS: [(DeadLetterState, DeadLetterAction, DeadLetterState); 5] = [
+    (
+        DeadLetterState::Open,
+        DeadLetterAction::Claim,
+        DeadLetterState::Repairing,
+    ),
+    (
+        DeadLetterState::Open,
+        DeadLetterAction::SideEffectSucceeded,
+        DeadLetterState::Repaired,
+    ),
+    (
+        DeadLetterState::Repairing,
+        DeadLetterAction::SideEffectSucceeded,
+        DeadLetterState::Repaired,
+    ),
+    (
+        DeadLetterState::Open,
+        DeadLetterAction::Discard,
+        DeadLetterState::Discarded,
+    ),
+    (
+        DeadLetterState::Repairing,
+        DeadLetterAction::Discard,
+        DeadLetterState::Discarded,
+    ),
+];
+
+/// 非法迁移。
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub struct DeadLetterTransitionError {
+    pub from: DeadLetterState,
+    pub action: DeadLetterAction,
+}
+
+impl std::fmt::Display for DeadLetterTransitionError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "死信处于 {} 时不能执行 {:?}；合法边共 {} 条，见裁定 F-15",
+            self.from.as_db_value(),
+            self.action,
+            DEAD_LETTER_TRANSITIONS.len()
+        )
+    }
+}
+
+impl std::error::Error for DeadLetterTransitionError {}
+
+/// 走一次死信状态迁移。查表，**没有兜底分支**。
+pub fn dead_letter_transition(
+    from: DeadLetterState,
+    action: DeadLetterAction,
+) -> Result<DeadLetterState, DeadLetterTransitionError> {
+    DEAD_LETTER_TRANSITIONS
+        .iter()
+        .find(|(f, a, _)| *f == from && *a == action)
+        .map(|(_, _, to)| *to)
+        .ok_or(DeadLetterTransitionError { from, action })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// 五条合法边逐条走通，且**逐对穷举**:4 状态 × 3 动作 = 12 组，恰 5 组合法。
+    /// 后半句比前半句严——它同时守住没有第六条边悄悄可走。
+    #[test]
+    fn exactly_five_of_the_twelve_dead_letter_pairs_are_legal() {
+        assert_eq!(
+            DEAD_LETTER_TRANSITIONS.len(),
+            5,
+            "改这张表必须先改裁定 F-15"
+        );
+        for (from, action, to) in DEAD_LETTER_TRANSITIONS {
+            assert_eq!(dead_letter_transition(from, action), Ok(to));
+        }
+        let legal = DeadLetterState::ALL
+            .iter()
+            .flat_map(|s| DeadLetterAction::ALL.iter().map(move |a| (*s, *a)))
+            .filter(|(s, a)| dead_letter_transition(*s, *a).is_ok())
+            .count();
+        assert_eq!(legal, 5, "4 状态 × 3 动作 = 12 组，合法的应恰 5 组");
+    }
+
+    /// 本表最要紧的一条:**「已修复」不是端点动作。**
+    ///
+    /// 裁定 F-15 的依据是 E2E-5 逐字「重投**仍失败**，双人审批后丢弃」——
+    /// 重投可以失败。端点若同步置 `Repaired`，那条验收的后半就无从发生。
+    #[test]
+    fn repaired_is_not_reachable_by_any_endpoint_action() {
+        let endpoint_actions: Vec<DeadLetterAction> = DeadLetterAction::ALL
+            .iter()
+            .copied()
+            .filter(|a| a.is_endpoint_action())
+            .collect();
+        assert_eq!(endpoint_actions.len(), 2, "端点动作只有认领与丢弃两个");
+
+        for from in DeadLetterState::ALL {
+            for a in &endpoint_actions {
+                assert_ne!(
+                    dead_letter_transition(from, *a),
+                    Ok(DeadLetterState::Repaired),
+                    "{from:?} 经端点动作 {a:?} 到了 Repaired——修好了是挣来的，不是宣称的"
+                );
+            }
+        }
+        // 反面:做成副作用那一路必须真能到 Repaired，否则这条断言是恒真的。
+        assert_eq!(
+            dead_letter_transition(
+                DeadLetterState::Repairing,
+                DeadLetterAction::SideEffectSucceeded
+            ),
+            Ok(DeadLetterState::Repaired)
+        );
+    }
+
+    /// 两个终态出发没有任何边。
+    #[test]
+    fn settled_states_have_no_outgoing_edges() {
+        for from in [DeadLetterState::Repaired, DeadLetterState::Discarded] {
+            assert!(from.is_settled());
+            for a in DeadLetterAction::ALL {
+                assert!(
+                    dead_letter_transition(from, a).is_err(),
+                    "{from:?} 已了结，不该还有出边 {a:?}"
+                );
+            }
+        }
+    }
+
+    /// 不设 `Repairing → Open`:自动解除认领会把「谁在管这条」这个事实丢掉，
+    /// 而 E2E-5 从 `Repairing` 直接走到 `Discarded` 不需要它。
+    #[test]
+    fn a_claim_is_never_automatically_released() {
+        let reachable: Vec<DeadLetterState> = DeadLetterAction::ALL
+            .iter()
+            .filter_map(|a| dead_letter_transition(DeadLetterState::Repairing, *a).ok())
+            .collect();
+        assert!(
+            !reachable.contains(&DeadLetterState::Open),
+            "Repairing 回落到 Open 了，认领人就此丢失"
+        );
+    }
+
+    /// E2E-5 那条时序整条走通:进死信 → 认领 → 重投失败(状态不动) → 丢弃。
+    /// 这一条是裁定 F-15 的验收形状，缺了它上面几条各自成立但连不成一条路。
+    #[test]
+    fn the_e2e5_timeline_walks_end_to_end() {
+        let s = DeadLetterState::Open;
+        let s = dead_letter_transition(s, DeadLetterAction::Claim).expect("认领应合法");
+        assert_eq!(s, DeadLetterState::Repairing);
+        // 重投仍失败:没有任何动作被触发，状态原地不动。
+        assert!(!s.is_settled());
+        let s = dead_letter_transition(s, DeadLetterAction::Discard).expect("丢弃应合法");
+        assert_eq!(s, DeadLetterState::Discarded);
+        assert!(s.is_settled());
+    }
+
+    #[test]
+    fn dead_letter_db_values_are_distinct() {
+        assert_eq!(DeadLetterState::ALL.len(), 4);
+        let mut v: Vec<&str> = DeadLetterState::ALL
+            .iter()
+            .map(|s| s.as_db_value())
+            .collect();
+        v.sort_unstable();
+        v.dedup();
+        assert_eq!(v.len(), 4, "四个 DB 取值必须互异");
+    }
 
     #[test]
     fn success_completes_regardless_of_attempts() {

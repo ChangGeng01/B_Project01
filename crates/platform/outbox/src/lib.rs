@@ -23,7 +23,8 @@ pub mod idempotency;
 
 pub use consumption::{ConsumeDecision, ConsumptionKey};
 pub use delivery::{
-    poll_interval, DeadLetterState, NextStep, OutboxStatus, BACKOFF_SCHEDULE, FETCH_BATCH_LIMIT,
-    MAX_RETRIES, POLL_INTERVAL_BUSY, POLL_INTERVAL_IDLE,
+    dead_letter_transition, poll_interval, DeadLetterAction, DeadLetterState,
+    DeadLetterTransitionError, NextStep, OutboxStatus, BACKOFF_SCHEDULE, DEAD_LETTER_TRANSITIONS,
+    FETCH_BATCH_LIMIT, MAX_RETRIES, POLL_INTERVAL_BUSY, POLL_INTERVAL_IDLE,
 };
 pub use idempotency::{hash_hex, judge, ExistingKeyRow, KeyState};
