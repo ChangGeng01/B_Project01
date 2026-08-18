@@ -7,6 +7,19 @@
 //!     注册表逐项一致，`ep_db_retries_total` 与 `ep_tx_retry_total` 两个名字不出现在任何
 //!     登记文件与代码中。
 //! 三、单据类型码，即 `--check-doc-type-codes`，入口见 [`run_doc_type_codes`]。
+//! 四、路由能力元组。总览 A-20 与阶段 4 退出条件 17：每个 `/api/v1/` 路由都能解析到一个
+//!     `(CapabilityDomain, ActionClass)` 元组，缺失即构建失败。判据落在**声明完整性**上，
+//!     与「运行期是否真的按该元组判定」是两件事——后者今天在注册处被 `_capability` 丢弃，
+//!     属附录辛第 26 条，本段不判、也不得被读作已判。
+//!
+//! 第四段的文本级判定规则与其三处已知限制：
+//! 一、只扫 `apps/` 下**含 `.route(` 的**源码文件。守卫里的路径比较（形如
+//!     `if path != "/api/v1/..."`）不构成路由注册，按此规则自然排除。
+//! 二、`/api/v1/system/` 前缀豁免。依据是阶段 1 计划端点表权限列逐字「无，仅回环」，
+//!     同计划另有一条 e2e 用例断言该前缀不对外暴露。
+//! 三、关联判据取「相邻两个路径字面量之间须出现一次 `CapabilityDomain::`」，末条取到文本末。
+//!     该规则认的是**同一声明块内的邻接**，不做语法树解析；若日后有人把元组写到
+//!     下一条路径之后，本判据会漏。这一条是本段的已知上限，不写成「已覆盖」。
 //!
 //! 第三段的逐项比对按退出条件 23 与技术基线第 12 节通则第六条整条推迟到阶段 3a，
 //! 因此它落进 [`Report::deferred`] 而不是 [`Report::uncovered`]：推迟是通则给出的三种
@@ -75,6 +88,7 @@ pub fn run(root: &Path) -> Report {
 
     compared += check_config_keys(root, &mut problems, &mut uncovered);
     compared += check_metrics(root, &mut problems, &mut uncovered);
+    compared += check_route_capabilities(root, &mut problems, &mut uncovered);
 
     Report {
         problems,
@@ -523,6 +537,105 @@ fn sequence_type_codes(root: &Path) -> Vec<String> {
     out
 }
 
+// ---------------------------------------------------------------------------
+// 四、路由能力元组
+// ---------------------------------------------------------------------------
+
+/// 系统端点前缀，按阶段 1 计划端点表权限列逐字「无，仅回环」豁免。
+const SYSTEM_ROUTE_PREFIX: &str = "/api/v1/system/";
+
+/// 从一份源码文本里取出全部路由路径及其是否带能力元组。
+///
+/// 判定规则见模块文档第四段。以文本为被测对象，因此负样例直接喂一份手写源码即可。
+fn scan_route_capabilities(text: &str) -> Vec<(String, bool)> {
+    let mut hits: Vec<(usize, String)> = Vec::new();
+    let needle = "\"/api/v1/";
+    let mut from = 0usize;
+    while let Some(rel) = text[from..].find(needle) {
+        let at = from + rel;
+        let lit_start = at + 1;
+        match text[lit_start..].find('"') {
+            None => break,
+            Some(end_rel) => {
+                let path = text[lit_start..lit_start + end_rel].to_string();
+                hits.push((at, path));
+                from = lit_start + end_rel + 1;
+            }
+        }
+    }
+
+    let mut out = Vec::new();
+    for i in 0..hits.len() {
+        let (start, ref path) = hits[i];
+        if path.starts_with(SYSTEM_ROUTE_PREFIX) {
+            continue;
+        }
+        let end = hits.get(i + 1).map_or(text.len(), |(next, _)| *next);
+        let has = text[start..end].contains("CapabilityDomain::");
+        out.push((path.clone(), has));
+    }
+    out
+}
+
+/// 递归收集 `apps/` 下的 `.rs` 文件。
+fn rs_files(dir: &Path, out: &mut Vec<PathBuf>) {
+    let Ok(entries) = fs::read_dir(dir) else {
+        return;
+    };
+    for e in entries.flatten() {
+        let p = e.path();
+        if p.is_dir() {
+            rs_files(&p, out);
+        } else if p.extension().is_some_and(|x| x == "rs") {
+            out.push(p);
+        }
+    }
+}
+
+fn check_route_capabilities(
+    root: &Path,
+    problems: &mut Vec<String>,
+    uncovered: &mut Vec<String>,
+) -> usize {
+    let mut files = Vec::new();
+    rs_files(&root.join(APPS), &mut files);
+    files.sort();
+
+    let mut compared = 0usize;
+    let mut scanned_files = 0usize;
+    for f in files {
+        let Ok(text) = fs::read_to_string(&f) else {
+            continue;
+        };
+        // 只扫真的注册路由的文件；守卫里的路径比较不构成注册。
+        if !text.contains(".route(") {
+            continue;
+        }
+        scanned_files += 1;
+        let rel = f.strip_prefix(root).unwrap_or(&f).display().to_string();
+        for (path, has) in scan_route_capabilities(&text) {
+            compared += 1;
+            if !has {
+                problems.push(format!(
+                    "{rel} 的路由 {path} 解析不到 (CapabilityDomain, ActionClass) 元组；\
+                     按总览 A-20 与阶段 4 退出条件 17，缺失即构建失败"
+                ));
+            }
+        }
+    }
+
+    if scanned_files == 0 {
+        uncovered.push(format!(
+            "未覆盖：{APPS} 下没有含 .route( 的源码文件，路由能力元组判据无被测输入"
+        ));
+    } else if compared == 0 {
+        uncovered.push(format!(
+            "未覆盖：扫了 {scanned_files} 个含路由注册的文件，但没有解析出任何非系统 /api/v1/ 路由"
+        ));
+    }
+    compared
+}
+
 #[cfg(test)]
 mod negative_samples {
     use super::*;
@@ -532,6 +645,54 @@ mod negative_samples {
             .parent()
             .expect("xtask 在工作区根之下")
             .to_path_buf()
+    }
+
+    /// 判据本体：带元组的条目判过，缺元组的条目判不过。
+    /// 以文本为被测对象，故负样例直接喂手写源码。
+    #[test]
+    fn a_route_without_a_capability_tuple_is_caught() {
+        let good = r#"
+            .route(
+                "/api/v1/platform/things",
+                get(list),
+                (CapabilityDomain::PlatformAdminLowcodeOps, ActionClass::Read),
+            )
+        "#;
+        assert_eq!(
+            scan_route_capabilities(good),
+            vec![("/api/v1/platform/things".to_string(), true)]
+        );
+
+        let bad = r#"
+            .route("/api/v1/platform/things", get(list))
+        "#;
+        assert_eq!(
+            scan_route_capabilities(bad),
+            vec![("/api/v1/platform/things".to_string(), false)]
+        );
+    }
+
+    /// 系统端点按阶段 1 计划端点表权限列「无，仅回环」豁免，不进被测面。
+    #[test]
+    fn system_routes_are_exempt() {
+        let text = r#".route("/api/v1/system/echo", post(echo))"#;
+        assert!(scan_route_capabilities(text).is_empty());
+    }
+
+    /// 相邻两条之间各判各的：前一条有元组不能替后一条顶过。
+    #[test]
+    fn a_tuple_does_not_cover_the_next_route() {
+        let text = r#"
+            ("/api/v1/platform/a", get(a), (CapabilityDomain::MdmMasterData, ActionClass::Read)),
+            ("/api/v1/platform/b", get(b)),
+        "#;
+        assert_eq!(
+            scan_route_capabilities(text),
+            vec![
+                ("/api/v1/platform/a".to_string(), true),
+                ("/api/v1/platform/b".to_string(), false),
+            ]
+        );
     }
 
     /// 仓库现状：配置键与指标名两侧齐备，本子命令应全绿。

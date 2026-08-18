@@ -74,53 +74,106 @@ pub fn trace_of(headers: &HeaderMap) -> String {
         .unwrap_or_else(|| ZERO_TRACE.to_string())
 }
 
-/// 九个平台路由。能力常量在 capability 登记，路由字面量是唯一引用点。
+/// 十个平台路由，四读六写。能力常量在 capability 登记，路由字面量是唯一引用点。
 /// 写路由单独成组并挂阶段 1 的幂等键请求头守卫层；判等与重放存储
 /// 属阶段 3a，本阶段不实现（C-07 三段分工）。
+///
+/// 本函数原先用裸 `.route(path, handler)` 注册这十条，**绕开了同文件定义的
+/// [`RouteEntry`]**，于是那一行「能力元组缺失即编译不过」对这十条不生效——
+/// 全仓 33 条路由里恰是这十条没有能力元组。改为逐条走 `RouteEntry`，
+/// 使该类型的编译期保证覆盖到它们；判据侧另由 `xtask configdoc` 第四段承接。
+///
+/// 十条的能力域一律取 `PlatformAdminLowcodeOps`，与 `identity_admin.rs` 的
+/// 平台管理端点同域；动作类别按读写取 `Read` 与 `Write`。这两项是本次落码所定，
+/// 卷内未逐条指定，若日后另有裁定以裁定为准。
 pub fn platform_router(state: Arc<PlatformState>) -> Router {
-    let reads = Router::new()
-        .route(
+    const READS: usize = 4;
+    const WRITES: usize = 6;
+
+    let read_entries: [RouteEntry; READS] = [
+        (
             "/api/v1/platform/key-domains",
             get(key_domain::list_key_domains),
-        )
-        .route(
+            (CapabilityDomain::PlatformAdminLowcodeOps, ActionClass::Read),
+        ),
+        (
             "/api/v1/platform/key-domains/{id}",
             get(key_domain::get_key_domain),
-        )
-        .route(
+            (CapabilityDomain::PlatformAdminLowcodeOps, ActionClass::Read),
+        ),
+        (
             "/api/v1/platform/sensitive-fields",
             get(sensitive::list_sensitive_fields),
-        )
-        .route(
+            (CapabilityDomain::PlatformAdminLowcodeOps, ActionClass::Read),
+        ),
+        (
             "/api/v1/platform/migrations",
             get(migration::list_migrations),
-        )
-        .with_state(state.clone());
-    let writes = Router::new()
-        .route(
+            (CapabilityDomain::PlatformAdminLowcodeOps, ActionClass::Read),
+        ),
+    ];
+    let write_entries: [RouteEntry; WRITES] = [
+        (
             "/api/v1/platform/key-domains/actions/provision",
             post(key_domain::provision_key_domain),
-        )
-        .route(
+            (
+                CapabilityDomain::PlatformAdminLowcodeOps,
+                ActionClass::Write,
+            ),
+        ),
+        (
             "/api/v1/platform/key-domains/{id}/actions/rotate",
             post(key_domain::rotate_key_domain),
-        )
-        .route(
+            (
+                CapabilityDomain::PlatformAdminLowcodeOps,
+                ActionClass::Write,
+            ),
+        ),
+        (
             "/api/v1/platform/key-domains/{id}/actions/plan-destroy",
             post(key_domain::plan_destroy_key_domain),
-        )
-        .route(
+            (
+                CapabilityDomain::PlatformAdminLowcodeOps,
+                ActionClass::Write,
+            ),
+        ),
+        (
             "/api/v1/platform/key-domains/{id}/actions/cancel-destroy",
             post(key_domain::cancel_destroy_key_domain),
-        )
-        .route(
+            (
+                CapabilityDomain::PlatformAdminLowcodeOps,
+                ActionClass::Write,
+            ),
+        ),
+        (
             "/api/v1/platform/migrations/actions/open-window",
             post(windows::open_window),
-        )
-        .route(
+            (
+                CapabilityDomain::PlatformAdminLowcodeOps,
+                ActionClass::Write,
+            ),
+        ),
+        (
             "/api/v1/platform/migrations/actions/close-window",
             post(windows::close_window),
-        )
+            (
+                CapabilityDomain::PlatformAdminLowcodeOps,
+                ActionClass::Write,
+            ),
+        ),
+    ];
+
+    let mut reads = Router::new();
+    for (path, handler, _capability) in read_entries {
+        reads = reads.route(path, handler);
+    }
+    let reads = reads.with_state(state.clone());
+
+    let mut writes = Router::new();
+    for (path, handler, _capability) in write_entries {
+        writes = writes.route(path, handler);
+    }
+    let writes = writes
         .layer(from_fn_with_state(
             state.system.clone(),
             idempotency_key_guard,

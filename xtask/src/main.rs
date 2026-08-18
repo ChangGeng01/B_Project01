@@ -154,7 +154,11 @@ judged_uncovered! {
     sqlcheck => |r| format!("{} 条规则，扫过 {} 个迁移文件", r.checked.len(), r.scanned_files),
     codecheck => |r| format!("核过 {} 项", r.checked),
     eventcatalog => |r| format!("比对 {} 个事件类型", r.compared),
-    configdoc => |r| format!("比对 {} 个配置键，{} 项按裁定推迟", r.compared, r.deferred.len()),
+    configdoc => |r| format!(
+        "比对 {} 个条目（配置键、指标名与路由能力元组三段合计），{} 项按裁定推迟",
+        r.compared,
+        r.deferred.len()
+    ),
 }
 
 judged_undecidable!(coverage, sbom, sign, reproduce);
