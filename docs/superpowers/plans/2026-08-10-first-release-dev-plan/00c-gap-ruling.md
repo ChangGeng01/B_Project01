@@ -4394,6 +4394,170 @@ crate 内部**（`lib.rs:25` 的 `pub use` 与 `decider.rs` 的定义、impl、�
 | 辛-26 | 路由能力元组被 `_capability` 丢弃，33 条在线端点今天无能力判定且无任何东西会报出来 | 须走裁定 |
 | 辛-27 | 部署期闸门无自动调用方：`ep-migrate` 与 `--check` 在 CI、deploy、scripts 全部零命中 | 须走裁定 |
 
+### F-23　裁定附录辛第 27 条：部署期闸门无自动调用方
+
+候选稿五条要点**全部被对抗性核查打掉**，其中一条是我自己标为「优先级最高」的新发现——
+它是错的，本裁定撤回。更要紧的是普查查出**同形态全卷 13 处**，最大的一处接的是**发布放行**。
+
+#### 结论零　辛-27 登记稿两处更正
+
+**一、「`ep-migrate` 与 `--check` 在 CI、deploy、scripts 全部零命中」——`ep-migrate` 不是零命中。**
+它作为镜像名出现在 `scripts/verify-release.sh` 两处。
+准确表述：**`--check` 零命中；`ep-migrate` 仅作镜像名出现，无任何执行点。**
+
+**二、「比辛-22 大」成立，但理由要换。** 不是因为挂在它下面的东西多，
+而是因为**同形态在全卷有 13 处**，且其中一处接的是发布放行（见结论五）。
+
+#### 结论一　辛-27 是一个捆绑，拆成三件，承接方各不相同
+
+**（一）`ep-migrate check`——卷内已有调用方名词，但有两个名字且都无交付物行。**
+`01-engineering-baseline.md:592` 逐字「由**升级脚本**在升级窗口内以 `ep-migrate` 账户
+直接拉起并等其退出，退出码原样判定」；而 `01-engineering-baseline.md:457` 逐字
+「改由**起栈脚本**以其独立账户直接拉起并等其退出、按退出码原样判定」。
+**两者是不是同一个，卷内零说明。** 且「升级脚本」四字在全 15 份计划里只出现两处，
+**都是理由句里的一个名词，不是任何阶段的交付物行**。
+
+处置：不新立承接方，但 F-08 第十节第 5 步须把它**升为具名交付物并统一命名**——
+否则重建时会得到两个脚本或零个。
+
+**（二）`db/checks`——不该推给部署期，但分母是 13 不是 14。**
+这十三项要的不是「一套已起的部署」，是**一台跑过迁移的库**：它们读的
+`unpoliced_table_registry`、`append_only_registry` 都由迁移建并回填。
+第 14 项 `append_only_consistency.sql` **今天没有执行方**（辛-24），须先解那一条。
+
+**但 CI 跑是必要不充分**，两条理由：第 12 号断言的被测对象是**建库参数**
+（`db/bootstrap/00_database.sql` 的 locale 与 ICU），不是迁移产物；
+部署库还会累积**在线 DDL 在运行期建出的 `ext.*` 对象**，CI 里永远没有。
+故部署期那一道**不能省**，它是第二道而非唯一一道。
+
+**（三）八个二进制的 `--check`——三件里唯一纯粹的缺口。** 无调用方，也无人工手册兜底。
+
+#### 结论二　我标为「优先级最高」的那条新发现是错的，撤回
+
+候选稿第三节写「`--check` 在无库环境返回 0，是第一类缺陷（恒真的判据），优先级最高」。
+**两处都错：**
+
+**一、触发条件说错了。** 真实条件不是「无库」，是「**SQL 探针未装配**」。
+而 core-server 与 job-worker **已装配真探针**（`wiring/db.rs` 两处逐字 `Some(Arc::new(
+FoundationProbeAdapter::new(`），且连接池是**惰性**的（`connect_lazy_with`）——
+配置与机密齐备而库不在时，探针为 `Some` → `DatabaseReachable` 判
+`Verdict::Fail("数据库不可达：…")` → Blocking → **非零退出**。
+**最要紧的两个二进制行为是对的。**
+
+**二、「Pending 不计入成败」是登记在案的取舍，不是疏漏。**
+阶段 1 计划第 217 行定死该口径，第 620 行「假设二」写明了替代方案
+（八进程以 Degraded 启动）与**不采用的理由**（会淹没规格第 15.3 章的真实降级信号），
+并配了补偿控制（Pending 只减不增、最后阶段归零），第 614 行连
+`selfcheck.pending_as_failure` 这个开关都明令删除。**是决定，不是缺陷。**
+
+**但这条线索底下有一件真的，且不需要任何口径裁定：**
+`crates/platform/runtime/src/process.rs:60-65` 把 `ProcessKind::IntegrationGateway` 与
+`ProcessKind::OpsAgent` 列在 `holds_sql_session()` 返**真**的一支，
+而两者的 `Cargo.toml` **都没有 `ep-adapter-db-pg`**（命中数 **0**），
+`src/wiring/` 下只有 `mod.rs`、无 `db.rs`、无 `probes.rs`。
+且 `apps/integration-gateway/src/wiring/mod.rs` 逐字
+「与 core-server 同理：`ep-adapter-db-pg` 尚未提供 `SqlProbe` 实现」——
+**core-server 今天已经注入了，这半句是假的。** 三者互相矛盾。登记为**辛-28**。
+
+#### 结论三　甲（接编排面）撤销，但候选稿给的理由方向反了
+
+候选稿写「加一个编排 unit 会当场打破等价并判红」。**两处都错：**
+
+**一、「当场」把静态可能性写成了运行事实。** `verify-orchestration-equivalence.py`
+**自己也没有自动调用方**——`deploy/ORCHESTRATION.md:203` 逐字自陈
+「**两个脚本没有接进 CI。** 流水线定义在 `.github/` 下，不在本次交付的路径范围内。」
+
+**二、更要命的是方向反了：那条判据对甲的落地物恒真。**
+该脚本的扫描 glob 只有 `*.volume`／`*.container`／`*.slice`／`*.slice.d`，
+**没有 `*.service`**。而甲的 systemd 落地物正是一个 `*.service`（`Type=oneshot` + `Before=`）——
+**判据一声不响地通过。** 这比「判红」严重，它是本卷第一类缺陷在判定件上的形态。
+
+甲撤销的**真理由**是两条：`00c:2263` 逐字停写线「在 CI 平台裁定出结论之前，
+**不得改 `.github/` 下任何脚本的平台绑定**」，以及 `00c:2044` 已把等价性判据撤下、
+两套编排失去对象。**往一个已被判定为「正在消失」的编排形态里接闸门，
+等于把闸门接到一个不会交付的东西上。**
+
+#### 结论四　乙可以劈成两半，今轮能落一半
+
+候选稿说「加 `services:` 算不算平台绑定，须裁定人一句话定死」。
+**不必裁——卷内已给了切分线。**
+「平台绑定」在 `00c:2128` 与 `00c:5371` **两次以枚举方式自释**，点名四处具体位置
+（执行器标签、离线 `CARGO_HOME`、`xtask/src/ci.rs` 固定拼 bash、可执行位判定），
+**数据库服务不在其中**。而 `.github/workflows/ci.yml` 自身逐字
+「无论最终取哪一条，要改的都只有本文件——判定逻辑全在 xtask 与
+`.github/ci/pipeline-stages.tsv` 里，一行不动。」
+
+**故：**
+- **平台无关、今轮可落**：`.github/ci/pipeline-stages.tsv` 与 `docs/ci-pipeline.md`
+  第 3 节同批加一行 db-checks 阶段。登记表不是脚本、不含平台绑定。
+- **平台绑定、挂 CI 平台裁定**：库怎么起（`services:` 段或执行器镜像预置）只写在 `ci.yml` 里。
+
+**须同批解决一条，否则乙是空的**：`crates/adapter/db-pg/tests/live_pg.rs` 逐字
+「未设该变量时本文件全部用例**即刻返回**并在 stderr 留痕」，
+而 `.github/` 下 `EP_TEST_PG_URL` 与 postgres **零命中**。
+**加库而不同时把「未设即跳过」改成「未设即失败」，等于把绿色挪个位置。**
+
+#### 结论五　普查：「造好了没接线」全卷 13 处，最大一处接的是**发布放行**
+
+`tools/release-gate/src/main.rs` **全文 5 行**，逐字：
+
+```rust
+//! ep-release-gate — 工具 crate 骨架。
+
+fn main() {
+    println!("ep-release-gate skeleton");
+}
+```
+
+返 0。而 `RG-RLS-MATRIX-GREEN`、`RG-CI-PROBE-ABSENT`、`RG-TOOLS-EXCLUDED`、
+`RG-NO-UNDECIDABLE` **四个发布门禁项全部把判定委托给它**——
+`testkit/tests/rls_matrix.rs:8-9` 逐字「判绿。绿判定属发布门禁项 `RG-RLS-MATRIX-GREEN`
+（阶段 14 的 / ep-release-gate 逐项判定）。」
+
+**完整链条：`rls_matrix` 全 Skipped → 绿判定委托给一个 println 骨架 → 骨架返 0。**
+这比辛-27 描述的任何一项都彻底，且**它守的是发布放行**。登记为**辛-29**。
+
+`tools/bench/src/main.rs` 同为 5 行骨架（`println!("ep-bench skeleton");`），
+承接附录 A 的性能容量基线。登记为**辛-30**。
+
+#### 结论六　一处「有调用方，但判据自己比自己」——比无调用方更坏
+
+`scripts/verify-connection-budget.sh` 的 `spec_rows()` 是一个**写死八行的 heredoc**，
+第二项把这八行加总，再与**同一文件里**的 `EXPECT_RESIDENT_SUM=42` 比——
+**规格第 7.7 章一次都没被读到。**
+
+且第四项只断言 `portal-gateway` 与 `plugin-host` **不**链接 `ep-adapter-db-pg`，
+**没有反向断言** `integration-gateway` 与 `ops-agent` 链接了。
+结合结论二的实测：**规格 42 条常驻连接里记在这两个进程头上的 7 条，
+代码里没有任何池创建点，而这个判定件永远绿。** 登记为**辛-31**。
+
+#### 一处须如实交代的
+
+**CI 是真的**——`.github/workflows/ci.yml` 存在。**但它没有库**（`.github/` 下 postgres 零命中）。
+本卷历轮我报的「六门禁全绿」是我**在本机逐条跑 `cargo run -p ep-xtask -- <gate>` 的结果**，
+那六道判的都是静态面，不需要库；**它们的绿与 `db/checks` 十四项的状态无关**——
+后者今天在任何地方都没有跑过。这一点此前各轮未加区分，在此讲明。
+
+#### 残余
+
+- **A** `spec:1410` 明列的「部署与升级回退手册」**全卷零认领**；
+  `14:45` 点名的落点 `docs/runbooks/` 与 `docs/delivery/` **两个目录都不存在**
+- **B** 「升级脚本」与「起栈脚本」是否同一个，卷内零说明
+- **C** CI 平台裁定（`00c:2270` 第十一节第 4 条）未出，乙的另一半挂在它下面
+- **D** `docs/ci-pipeline.md` 与 `run-pipeline.sh` 两处陈述已被 `xtask ci` 的交付推翻，
+  一说登记表已作废、一说它是唯一真值，无判定件覆盖散文段
+- **E** 本轮全部结论均为**静态读码，一次未跑**——
+  「一台迁移过的空库足以让十三项产生真判定」这一论断仍未经真实执行验证
+
+#### 新登记的附录辛条目
+
+| 编号 | 缺口 | 类 |
+|---|---|---|
+| 辛-28 | `holds_sql_session()` 对两个进程返真，而两者不依赖 db 适配层、无 probes；且两处模块注释与代码事实相反 | 须走裁定 |
+| 辛-29 | `ep-release-gate` 是 5 行 println 骨架返 0，而四个 `RG-*` 发布门禁项全部委托给它 | 须走裁定 |
+| 辛-30 | `ep-bench` 是 5 行骨架，承接附录 A 性能容量基线 | 须走裁定 |
+| 辛-31 | `verify-connection-budget.sh` 的期望值与实际值同源（自己比自己），且缺反向断言 | 须走裁定 |
+
 ## 附录丙　阶段 1 实测引出的同类缺陷登记
 
 本附录登记裁定 F-01 与 F-03 落地过程中，由三次同类缺陷普查查出的 22 条。
