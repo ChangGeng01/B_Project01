@@ -348,7 +348,7 @@ db/migrations/platform_core/ 再追加一个回填文件，其主要创建对象
 
 #### 3.4 默认账龄分档取值
 
-对应 U-D-11 的临时取值，播种为 is_preset 的 profile，code 为 AGING-DEFAULT-7，允许管理员经第 5.3 节的账龄分档端点在审批后修改。账龄分档不属阶段 3a 冻结的 15 个 item_kind，因此不进配置发布包，其修改只在本环境内生效，不经跨环境发布通道，也不另建第二套发布路径。
+对应 U-D-11 的临时取值，播种为 is_preset 的 profile，code 为 AGING-DEFAULT-7，允许管理员经第 5.3 节的账龄分档端点在审批后修改。账龄分档不属阶段 3a 冻结的 16 个 item_kind，因此不进配置发布包，其修改只在本环境内生效，不经跨环境发布通道，也不另建第二套发布路径。
 
 | sort_no | bucket_code | label | from_days | to_days | includes_not_due |
 |---|---|---|---|---|---|
@@ -509,7 +509,7 @@ ep-domain-reporting：
 | DASHBOARD_DEFINITION | DashboardDefinitionApplier | DASHBOARD |
 | PRINT_TEMPLATE | PrintTemplateApplier | PRINT_TEMPLATE |
 
-item_kind 取值取自阶段 3a 冻结的 15 项枚举，report_objects.object_kind 的四个取值不改名，两者的映射只在 applier 内部转换，理由是 object_kind 是本模块表的 CHECK 取值，改名会牵动已发布对象的行数据与既有索引。
+item_kind 取值取自阶段 3a 冻结的 16 项枚举（第 16 项 `RULE` 由裁定 F-21 新立，代码侧由阶段 13b 同批加入），report_objects.object_kind 的四个取值不改名，两者的映射只在 applier 内部转换，理由是 object_kind 是本模块表的 CHECK 取值，改名会牵动已发布对象的行数据与既有索引。
 
 apply 的幂等：按 code 与 spec_hash 定位，已存在同 code 且 spec_hash 相同的 PUBLISHED 版本即跳过；不同即新建 version_no 加一的版本并写入或更新 publications 行。rollback 按包内记录的前一版本 version_no 回退 publications 行，不删除任何版本行，与第 4.6 节的四状态机共用同一套守卫，不另建状态迁移路径。
 

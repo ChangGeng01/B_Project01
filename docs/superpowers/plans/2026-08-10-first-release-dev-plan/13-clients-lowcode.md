@@ -239,7 +239,7 @@ status 取值与 PRD 第 10.4.1 节状态表逐行对应：DRAFT（草稿）、P
 
 列：id、security_level、config_package_id uuid、item_kind text、item_code text、change_kind text（ADD、MODIFY、REMOVE）、applies_to_legal_entity_ids uuid[]（空数组表示全部法人）、before_spec jsonb、after_spec jsonb、item_hash text、sort_no int、公共列。
 
-item_kind 取值封闭为 15 项：CUSTOM_OBJECT、CUSTOM_FIELD、CUSTOM_RELATION、CUSTOM_INDEX、CUSTOM_VIEW、UI_LAYOUT、FLOW_DEFINITION、AUTHZ_ROLE、AUTHZ_POLICY、AUTHZ_FIELD_GRANT、REPORT_DEFINITION、METRIC_DEFINITION、DASHBOARD_DEFINITION、PRINT_TEMPLATE、NOTIFY_RULE。其中 FLOW_、AUTHZ_、REPORT_、METRIC_、DASHBOARD_、PRINT_、NOTIFY_ 七类的定义对象表由流程、权限、报表、通知各自阶段拥有，本表只保存其序列化快照与哈希，落地由第 4.6 节的 `ConfigItemApplier` 端口交回各阶段实现。本阶段不定义那些表；PRINT_TEMPLATE 内容项的打印排版按裁定 A-08 只产出 `ep_foundation::port::doc::PrintLayout` 取值，本阶段不自建渲染路径，也不新增 trait。
+item_kind 取值封闭为 16 项：CUSTOM_OBJECT、CUSTOM_FIELD、CUSTOM_RELATION、CUSTOM_INDEX、CUSTOM_VIEW、UI_LAYOUT、FLOW_DEFINITION、AUTHZ_ROLE、AUTHZ_POLICY、AUTHZ_FIELD_GRANT、REPORT_DEFINITION、METRIC_DEFINITION、DASHBOARD_DEFINITION、PRINT_TEMPLATE、NOTIFY_RULE、RULE。第 16 项 `RULE` 由裁定 F-21 新立，其定义对象表、applier 与录入通道按该裁定六件配齐，applier 属主为本阶段的 ep-platform-meta。其中 FLOW_、AUTHZ_、REPORT_、METRIC_、DASHBOARD_、PRINT_、NOTIFY_ 七类的定义对象表由流程、权限、报表、通知各自阶段拥有，本表只保存其序列化快照与哈希，落地由第 4.6 节的 `ConfigItemApplier` 端口交回各阶段实现。本阶段不定义那些表；PRINT_TEMPLATE 内容项的打印排版按裁定 A-08 只产出 `ep_foundation::port::doc::PrintLayout` 取值，本阶段不自建渲染路径，也不新增 trait。
 
 约束与索引：`pk_config_package_items`、`fk_config_package_items_config_packages`、`ux_config_package_items_pkg_kind_code`、`ix_config_package_items_config_package_id_created_at`、`ck_config_package_items_item_kind`、`ck_config_package_items_change_kind`、`ck_config_package_items_specs`（ADD 时 `before_spec` 为空且 `after_spec` 非空，REMOVE 时相反，MODIFY 时两者均非空）。无行级策略。
 
@@ -430,7 +430,7 @@ pub enum PackageStatus { Draft, PendingAutotest, TestFailed, TestPassed, Pending
     Rejected, Approved, SignedPendingRelease, Released, RolledBack, Superseded }
 pub enum ReleaseOrderStatus { Submitted, Approved, Rejected, Queued, Executing,
     Succeeded, Failed, Compensated, Cancelled }
-pub enum ItemKind { /* 15 项，见 3.2.11；本枚举与 ConfigPackageItem 由阶段 3a 在 crates/platform/release/src/port/config_item.rs 交付，见裁定 A-19 */ }
+pub enum ItemKind { /* 16 项，见 3.2.11（第 16 项 RULE 由裁定 F-21 新立）；本枚举与 ConfigPackageItem 由阶段 3a 在 crates/platform/release/src/port/config_item.rs 交付，见裁定 A-19 */ }
 pub enum ChangeKind { Add, Modify, Remove }
 ```
 
@@ -1073,7 +1073,7 @@ pub trait ConfigItemApplier: Send + Sync {
 
 #### 11.2 为后续阶段预留的扩展点
 
-- `ConfigItemApplier` 端口由阶段 3a 按裁定 A-19 交付，其 `item_kind` 取值集合可扩展。新增一类定制内容项时只需实现该 trait 并在 wiring 注册到 `ConfigItemApplierRegistry`，发布链路、差异算法、签名、审批与回退全部复用，不改本阶段任何表。
+- `ConfigItemApplier` 端口由阶段 3a 按裁定 A-19 交付，其 `item_kind` 取值集合可扩展。新增一类定制内容项时只需实现该 trait 并在 wiring 注册到 `ConfigItemApplierRegistry`，发布链路、差异算法、签名、审批与回退全部复用，不新建本阶段任何表，但须放宽 `ck_config_package_items_item_kind` 并同批更新阶段 3a 的 `ItemKind::ALL`（裁定 F-21 结论四判原措辞「不改本阶段任何表」为假）。
 - `CapabilityValue` 枚举与 `client_capability_values` 表结构支持新增能力域行与新增端列。恢复客户门户或经销商门户配套应用时，只需新增能力域行与新的 `client` 取值，不改判定算法。
 - `extension_capability_grants.capability` 的取值集合封闭在 4 项。恢复服务端隔离容器形态或新增外设适配时，新增取值并同步扩展宿主导入函数表；宿主导入函数表的断言测试是新增能力必须同步修改的强制点。
 - 客户端本地缓存的记录标签已按规格第 7.9 章口径携带，为后续恢复离线数据租约、租约到期锁定与撤销序列、离线草稿字段级合并预留了判定依据。

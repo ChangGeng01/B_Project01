@@ -56,7 +56,7 @@
 按归属裁定前移到本阶段的能力，四项。第 19 项属 3a 段，其余三项属 3b 段。
 
 18. 全文检索索引与查询（3b 段）：`ep-adapter-search` 实现 `ep_foundation::port::search::SearchIndexPort` 与 `SearchQueryPort`，索引按法人分区，物理路径 `C:\EP\search\<legal_entity_id>\`。`SearchDocument`、`SearchQuery`、`SearchHit` 三个类型与两个 trait 由阶段 1 在 `crates/foundation/src/port/search.rs` 建空文件、本阶段补齐。写入一律经 job-worker 消费 Outbox 事件触发，不在业务事务内调用。本阶段不交付任何业务对象的检索文档投影函数，投影由各业务阶段按 `SearchDocument` 结构提供，见第 3.4.10 节。
-19. 配置发布的内容项落地端口（3a 段）：`crates/platform/release/src/port/config_item.rs`，内容为 `ConfigItemApplier` trait、`ItemKind` 枚举 15 项、`ConfigPackageItem` DTO 与 `ConfigItemApplierRegistry`，其中 `Tx` 取自 `ep_foundation::port::tx`。本项无表、无用例、不依赖身份与授权，因此排在阶段 4 之前，使阶段 4 的三个授权类 applier 不再倒挂，见第 3.4.12 节。
+19. 配置发布的内容项落地端口（3a 段）：`crates/platform/release/src/port/config_item.rs`，内容为 `ConfigItemApplier` trait、`ItemKind` 枚举 16 项（第 16 项 `RULE` 由裁定 F-21 新立，代码侧由阶段 13b 同批加入）、`ConfigPackageItem` DTO 与 `ConfigItemApplierRegistry`，其中 `Tx` 取自 `ep_foundation::port::tx`。本项无表、无用例、不依赖身份与授权，因此排在阶段 4 之前，使阶段 4 的三个授权类 applier 不再倒挂，见第 3.4.12 节。
 20. 最小配置发布通道（3b 段）：`platform_meta.config_packages`、`platform_meta.config_package_items`、`platform_meta.config_release_orders` 三张表，六态发布状态机，ECDSA P-256 签名与逐项 `item_hash` 校验，发布与回退用例，`ConfigItemApplierRegistry` 的运行期装配，以及 `FlowDefinitionApplier` 与 `NotifyRuleApplier` 两个 applier。本阶段不建 `config_release_steps` 与 `config_edit_locks`，十一态生命周期、自动测试编排与编辑锁由阶段 13b 扩展。
 21. 模块许可与生命周期（3b-2 批）：`platform_core.module_registrations`、`platform_core.license_grants`、`platform_core.feature_flags` 三张表与 `ep-platform-license` 的 `ModuleLicenseQuery`。定时器扫描与 Outbox 投递按 `ModuleLicenseQuery::module_state` 过滤，落实规格第 5.6 章模块停用后停止定时任务与对外事件。许可到期与吊销的后果由 `LicenseStatus` 四态与规格第 3.4 章的受限运行承接，不进启动自检，基线第 7.3 节的 `license-and-modules-consistent` 整项删除，见第 3.4.11 节。模块停用再启用的端到端验收按裁定 A-05 顺延到阶段 13b。
 
@@ -779,7 +779,7 @@ archive-writer 与 backup-writer 在本阶段不改动，本阶段只为其提�
 
 **表 29 `platform_meta.config_package_items`**（3b 段，部署级）
 
-列与约束按阶段 13 计划第 3.2.11 节逐项照建，`item_kind` 的 CHECK 一次建齐第 3.4.12 节冻结的 15 项，与 3a 段冻结的 `ItemKind` 枚举逐项一致，未在 `ConfigItemApplierRegistry` 注册实现的 `item_kind` 由运行期校验拒绝发布，不靠 CHECK 拦截。
+列与约束按阶段 13 计划第 3.2.11 节逐项照建，`item_kind` 的 CHECK 一次建齐第 3.4.12 节冻结的 16 项（第 16 项 `RULE` 由裁定 F-21 新立，代码侧由阶段 13b 同批加入），与 3a 段冻结的 `ItemKind` 枚举逐项一致，未在 `ConfigItemApplierRegistry` 注册实现的 `item_kind` 由运行期校验拒绝发布，不靠 CHECK 拦截。
 
 **表 30 `platform_meta.config_release_orders`**（3b 段，部署级）
 
@@ -1156,7 +1156,7 @@ pub trait ModuleLicenseQuery: Send + Sync {
 
 #### 3.4.12 配置发布的内容项端口与最小发布通道
 
-3a 段只交付一个文件 `crates/platform/release/src/port/config_item.rs`，内容为下列 trait、`ItemKind` 枚举 15 项、`ConfigPackageItem` DTO 与 `ConfigItemApplierRegistry`。trait 方法签名与阶段 13 计划第 4.6 节逐字一致，其中 `Tx` 取自 `ep_foundation::port::tx`：
+3a 段只交付一个文件 `crates/platform/release/src/port/config_item.rs`，内容为下列 trait、`ItemKind` 枚举 16 项（第 16 项 `RULE` 由裁定 F-21 新立，代码侧由阶段 13b 同批加入）、`ConfigPackageItem` DTO 与 `ConfigItemApplierRegistry`。trait 方法签名与阶段 13 计划第 4.6 节逐字一致，其中 `Tx` 取自 `ep_foundation::port::tx`：
 
 ```rust
 pub trait ConfigItemApplier: Send + Sync {
@@ -1168,7 +1168,7 @@ pub trait ConfigItemApplier: Send + Sync {
 }
 ```
 
-`ItemKind` 的 15 项为 CUSTOM_OBJECT、CUSTOM_FIELD、CUSTOM_RELATION、CUSTOM_INDEX、CUSTOM_VIEW、UI_LAYOUT、FLOW_DEFINITION、AUTHZ_ROLE、AUTHZ_POLICY、AUTHZ_FIELD_GRANT、REPORT_DEFINITION、METRIC_DEFINITION、DASHBOARD_DEFINITION、PRINT_TEMPLATE、NOTIFY_RULE，与阶段 13 计划第 3.2.11 节逐项一致。`ConfigPackageItem` 的字段为 `id`、`security_level`、`config_package_id`、`item_kind`、`item_code`、`change_kind`、`applies_to_legal_entity_ids`、`before_spec`、`after_spec`、`item_hash`、`sort_no`。`ConfigItemApplierRegistry` 只提供按 `ItemKind` 注册与查找两个方法，装配在两个 wiring 中。3a 段无表、无用例、不依赖身份与授权，因此可排在阶段 4 之前，阶段 4 的 `AuthzRoleApplier`、`AuthzPolicyApplier`、`AuthzFieldGrantApplier` 由此不再倒挂。
+`ItemKind` 的 16 项为 CUSTOM_OBJECT、CUSTOM_FIELD、CUSTOM_RELATION、CUSTOM_INDEX、CUSTOM_VIEW、UI_LAYOUT、FLOW_DEFINITION、AUTHZ_ROLE、AUTHZ_POLICY、AUTHZ_FIELD_GRANT、REPORT_DEFINITION、METRIC_DEFINITION、DASHBOARD_DEFINITION、PRINT_TEMPLATE、NOTIFY_RULE、RULE（第 16 项 `RULE` 由裁定 F-21 新立，代码侧由阶段 13b 同批加入），与阶段 13 计划第 3.2.11 节逐项一致。`ConfigPackageItem` 的字段为 `id`、`security_level`、`config_package_id`、`item_kind`、`item_code`、`change_kind`、`applies_to_legal_entity_ids`、`before_spec`、`after_spec`、`item_hash`、`sort_no`。`ConfigItemApplierRegistry` 只提供按 `ItemKind` 注册与查找两个方法，装配在两个 wiring 中。3a 段无表、无用例、不依赖身份与授权，因此可排在阶段 4 之前，阶段 4 的 `AuthzRoleApplier`、`AuthzPolicyApplier`、`AuthzFieldGrantApplier` 由此不再倒挂。
 
 本阶段实现的 applier 共两个：`FlowDefinitionApplier`（位于 `ep-platform-flow`，落地到 `platform_flow.process_definitions`，属 3b-1 批，T0 的流程定义经它下发）与 `NotifyRuleApplier`（位于 `ep-platform-notify`，落地到 `platform_msg.notification_templates` 与提醒规则，属 3b-2 批）。其余 13 个按裁定 A-19 分派到阶段 4、11 与 13b，本阶段不代做。查不到实现的 `item_kind` 整包拒绝发布，错误码 `PLATFORM.CONFIG_RELEASE_ORDER.APPLIER_NOT_REGISTERED`，分类 `BUSINESS_CONFLICT`，由本阶段登记。
 

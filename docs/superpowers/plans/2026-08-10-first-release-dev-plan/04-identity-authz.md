@@ -415,7 +415,7 @@ X-Reauth-Token 的消费是一次条件更新：`update platform_core.reauth_cha
 FieldProjector 输入为对象类型、对象的原始行（serde_json::Value）与 SecurityContext，输出为新的 Value，不修改输入。掩码规则：FULL 输出固定字符串六个星号；KEEP_LAST_4 保留末四位其余替换为星号，长度不足 8 位时退化为 FULL；KEEP_DOMAIN 用于电子邮箱，保留 at 之后的部分。字段在 platform_core.sensitive_field_registry 中登记且 is_field_encrypted 为真时物理列是密文，上述三条不施加于密文：KEEP_LAST_4 的后四位直接取自同表的 `<column_name>_tail` 列，FULL 与 HIDDEN 既不读密文也不解密；只有字段权限为 READ 或 WRITE 且用户 clearance_level 不低于该字段密级时，才在投影前经 SensitiveFieldDecryptor 解密后输出，字段投影路径上只有这一处解密位点，不经字段投影而需要明文的解密由需要它的那个阶段在其计划内自行指名位点，同样调用 SensitiveFieldDecryptor，全库不得出现第二套解封路径。按 A-28，命中该分支的字段以 platform_core.sensitive_field_registry 中 is_field_encrypted 为真的登记行为准，本阶段不另列第二份清单；登记行与其物理列由引入该列的模块阶段在同一迁移内交付，本阶段只按登记行渲染，不建表也不写登记行；登记行的 mask_style 取 KEEP_LAST_4 时该表必须同时存在 `<column_name>_tail` 列，没有该列的只能取 FULL。字段在 field_permissions 中无授权行时按默认拒绝处理，不进入响应键集合，与阶段二的默认拒绝一致；各模块字段的授权行按 A-19 的 AUTHZ_FIELD_GRANT applier 经配置发布通道在其所属阶段之后写入。掩码后的值不参与排序与聚合，任何列表端点如果按 MASKED 或 HIDDEN 字段排序，一律返回 VALIDATION 与 PLATFORM.AUTHZ.SORT_FIELD_FORBIDDEN，这是 PRD 第 10.2.4 节“不得通过排序位次间接暴露”的实现点。分面计数同理：计数的分组键若含无权字段，该分面整体不返回。
 #### 4.8 权限配置对象的配置包 applier
 
-按 A-19，ConfigItemApplier trait、含 15 项的 ItemKind 枚举、ConfigPackageItem 与 ConfigItemApplierRegistry 由阶段 3a 在 `crates/platform/release/src/port/config_item.rs` 交付，其中的事务句柄类型取自 ep-foundation。本阶段实现其中三个 item_kind，实现类型全部落在 ep-platform-authz。
+按 A-19，ConfigItemApplier trait、含 16 项的 ItemKind 枚举（第 16 项 `RULE` 由裁定 F-21 新立，代码侧由阶段 13b 同批加入）、ConfigPackageItem 与 ConfigItemApplierRegistry 由阶段 3a 在 `crates/platform/release/src/port/config_item.rs` 交付，其中的事务句柄类型取自 ep-foundation。本阶段实现其中三个 item_kind，实现类型全部落在 ep-platform-authz。
 
 | item_kind | 实现类型 | 覆盖的配置表 |
 |---|---|---|
