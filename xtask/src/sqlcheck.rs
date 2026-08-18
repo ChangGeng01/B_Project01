@@ -4,7 +4,9 @@
 //! 迁移版本号全局唯一且严格递增（裁定 00c 第五条）、引导脚本口令字面量禁令
 //! （阶段 1 计划第 4.1 节 SQL-020）、`ci_probe` 不进生产迁移目录（第 4.4 节 SQL-030）。
 //!
-//! **空扫描不判通过。** `db/migrations/` 下当前 0 个 `.sql` 文件；按技术基线第 12 节
+//! 另加第十四项 SQL-031：仅追加登记与守卫挂接的**次序**一致性，见下。
+//!
+//! **空扫描不判通过。** 被测目录为空时，按技术基线第 12 节
 //! 通则第六条，被测输入缺席既不得表达为通过也不得表达为违反，这类规则单列进
 //! [`Report::uncovered`] 并由调用方以专用退出码结束。重新生效的触发谓词是
 //! 「对应目录下出现第一个 `.sql` 文件」，由本工具自身可观测，不写成阶段号。
@@ -18,7 +20,7 @@ use std::path::{Path, PathBuf};
 
 /// 规则清单。左列是规则号，右列是判据一句话。
 /// SQL-001 至 SQL-011 判迁移文件，SQL-020 与 SQL-021 判引导目录，SQL-030 判迁移目录整体。
-pub const RULES: [(&str, &str); 13] = [
+pub const RULES: [(&str, &str); 14] = [
     (
         "SQL-001",
         "业务 schema 上禁止 DELETE 语句，只放行 platform_msg 与 platform_ops",
@@ -50,6 +52,10 @@ pub const RULES: [(&str, &str); 13] = [
     ("SQL-011", "迁移版本号全局唯一且严格递增"),
     ("SQL-020", "引导脚本中不得出现口令字面量"),
     ("SQL-021", "引导目录中不得出现约定之外的文件名"),
+    (
+        "SQL-031",
+        "仅追加登记行必有 attach_table_guards 调用，且该调用不得排在登记之前",
+    ),
 ];
 
 /// 迁移目录相对仓库根的位置。三处目录名是阶段 1 计划第 4.1、4.2 节与裁定登记的固定取值。
@@ -131,7 +137,7 @@ pub fn run(root: &Path) -> Report {
     let migrations = sql_files(&root.join(MIGRATIONS));
     if migrations.is_empty() {
         // RULES 的前 11 条与 SQL-030 判迁移文件；没有迁移文件就是这 12 条一律未覆盖。
-        for (id, what) in RULES.iter().take(11).chain(std::iter::once(&RULES[12])) {
+        for (id, what) in RULES.iter().take(11).chain([&RULES[12], &RULES[13]]) {
             uncovered.push(format!(
                 "{id} 未覆盖：{MIGRATIONS} 下没有任何 .sql 文件，判据「{what}」本次无被测输入"
             ));
@@ -154,6 +160,17 @@ pub fn run(root: &Path) -> Report {
             }
         }
         violations.extend(check_versions(&versions));
+
+        let (guard_violations, registered) = check_append_only_guards(root, &migrations);
+        if registered == 0 {
+            uncovered.push(format!(
+                "SQL-031 未覆盖：{MIGRATIONS} 下解析不到任何 append_only_registry 登记行，\
+                 判据本次无被测输入"
+            ));
+        } else {
+            checked.push("SQL-031");
+            violations.extend(guard_violations);
+        }
     }
 
     let bootstrap_dir = root.join(BOOTSTRAP);
@@ -784,6 +801,146 @@ fn rule_ci_probe(rel: &str, lines: &[(usize, String)]) -> Vec<Violation> {
     line_rule(rel, lines, "SQL-030", |l| l.contains("ci_probe"), why)
 }
 
+/// SQL-031：仅追加登记与守卫挂接的次序一致性。**跨文件判据**，被测面是整个迁移目录。
+///
+/// # 为什么这一条能静态判，而 `db/checks/append_only_consistency.sql` 不能
+///
+/// 那份活库脚本比的是 `platform_core.append_only_registry` 与 `pg_trigger`，
+/// 两侧都要连库。但触发器并非各迁移里字面 `create trigger` 出来的，而是由
+/// `platform_core.attach_table_guards(schema, table)` 在被调用时**读登记表**决定挂哪一个
+/// （见 `V20260901090500__platform_core_conventions.sql` 的三分支）。该函数的注释逐字写着
+/// 「空库全序下本函数先于登记表被调用，表不存在时尚无任何登记行，**按未登记处理**，
+/// 不得因缺表报错」——**于是「attach 调用排在登记 insert 之前」这一情形会静默挂不上守卫**，
+/// 而两侧的产生处都在迁移文本里，可静态判。
+///
+/// # 本条**不覆盖**什么（不得读作 append_only_consistency.sql 已有承接方）
+///
+/// 一、活库漂移：有人手工 drop 触发器、或迁移只跑了一半，本条看不见；
+/// 二、活库脚本的反向分支 `UNREGISTERED_TRIGGER`：那种触发器只可能由本函数按登记创建，
+///     静态上不可达，故本条不判该向；
+/// 三、结论只及于**迁移文本**的自洽，不等于目标库的实际状态。
+///
+/// 附录辛第 24 条（该脚本被七处文档指名由 `xtask sqlcheck` 执行，而本工具无 postgres 客户端）
+/// **由本条部分承接，不是全部**：活库那一半仍缺执行方，属附录辛第 27 条。
+fn check_append_only_guards(root: &Path, migrations: &[PathBuf]) -> (Vec<Violation>, usize) {
+    // (schema, table) -> (版本号, 模式, 文件相对路径, 行号)
+    let mut regs: BTreeMap<(String, String), (u64, String, String, usize)> = BTreeMap::new();
+    // (schema, table) -> (版本号, 文件相对路径, 行号)
+    let mut atts: BTreeMap<(String, String), (u64, String, usize)> = BTreeMap::new();
+
+    for path in migrations {
+        let rel = relative(root, path);
+        let Some(ver) = file_version(&rel) else {
+            continue;
+        };
+        let Ok(text) = fs::read_to_string(path) else {
+            continue;
+        };
+        for st in statements(&strip_comments(&text)) {
+            for (sc, tb, mode) in parse_registry_rows(&st.norm) {
+                regs.entry((sc, tb))
+                    .or_insert((ver, mode, rel.clone(), st.line));
+            }
+            if let Some((sc, tb)) = parse_attach_call(&st.norm) {
+                atts.entry((sc, tb)).or_insert((ver, rel.clone(), st.line));
+            }
+        }
+    }
+
+    let out = compare_guard_maps(&regs, &atts);
+    let n = regs.len();
+    (out, n)
+}
+
+/// SQL-031 的比对本体。**纯函数**：两张表进、违反明细出，不碰文件系统。
+///
+/// 抽出来是为了让**违反分支**可被直接测到——只在「通过」路径上被测过的判据，
+/// 与恒真判据在效果上没有区别。
+fn compare_guard_maps(
+    regs: &BTreeMap<(String, String), (u64, String, String, usize)>,
+    atts: &BTreeMap<(String, String), (u64, String, usize)>,
+) -> Vec<Violation> {
+    let mut out = Vec::new();
+    for ((sc, tb), (rver, mode, rfile, rline)) in regs {
+        match atts.get(&(sc.clone(), tb.clone())) {
+            None => out.push(Violation {
+                rule: "SQL-031",
+                file: rfile.clone(),
+                line: *rline,
+                detail: format!(
+                    "{sc}.{tb} 以 {mode} 登记入 append_only_registry，\
+                     但全部迁移里没有一处 attach_table_guards('{sc}', '{tb}')；\
+                     登记在而守卫不挂，该表的仅追加约束不成立"
+                ),
+            }),
+            Some((aver, afile, aline)) if aver < rver => out.push(Violation {
+                rule: "SQL-031",
+                file: afile.clone(),
+                line: *aline,
+                detail: format!(
+                    "{sc}.{tb} 的 attach_table_guards 在版本 {aver} 调用，\
+                     而其 append_only_registry 登记行在版本 {rver}（{rfile}:{rline}）；\
+                     attach 读登记表决定挂哪个触发器，排在登记之前会按未登记处理、\
+                     静默挂不上 {mode} 守卫"
+                ),
+            }),
+            Some(_) => {}
+        }
+    }
+    out.sort_by_key(|v| (v.file.clone(), v.line));
+    out
+}
+
+/// 从一条已归一的语句里解析全部 `append_only_registry` 登记元组。
+///
+/// 被解析的形态取自现存迁移：`insert into platform_core.append_only_registry
+/// (id, schema_name, table_name, mode) values ('<uuid>', '<schema>', '<table>', '<mode>')`，
+/// 元组跨行书写，故按**语句**而不是按行解析（[`Stmt::norm`] 已把换行归一为空格）。
+/// `norm` 已转小写，因此模式字面量按小写匹配。
+fn parse_registry_rows(norm: &str) -> Vec<(String, String, String)> {
+    if !norm.starts_with("insert into") || !norm.contains("append_only_registry") {
+        return Vec::new();
+    }
+    let mut out = Vec::new();
+    for tuple in norm.split('(').skip(1) {
+        let body = match tuple.find(')') {
+            Some(k) => &tuple[..k],
+            None => tuple,
+        };
+        let mode = if body.contains("'append_only'") {
+            "APPEND_ONLY"
+        } else if body.contains("'immutable_columns'") {
+            "IMMUTABLE_COLUMNS"
+        } else {
+            continue;
+        };
+        // 元组内的带引号取值：uuid、schema、table、mode。取形如标识符且非模式字面量的前两个。
+        let quoted: Vec<&str> = body.split('\'').skip(1).step_by(2).collect();
+        let mut idents = quoted.iter().filter(|q| {
+            !q.is_empty()
+                && q.len() <= 63
+                && q.chars()
+                    .all(|c| c.is_ascii_lowercase() || c == '_' || c.is_ascii_digit())
+                && *q != &"append_only"
+                && *q != &"immutable_columns"
+        });
+        let (Some(sc), Some(tb)) = (idents.next(), idents.next()) else {
+            continue;
+        };
+        out.push((sc.to_string(), tb.to_string(), mode.to_string()));
+    }
+    out
+}
+
+/// 解析一条 `attach_table_guards('schema', 'table')` 调用。
+fn parse_attach_call(norm: &str) -> Option<(String, String)> {
+    let at = norm.find("attach_table_guards")?;
+    let rest = &norm[at..];
+    let open = rest.find('(')?;
+    let quoted: Vec<&str> = rest[open..].split('\'').skip(1).step_by(2).collect();
+    Some((quoted.first()?.to_string(), quoted.get(1)?.to_string()))
+}
+
 /// 文件名版本号 `V<14 位数字>__<名字>.sql`。
 fn file_version(rel: &str) -> Option<u64> {
     let stem = rel.rsplit('/').next()?.strip_suffix(".sql")?;
@@ -862,6 +1019,147 @@ fn check_bootstrap_names(dir: &Path) -> Vec<Violation> {
 #[cfg(test)]
 mod negative_samples {
     use super::*;
+
+    /// SQL-031 的解析：登记元组跨行书写，按语句解析取得到。
+    #[test]
+    fn a_multiline_registry_tuple_is_parsed() {
+        let norm = "insert into platform_core.append_only_registry                     (id, schema_name, table_name, mode) values                     ('00000000-0000-7000-8000-000000000102', 'platform_core',                     'login_attempts', 'append_only')";
+        assert_eq!(
+            parse_registry_rows(norm),
+            vec![(
+                "platform_core".to_string(),
+                "login_attempts".to_string(),
+                "APPEND_ONLY".to_string()
+            )]
+        );
+    }
+
+    /// 模式字面量本身不得被当成 schema 或 table。
+    #[test]
+    fn the_mode_literal_is_not_mistaken_for_an_identifier() {
+        let norm = "insert into platform_core.append_only_registry (schema_name,                     table_name, mode) values ('platform_core', 'x', 'immutable_columns')";
+        let got = parse_registry_rows(norm);
+        assert_eq!(got.len(), 1);
+        assert_eq!(got[0].0, "platform_core");
+        assert_eq!(got[0].1, "x");
+        assert_eq!(got[0].2, "IMMUTABLE_COLUMNS");
+    }
+
+    /// 非登记语句不产出元组。
+    #[test]
+    fn an_unrelated_insert_yields_nothing() {
+        assert!(
+            parse_registry_rows("insert into platform_core.roles (code) values ('x')").is_empty()
+        );
+        assert!(parse_registry_rows("select 1").is_empty());
+    }
+
+    /// attach 调用的解析。
+    #[test]
+    fn an_attach_call_is_parsed() {
+        assert_eq!(
+            parse_attach_call(
+                "select platform_core.attach_table_guards('platform_authz', 'sod_rules')"
+            ),
+            Some(("platform_authz".to_string(), "sod_rules".to_string()))
+        );
+        assert_eq!(parse_attach_call("select 1"), None);
+    }
+
+    /// 违反一：有登记行而全仓没有对应的 attach 调用。
+    #[test]
+    fn a_registry_row_without_an_attach_call_is_caught() {
+        let mut regs = BTreeMap::new();
+        regs.insert(
+            ("platform_core".to_string(), "audit_events".to_string()),
+            (
+                20260901093000u64,
+                "APPEND_ONLY".to_string(),
+                "db/migrations/x.sql".to_string(),
+                12usize,
+            ),
+        );
+        let v = compare_guard_maps(&regs, &BTreeMap::new());
+        assert_eq!(v.len(), 1, "{v:#?}");
+        assert_eq!(v[0].rule, "SQL-031");
+        assert!(
+            v[0].detail.contains("没有一处 attach_table_guards"),
+            "{}",
+            v[0].detail
+        );
+    }
+
+    /// 违反二：attach 调用排在登记 insert 之前——函数按未登记处理，静默挂不上守卫。
+    #[test]
+    fn an_attach_before_its_registry_row_is_caught() {
+        let key = ("platform_core".to_string(), "login_attempts".to_string());
+        let mut regs = BTreeMap::new();
+        regs.insert(
+            key.clone(),
+            (
+                20261012093000u64,
+                "APPEND_ONLY".to_string(),
+                "db/migrations/reg.sql".to_string(),
+                55usize,
+            ),
+        );
+        let mut atts = BTreeMap::new();
+        atts.insert(
+            key,
+            (
+                20260901090500u64,
+                "db/migrations/early.sql".to_string(),
+                9usize,
+            ),
+        );
+        let v = compare_guard_maps(&regs, &atts);
+        assert_eq!(v.len(), 1, "{v:#?}");
+        assert!(v[0].detail.contains("静默挂不上"), "{}", v[0].detail);
+    }
+
+    /// 次序正确即不报：同一版本内先登记后挂接是合法形态。
+    #[test]
+    fn an_attach_at_or_after_its_registry_row_is_clean() {
+        let key = ("platform_core".to_string(), "login_attempts".to_string());
+        let mut regs = BTreeMap::new();
+        regs.insert(
+            key.clone(),
+            (
+                20261012093000u64,
+                "APPEND_ONLY".to_string(),
+                "db/migrations/reg.sql".to_string(),
+                55usize,
+            ),
+        );
+        let mut atts = BTreeMap::new();
+        atts.insert(
+            key,
+            (
+                20261012093000u64,
+                "db/migrations/reg.sql".to_string(),
+                63usize,
+            ),
+        );
+        assert!(compare_guard_maps(&regs, &atts).is_empty());
+    }
+
+    /// 仓库现状：两条登记行各自有 attach 调用，且次序正确。
+    /// 这一条同时证明 SQL-031 今天有被测输入，不是恒过。
+    #[test]
+    fn the_repository_has_consistent_append_only_guards() {
+        let root = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .parent()
+            .expect("xtask 在工作区根之下")
+            .to_path_buf();
+        let migrations = sql_files(&root.join(MIGRATIONS));
+        assert!(!migrations.is_empty(), "迁移目录不该是空的");
+        let (violations, registered) = check_append_only_guards(&root, &migrations);
+        assert!(
+            registered >= 2,
+            "至少应解析到两条登记行，实测 {registered}——解析不到就等于判据恒过"
+        );
+        assert!(violations.is_empty(), "{violations:#?}");
+    }
 
     const OK_TABLE: &str = r#"-- rollback: drop table sales.sales_orders;
 create table sales.sales_orders (
