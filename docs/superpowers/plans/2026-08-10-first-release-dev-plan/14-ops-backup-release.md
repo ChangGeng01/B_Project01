@@ -571,7 +571,7 @@ ep-release-gate 逐项判定，判定结论进入发布证据包，任一为否�
 12. 覆盖率达标：平台内核与不变量相关代码不低于 85%，新增与修改代码不低于 80%，工作区整体不低于 80%，无带 issue 编号之外的 #[ignore]。
 13. 等级保护三级控制项自评矩阵完成，除第 17.5 章登记的四项永久性不符合项外全部符合，其余不符合项均已关闭并经具备资质机构预评估；CI 校验不符合项条目未超出封闭清单。
 14. 供应链安全各项齐备：SBOM、构建来源证明、离线依赖仓库、客户侧验签工具；可复现构建的两次比对一致一项按裁定 F-08 第 4.4 节暂不计入本条达标项——PE 二进制能否稳定字节一致未实测，CI 阶段 8 reproducible-build 在 .github/ci/pipeline-stages.tsv 中标 undelivered、不删行，两次构建照跑但其结果本阶段不作为通过判据，未交付不得折算成通过；本项的重新生效谓词是该状态列由 undelivered 变为 delivered 即自动转为本条的达标项。
-15. ep-release-gate 对第 22 章十五条与第 17.2 章通过标准逐条产出判定结论，第 8.7 节的 RG-CI-PROBE-ABSENT、RG-TOOLS-EXCLUDED、RG-RLS-MATRIX-GREEN、RG-UNWIRED-ABSENT 与 RG-NO-UNDECIDABLE 五个门禁项全部为通过，发布证据包组装完成，含认证报告、演练报告、台账快照与暴露窗口记录、缺陷台账、渗透测试结论、等保自评结论、各业务阶段四端界面交付情况汇总矩阵、签字验收记录。
+15. ep-release-gate 对第 22 章十五条与第 17.2 章通过标准**逐条判定为通过**（原写「逐条产出判定结论」——只要求产出结论、不要求结论为通过，十五条中任一条判为不通过时本条仍成立，属恒真判据；裁定 F-42 改写），第 8.7 节的 RG-CI-PROBE-ABSENT、RG-TOOLS-EXCLUDED、RG-RLS-MATRIX-GREEN、RG-UNWIRED-ABSENT 与 RG-NO-UNDECIDABLE 五个门禁项全部为通过，发布证据包组装完成，含认证报告、演练报告、台账快照与暴露窗口记录、缺陷台账、渗透测试结论、等保自评结论、各业务阶段四端界面交付情况汇总矩阵、签字验收记录。
 16. PRD 第 11.11 节八条诚实披露文本已进入交付说明与客户合同模板，并在产品界面可达处呈现；交付、认证与验收材料经文本检查未出现高可用、零停机、自动切换、受控读取、法人隔离、等效、已满足、优先级隔离、资源隔离、性能保证十项禁用措辞。
 17. OpsDisposalService 已实现阶段 3b 定义的 DisposalPort 并在 core-server 与 job-worker 两个 wiring 目录内首次注入，阶段 3b 至阶段 13 的两个目录内均未出现该端口的任何替身与任何注入行；其间的物理删除请求经阶段 3b 注册的受理路由以 PLATFORM.DISPOSAL.NOT_DELIVERED 与 HTTP 409 被拒且不可重试，subject 取 DisposalPort 的 PORT_NOT_IMPLEMENTED 降级窗口全程活动并已在本阶段注入后关闭，该窗口的开闭两端各有一条实证记录；AttachmentObjects、KeyDomain、BackupSets、ExtTables 四类处置范围各有一次完整执行记录，销毁证明对象与审计条目齐备，落点侧历史副本在同一次处置内一并覆盖；缺审批链、缺第二审批人或缺重新认证凭证时执行被拒并写审计。
 18. 电子签章的认证清单已补齐：crates/adapter/esign/tests/contract_sandbox.rs 对真实沙箱的一次通过记录已归档，或已提交规格附录 B 允许的等效验证证据。
@@ -579,6 +579,7 @@ ep-release-gate 逐项判定，判定结论进入发布证据包，任一为否�
 20. platform_ops.degradation_windows 的 kind 取值已由阶段 2 的 3 个扩展至 18 个，两条 CHECK 与三个索引已追加，本阶段未对阶段 2 已交付的任何取值改名、也未增删该表的任何列；阶段 2 交付的 subject 列、ux_degradation_windows_kind_scope_closed 与 ck_degradation_windows_open_order 未被本阶段改写。
 21. 本阶段全部 /api/v1/ 路由的能力域码与动作类别常量已按 A-20 声明在 crates/platform/obs/src/capability.rs，能力域一律取 foundation::CapabilityDomain::PlatformAdminLowcodeOps，动作类别取 foundation::ActionClass，xtask configdoc 通过。
 22. 本阶段新建的 16 张 platform_ops 表在 platform_core.unpoliced_table_registry 中各有一行登记，schema_name、table_name、admission_basis、isolation_entry 与 matrix_case_id 五列取值齐备，且 db/checks 的第十三项返回零行；阶段 2 登记的八行未被本阶段改写，degradation_windows 在该表中不产生第二行。
+23. 规格第 21.4 章要求的专业签字已取得并留档：安全（须覆盖规格第 12.5 章审计链与威胁模型）在本阶段签字，签字人资格证据随版本留档；签字缺失或不通过时本阶段不得退出，整改后重新测试并重新签字，不得以未记录的方式豁免（规格第 22 章第 12 条）。本条由裁定 F-42 新增，此前四份计划的退出条件中无任何签字项。
 
 ---
 

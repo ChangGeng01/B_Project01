@@ -808,6 +808,7 @@ E-21 platform_core.append_only_registry 中 ledger.vouchers、ledger.voucher_lin
 E-22 单据类型码 OBB、GV、PCR、YEC 已登记在 docs/data-dictionary.md 的单据类型码一节，且与 ep-platform-sequence 的常量表逐项一致，xtask configdoc --check-doc-type-codes 通过。
 
 E-23 testkit/scenarios/golden_loop_14_steps.rs 在 ep-datagen 默认 scale 数据集上一次跑通，覆盖规格第 8 章第 1 至 14 步与规格第 17.2 章十五类必测分支，规格第 17.3 章强制不变量在该用例上自动校验通过，Windows 与 macOS 两端的桌面走查同批通过，执行记录纳入发布证据包。
+E-24 规格第 21.4 章要求的专业签字已取得并留档：会计与税务在本阶段签字，签字人资格证据随版本留档；签字缺失或不通过时本阶段不得退出，整改后重新测试并重新签字，不得以未记录的方式豁免（规格第 22 章第 12 条）。本条由裁定 F-42 新增，此前四份计划的退出条件中无任何签字项。
 
 
 ### 9.10 与规格和 PRD 的对应

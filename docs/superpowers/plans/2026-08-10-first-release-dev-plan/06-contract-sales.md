@@ -791,6 +791,7 @@ E2E-6-04、E2E-6-10 的账务侧判据由财务与库存阶段承接，本阶段
 17. 本阶段全部路由的能力域码与动作类别常量已在 `crates/contract/clm/src/capability.rs`、`crates/contract/sales/src/capability.rs` 与阶段 5 已建的 `crates/contract/cpq/src/capability.rs` 声明，`xtask configdoc` 通过。
 18. `ClmProductUsageProbe` 与 `SalesProductUsageProbe` 已实现并注入阶段 5 提供的 `AnyProductUsageProbe`，阶段 5 的启动自检项 `master-data-usage-probes-registered` 在 clm 与 sales 启用时通过；本模块的 `ClmReferenceCounter` 与 `SalesReferenceCounter` 已注册到 `MasterReferenceCounterRegistry`，`SalesTradeHistoryProviderImpl` 已注册到 `TradeHistoryProviderRegistry`。
 19. 四个单据类型码 CT、SO、SR、DC 已登记入 `docs/data-dictionary.md` 的单据类型码一节与 `ep-platform-sequence` 的常量表，`xtask configdoc --check-doc-type-codes` 通过。
+20. 规格第 21.4 章要求的专业签字已取得并留档：法务在本阶段签字，签字人资格证据随版本留档；签字缺失或不通过时本阶段不得退出，整改后重新测试并重新签字，不得以未记录的方式豁免（规格第 22 章第 12 条）。本条由裁定 F-42 新增，此前四份计划的退出条件中无任何签字项。
 
 ---
 
