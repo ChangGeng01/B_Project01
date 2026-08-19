@@ -543,7 +543,7 @@ archive-writer 与 backup-writer 在本阶段不改动，本阶段只为其提�
 | legal_entity_id | uuid | not null |
 | code | text | not null，长度不超过 64 |
 | version | int | not null |
-| notice_type | text | not null，ck 取值为 PRD 第 10.5.2 节的十类提醒事项码 |
+| notice_type | text | not null，ck 取值为 PRD 第 10.5.2 节十类中的九类提醒事项码（撤下「许可临期与宽限期告警」，见第 3.4.5 节） |
 | title_template | text | not null，长度不超过 200 |
 | body_template | text | not null，长度不超过 2000 |
 | push_title_template | text | null |
@@ -925,9 +925,9 @@ select ... from platform_msg.outbox_events
 
 站内通知在业务事务内同步写入，不经 Outbox。理由是规格第 5.1 章把站内通知定为“首版唯一验收不可豁免的通知渠道”，把它挂在至少一次投递的异步链路上会引入一个本可避免的丢失面与延迟面；而通知的写入是同库单表插入，放进业务事务不违反基线第 10.3 节的事务内禁止清单。登记为本阶段新增决定。
 
-写入算法四步。其一，按 `notice_type` 取当前生效的模板版本。其二，解析接收人，得到 `Vec<UserId>`；解析方式由触发源决定：审批待办取 `process_tasks.assignee_user_id` 或候选角色展开，审批结果取 `process_instances` 的发起人，对账差异取该法人的数据责任人，许可宽限期取全体在职用户。其三，对每个接收人渲染标题与正文，渲染只允许使用模板声明的变量集合，声明外变量拒绝渲染；渲染前对该接收人做一次字段可见性裁剪，无权字段以事项类型与编号替代。其四，批量插入 `notifications` 与 `notification_deliveries`（`IN_APP` 通道直接 `DELIVERED`），`ON CONFLICT (legal_entity_id, recipient_user_id, dedupe_key) DO NOTHING` 完成去重。
+写入算法四步。其一，按 `notice_type` 取当前生效的模板版本。其二，解析接收人，得到 `Vec<UserId>`；解析方式由触发源决定：审批待办取 `process_tasks.assignee_user_id` 或候选角色展开，审批结果取 `process_instances` 的发起人，对账差异取该法人的数据责任人。其三，对每个接收人渲染标题与正文，渲染只允许使用模板声明的变量集合，声明外变量拒绝渲染；渲染前对该接收人做一次字段可见性裁剪，无权字段以事项类型与编号替代。其四，批量插入 `notifications` 与 `notification_deliveries`（`IN_APP` 通道直接 `DELIVERED`），`ON CONFLICT (legal_entity_id, recipient_user_id, dedupe_key) DO NOTHING` 完成去重。
 
-扇出规模：首版命名用户 50，最大扇出为许可宽限期告警的 50 行，单事务可承受。若某类提醒的接收人超过 200，改为写一条 Outbox 事件由 job-worker 分批扇出，阈值 `notify.sync_fanout_max` 默认 200。
+扇出规模标定改挂已冻结的规模基线：首版命名用户上限 50，任一类提醒的接收人集合都是在职用户的子集，故最大扇出不超过 50 行，单事务可承受。**此处原以「许可临期与宽限期告警」为支点，该类已撤下**——它是全卷唯一「接收人为全体在职用户」的分支，撤下后没有任何一类提醒的接收人是未定上界的集合，标定反而更稳。若某类提醒的接收人超过 200，改为写一条 Outbox 事件由 job-worker 分批扇出，阈值 `notify.sync_fanout_max` 默认 200。
 
 未读上限：单用户未读数达到 `unread_cap_per_user`（默认 2000）时，新通知仍写入，同时把该用户最旧的已超过保留期的已读通知纳入下一轮清理，并写一条 `WARN` 级运行日志。不丢新通知，这是不可豁免渠道的底线。
 
@@ -1146,7 +1146,7 @@ pub trait ModuleLicenseQuery: Send + Sync {
 
 安装态状态机四条边：`NOT_INSTALLED` 到 `INSTALLED_ENABLED`（安装并启用）、`INSTALLED_ENABLED` 到 `INSTALLED_DISABLED`（停用）、`INSTALLED_DISABLED` 到 `INSTALLED_ENABLED`（再启用）、`INSTALLED_DISABLED` 到 `NOT_INSTALLED`（卸载）。每次迁移写 `state_changed_at` 与一条审计事件，非法迁移返回 `BUSINESS_CONFLICT`。
 
-许可状态判定顺序固定：`revoked_at` 非空为 `Revoked`；`valid_to` 早于当前日期为 `Expired`；距 `valid_to` 不足临期窗口为 `ExpiringSoon`；否则 `Valid`。临期窗口取 30 天，属本阶段临时取值，切换只改配置。
+许可状态判定顺序固定：`revoked_at` 非空为 `Revoked`；`valid_to` 早于当前日期为 `Expired`；距 `valid_to` 不足临期窗口为 `ExpiringSoon`；否则 `Valid`。临期窗口取 **60 天**，照规格第 3.4 章逐字「到期日前 60 天进入临期告警」。此处原取 30 天并自称「切换只改配置」，而**本仓不存在该配置键**——既无配置可切，又无任何退出条件会因取 30 而失败，属本卷第三类缺陷；取 60 与规格一致后该面消失。
 
 过滤点两处，都在 job-worker：定时器扫描取件后按实例所属定义的模块段解析 `ModuleCode`，Outbox 投递取件后按 `event_type` 的模块段解析 `ModuleCode`；`module_state` 不为 `InstalledEnabled` 时跳过该条，条目保持 `PENDING` 且不累加 `attempts`，模块再启用后自动恢复投递。这落实规格第 5.6 章模块停用后停止定时任务与对外事件，且不把停用误判为投递失败。
 
@@ -1590,7 +1590,7 @@ E2E-6 配置发布最小通道（3b 段）：创建含一个 `FLOW_DEFINITION` �
 |---|---|
 | 10.4.4 流程定制 | 版本化定义、运行中实例继续用发起时版本、版本迁移可模拟可回退、四项运行约束、步骤幂等键、补偿逆序与人工任务队列 |
 | 10.5.1 两条渠道及其地位 | 站内通知不可豁免且不依赖任何对外出口；移动推送为可选增强，不可用时不影响应用内送达 |
-| 10.5.2 提醒事项清单 | 十类提醒事项的 `notice_type` 枚举与模板；其中审批待办、审批结果、高风险操作待审批、流程时限四类由本阶段的流程引擎直接触发；合同到期、对账差异、关账被拒、死信与人工任务、许可临期、运维降级六类由本阶段提供写入接口，触发源在各自阶段 |
+| 10.5.2 提醒事项清单 | 九类提醒事项的 `notice_type` 枚举与模板（PRD 十类撤下「许可临期与宽限期告警」）；其中审批待办、审批结果、高风险操作待审批、流程时限四类由本阶段的流程引擎直接触发；合同到期、对账差异、关账被拒、死信与人工任务、许可临期、运维降级六类由本阶段提供写入接口，触发源在各自阶段 |
 | 10.5.3 提醒规则的配置 | 定时器承载，触发与执行幂等且可重放，重启与从备份恢复后不漏不重 |
 | 10.5.4 通知中心的用户操作 | 查看、跳转、标记已读、与审批待办的关系四项；跳转后仍按权限判定，无权时不展示单据内容 |
 | 10.5.5 异常 | 无权限时正文不含无权字段；推送不可用时不重试到其他渠道；接收人停用需重新指派（指派方式待决，本阶段进人工任务队列） |
