@@ -1,8 +1,19 @@
 //! 活库集成测试。需要一台运行中的 PostgreSQL，入口是环境变量
 //! `EP_TEST_PG_URL`（具备建库与删库权限的连接串，形如
-//! `postgres://postgres@127.0.0.1:5432/postgres`）。未设该变量时本文件
-//! 全部用例即刻返回并在 stderr 留痕：本机无库，留待集成任务在有库的
-//! 环境里跑。
+//! `postgres://postgres@127.0.0.1:5432/postgres`）。
+//!
+//! # 五个用例一律带 `#[ignore]`，理由是「未覆盖 ≠ 通过」
+//!
+//! 原先的形态是「未设该变量时即刻返回并在 stderr 留痕」。**实测该形态产出的是一条
+//! 恒真的判据**：本机有库与无库两次运行，测试摘要**都是 `ok. 5 passed`**，
+//! 差别只在耗时（0.00s 对 0.50s）——即「跑过」与「什么都没做」在结果上完全一样，
+//! 而 CI 两种情况都看到绿。这正是本卷第一类缺陷。
+//!
+//! 标准库测试框架只有 `passed`／`failed`／`ignored` 三种计数，其中只有 `ignored`
+//! 如实表达「本次没跑」。故改为 `#[ignore]`：默认 `cargo test` 报 **5 ignored**，
+//! 不再冒充通过；有库时以
+//! `EP_TEST_PG_URL=… cargo test -p ep-adapter-db-pg --test live_pg -- --ignored`
+//! 实跑。运行期仍保留 `LiveDb::new()` 的 `None` 早退，用于变量设了但连不上的情形。
 //!
 //! 建库约定与 `ep-testkit` 的 `PgTestDb`（02 计划 D-08）一致：
 //! `ep_test_<唯一后缀>` 独占建库，用例结束即删库。testkit 交付前这里
@@ -193,6 +204,7 @@ fn build_cfg(db: &LiveDb) -> PoolBuildCfg {
 
 /// after_connect 钩子：application_name、池级超时、四条会话变量空串。
 #[tokio::test]
+#[ignore = "活库用例：需 EP_TEST_PG_URL，以 --ignored 实跑；默认计入 ignored 而不是 passed"]
 async fn live_after_connect_sets_pool_session_state() {
     let Some(db) = LiveDb::new().await else {
         eprintln!("跳过：未设 {ENV_URL}，需运行中的 PostgreSQL");
@@ -220,6 +232,7 @@ async fn live_after_connect_sets_pool_session_state() {
 
 /// transact 四步在真实库上：会话变量在事务体内可见，提交后可见写入。
 #[tokio::test]
+#[ignore = "活库用例：需 EP_TEST_PG_URL，以 --ignored 实跑；默认计入 ignored 而不是 passed"]
 async fn live_transact_writes_session_vars_and_commits() {
     let Some(db) = LiveDb::new().await else {
         eprintln!("跳过：未设 {ENV_URL}，需运行中的 PostgreSQL");
@@ -266,6 +279,7 @@ async fn live_transact_writes_session_vars_and_commits() {
 
 /// 23503 在真实库上映射 REFERENCED_ROW_MISSING，details 带约束与列。
 #[tokio::test]
+#[ignore = "活库用例：需 EP_TEST_PG_URL，以 --ignored 实跑；默认计入 ignored 而不是 passed"]
 async fn live_fk_violation_maps_to_referenced_row_missing() {
     let Some(db) = LiveDb::new().await else {
         eprintln!("跳过：未设 {ENV_URL}，需运行中的 PostgreSQL");
@@ -302,6 +316,7 @@ async fn live_fk_violation_maps_to_referenced_row_missing() {
 
 /// 迁移窗口守卫的开与关两条路径（真实库上的行锁与过期判定）。
 #[tokio::test]
+#[ignore = "活库用例：需 EP_TEST_PG_URL，以 --ignored 实跑；默认计入 ignored 而不是 passed"]
 async fn live_migration_window_guard_open_and_closed_paths() {
     let Some(db) = LiveDb::new().await else {
         eprintln!("跳过：未设 {ENV_URL}，需运行中的 PostgreSQL");
@@ -378,6 +393,7 @@ async fn live_migration_window_guard_open_and_closed_paths() {
 
 /// 快照分支在真实库上：导出快照号、读方经快照对齐读到一致视图。
 #[tokio::test]
+#[ignore = "活库用例：需 EP_TEST_PG_URL，以 --ignored 实跑；默认计入 ignored 而不是 passed"]
 async fn live_snapshot_transact_exports_a_usable_snapshot() {
     let Some(db) = LiveDb::new().await else {
         eprintln!("跳过：未设 {ENV_URL}，需运行中的 PostgreSQL");
