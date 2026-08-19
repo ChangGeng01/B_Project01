@@ -1,7 +1,16 @@
 //! integration-gateway 的装配。
 //!
-//! 与 core-server 同理：`ep-adapter-db-pg` 尚未提供 `SqlProbe` 实现，
-//! 因此不注入，四项 SQL 自检报 PENDING（未覆盖）而不是 PASSED。
+//! `ep-adapter-db-pg` 不提供 `SqlProbe` 实现——全仓两处 `impl SqlProbe` 分别在
+//! core-server 与 job-worker **各自的 `wiring/probes.rs`**，是那两个 app 自建的
+//! `FoundationProbeAdapter`，建在 `PgDataFoundationCheck` 之上。
+//!
+//! 本进程今天不依赖 `ep-adapter-db-pg`、无池、无该适配器，故不注入，
+//! 四项 SQL 自检报 PENDING（未覆盖）而不是 PASSED。
+//!
+//! **原注写的「与 core-server 同理」已不成立**：core-server 早已自建适配器并注入
+//! （`apps/core-server/src/wiring/db.rs` 的 `sql_probe` 逐字「装配成功即 Some，
+//! 自检随即产生实质判定」）。本进程与它不同理，是**尚无任何数据库装配**。
+//! 该处更正见裁定 F-34。
 
 use std::sync::Arc;
 
