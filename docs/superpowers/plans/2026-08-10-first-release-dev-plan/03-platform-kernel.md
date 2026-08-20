@@ -925,7 +925,7 @@ select ... from platform_msg.outbox_events
 
 站内通知在业务事务内同步写入，不经 Outbox。理由是规格第 5.1 章把站内通知定为“首版唯一验收不可豁免的通知渠道”，把它挂在至少一次投递的异步链路上会引入一个本可避免的丢失面与延迟面；而通知的写入是同库单表插入，放进业务事务不违反基线第 10.3 节的事务内禁止清单。登记为本阶段新增决定。
 
-写入算法四步。其一，按 `notice_type` 取当前生效的模板版本。其二，解析接收人，得到 `Vec<UserId>`；解析方式由触发源决定：审批待办取 `process_tasks.assignee_user_id` 或候选角色展开，审批结果取 `process_instances` 的发起人，对账差异取该法人的数据责任人。其三，对每个接收人渲染标题与正文，渲染只允许使用模板声明的变量集合，声明外变量拒绝渲染；渲染前对该接收人做一次字段可见性裁剪，无权字段以事项类型与编号替代。其四，批量插入 `notifications` 与 `notification_deliveries`（`IN_APP` 通道直接 `DELIVERED`），`ON CONFLICT (legal_entity_id, recipient_user_id, dedupe_key) DO NOTHING` 完成去重。
+写入算法四步。其一，按 `notice_type` 取当前生效的模板版本。其二，解析接收人，得到 `Vec<UserId>`；解析方式由触发源决定：审批待办取 `process_tasks.assignee_user_id` 或候选角色展开，审批结果取 `process_instances` 的发起人，对账差异取该法人的数据责任人，**影响面处置取目标模块的管理者角色展开**（按裁定 F-44 决定二：销售退货类取 `SALES_MANAGER`、发票作废或红冲类取 `FINANCE_MANAGER`、采购需求类取 `PROCURE_MANAGER`、项目任务类取 `PROJECT_MANAGER`；四类一律只展开候选角色、`assignee_user_id` 留空，不在出厂数据里写死任何自然人）。**`PROJECT_MANAGER` 是本裁定新增的第六个角色码**——F-10 的 C-3 只冻结了五个，其中无项目侧角色，不补则「在制任务收尾还是取消」这一类无人可派。其三，对每个接收人渲染标题与正文，渲染只允许使用模板声明的变量集合，声明外变量拒绝渲染；渲染前对该接收人做一次字段可见性裁剪，无权字段以事项类型与编号替代。其四，批量插入 `notifications` 与 `notification_deliveries`（`IN_APP` 通道直接 `DELIVERED`），`ON CONFLICT (legal_entity_id, recipient_user_id, dedupe_key) DO NOTHING` 完成去重。
 
 扇出规模标定改挂已冻结的规模基线：首版命名用户上限 50，任一类提醒的接收人集合都是在职用户的子集，故最大扇出不超过 50 行，单事务可承受。**此处原以「许可临期与宽限期告警」为支点，该类已撤下**——它是全卷唯一「接收人为全体在职用户」的分支，撤下后没有任何一类提醒的接收人是未定上界的集合，标定反而更稳。若某类提醒的接收人超过 200，改为写一条 Outbox 事件由 job-worker 分批扇出，阈值 `notify.sync_fanout_max` 默认 200。
 
