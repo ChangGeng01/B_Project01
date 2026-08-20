@@ -54,7 +54,7 @@ PRD 第 6.2.2 的资金账户字段表没有期初余额，而第 6.2.4 的资�
 | 编号 | 临时取值 | 承载方式 | 切换代价 |
 |---|---|---|---|
 | F-01 / U-D-03 | 发票号码 `text` 且 `char_length <= 64`，法人内唯一；发票代码 `text` 且 `char_length <= 32`，可空，发票种类为数电时必须为空，为纸质时必填 | 表列与 CHECK 约束，发票种类为 `invoice_kind` 列 | 低，改 CHECK 与校验函数 |
-| F-02 / U-D-04 | 税率取自 `invoice.tax_rate_options`，出厂预置 0.130000、0.090000、0.060000、0.030000、0.010000、0.000000；一张发票单税率、单行金额，不做多行明细 | 出厂预置由第 3.6 节 invoice 目录第 13 号种子迁移 `V202611030950__invoice_backfill_seed_tax_rate_options.sql` 在 T0 期间写入，见第 0.0 节第五项；出厂预置之后的增删改按裁定 A-27 经配置发布对象由阶段 3b 的发布通道写入 `invoice.tax_rate_options`。按裁定 C-11 与总览第 1.5 节第五条，该表是税率字典的唯一出处，唯一取用入口为 `ep_contract_invoice::TaxRateOptionQuery` 的 `default_rate` 与 `list` 两个方法，任何阶段不得另设税率桩 | 税率集合为低；多行明细为中，需新增 `invoice.sales_invoice_lines` 与分摊逻辑 |
+| F-02 / U-D-04 | 税率取自 `invoice.tax_rate_options`，出厂预置 0.130000、0.090000、0.060000、0.030000、0.010000、0.000000；**按裁定 F-45 决定二与 F-10 B-8**：一张发票**允许多税率**，每个行明细各自带税率；**允许多行明细**，须新增 `invoice.sales_invoice_lines` 与分摊逻辑。本行原写「一张发票单税率、单行金额，不做多行明细」，已被上述两条裁定两面作废 | 出厂预置由第 3.6 节 invoice 目录第 13 号种子迁移 `V202611030950__invoice_backfill_seed_tax_rate_options.sql` 在 T0 期间写入，见第 0.0 节第五项；出厂预置之后的增删改按裁定 A-27 经配置发布对象由阶段 3b 的发布通道写入 `invoice.tax_rate_options`。按裁定 C-11 与总览第 1.5 节第五条，该表是税率字典的唯一出处，唯一取用入口为 `ep_contract_invoice::TaxRateOptionQuery` 的 `default_rate` 与 `list` 两个方法，任何阶段不得另设税率桩 | 税率集合为低；多行明细为中，需新增 `invoice.sales_invoice_lines` 与分摊逻辑 |
 | F-03 / U-D-05 | 舍入按共享基线第 3.5 节；容差判据为 `abs(tax_amount - round(net_amount * tax_rate, 2)) <= tolerance`，`tolerance` 默认 0.02 | 配置项 `EP__INVOICE__TAX__AMOUNT_TOLERANCE` | 低 |
 | F-04 / U-D-06 | 剩余可开比例的计算基数为合同金额；比例列类型 `numeric(9,6)`；累计比例校验容差 0.000001 | 配置项 `EP__INVOICE__RATIO__TOLERANCE` | 基数改为订单金额合计为中，需改取数与回滚公式 |
 | F-05 / U-D-07 | 申请金额不可人工改写，等于 `round(开票比例 * 合同金额, 2)` | 领域规则 | 低 |
