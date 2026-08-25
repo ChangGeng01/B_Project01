@@ -1,6 +1,6 @@
 # 新需求盘点：事后更正与深度配置、AI agent、双端权威、对标差异化
 
-> **F-57 现行状态：`HISTORICAL_NON_NORMATIVE`。** 本文仅保留 2026-08-14 的缺口审计证据；F-50/F-55 等材料不再是可独立执行的现行入口。当前权威集合为 [F-57 总体设计](2026-08-23-f57-governed-automation-fabric-design.md)、[F-57 需求追踪矩阵](../reviews/2026-08-23-f57-requirements-traceability.md)、[F-57 权威替代登记](../reviews/2026-08-23-f57-authority-supersession-register.md)与 [F-57 实施计划](../plans/2026-08-23-f57-governed-automation-fabric-implementation.md)。F-57 是设计/计划权威，不是产品已实现声明；本地模型实现延期。
+> **F-57 现行状态：`HISTORICAL_NON_NORMATIVE`。** 本文仅保留 2026-08-14 的缺口审计证据；F-50/F-55 等材料不再是可独立执行的现行入口。当前权威集合为 [F-57 总体设计](2026-08-23-f57-governed-automation-fabric-design.md)、[F-57 需求追踪矩阵](../reviews/2026-08-23-f57-requirements-traceability.md)、[F-57 权威替代登记](../reviews/2026-08-23-f57-authority-supersession-register.md)与 [F-57 实施计划](../plans/2026-08-24-f57-converged-program.md)。F-57 是设计/计划权威，不是产品已实现声明；本地模型实现延期。
 
 **盘点日 2026-08-14。方法**：六组现状盘点（每组独立读规格 1996 行、PRD 4660 行、十四阶段计划约 17500 行并给逐字原文）
 加两个场景穿线（拿使用方举的两个例子在现有卷宗里逐环走），再合成。全程只读，不改任何文件。

@@ -1,6 +1,6 @@
 # F-50 财务一致性与发票模型实施计划
 
-> **F-57 状态：`SUPERSEDED_DO_NOT_EXECUTE`。** 本文件只保留为历史设计输入，不得单独或续跑执行；其中仍适用的财务约束已并入 F-57 总体设计、需求追踪矩阵及 F-57 实施计划。任何实现必须从 `2026-08-23-f57-governed-automation-fabric-implementation.md` Task 1 开始。
+> **F-57 状态：`SUPERSEDED_DO_NOT_EXECUTE`。** 本文件只保留为历史设计输入，不得单独或续跑执行；其中仍适用的财务约束已并入 F-57 总体设计、需求追踪矩阵及 [2026-08-24 收敛实施主计划](2026-08-24-f57-converged-program.md)。获得另行开发授权后也只能从该主计划指向的 G0 bootstrap 子计划开始，不存在本文件的续跑入口。
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use `superpowers:executing-plans` to implement this plan task-by-task. 每个任务完成测试并提交后才能进入下一任务；禁止把本计划拆成互相看不到同一事务边界的并行实现。
 

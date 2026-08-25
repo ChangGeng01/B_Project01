@@ -1,6 +1,6 @@
 # PRD 起草一致性报告
 
-> **F-57 现行状态：`HISTORICAL_NON_NORMATIVE`。** 本报告仅保留 2026-08-09 的 PRD 一致性评审证据；F-50/F-55 等材料不再是可独立执行的现行入口。当前权威集合为 [F-57 总体设计](../specs/2026-08-23-f57-governed-automation-fabric-design.md)、[F-57 需求追踪矩阵](2026-08-23-f57-requirements-traceability.md)、[F-57 权威替代登记](2026-08-23-f57-authority-supersession-register.md)与 [F-57 实施计划](../plans/2026-08-23-f57-governed-automation-fabric-implementation.md)。F-57 是设计/计划权威，不是产品已实现声明；本地模型实现延期。
+> **F-57 现行状态：`HISTORICAL_NON_NORMATIVE`。** 本报告仅保留 2026-08-09 的 PRD 一致性评审证据；F-50/F-55 等材料不再是可独立执行的现行入口。当前权威集合为 [F-57 总体设计](../specs/2026-08-23-f57-governed-automation-fabric-design.md)、[F-57 需求追踪矩阵](2026-08-23-f57-requirements-traceability.md)、[F-57 权威替代登记](2026-08-23-f57-authority-supersession-register.md)与 [F-57 实施计划](../plans/2026-08-24-f57-converged-program.md)。F-57 是设计/计划权威，不是产品已实现声明；本地模型实现延期。
 
 由整合员在十一节并行起草后产出,记录术语冲突、职责重叠与潜在矛盾。
 

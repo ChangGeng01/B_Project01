@@ -18,6 +18,14 @@ cargo xtask f57 evidence verify ...
 
 GitHub Actions、Forgejo/Woodpecker 或其他自建平台不得复制测试选择、Requirement 状态、签名、证据有效期和最终判绿逻辑。更换调度平台只允许替换薄适配器。
 
+`windows-f57-release-precommit` 薄适配器只能调用一个精确入口：
+
+```text
+cargo xtask f57 verify --level l1 --profile windows-f57-release-precommit
+```
+
+该入口由 `ep-xtask` 内版本化、冻结的 `WindowsF57ReleasePrecommitPlanV1` 解析并执行本文件 §7.1 的完整内部命令转录；YAML、PowerShell 与调度平台不得复制、删减或重排该转录。这样“外部只有一个 Rust 入口”和“内部必须跑完明确命令集合”是同一契约的两层，不是两套入口。
+
 当前仓库尚未交付该命令族；此时请求 F-57 分层证据必须返回 `NOT_DELIVERED`/退出码 70，不能回退使用旧 Linux、25-task 或 11-stage 聚合冒充现行结果。
 
 ## 2. 四层证据
@@ -167,19 +175,28 @@ PR 调度适配器固定为 PowerShell 或对应平台的受控脚本，只调�
 
 ### 7.1 强制 Windows Server 2022 / MSVC 预提交门
 
-`.github/workflows/ci.yml` 中的 `windows-f57-release-precommit` 是 Task 14 与最终发布路径的强制 job，必须运行在已批准的 Windows Server 2022 x64 self-hosted runner 和锁定的 MSVC 工具链上。Linux/macOS 编译、交叉编译、`cfg(windows)` 排除、手工豁免或允许失败都不能满足该门。它至少逐字执行：
+`.github/workflows/ci.yml` 中的 `windows-f57-release-precommit` 是 Task 14 与最终发布路径的强制 job，必须运行在已批准的 Windows Server 2022 x64 self-hosted runner 和锁定的 MSVC 工具链上。Linux/macOS 编译、交叉编译、`cfg(windows)` 排除、手工豁免或允许失败都不能满足该门。YAML 只可执行以下唯一外部入口并原样回传退出码：
 
 ```powershell
-cargo xtask f57 authority-kernel-abi generate --check
-cargo test -p ep-platform-powershell-trust -p powershell-trust-tool --all-targets --locked
-cargo test -p ep-platform-release -p ep-platform-runtime -p ep-platform-package -p ep-platform-backup -p ep-platform-generation-activation -p core-server -p recovery-tool -p ep-xtask -p ep-testkit --all-targets --locked
-cargo build -p core-server -p recovery-tool --release --locked
-cargo test -p core-server --test windows_service_process_dispatch --test windows_service_dynamic_readback --test package_maintenance_composition --test final_installed_generation_composition --test production_activation_composition --test production_admission_gate_composition --test power_shutdown_continuation_composition --locked -- --nocapture
-cargo test -p ep-platform-backup -p ep-adapter-backup -p evidence-signing-broker -p backup-writer -p backup-checkpoint-signer -p data-volume-unlock-broker -p backup-target -p recovery-tool -p pg-passphrase-helper --all-targets --locked -- --nocapture
-cargo test -p ep-testkit --test f57_final_installed_generation --test f57_package_maintenance_production --test f57_production_activation --test f57_production_generation_admission --test f57_windows_runtime_deployment --test f57_windows_recovery_security --test f57_postgres16_recovery --locked -- --nocapture
+cargo xtask f57 verify --level l1 --profile windows-f57-release-precommit
 ```
 
-ABI 检查只能调用 master 定义的唯一 generator 的 `--check` 模式；它必须对 `apps/core-server/src/kernel/abi.rs`、`docs/abi/f57-authority-kernel-v1.h` 与 `crates/platform/authority-kernel/authority-kernel.def` 做零 diff 验证。随后在锁定 MSVC x64 下重读 PE export table：只能有一个 named、non-forwarded export `ep_authority_kernel_get_api_v1`，不能有第二个 named export 或 unnamed ordinal-only export；ABI version/size/offset 必须为 `1/48/[0,4,8,16,24,32,40]`，C round-trip、section protection、held-file identity 与 generated import allowlist 都必须通过。手改任一生成文件、generator 漂移、额外/forwarded export 或只编译未检查 PE 都失败。
+`ep-xtask` 内的 `WindowsF57ReleasePrecommitPlanV1` 必须确定性解析并执行以下完整、可审计的内部子进程转录；下列命令是 Rust 计划的实现契约，不得复制到 YAML 形成第二套选择逻辑：
+
+```powershell
+cargo xtask f57 graph generate --check
+cargo run -p authority-kernel-abi-gen --locked -- --check
+cargo test -p ep-platform-powershell-trust -p powershell-trust-tool --all-targets --locked
+cargo test -p ep-platform-release -p ep-platform-runtime -p ep-platform-package -p ep-platform-backup -p ep-platform-generation-activation -p ep-platform-tenancy -p ep-platform-ups-contract -p ep-adapter-ups-windows -p ep-authority-kernel -p ep-adapter-file -p ep-adapter-db-pg -p core-server -p recovery-tool -p ep-xtask -p ep-testkit -p ep-release-gate --all-targets --locked
+cargo build -p core-server -p ep-authority-kernel -p ep-adapter-ups-windows -p recovery-tool --release --locked
+cargo test -p core-server --test windows_service_process_dispatch --test authority_kernel_loader_composition --test authority_kernel_abi_binding --locked -- --nocapture
+cargo test -p ep-authority-kernel --test abi_compatibility --test abi_export_and_layout --test windows_service_dynamic_readback --test package_maintenance_composition --test final_installed_generation_composition --test production_activation_composition --test production_admission_gate_composition --test power_shutdown_continuation_composition --locked -- --nocapture
+cargo test -p ep-platform-backup -p ep-adapter-backup -p evidence-signing-broker -p backup-writer -p backup-checkpoint-signer -p data-volume-unlock-broker -p backup-target -p recovery-tool -p pg-passphrase-helper --all-targets --locked -- --nocapture
+cargo test -p ep-xtask --test f57_release_carrier --test f57_windows_runtime_deployment --locked -- --nocapture
+cargo test -p ep-testkit --test f57_final_candidate --test f57_final_installed_generation --test f57_package_maintenance_production --test f57_production_activation --test f57_production_generation_admission --test f57_production_admission_execution_lease --test f57_production_admission_bypass --test f57_production_admission_races --test f57_windows_runtime_deployment --test f57_windows_recovery_security --test f57_postgres16_recovery --test f57_postgres16_windows_install --test f57_backup_storage_safeguard --test f57_backup_topology_signing_trust --test f57_backup_checkpoint_transition --test f57_release_gate_unit --test f57_release_dependency_dag --test f57_ups_adapter_contract --test f57_ups_command_reconciliation --locked -- --nocapture
+```
+
+ABI 检查只能调用 master 定义的唯一命令 `cargo run -p authority-kernel-abi-gen --locked -- --check`；它必须对 `apps/core-server/src/kernel/abi.rs`、`include/ep_authority_kernel_api_v1.h` 与 `crates/platform/authority-kernel/ep-authority-kernel.def` 做零 diff 验证。随后在锁定 MSVC x64 下重读 PE export table：只能有一个 named、non-forwarded export `ep_authority_kernel_get_api_v1`，不能有第二个 named export 或 unnamed ordinal-only export；ABI version/size/offset 必须为 `1/48/[0,4,8,16,24,32,40]`，C round-trip、section protection、held-file identity 与 generated import allowlist 都必须通过。手改任一生成文件、generator 漂移、额外/forwarded export 或只编译未检查 PE 都失败。
 
 该 job 必须在真实 Windows 进程中验证精确五个 Authority launcher-role 服务向量：ordinary Authority、dormant continuation、control broker、raw signer facade 与 journal signer facade；同时覆盖 `CreateProcessW`、`StartServiceCtrlDispatcherW`、Service SID/token readback、Authority 角色端点 nonce challenge、无 activation 的 continuation 零副作用退出，以及少/多/未知服务向量的负例。这里的五个服务不是整机清单：EnterprisePlatform-owned 固定清单精确为九个 SCM 服务，即这五个 Authority 服务、`EPF57EvidenceSignerBroker` 与 backup writer/checkpoint signer/data-volume-unlock broker 三个 component service；完整生产主机另必须含固定 `ep-postgres16` 与 runtime-deployment closure 中不别名的 `ACTIVE/WINDOWS_SERVICE` 行，所以基数是 `10 + active_additional_windows_service_count`。系统/第三方服务不计入该等式，未知 `EP*|EnterprisePlatform`-owned 行必须失败。
 
@@ -372,6 +389,7 @@ PRODUCT_DECISIONS_OPEN=0
 REQUIREMENT_SET=185
 TEST_ID_REGISTRY=276
 SIGNER_REGISTRY_ROWS=89
+DEVELOPMENT_READINESS=READY_NOT_AUTHORIZED
 DEVELOPMENT_AUTHORIZATION_REQUIRED
 DEVELOPMENT_AUTHORIZED=false
 IMPLEMENTATION_NOT_STARTED

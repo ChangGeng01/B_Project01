@@ -29,7 +29,7 @@
 | [ADR-0002](ADR-0002-toolchain-freeze.md) | 工具链版本冻结 | 已接受 | 阶段 1 计划第 13 节假设一 |
 | [ADR-0003](ADR-0003-database-collation.md) | 数据库默认排序固定为 libc/C 字节序 | 已接受 | 阶段 1 计划第 13 节新增决定二 |
 | [ADR-0004](ADR-0004-musl-static-linking.md) | 历史 Linux musl/scratch 构建决定（已由 Windows 原生部署取代） | 已取代 | 阶段 1 计划第 13 节新增决定七、F-51 |
-| [ADR-0005](ADR-0005-ci-platform.md) | Forgejo + Woodpecker Windows agent，唯一入口 `cargo xtask ci` | 部分被 ADR-0022 取代 | 阶段 1 计划第 13 节新增决定八、F-51 |
+| [ADR-0005](ADR-0005-ci-platform.md) | Forgejo + Woodpecker Windows agent；现行由 F-57 Rust command family 唯一判定，平台只作薄适配 | 部分被 ADR-0022 与 F-57 现行流水线取代 | 阶段 1 计划第 13 节新增决定八、F-51 |
 | [ADR-0006](ADR-0006-domain-invariant-property-tests.md) | 五组领域不变量属性测试的挂载点 | 已接受 | 阶段 1 计划第 9 节领域属性测试一段 |
 | [ADR-0007](ADR-0007-file-secret-provider-interim.md) | `FileSecretProvider` 为阶段 1 临时实现；生产终态为 `KmsSecretProvider` | 已取代 | 阶段 1 计划第 8 节末段、阶段 2 §4.3a |
 | [ADR-0008](ADR-0008-five-named-pools-budget-exit-78.md) | 历史五具名连接池与启动预算求和校验违例退 78 | 已被 ADR-0018 取代 | 阶段 2 计划第 7.2 节与裁定 C-04 |

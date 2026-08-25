@@ -1,6 +1,6 @@
 # 数据分析 AI 的形态设计（裁定 F-09-4 的承接）
 
-> **F-57 现行状态：`HISTORICAL_NON_NORMATIVE`。** 本文仅保留 2026-08-17 的 AI 形态研究证据；F-50/F-55 等材料不再是可独立执行的现行入口。当前权威集合为 [F-57 总体设计](2026-08-23-f57-governed-automation-fabric-design.md)、[F-57 需求追踪矩阵](../reviews/2026-08-23-f57-requirements-traceability.md)、[F-57 权威替代登记](../reviews/2026-08-23-f57-authority-supersession-register.md)与 [F-57 实施计划](../plans/2026-08-23-f57-governed-automation-fabric-implementation.md)。F-57 是设计/计划权威，不是产品已实现声明；本地模型实现明确延期。
+> **F-57 现行状态：`HISTORICAL_NON_NORMATIVE`。** 本文仅保留 2026-08-17 的 AI 形态研究证据；F-50/F-55 等材料不再是可独立执行的现行入口。当前权威集合为 [F-57 总体设计](2026-08-23-f57-governed-automation-fabric-design.md)、[F-57 需求追踪矩阵](../reviews/2026-08-23-f57-requirements-traceability.md)、[F-57 权威替代登记](../reviews/2026-08-23-f57-authority-supersession-register.md)与 [F-57 实施计划](../plans/2026-08-24-f57-converged-program.md)。F-57 是设计/计划权威，不是产品已实现声明；本地模型实现明确延期。
 
 **方法**：先盘硬约束（一人独立读卷），再四个角度**互不知情**各出一个方案，
 每案配一个专职**攻方**找权限旁路与泄漏通道，另出一份资源冲击报告，最后收口。全程只读。

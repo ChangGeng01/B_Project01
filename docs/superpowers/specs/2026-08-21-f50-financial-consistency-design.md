@@ -1,6 +1,6 @@
 # F-50 财务一致性与发票模型收口设计
 
-> **F-57 状态：`CURRENT_SUBJECT_INPUT`。** 本文不是完整的现行平台权威；只有被 F-57 保留的财务不变量与裁定仍属规范性输入，实施按适用范围流经 F-57 **Tasks 4, 20, and 25**，旧 [F-50 实施计划](../plans/2026-08-21-f50-financial-consistency-implementation.md) 已被替代。当前权威集合为 [F-57 总体设计](2026-08-23-f57-governed-automation-fabric-design.md)、[F-57 需求追踪矩阵](../reviews/2026-08-23-f57-requirements-traceability.md)、[F-57 权威替代登记](../reviews/2026-08-23-f57-authority-supersession-register.md)与 [F-57 实施计划](../plans/2026-08-23-f57-governed-automation-fabric-implementation.md)。F-57 是设计/计划权威，不是产品已实现声明；本地模型实现延期。
+> **F-57 状态：`CURRENT_SUBJECT_INPUT`。** 本文不是完整的现行平台权威；只有被 F-57 保留的财务不变量与裁定仍属规范性输入。旧 **F57-04/20/25** 只保留为需求所有权桶，实施顺序与门禁只由 [2026-08-24 收敛实施主计划](../plans/2026-08-24-f57-converged-program.md)及其四份依赖有序子计划定义；旧 [F-50 实施计划](../plans/2026-08-21-f50-financial-consistency-implementation.md) 已被替代。当前权威集合还包括 [F-57 总体设计](2026-08-23-f57-governed-automation-fabric-design.md)、[F-57 需求追踪矩阵](../reviews/2026-08-23-f57-requirements-traceability.md)与 [F-57 权威替代登记](../reviews/2026-08-23-f57-authority-supersession-register.md)。F-57 是设计/计划权威，不是产品已实现声明；本地模型实现延期。
 
 > 日期：2026-08-21
 > 状态：**F-50 时点历史状态：当时已批准并完成权威回写；当前只能作为 F-57 保留的财务不变量与裁定输入，不构成独立开发入口**

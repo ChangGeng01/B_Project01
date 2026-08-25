@@ -1,8 +1,8 @@
 # 首版产品需求文档（PRD）
 
-> **F-57 现行状态（2026-08-23）：`PARTIALLY_SUPERSEDED`。** 本 PRD 只保留与 F-57 不冲突的详细业务字段、状态、规则、异常和验收；F-50 至 F-56 不再是可独立执行的现行平台权威。当前权威集合为 [F-57 总体设计](2026-08-23-f57-governed-automation-fabric-design.md)、[F-57 需求追踪矩阵](../reviews/2026-08-23-f57-requirements-traceability.md)、[F-57 权威替代登记](../reviews/2026-08-23-f57-authority-supersession-register.md)与 [F-57 实施计划](../plans/2026-08-23-f57-governed-automation-fabric-implementation.md)。F-57 是设计/计划权威，不是产品已实现声明；本地模型实现延期。
+> **F-57 现行状态（2026-08-23）：`PARTIALLY_SUPERSEDED`。** 本 PRD 只保留与 F-57 不冲突的详细业务字段、状态、规则、异常和验收；F-50 至 F-56 不再是可独立执行的现行平台权威。当前权威集合为 [F-57 总体设计](2026-08-23-f57-governed-automation-fabric-design.md)、[F-57 需求追踪矩阵](../reviews/2026-08-23-f57-requirements-traceability.md)、[F-57 权威替代登记](../reviews/2026-08-23-f57-authority-supersession-register.md)与 [F-57 收敛实施主计划](../plans/2026-08-24-f57-converged-program.md)及其四份子计划。F-57 是设计/计划权威，不是产品已实现声明；本地模型实现延期。
 
-> **2026-08-21 F-50 后续专项裁定（历史裁定，现由 F-57 继承/替代）。** F-50 在其时点替代了本 PRD 中历史成交、财务第 6 节、发票号码、红冲/作废、资金冲正、账龄/勾稽、诚实披露及附录乙的对应旧句；当前仅由 F-57 保留的不变量继续有效，现行开发入口为 F-57 实施计划的 **Tasks 4, 20, and 25**，旧 F-50 实施计划已被替代。F-49 九项、F-01/U-D-03 与 F-03/U-D-05 均已关闭；旧“待决”或旧公式只作历史追溯。
+> **2026-08-21 F-50 后续专项裁定（历史裁定，现由 F-57 继承/替代）。** F-50 在其时点替代了本 PRD 中历史成交、财务第 6 节、发票号码、红冲/作废、资金冲正、账龄/勾稽、诚实披露及附录乙的对应旧句；当前仅由 F-57 保留的不变量继续有效，现行开发入口为 [2026-08-24 F-57 收敛实施主计划](../plans/2026-08-24-f57-converged-program.md)与其四份依赖有序子计划。旧 **Tasks 4, 20, and 25** 只解释为 `F57-04|F57-20|F57-25` 历史需求所有权桶，不是可执行节点、顺序或开工入口；旧 F-50 实施计划已被替代。F-49 九项、F-01/U-D-03 与 F-03/U-D-05 均已关闭；旧“待决”或旧公式只作历史追溯。
 
 > **2026-08-22 F-55 后续专项裁定（历史裁定，现由 F-57 继承/替代）。** [F-55 已批准范围冻结](2026-08-22-f55-approved-ai-mcp-server-admin-cloud-freeze.md) 在其时点曾恢复本地分析 AI、双向 MCP、ServerAdmin 静态 SPA 与客户自控境内 IaaS VM 承载；F-57 已将本地模型实现延期，当前只保留 F-57 继承的 provider、MCP、权限、审计与隔离契约。F-55 的旧范围与排除项仅作历史追溯，现行边界以 F-57 为准。
 
@@ -34,7 +34,7 @@
 | F-57 总体设计 | docs/superpowers/specs/2026-08-23-f57-governed-automation-fabric-design.md | `CURRENT_DESIGN_AUTHORITY`；定义现行范围、不变量与裁定，但不证明产品已经实现 |
 | F-57 需求追踪矩阵 | docs/superpowers/reviews/2026-08-23-f57-requirements-traceability.md | `CURRENT_TRACEABILITY_AUTHORITY`；维护需求到现行权威、任务与证据门禁的映射 |
 | F-57 权威替代登记 | docs/superpowers/reviews/2026-08-23-f57-authority-supersession-register.md | `CURRENT_SUPERSESSION_AUTHORITY`；判定旧材料的保留、部分替代与历史状态 |
-| F-57 实施计划 | docs/superpowers/plans/2026-08-23-f57-governed-automation-fabric-implementation.md | `CURRENT_IMPLEMENTATION_SEQUENCE`；只定义任务归属、实施顺序与验证门禁，不是实现完成证据 |
+| F-57 收敛五文件计划集入口 | docs/superpowers/plans/2026-08-24-f57-converged-program.md | `CURRENT_IMPLEMENTATION_SEQUENCE`；引用四份依赖有序子计划，唯一定义现行任务归属、实施顺序与验证门禁，不是实现完成证据 |
 | 本 PRD | docs/superpowers/specs/2026-08-09-first-release-prd.md | `PARTIALLY_SUPERSEDED`；仅提供 F-57 未冲突的业务细节与状态化登记 |
 | 旧总体设计规格 | docs/superpowers/specs/2026-07-19-enterprise-private-operations-platform-design.md | `HISTORICAL_PARTIALLY_INHERITED`；仅 F-57 明确保留的功能、账务与非功能细节可继续作为输入 |
 | F-50 财务一致性裁定 | docs/superpowers/specs/2026-08-21-f50-financial-consistency-design.md | `CURRENT_SUBJECT_INPUT`；仅 F-57 保留的财务不变量与裁定继续有效，旧 F-50 实施计划已被替代 |

@@ -1,6 +1,6 @@
 # 首版范围判定表(第 5 章模块目录与平台章节)
 
-> **F-57 现行状态：`HISTORICAL_NON_NORMATIVE`。** 本表仅保留 2026-08-04 的范围判定证据；F-50/F-55 等材料不再是可独立执行的现行入口。当前权威集合为 [F-57 总体设计](../specs/2026-08-23-f57-governed-automation-fabric-design.md)、[F-57 需求追踪矩阵](2026-08-23-f57-requirements-traceability.md)、[F-57 权威替代登记](2026-08-23-f57-authority-supersession-register.md)与 [F-57 实施计划](../plans/2026-08-23-f57-governed-automation-fabric-implementation.md)。F-57 是设计/计划权威，不是产品已实现声明；本地模型实现延期。
+> **F-57 现行状态：`HISTORICAL_NON_NORMATIVE`。** 本表仅保留 2026-08-04 的范围判定证据；F-50/F-55 等材料不再是可独立执行的现行入口。当前权威集合为 [F-57 总体设计](../specs/2026-08-23-f57-governed-automation-fabric-design.md)、[F-57 需求追踪矩阵](2026-08-23-f57-requirements-traceability.md)、[F-57 权威替代登记](2026-08-23-f57-authority-supersession-register.md)与 [F-57 实施计划](../plans/2026-08-24-f57-converged-program.md)。F-57 是设计/计划权威，不是产品已实现声明；本地模型实现延期。
 
 - 来源:客户提供的收束版需求《管理软件基本需求.docx》
 - 判定口径:见本目录下 2026-08-04-first-release-scope-decisions.md

@@ -1,6 +1,6 @@
 # Governed Bidirectional MCP Extensions Implementation Plan
 
-> **F-57 状态：`SUPERSEDED_DO_NOT_EXECUTE`。** 本文件只保留为历史设计输入，不得单独或续跑执行；MCP 已收敛为受治理工具层，不是事务总线。任何实现必须从 `2026-08-23-f57-governed-automation-fabric-implementation.md` Task 1 开始。
+> **F-57 状态：`SUPERSEDED_DO_NOT_EXECUTE`。** 本文件只保留为历史设计输入，不得单独或续跑执行；MCP 已收敛为受治理工具层，不是事务总线。获得另行开发授权后也只能从 [2026-08-24 收敛实施主计划](2026-08-24-f57-converged-program.md) 指向的 G0 bootstrap 子计划开始，不存在本文件的续跑入口。
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 

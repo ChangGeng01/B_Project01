@@ -1,6 +1,6 @@
 # 《企业私有化可组合运营平台总体设计》v1.4 定向收口记录
 
-> **F-57 状态：`HISTORICAL_NON_NORMATIVE`。** 本文仅保留历史评审证据，不是现行开发或验收权威。当前权威集合为 [F-57 总体设计](../specs/2026-08-23-f57-governed-automation-fabric-design.md)、[F-57 需求追踪矩阵](2026-08-23-f57-requirements-traceability.md)、[F-57 权威替代登记](2026-08-23-f57-authority-supersession-register.md)与 [F-57 实施计划](../plans/2026-08-23-f57-governed-automation-fabric-implementation.md)。F-57 是设计/计划权威，不是产品已实现声明；本地模型实现延期。
+> **F-57 状态：`HISTORICAL_NON_NORMATIVE`。** 本文仅保留历史评审证据，不是现行开发或验收权威。当前权威集合为 [F-57 总体设计](../specs/2026-08-23-f57-governed-automation-fabric-design.md)、[F-57 需求追踪矩阵](2026-08-23-f57-requirements-traceability.md)、[F-57 权威替代登记](2026-08-23-f57-authority-supersession-register.md)与 [F-57 实施计划](../plans/2026-08-24-f57-converged-program.md)。F-57 是设计/计划权威，不是产品已实现声明；本地模型实现延期。
 
 - 复核对象：`docs/superpowers/specs/2026-07-19-enterprise-private-operations-platform-design.md` v1.4 及其关联产品介绍
 - 收口版本：v1.5

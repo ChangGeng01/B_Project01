@@ -190,7 +190,7 @@ L0 可信内核      事务 / 授权 / 审计 / 配置代 / 自动化 / 签名 /
 
 Integration Gateway 的写入输入必须转换为版本化 typed command 或 proposal，再由 Authority 重新验证身份、法人、行/字段权限、策略、配置代和幂等键。其配置、依赖图或运行拓扑若声明数据库连接串、数据库角色、连接池、迁移器、KMS 解封或权威目录访问，安装、启动和 generation 激活必须失败关闭。
 
-每个可激活 generation 必须包含不可变、已签名的 `RuntimeTopologyManifestV1`。它至少绑定 deployment、authority epoch、generation digest、hardware profile、storage manifest、capacity certificate，以及每个参与者的服务身份、二进制摘要、carrier、Windows Service SID、IPC/ACL、依赖、readiness、资源等级、有界队列和允许的持久化类别；同时冻结数据库连接消费者 exact-set、角色、用途、常驻/峰值上限、超时和总预算。实际二进制、服务身份、端点、ACL、连接消费者、池上限、参与者集合或硬件能力与 manifest 不一致时不得 ready。拓扑、硬件、连接预算或 carrier 能力改变必须签发新 manifest 并重新取得容量证书，禁止用环境变量或命令行静默扩权。
+每个可激活 generation 在其签名 generation envelope 已经生成后，必须确定性构造并按内容摘要存储一份不可变的 strict plain JCS `RuntimeTopologyDeclarationV1`；它不是 signed envelope，也不增加 signer-registry row。declaration 绑定 deployment、authority epoch、完整已签名 generation envelope digest、capability-graph digest、hardware/storage/workload profile、storage manifest、capacity policy definition，以及每个参与者的服务身份、二进制摘要、carrier、Windows Service SID、IPC/ACL、依赖、readiness、资源等级、有界队列和允许的持久化类别；同时冻结数据库连接消费者 exact-set、角色、用途、权限类别、常驻/峰值上限、超时和预算权重。它不得提前携带 candidate、P340 soak 或 capacity-certificate ref。实际二进制、服务身份、端点、ACL、连接消费者、池上限、参与者集合或硬件能力与 declaration 不一致时不得 ready。只有同一候选的 P340 终态 PASS 后，G6 才可构造 strict plain JCS `RuntimeTopologyCertificationV1`，把该 declaration 与 candidate、P340 soak、capacity certificate、宿主指纹及三个 profile exact-bind；发布证书再绑定 certification，生产启用还必须重验现场读回。拓扑、硬件、连接预算或 carrier 能力改变必须产生新 generation/declaration 并重做适用的 P340/certification，禁止用环境变量或命令行静默扩权。
 
 F-57 生产运行时只能采用原生 Windows Service、Service SID、命名管道、Job Object、DACL 和 Windows 证书存储。活动生产路径不得依赖 Linux、WSL、systemd、cgroup、Podman、Compose、Kubernetes 或 `/run`、`/etc`、`/var/lib` 等 Linux 路径；历史 Linux 资产只能作为不可发布研究夹具。Windows 构建、安装、升级、服务/IPC ACL、启动、停止和恢复证据是发布门，Linux 构建成功不能替代。
 
@@ -250,7 +250,7 @@ F-57 生产运行时只能采用原生 Windows Service、Service SID、命名管
 
 每次权威命令必须记录配置代、权限策略版本、工作流版本、能力包版本、客户端版本和幂等标识（稳定需求 `GOV-008`）。缺失任一适用版本的命令不得进入权威提交。
 
-每个 generation 还必须绑定 `CapabilityGraphV1`、`RuntimeTopologyManifestV1`、storage manifest、适用的 capacity certificate 与所有 item digest。所有需要独立签名的业务制品统一使用 `SignedBusinessArtifactV1<T>` 外层协议；其 wire exact 复用 F-56 §2.1 已冻结的四字段 `payload|payload_sha256|signer_subject|signature_cms_b64url` detached-CMS 封套，purpose 必须是 payload `T` 内的强类型字段并由 typed expectation 验证，不得新增第二种外层封套。payload 不得再次包含自由格式 `signature`、`signing_key_id`、算法或证书链字段。迁移计划的唯一类型是 `SignedBusinessArtifactV1<MigrationPlanPayloadV1>`，并且必须作为同一 generation 的具名 item 被 digest 引用；单独持有迁移计划签名不能激活 DDL。
+每个已签名 generation 必须绑定 `CapabilityGraphV1`、projection manifest、storage manifest、capacity policy definition、所有 item/reverse-plan digest 与 required-participant exact-set。随后构造的 `RuntimeTopologyDeclarationV1` 反向绑定该完整已签名 generation envelope digest，不得让 generation 反向引用 declaration 形成摘要环，也不得在此阶段绑定尚未产生的 capacity certificate；该证书只能在 P340 终态后由 `RuntimeTopologyCertificationV1` 绑定。所有需要独立签名的业务制品统一使用 `SignedBusinessArtifactV1<T>` 外层协议；其 wire exact 复用 F-56 §2.1 已冻结的四字段 `payload|payload_sha256|signer_subject|signature_cms_b64url` detached-CMS 封套，purpose 必须是 payload `T` 内的强类型字段并由 typed expectation 验证，不得新增第二种外层封套。payload 不得再次包含自由格式 `signature`、`signing_key_id`、算法或证书链字段。迁移计划的唯一类型是 `SignedBusinessArtifactV1<MigrationPlanPayloadV1>`，并且必须作为同一 generation 的具名 item 被 digest 引用；单独持有迁移计划签名不能激活 DDL。
 
 ### 5.2 三种可插拔等级
 
@@ -275,7 +275,7 @@ F-57 生产运行时只能采用原生 Windows Service、Service SID、命名管
 
 新运行实例使用新版本；已运行实例固定原版本。紧急变更只能明确选择继续、补偿后停止或重新启动，禁止静默迁移。
 
-Authority 是唯一 generation 协调者，并持有持久激活 journal 与全局 activation mutex。`RuntimeTopologyManifestV1` 中的 required participants 必须分别验证签名、依赖和本地实际状态，完成适用的原子切换、排空替换或维护升级，并对完全相同的 generation digest 写入持久 `GenerationParticipantV1` ACK。只有 required participant exact-set 全部 ACK 后才能推进 observed pointer；失败、超时、摘要不一致或重启丢失状态时只能保持上一 observed generation 或执行完整回滚，禁止部分激活。
+Authority 是唯一 generation 协调者，并持有持久激活 journal 与全局 activation mutex。已签名 `GenerationManifestV1` 中的 required participants 必须从同一 compiled graph 确定性派生，并与 `RuntimeTopologyDeclarationV1` 的 ACTIVE participant exact-set 一一对应；每个参与者必须分别验证签名、依赖和本地实际状态，完成适用的原子切换、排空替换或维护升级，并对完全相同的 generation envelope digest 写入持久 `GenerationParticipantV1` ACK。只有 required participant exact-set 全部 ACK 后才能推进 observed pointer；失败、超时、摘要不一致或重启丢失状态时只能保持上一 observed generation 或执行完整回滚，禁止部分激活。
 
 每个在途命令、工作流、外部 effect 和可恢复任务必须持有 `ArtifactPinLeaseV1`，记录 execution、participant、generation、package/version digest、取得/续租/释放状态。短调用可使用有界租约；持久流程与 `Unknown` 外部效果还必须保存不可因租约超时而消失的持久引用。只有同时满足以下条件才允许归档或回收旧包、规则、schema 和 provider：
 
@@ -742,7 +742,7 @@ CI 分为四层：
 
 ## 17. 已关闭与现场选择
 
-本设计不存在仍需产品负责人重新选择的产品方向；2026-08-24 收敛修订、ADR-0025 与五文件实施计划集已获用户批准并达到 `DESIGN_READY`。开发仍需用户另行明确授权，当前状态为 `DEVELOPMENT_AUTHORIZATION_REQUIRED`。以下属于实施或部署现场选择，不改变本文的目标架构：
+本设计不存在仍需产品负责人重新选择的产品方向；2026-08-24 收敛修订、ADR-0025 与五文件实施计划集已获用户批准并达到 `DESIGN_READY`。项目唯一当前开发状态仍为 `READY_NOT_AUTHORIZED`，阻断原因为 `DEVELOPMENT_AUTHORIZATION_REQUIRED`；只有用户另行明确授权后才可开发。以下属于实施或部署现场选择，不改变本文的目标架构：
 
 - Tauri 2 是否通过四平台硬门；失败后的唯一回退已固定为 Flutter + Rust；
 - 新增 HDD 的具体型号、控制器或 Windows 镜像实现，以实机证据选择；

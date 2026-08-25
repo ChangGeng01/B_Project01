@@ -1,6 +1,6 @@
 # ServerAdmin and Customer-Controlled Deployment Carrier Implementation Plan
 
-> **F-57 状态：`SUPERSEDED_DO_NOT_EXECUTE`。** 本文件只保留为历史设计输入，不得单独或续跑执行；F-57 已将管理面定义为 Windows Server 权威端控制中心，并与员工 Workbench 分离。任何实现必须从 `2026-08-23-f57-governed-automation-fabric-implementation.md` Task 1 开始。
+> **F-57 状态：`SUPERSEDED_DO_NOT_EXECUTE`。** 本文件只保留为历史设计输入，不得单独或续跑执行；F-57 已将管理面定义为 Windows Server 权威端控制中心，并与员工 Workbench 分离。获得另行开发授权后也只能从 [2026-08-24 收敛实施主计划](2026-08-24-f57-converged-program.md) 指向的 G0 bootstrap 子计划开始，不存在本文件的续跑入口。
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 

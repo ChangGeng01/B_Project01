@@ -2,7 +2,7 @@
 
 日期：2026-08-04
 
-> **历史决策依据，不是现行平台实施清单。** “客户自控单写服务器、约 20 名活跃用户、单机故障即停机”仍是范围来源；本文当时的 Linux、容器编排、并发硬上限、资源单位和旧备份权限/延期值均不可执行。现行入口是 [F-57 总体设计](../specs/2026-08-23-f57-governed-automation-fabric-design.md)、[权威登记](2026-08-23-f57-authority-supersession-register.md)和[F-57 实施计划](../plans/2026-08-23-f57-governed-automation-fabric-implementation.md)。
+> **历史决策依据，不是现行平台实施清单。** “客户自控单写服务器、约 20 名活跃用户、单机故障即停机”仍是范围来源；本文当时的 Linux、容器编排、并发硬上限、资源单位和旧备份权限/延期值均不可执行。现行入口是 [F-57 总体设计](../specs/2026-08-23-f57-governed-automation-fabric-design.md)、[权威登记](2026-08-23-f57-authority-supersession-register.md)和[F-57 实施计划](../plans/2026-08-24-f57-converged-program.md)。
 
 > **读本文件的方式**：口径一至七在前，验证后的补充一至八在后。
 > 补充部分覆盖口径部分，冲突时以补充为准。已被覆盖的取值已在原处标注作废，不要照抄。

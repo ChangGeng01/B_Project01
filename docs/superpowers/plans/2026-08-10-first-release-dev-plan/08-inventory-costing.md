@@ -1,4 +1,4 @@
-> **F-57 状态：`HISTORICAL_DO_NOT_EXECUTE`。** 本文只保留历史任务正文，现行工作由 F-57 **Task 20** 承接。当前权威集合为 [F-57 总体设计](../../specs/2026-08-23-f57-governed-automation-fabric-design.md)、[F-57 需求追踪矩阵](../../reviews/2026-08-23-f57-requirements-traceability.md)、[F-57 权威替代登记](../../reviews/2026-08-23-f57-authority-supersession-register.md)与 [F-57 实施计划](../2026-08-23-f57-governed-automation-fabric-implementation.md)；F-57 是设计/计划权威，不是产品已实现声明，本地模型实现延期。
+> **F-57 状态：`HISTORICAL_DO_NOT_EXECUTE`。** 本文只保留历史任务正文；旧 **F57-20** 仅是需求所有权桶，不是现行 task 或执行顺序。当前权威集合为 [F-57 总体设计](../../specs/2026-08-23-f57-governed-automation-fabric-design.md)、[F-57 需求追踪矩阵](../../reviews/2026-08-23-f57-requirements-traceability.md)、[F-57 权威替代登记](../../reviews/2026-08-23-f57-authority-supersession-register.md)与 [2026-08-24 收敛实施主计划](../2026-08-24-f57-converged-program.md)；F-57 是设计/计划权威，不是产品已实现声明，本地模型实现延期。
 
 ## 阶段 8：库存与存货计价
 

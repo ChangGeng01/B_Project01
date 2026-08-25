@@ -1,6 +1,6 @@
 # 企业私有化运营平台首版 · 十四阶段技术计划整合卷（前置部分与跨阶段核对）
 
-> **F-57 现行状态（2026-08-23）：`HISTORICAL`。** 本卷只作旧实施设计追溯，不是当前执行入口。现行总体设计见 [F-57](../../specs/2026-08-23-f57-governed-automation-fabric-design.md)，现行执行顺序见 [F-57 实施计划](../2026-08-23-f57-governed-automation-fabric-implementation.md)。
+> **F-57 现行状态（2026-08-23）：`HISTORICAL`。** 本卷只作旧实施设计追溯，不是当前执行入口。现行总体设计见 [F-57](../../specs/2026-08-23-f57-governed-automation-fabric-design.md)，现行执行顺序见 [F-57 实施计划](../2026-08-24-f57-converged-program.md)。
 
 版本：整合卷 v1.0
 日期：2026-08-10

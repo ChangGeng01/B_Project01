@@ -1,4 +1,4 @@
-> **F-57 状态：`SUPERSEDED_DO_NOT_EXECUTE`。** 本文件只供提取未冲突的旧技术细节；不得作为共享强制基线。唯一执行入口是 [F-57 实施计划](../2026-08-23-f57-governed-automation-fabric-implementation.md)。
+> **F-57 状态：`SUPERSEDED_DO_NOT_EXECUTE`。** 本文件只供提取未冲突的旧技术细节；不得作为共享强制基线。唯一执行入口是 [F-57 实施计划](../2026-08-24-f57-converged-program.md)。
 
 ## 0. 本基线的地位与使用方式
 
