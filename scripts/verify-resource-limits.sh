@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# F-57：HISTORICAL_LINUX_RESEARCH_ONLY；不得作为当前 P340/Windows 资源门或发布证据。
 # 部署与升级各执行一次的资源限额核对。判定分两半：
 #   自洽性半边　deploy/ 下八个 drop-in 的两个权重列与规格第 13.1 章配额表该行百分数乘以 100 逐行整数相等；
 #   运行期半边　drop-in 的四类取值与 cgroup v2 目录下的实际取值逐行相等。

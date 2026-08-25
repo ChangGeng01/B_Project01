@@ -1,0 +1,2669 @@
+openapi: 3.1.0
+info:
+  title: Enterprise Platform Finance API — Stage 10 full surface
+  version: 1.0.0-stage10
+  description: |
+    本文件保留阶段 10/F-50 的 33 个 finance HTTP method/path operation，只是 F-57
+    当前主题输入，尚待精确再基线；它不是现行、已实现的完整 F-57 机器契约。
+    退款由调用方提交逐笔原款项来源及链接金额，
+    服务端计算预收/预付消耗与核销释放。资金冲正只提交源单据和事实更正信息；
+    `ar_ap_amount`、`advance_amount`、科目、核销释放额等内部拆分永远不是 HTTP 输入。
+  x-f57-status: CURRENT_SUBJECT_INPUT_PENDING_EXACT_REBASELINE
+  x-source-authority: F-50-current-subject-input
+  x-planned-implementation-tasks: [F57-20]
+  x-implementation-state: NOT_IMPLEMENTED_AS_FULL_F57_MACHINE_CONTRACT
+  x-scope: stage10-full-surface
+jsonSchemaDialect: https://json-schema.org/draft/2020-12/schema
+servers:
+  - url: /
+tags:
+  - name: CashAccounts
+  - name: Settlements
+  - name: Receipts
+  - name: Payments
+  - name: Refunds
+  - name: CashDocumentReversals
+  - name: Ledgers
+  - name: Agings
+  - name: Overbilling
+  - name: Reconciliations
+  - name: OpeningBalances
+security:
+  - bearerAuth: []
+paths:
+  /api/v1/finance/cash-accounts:
+    post:
+      tags: [CashAccounts]
+      operationId: createCashAccount
+      summary: 创建资金账户
+      parameters:
+        - $ref: '#/components/parameters/LegalEntityId'
+        - $ref: '#/components/parameters/DeviceId'
+        - $ref: '#/components/parameters/InternalClient'
+        - $ref: '#/components/parameters/RequestId'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/CashAccountCreateRequest'}
+      responses:
+        '201':
+          description: "`EP__FINANCE__CASH_ACCOUNT__REQUIRES_APPROVAL=false` 时，资金账户已直接创建"
+          headers:
+            X-Request-Id: {$ref: '#/components/headers/XRequestId'}
+            X-Trace-Id: {$ref: '#/components/headers/XTraceId'}
+            Idempotent-Replay: {$ref: '#/components/headers/IdempotentReplay'}
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/CashAccountSuccess'}
+        '202':
+          description: "`EP__FINANCE__CASH_ACCOUNT__REQUIRES_APPROVAL=true` 时，仅创建审批申请；资金账户行尚未创建"
+          headers:
+            X-Request-Id: {$ref: '#/components/headers/XRequestId'}
+            X-Trace-Id: {$ref: '#/components/headers/XTraceId'}
+            Idempotent-Replay: {$ref: '#/components/headers/IdempotentReplay'}
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/ApprovalSubmissionSuccess'}
+        '400': {$ref: '#/components/responses/Error400'}
+        '403': {$ref: '#/components/responses/Error403'}
+        '404': {$ref: '#/components/responses/Error404'}
+        '409': {$ref: '#/components/responses/Error409'}
+      x-permission: finance.cash_account:create
+      x-idempotency: required
+      x-reauth: not-required
+      x-approval: cash-account-configured; default-required; approval-callback-revalidates-and-creates
+      x-error-codes:
+        - FINANCE.CASH_ACCOUNT.ACCOUNT_TYPE_LEDGER_MISMATCH
+        - PLATFORM.IDEMPOTENCY.KEY_REQUIRED
+        - PLATFORM.IDEMPOTENCY.PAYLOAD_MISMATCH
+        - PLATFORM.AUTHZ.NOT_FOUND_OR_DENIED
+    get:
+      tags: [CashAccounts]
+      operationId: listCashAccounts
+      summary: 查询资金账户列表
+      parameters:
+        - $ref: '#/components/parameters/LegalEntityId'
+        - $ref: '#/components/parameters/DeviceId'
+        - $ref: '#/components/parameters/InternalClient'
+        - $ref: '#/components/parameters/RequestId'
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/PageSize'
+        - $ref: '#/components/parameters/Cursor'
+        - name: filter[account_type]
+          in: query
+          schema: {type: string, enum: [BANK, CASH]}
+        - name: filter[is_active]
+          in: query
+          schema: {type: boolean}
+        - name: sort
+          in: query
+          description: 只允许 `code:asc`，省略时也按 code 升序。
+          schema: {type: string, enum: ['code:asc']}
+      responses:
+        '200':
+          description: 分页资金账户；账号只返回脱敏后四位
+          headers:
+            X-Request-Id: {$ref: '#/components/headers/XRequestId'}
+            X-Trace-Id: {$ref: '#/components/headers/XTraceId'}
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/CashAccountListSuccess'}
+        '400': {$ref: '#/components/responses/Error400'}
+        '403': {$ref: '#/components/responses/Error403'}
+        '404': {$ref: '#/components/responses/Error404'}
+      x-permission: finance.cash_account:read
+      x-idempotency: not-applicable
+      x-reauth: not-required
+      x-error-codes:
+        - PLATFORM.AUTHZ.SORT_FIELD_FORBIDDEN
+        - PLATFORM.AUTHZ.NOT_FOUND_OR_DENIED
+  /api/v1/finance/cash-accounts/{id}:
+    get:
+      tags: [CashAccounts]
+      operationId: getCashAccount
+      summary: 查询资金账户详情
+      description: |
+        默认只返回账号后四位；同时具备 `finance.cash_account.bank_account_no.read_full`、提交有效
+        X-Reauth-Token 并写审计时才返回完整账号。bank_name 另需 `finance.cash_account.bank_name.read`。
+      parameters:
+        - $ref: '#/components/parameters/DocumentId'
+        - $ref: '#/components/parameters/LegalEntityId'
+        - $ref: '#/components/parameters/DeviceId'
+        - $ref: '#/components/parameters/InternalClient'
+        - $ref: '#/components/parameters/RequestId'
+        - $ref: '#/components/parameters/OptionalReauthToken'
+      responses:
+        '200':
+          description: 资金账户详情，字段级权限与重新认证决定敏感字段投影
+          headers:
+            X-Request-Id: {$ref: '#/components/headers/XRequestId'}
+            X-Trace-Id: {$ref: '#/components/headers/XTraceId'}
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/CashAccountSuccess'}
+        '403': {$ref: '#/components/responses/Error403'}
+        '404': {$ref: '#/components/responses/Error404'}
+      x-permission: finance.cash_account:read
+      x-field-permissions:
+        bank_name: finance.cash_account.bank_name.read
+        bank_account_no: finance.cash_account.bank_account_no.read_full
+      x-idempotency: not-applicable
+      x-reauth: conditional-for-bank-account-no.read_full
+      x-error-codes:
+        - PLATFORM.AUTHZ.REAUTH_REQUIRED
+        - PLATFORM.AUTHZ.NOT_FOUND_OR_DENIED
+    patch:
+      tags: [CashAccounts]
+      operationId: updateCashAccount
+      summary: 修改资金账户
+      parameters:
+        - $ref: '#/components/parameters/DocumentId'
+        - $ref: '#/components/parameters/LegalEntityId'
+        - $ref: '#/components/parameters/DeviceId'
+        - $ref: '#/components/parameters/InternalClient'
+        - $ref: '#/components/parameters/RequestId'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/CashAccountPatchRequest'}
+      responses:
+        '200':
+          description: "`EP__FINANCE__CASH_ACCOUNT__REQUIRES_APPROVAL=false` 时，资金账户已直接修改"
+          headers:
+            X-Request-Id: {$ref: '#/components/headers/XRequestId'}
+            X-Trace-Id: {$ref: '#/components/headers/XTraceId'}
+            Idempotent-Replay: {$ref: '#/components/headers/IdempotentReplay'}
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/CashAccountSuccess'}
+        '202':
+          description: "`EP__FINANCE__CASH_ACCOUNT__REQUIRES_APPROVAL=true` 时，仅创建审批申请；现有账户行保持不变"
+          headers:
+            X-Request-Id: {$ref: '#/components/headers/XRequestId'}
+            X-Trace-Id: {$ref: '#/components/headers/XTraceId'}
+            Idempotent-Replay: {$ref: '#/components/headers/IdempotentReplay'}
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/ApprovalSubmissionSuccess'}
+        '400': {$ref: '#/components/responses/Error400'}
+        '403': {$ref: '#/components/responses/Error403'}
+        '404': {$ref: '#/components/responses/Error404'}
+        '409': {$ref: '#/components/responses/Error409'}
+      x-permission: finance.cash_account:update
+      x-idempotency: required
+      x-reauth: not-required
+      x-approval: cash-account-configured; default-required; approval-callback-revalidates-and-updates
+      x-error-codes:
+        - PLATFORM.CONCURRENCY.STALE_VERSION
+        - PLATFORM.IDEMPOTENCY.KEY_REQUIRED
+        - PLATFORM.IDEMPOTENCY.PAYLOAD_MISMATCH
+        - PLATFORM.AUTHZ.NOT_FOUND_OR_DENIED
+  /api/v1/finance/cash-accounts/{id}/actions/deactivate:
+    post:
+      tags: [CashAccounts]
+      operationId: deactivateCashAccount
+      summary: 停用资金账户
+      parameters:
+        - $ref: '#/components/parameters/DocumentId'
+        - $ref: '#/components/parameters/LegalEntityId'
+        - $ref: '#/components/parameters/DeviceId'
+        - $ref: '#/components/parameters/InternalClient'
+        - $ref: '#/components/parameters/RequestId'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/RowVersionActionRequest'}
+      responses:
+        '200':
+          description: 审批开关关闭时，资金账户已直接停用
+          headers:
+            X-Request-Id: {$ref: '#/components/headers/XRequestId'}
+            X-Trace-Id: {$ref: '#/components/headers/XTraceId'}
+            Idempotent-Replay: {$ref: '#/components/headers/IdempotentReplay'}
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/CashAccountSuccess'}
+        '202':
+          description: 审批开关开启时，仅创建停用审批申请；账户仍保持启用
+          headers:
+            X-Request-Id: {$ref: '#/components/headers/XRequestId'}
+            X-Trace-Id: {$ref: '#/components/headers/XTraceId'}
+            Idempotent-Replay: {$ref: '#/components/headers/IdempotentReplay'}
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/ApprovalSubmissionSuccess'}
+        '400': {$ref: '#/components/responses/Error400'}
+        '403': {$ref: '#/components/responses/Error403'}
+        '404': {$ref: '#/components/responses/Error404'}
+        '409': {$ref: '#/components/responses/Error409'}
+      x-permission: finance.cash_account:update
+      x-idempotency: required
+      x-reauth: not-required
+      x-approval: cash-account-configured; default-required; approval-callback-revalidates-and-deactivates
+      x-error-codes:
+        - PLATFORM.CONCURRENCY.STALE_VERSION
+        - PLATFORM.IDEMPOTENCY.KEY_REQUIRED
+        - PLATFORM.IDEMPOTENCY.PAYLOAD_MISMATCH
+        - PLATFORM.AUTHZ.NOT_FOUND_OR_DENIED
+  /api/v1/finance/cash-accounts/{id}/actions/activate:
+    post:
+      tags: [CashAccounts]
+      operationId: activateCashAccount
+      summary: 启用资金账户
+      parameters:
+        - $ref: '#/components/parameters/DocumentId'
+        - $ref: '#/components/parameters/LegalEntityId'
+        - $ref: '#/components/parameters/DeviceId'
+        - $ref: '#/components/parameters/InternalClient'
+        - $ref: '#/components/parameters/RequestId'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/RowVersionActionRequest'}
+      responses:
+        '200':
+          description: 审批开关关闭时，资金账户已直接启用
+          headers:
+            X-Request-Id: {$ref: '#/components/headers/XRequestId'}
+            X-Trace-Id: {$ref: '#/components/headers/XTraceId'}
+            Idempotent-Replay: {$ref: '#/components/headers/IdempotentReplay'}
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/CashAccountSuccess'}
+        '202':
+          description: 审批开关开启时，仅创建启用审批申请；账户仍保持停用
+          headers:
+            X-Request-Id: {$ref: '#/components/headers/XRequestId'}
+            X-Trace-Id: {$ref: '#/components/headers/XTraceId'}
+            Idempotent-Replay: {$ref: '#/components/headers/IdempotentReplay'}
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/ApprovalSubmissionSuccess'}
+        '400': {$ref: '#/components/responses/Error400'}
+        '403': {$ref: '#/components/responses/Error403'}
+        '404': {$ref: '#/components/responses/Error404'}
+        '409': {$ref: '#/components/responses/Error409'}
+      x-permission: finance.cash_account:update
+      x-idempotency: required
+      x-reauth: not-required
+      x-approval: cash-account-configured; default-required; approval-callback-revalidates-and-activates
+      x-error-codes:
+        - PLATFORM.CONCURRENCY.STALE_VERSION
+        - PLATFORM.IDEMPOTENCY.KEY_REQUIRED
+        - PLATFORM.IDEMPOTENCY.PAYLOAD_MISMATCH
+        - PLATFORM.AUTHZ.NOT_FOUND_OR_DENIED
+  /api/v1/finance/cash-accounts/{id}/cash-ledger-entries:
+    get:
+      tags: [CashAccounts, Ledgers]
+      operationId: listCashAccountLedgerEntries
+      summary: 查询单一资金账户的资金腿明细
+      parameters:
+        - $ref: '#/components/parameters/DocumentId'
+        - $ref: '#/components/parameters/LegalEntityId'
+        - $ref: '#/components/parameters/DeviceId'
+        - $ref: '#/components/parameters/InternalClient'
+        - $ref: '#/components/parameters/RequestId'
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/PageSize'
+        - $ref: '#/components/parameters/Cursor'
+        - $ref: '#/components/parameters/AccountingPeriodIdQuery'
+      responses:
+        '200':
+          description: 分页资金腿明细，meta 含期初、期间流入、期间流出与期末余额
+          headers:
+            X-Request-Id: {$ref: '#/components/headers/XRequestId'}
+            X-Trace-Id: {$ref: '#/components/headers/XTraceId'}
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/CashLedgerEntryListSuccess'}
+        '400': {$ref: '#/components/responses/Error400'}
+        '403': {$ref: '#/components/responses/Error403'}
+        '404': {$ref: '#/components/responses/Error404'}
+      x-permission: finance.cash_account:read
+      x-idempotency: not-applicable
+      x-reauth: not-required
+      x-error-codes: [PLATFORM.AUTHZ.NOT_FOUND_OR_DENIED]
+  /api/v1/finance/settlement-proposals:
+    get:
+      tags: [Settlements]
+      operationId: getSettlementProposal
+      summary: 按默认核销顺序生成核销建议
+      parameters:
+        - $ref: '#/components/parameters/LegalEntityId'
+        - $ref: '#/components/parameters/DeviceId'
+        - $ref: '#/components/parameters/InternalClient'
+        - $ref: '#/components/parameters/RequestId'
+        - name: side
+          in: query
+          required: true
+          schema: {type: string, enum: [AR, AP]}
+        - name: party_id
+          in: query
+          required: true
+          schema: {type: string, format: uuid}
+        - name: amount
+          in: query
+          required: true
+          schema: {$ref: '#/components/schemas/PositiveMoney'}
+      responses:
+        '200':
+          description: 默认核销行与转预收或转预付金额
+          headers:
+            X-Request-Id: {$ref: '#/components/headers/XRequestId'}
+            X-Trace-Id: {$ref: '#/components/headers/XTraceId'}
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/SettlementProposalSuccess'}
+        '400': {$ref: '#/components/responses/Error400'}
+        '403': {$ref: '#/components/responses/Error403'}
+        '404': {$ref: '#/components/responses/Error404'}
+      x-permission: finance.receivable_entry:read OR finance.payable_entry:read
+      x-idempotency: not-applicable
+      x-reauth: not-required
+      x-error-codes:
+        - FINANCE.SETTLEMENT.PARTY_REQUIRED
+        - PLATFORM.AUTHZ.NOT_FOUND_OR_DENIED
+  /api/v1/finance/receipts:
+    post:
+      tags: [Receipts]
+      operationId: createReceipt
+      summary: 登记到款并核销应收或转预收
+      parameters:
+        - $ref: '#/components/parameters/LegalEntityId'
+        - $ref: '#/components/parameters/DeviceId'
+        - $ref: '#/components/parameters/InternalClient'
+        - $ref: '#/components/parameters/RequestId'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/ReceiptCreateRequest'}
+      responses:
+        '201':
+          description: 审批开关关闭时，到款、核销关系、预收余额、资金腿与凭证已原子写入
+          headers:
+            X-Request-Id: {$ref: '#/components/headers/XRequestId'}
+            X-Trace-Id: {$ref: '#/components/headers/XTraceId'}
+            Idempotent-Replay: {$ref: '#/components/headers/IdempotentReplay'}
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/ReceiptDocumentSuccess'}
+        '202':
+          description: 审批开关开启时，仅创建审批申请；到款单、核销效果、预收、资金腿与凭证均尚未创建
+          headers:
+            X-Request-Id: {$ref: '#/components/headers/XRequestId'}
+            X-Trace-Id: {$ref: '#/components/headers/XTraceId'}
+            Idempotent-Replay: {$ref: '#/components/headers/IdempotentReplay'}
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/ApprovalSubmissionSuccess'}
+        '400': {$ref: '#/components/responses/Error400'}
+        '403': {$ref: '#/components/responses/Error403'}
+        '404': {$ref: '#/components/responses/Error404'}
+        '409': {$ref: '#/components/responses/Error409'}
+        '503': {$ref: '#/components/responses/Error503'}
+      x-permission: finance.receipt:create
+      x-idempotency: required
+      x-reauth: not-required
+      x-approval: receipt-configured; default-not-required; approval-callback-revalidates-and-registers-atomically
+      x-error-codes:
+        - FINANCE.RECEIPT.AMOUNT_NOT_POSITIVE
+        - FINANCE.RECEIPT.CASH_ACCOUNT_DEACTIVATED
+        - FINANCE.RECEIPT.DATE_IN_FUTURE
+        - FINANCE.SETTLEMENT.AMOUNT_EXCEEDS_EFFECTIVE_OPEN
+        - FINANCE.SETTLEMENT.EFFECTIVE_OPEN_CHANGED
+        - FINANCE.SETTLEMENT.TOTAL_EXCEEDS_DOCUMENT_AMOUNT
+        - FINANCE.RECONCILIATION.BALANCE_MISMATCH
+        - PLATFORM.IDEMPOTENCY.KEY_REQUIRED
+        - PLATFORM.IDEMPOTENCY.PAYLOAD_MISMATCH
+        - PLATFORM.AUTHZ.NOT_FOUND_OR_DENIED
+    get:
+      tags: [Receipts]
+      operationId: listReceipts
+      summary: 查询到款列表
+      parameters:
+        - $ref: '#/components/parameters/LegalEntityId'
+        - $ref: '#/components/parameters/DeviceId'
+        - $ref: '#/components/parameters/InternalClient'
+        - $ref: '#/components/parameters/RequestId'
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/PageSize'
+        - $ref: '#/components/parameters/Cursor'
+        - name: filter[customer_id]
+          in: query
+          schema: {type: string, format: uuid}
+        - name: filter[status]
+          in: query
+          schema: {type: string}
+        - name: filter[receipt_date]
+          in: query
+          schema: {type: string}
+        - name: filter[accounting_period_id]
+          in: query
+          schema: {type: string, format: uuid}
+      responses:
+        '200':
+          description: 分页到款单
+          headers:
+            X-Request-Id: {$ref: '#/components/headers/XRequestId'}
+            X-Trace-Id: {$ref: '#/components/headers/XTraceId'}
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/ReceiptDocumentListSuccess'}
+        '400': {$ref: '#/components/responses/Error400'}
+        '403': {$ref: '#/components/responses/Error403'}
+        '404': {$ref: '#/components/responses/Error404'}
+      x-permission: finance.receipt:read
+      x-idempotency: not-applicable
+      x-reauth: not-required
+      x-error-codes:
+        - PLATFORM.AUTHZ.SORT_FIELD_FORBIDDEN
+        - PLATFORM.AUTHZ.NOT_FOUND_OR_DENIED
+  /api/v1/finance/receipts/{id}:
+    get:
+      tags: [Receipts]
+      operationId: getReceipt
+      summary: 查询到款详情
+      parameters:
+        - $ref: '#/components/parameters/DocumentId'
+        - $ref: '#/components/parameters/LegalEntityId'
+        - $ref: '#/components/parameters/DeviceId'
+        - $ref: '#/components/parameters/InternalClient'
+        - $ref: '#/components/parameters/RequestId'
+      responses:
+        '200':
+          description: 到款、核销关系、预收余额及凭证追溯
+          headers:
+            X-Request-Id: {$ref: '#/components/headers/XRequestId'}
+            X-Trace-Id: {$ref: '#/components/headers/XTraceId'}
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/ReceiptDocumentSuccess'}
+        '403': {$ref: '#/components/responses/Error403'}
+        '404': {$ref: '#/components/responses/Error404'}
+      x-permission: finance.receipt:read
+      x-idempotency: not-applicable
+      x-reauth: not-required
+      x-error-codes: [PLATFORM.AUTHZ.NOT_FOUND_OR_DENIED]
+  /api/v1/finance/receipts/{id}/actions/cancel:
+    post:
+      tags: [Receipts]
+      operationId: cancelReceipt
+      summary: 取消草稿到款单
+      parameters:
+        - $ref: '#/components/parameters/DocumentId'
+        - $ref: '#/components/parameters/LegalEntityId'
+        - $ref: '#/components/parameters/DeviceId'
+        - $ref: '#/components/parameters/InternalClient'
+        - $ref: '#/components/parameters/RequestId'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/RowVersionActionRequest'}
+      responses:
+        '200':
+          description: 草稿到款单已取消
+          headers:
+            X-Request-Id: {$ref: '#/components/headers/XRequestId'}
+            X-Trace-Id: {$ref: '#/components/headers/XTraceId'}
+            Idempotent-Replay: {$ref: '#/components/headers/IdempotentReplay'}
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/ReceiptDocumentSuccess'}
+        '400': {$ref: '#/components/responses/Error400'}
+        '403': {$ref: '#/components/responses/Error403'}
+        '404': {$ref: '#/components/responses/Error404'}
+        '409': {$ref: '#/components/responses/Error409'}
+      x-permission: finance.receipt:cancel
+      x-idempotency: required
+      x-reauth: not-required
+      x-error-codes:
+        - FINANCE.RECEIPT.INVALID_TRANSITION
+        - PLATFORM.CONCURRENCY.STALE_VERSION
+        - PLATFORM.IDEMPOTENCY.KEY_REQUIRED
+        - PLATFORM.IDEMPOTENCY.PAYLOAD_MISMATCH
+        - PLATFORM.AUTHZ.NOT_FOUND_OR_DENIED
+  /api/v1/finance/payments:
+    post:
+      tags: [Payments]
+      operationId: createPayment
+      summary: 登记付款并核销应付或转预付
+      parameters:
+        - $ref: '#/components/parameters/LegalEntityId'
+        - $ref: '#/components/parameters/DeviceId'
+        - $ref: '#/components/parameters/InternalClient'
+        - $ref: '#/components/parameters/RequestId'
+        - $ref: '#/components/parameters/IdempotencyKey'
+        - $ref: '#/components/parameters/ReauthToken'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/PaymentCreateRequest'}
+      responses:
+        '202':
+          description: 重新认证证据已核销，付款单进入 PENDING_REAUTH_APPROVAL；此时尚无核销效果、预付余额、资金腿或凭证
+          headers:
+            X-Request-Id: {$ref: '#/components/headers/XRequestId'}
+            X-Trace-Id: {$ref: '#/components/headers/XTraceId'}
+            Idempotent-Replay: {$ref: '#/components/headers/IdempotentReplay'}
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/PaymentDocumentSuccess'}
+        '400': {$ref: '#/components/responses/Error400'}
+        '403': {$ref: '#/components/responses/Error403'}
+        '404': {$ref: '#/components/responses/Error404'}
+        '409': {$ref: '#/components/responses/Error409'}
+        '503': {$ref: '#/components/responses/Error503'}
+      x-permission: finance.payment:create
+      x-idempotency: required
+      x-reauth: required
+      x-approval: always-required; approval-callback-revalidates-and-registers-atomically
+      x-error-codes:
+        - FINANCE.PAYMENT.EXCEEDS_REQUEST_AMOUNT
+        - FINANCE.PAYMENT.REQUEST_NOT_APPROVED
+        - FINANCE.RECEIPT.CASH_ACCOUNT_DEACTIVATED
+        - FINANCE.SETTLEMENT.AMOUNT_EXCEEDS_EFFECTIVE_OPEN
+        - FINANCE.SETTLEMENT.EFFECTIVE_OPEN_CHANGED
+        - FINANCE.SETTLEMENT.TOTAL_EXCEEDS_DOCUMENT_AMOUNT
+        - FINANCE.RECONCILIATION.BALANCE_MISMATCH
+        - PLATFORM.IDEMPOTENCY.KEY_REQUIRED
+        - PLATFORM.IDEMPOTENCY.PAYLOAD_MISMATCH
+        - PLATFORM.AUTHZ.REAUTH_REQUIRED
+        - PLATFORM.AUTHZ.NOT_FOUND_OR_DENIED
+  /api/v1/finance/payments/{id}/actions/withdraw:
+    post:
+      tags: [Payments]
+      operationId: withdrawPayment
+      summary: 撤回付款登记
+      parameters:
+        - $ref: '#/components/parameters/DocumentId'
+        - $ref: '#/components/parameters/LegalEntityId'
+        - $ref: '#/components/parameters/DeviceId'
+        - $ref: '#/components/parameters/InternalClient'
+        - $ref: '#/components/parameters/RequestId'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/RowVersionActionRequest'}
+      responses:
+        '200':
+          description: 付款登记已撤回
+          headers:
+            X-Request-Id: {$ref: '#/components/headers/XRequestId'}
+            X-Trace-Id: {$ref: '#/components/headers/XTraceId'}
+            Idempotent-Replay: {$ref: '#/components/headers/IdempotentReplay'}
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/PaymentDocumentSuccess'}
+        '400': {$ref: '#/components/responses/Error400'}
+        '403': {$ref: '#/components/responses/Error403'}
+        '404': {$ref: '#/components/responses/Error404'}
+        '409': {$ref: '#/components/responses/Error409'}
+      x-permission: finance.payment:cancel
+      x-idempotency: required
+      x-reauth: not-required
+      x-error-codes:
+        - FINANCE.PAYMENT.INVALID_TRANSITION
+        - PLATFORM.CONCURRENCY.STALE_VERSION
+        - PLATFORM.IDEMPOTENCY.KEY_REQUIRED
+        - PLATFORM.IDEMPOTENCY.PAYLOAD_MISMATCH
+        - PLATFORM.AUTHZ.NOT_FOUND_OR_DENIED
+  /api/v1/finance/payments/{id}/actions/cancel:
+    post:
+      tags: [Payments]
+      operationId: cancelPayment
+      summary: 取消付款登记
+      parameters:
+        - $ref: '#/components/parameters/DocumentId'
+        - $ref: '#/components/parameters/LegalEntityId'
+        - $ref: '#/components/parameters/DeviceId'
+        - $ref: '#/components/parameters/InternalClient'
+        - $ref: '#/components/parameters/RequestId'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/RowVersionActionRequest'}
+      responses:
+        '200':
+          description: 付款登记已取消
+          headers:
+            X-Request-Id: {$ref: '#/components/headers/XRequestId'}
+            X-Trace-Id: {$ref: '#/components/headers/XTraceId'}
+            Idempotent-Replay: {$ref: '#/components/headers/IdempotentReplay'}
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/PaymentDocumentSuccess'}
+        '400': {$ref: '#/components/responses/Error400'}
+        '403': {$ref: '#/components/responses/Error403'}
+        '404': {$ref: '#/components/responses/Error404'}
+        '409': {$ref: '#/components/responses/Error409'}
+      x-permission: finance.payment:cancel
+      x-idempotency: required
+      x-reauth: not-required
+      x-error-codes:
+        - FINANCE.PAYMENT.INVALID_TRANSITION
+        - PLATFORM.CONCURRENCY.STALE_VERSION
+        - PLATFORM.IDEMPOTENCY.KEY_REQUIRED
+        - PLATFORM.IDEMPOTENCY.PAYLOAD_MISMATCH
+        - PLATFORM.AUTHZ.NOT_FOUND_OR_DENIED
+  /api/v1/finance/refunds:
+    post:
+      tags: [Refunds]
+      operationId: createRefund
+      summary: 登记客户退款或供应商返款
+      description: |
+        每个 source_payments 元素独立守恒，不能借用另一来源的余额。客户端只提交 linked_amount；
+        advance_consumed_amount 与 settlement_released_amount 是服务端只读投影。
+      parameters:
+        - $ref: '#/components/parameters/LegalEntityId'
+        - $ref: '#/components/parameters/DeviceId'
+        - $ref: '#/components/parameters/InternalClient'
+        - $ref: '#/components/parameters/RequestId'
+        - $ref: '#/components/parameters/IdempotencyKey'
+        - $ref: '#/components/parameters/ReauthToken'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RefundCreateRequest'
+      responses:
+        '202':
+          description: 退款或返款进入 PENDING_REAUTH_APPROVAL；此时尚未写核销释放、预收预付消耗、资金腿或凭证
+          headers:
+            X-Request-Id:
+              $ref: '#/components/headers/XRequestId'
+            X-Trace-Id:
+              $ref: '#/components/headers/XTraceId'
+            Idempotent-Replay:
+              $ref: '#/components/headers/IdempotentReplay'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RefundSuccess'
+        '400':
+          $ref: '#/components/responses/Error400'
+        '403':
+          $ref: '#/components/responses/Error403'
+        '404':
+          $ref: '#/components/responses/Error404'
+        '409':
+          $ref: '#/components/responses/Error409'
+        '503':
+          $ref: '#/components/responses/Error503'
+      x-forbidden-request-properties:
+        - advance_consumed_amount
+        - settlement_released_amount
+        - ar_ap_amount
+        - advance_amount
+        - account_id
+        - settlement_lines
+      x-permission: finance.refund:create
+      x-idempotency: required
+      x-reauth: required
+      x-approval: always-required; approval-callback-revalidates-and-registers-atomically
+      x-error-codes:
+        - FINANCE.REFUND.RETURN_DOC_REQUIRED
+        - FINANCE.REFUND.INVOICE_REVERSAL_REQUIRED
+        - FINANCE.REFUND.CASH_ACCOUNT_DEACTIVATED
+        - FINANCE.REFUND.SOURCE_ALLOCATION_MISMATCH
+        - FINANCE.REFUND.SOURCE_CAP_EXCEEDED
+        - FINANCE.SETTLEMENT.EFFECTIVE_OPEN_CHANGED
+        - FINANCE.SETTLEMENT.ROOT_INVARIANT_VIOLATED
+        - FINANCE.RECONCILIATION.BALANCE_MISMATCH
+        - PLATFORM.IDEMPOTENCY.KEY_REQUIRED
+        - PLATFORM.IDEMPOTENCY.PAYLOAD_MISMATCH
+        - PLATFORM.AUTHZ.REAUTH_REQUIRED
+        - PLATFORM.AUTHZ.NOT_FOUND_OR_DENIED
+  /api/v1/finance/cash-document-reversals:
+    post:
+      tags: [CashDocumentReversals]
+      operationId: createCashDocumentReversal
+      summary: 冲正到款、付款、退款或返款登记错误
+      description: |
+        只纠正款项实际未发生、金额、往来方、账户或日期登记错误。服务端在统一锁快照内按当前可追溯
+        资金去向计算唯一拆分，并在同一事务内写台账与一张净冲正凭证；发票红冲不得调用此入口。
+      parameters:
+        - $ref: '#/components/parameters/LegalEntityId'
+        - $ref: '#/components/parameters/DeviceId'
+        - $ref: '#/components/parameters/InternalClient'
+        - $ref: '#/components/parameters/RequestId'
+        - $ref: '#/components/parameters/IdempotencyKey'
+        - $ref: '#/components/parameters/ReauthToken'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CashDocumentReversalCreateRequest'
+      responses:
+        '201':
+          description: 资金单据已按锁后当前去向冲正
+          headers:
+            X-Request-Id:
+              $ref: '#/components/headers/XRequestId'
+            X-Trace-Id:
+              $ref: '#/components/headers/XTraceId'
+            Idempotent-Replay:
+              $ref: '#/components/headers/IdempotentReplay'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CashDocumentReversalSuccess'
+        '400':
+          $ref: '#/components/responses/Error400'
+        '403':
+          $ref: '#/components/responses/Error403'
+        '404':
+          $ref: '#/components/responses/Error404'
+        '409':
+          $ref: '#/components/responses/Error409'
+        '503':
+          $ref: '#/components/responses/Error503'
+      x-forbidden-request-properties:
+        - ar_ap_amount
+        - advance_amount
+        - cash_amount
+        - account_id
+        - debit_amount
+        - credit_amount
+        - settlement_lines
+      x-permission: finance.cash_document_reversal:create
+      x-idempotency: required
+      x-reauth: required
+      x-error-codes:
+        - FINANCE.CASH_DOCUMENT_REVERSAL.SOURCE_ALREADY_REVERSED
+        - FINANCE.CASH_DOCUMENT_REVERSAL.SOURCE_NOT_REGISTERED
+        - FINANCE.CASH_DOCUMENT.DOWNSTREAM_REFUND_EXISTS
+        - FINANCE.CASH_DOCUMENT.TRACEABILITY_MISMATCH
+        - FINANCE.CASH_DOCUMENT.POSTING_SPLIT_MISMATCH
+        - FINANCE.SETTLEMENT.ROOT_INVARIANT_VIOLATED
+        - FINANCE.RECONCILIATION.BALANCE_MISMATCH
+        - LEDGER.CASH_REVERSAL.SPLIT_INVALID
+        - PLATFORM.IDEMPOTENCY.KEY_REQUIRED
+        - PLATFORM.IDEMPOTENCY.PAYLOAD_MISMATCH
+        - PLATFORM.AUTHZ.REAUTH_REQUIRED
+        - PLATFORM.AUTHZ.NOT_FOUND_OR_DENIED
+  /api/v1/finance/receivable-entries:
+    get:
+      tags: [Ledgers]
+      operationId: listReceivableEntries
+      summary: 查询应收台账
+      parameters:
+        - $ref: '#/components/parameters/LegalEntityId'
+        - $ref: '#/components/parameters/DeviceId'
+        - $ref: '#/components/parameters/InternalClient'
+        - $ref: '#/components/parameters/RequestId'
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/PageSize'
+        - $ref: '#/components/parameters/Cursor'
+        - $ref: '#/components/parameters/AccountingPeriodIdQuery'
+        - name: filter[party_id]
+          in: query
+          schema: {type: string, format: uuid}
+        - name: filter[status]
+          in: query
+          schema: {type: string}
+      responses:
+        '200':
+          description: 分页应收条目；经营余额仅返回 effective_open
+          headers:
+            X-Request-Id: {$ref: '#/components/headers/XRequestId'}
+            X-Trace-Id: {$ref: '#/components/headers/XTraceId'}
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/LedgerEntryListSuccess'}
+        '400': {$ref: '#/components/responses/Error400'}
+        '403': {$ref: '#/components/responses/Error403'}
+        '404': {$ref: '#/components/responses/Error404'}
+      x-permission: finance.receivable_entry:read
+      x-idempotency: not-applicable
+      x-reauth: not-required
+      x-error-codes: [PLATFORM.AUTHZ.NOT_FOUND_OR_DENIED]
+  /api/v1/finance/receivable-entries/{id}:
+    get:
+      tags: [Ledgers]
+      operationId: getReceivableEntry
+      summary: 查询应收条目与显式核销效果链
+      parameters:
+        - $ref: '#/components/parameters/DocumentId'
+        - $ref: '#/components/parameters/LegalEntityId'
+        - $ref: '#/components/parameters/DeviceId'
+        - $ref: '#/components/parameters/InternalClient'
+        - $ref: '#/components/parameters/RequestId'
+      responses:
+        '200':
+          description: 应收条目详情，核销关系含 effect_kind、funding_origin、root_apply_id 与 reverses_id
+          headers:
+            X-Request-Id: {$ref: '#/components/headers/XRequestId'}
+            X-Trace-Id: {$ref: '#/components/headers/XTraceId'}
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/LedgerEntrySuccess'}
+        '403': {$ref: '#/components/responses/Error403'}
+        '404': {$ref: '#/components/responses/Error404'}
+      x-permission: finance.receivable_entry:read
+      x-idempotency: not-applicable
+      x-reauth: not-required
+      x-error-codes: [PLATFORM.AUTHZ.NOT_FOUND_OR_DENIED]
+  /api/v1/finance/payable-entries:
+    get:
+      tags: [Ledgers]
+      operationId: listPayableEntries
+      summary: 查询应付台账
+      parameters:
+        - $ref: '#/components/parameters/LegalEntityId'
+        - $ref: '#/components/parameters/DeviceId'
+        - $ref: '#/components/parameters/InternalClient'
+        - $ref: '#/components/parameters/RequestId'
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/PageSize'
+        - $ref: '#/components/parameters/Cursor'
+        - $ref: '#/components/parameters/AccountingPeriodIdQuery'
+        - name: filter[party_id]
+          in: query
+          schema: {type: string, format: uuid}
+        - name: filter[status]
+          in: query
+          schema: {type: string}
+      responses:
+        '200':
+          description: 分页应付条目；经营余额仅返回 effective_open
+          headers:
+            X-Request-Id: {$ref: '#/components/headers/XRequestId'}
+            X-Trace-Id: {$ref: '#/components/headers/XTraceId'}
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/LedgerEntryListSuccess'}
+        '400': {$ref: '#/components/responses/Error400'}
+        '403': {$ref: '#/components/responses/Error403'}
+        '404': {$ref: '#/components/responses/Error404'}
+      x-permission: finance.payable_entry:read
+      x-idempotency: not-applicable
+      x-reauth: not-required
+      x-error-codes: [PLATFORM.AUTHZ.NOT_FOUND_OR_DENIED]
+  /api/v1/finance/payable-entries/{id}:
+    get:
+      tags: [Ledgers]
+      operationId: getPayableEntry
+      summary: 查询应付条目与显式核销效果链
+      parameters:
+        - $ref: '#/components/parameters/DocumentId'
+        - $ref: '#/components/parameters/LegalEntityId'
+        - $ref: '#/components/parameters/DeviceId'
+        - $ref: '#/components/parameters/InternalClient'
+        - $ref: '#/components/parameters/RequestId'
+      responses:
+        '200':
+          description: 应付条目详情，核销关系使用显式 effect/root 语义
+          headers:
+            X-Request-Id: {$ref: '#/components/headers/XRequestId'}
+            X-Trace-Id: {$ref: '#/components/headers/XTraceId'}
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/LedgerEntrySuccess'}
+        '403': {$ref: '#/components/responses/Error403'}
+        '404': {$ref: '#/components/responses/Error404'}
+      x-permission: finance.payable_entry:read
+      x-idempotency: not-applicable
+      x-reauth: not-required
+      x-error-codes: [PLATFORM.AUTHZ.NOT_FOUND_OR_DENIED]
+  /api/v1/finance/advance-receipt-entries:
+    get:
+      tags: [Ledgers]
+      operationId: listAdvanceReceiptEntries
+      summary: 查询预收台账
+      parameters:
+        - $ref: '#/components/parameters/LegalEntityId'
+        - $ref: '#/components/parameters/DeviceId'
+        - $ref: '#/components/parameters/InternalClient'
+        - $ref: '#/components/parameters/RequestId'
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/PageSize'
+        - $ref: '#/components/parameters/Cursor'
+        - $ref: '#/components/parameters/AccountingPeriodIdQuery'
+      responses:
+        '200':
+          description: 分页预收条目
+          headers:
+            X-Request-Id: {$ref: '#/components/headers/XRequestId'}
+            X-Trace-Id: {$ref: '#/components/headers/XTraceId'}
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/LedgerEntryListSuccess'}
+        '400': {$ref: '#/components/responses/Error400'}
+        '403': {$ref: '#/components/responses/Error403'}
+        '404': {$ref: '#/components/responses/Error404'}
+      x-permission: finance.advance_entry:read
+      x-idempotency: not-applicable
+      x-reauth: not-required
+      x-error-codes: [PLATFORM.AUTHZ.NOT_FOUND_OR_DENIED]
+  /api/v1/finance/advance-payment-entries:
+    get:
+      tags: [Ledgers]
+      operationId: listAdvancePaymentEntries
+      summary: 查询预付台账
+      parameters:
+        - $ref: '#/components/parameters/LegalEntityId'
+        - $ref: '#/components/parameters/DeviceId'
+        - $ref: '#/components/parameters/InternalClient'
+        - $ref: '#/components/parameters/RequestId'
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/PageSize'
+        - $ref: '#/components/parameters/Cursor'
+        - $ref: '#/components/parameters/AccountingPeriodIdQuery'
+      responses:
+        '200':
+          description: 分页预付条目
+          headers:
+            X-Request-Id: {$ref: '#/components/headers/XRequestId'}
+            X-Trace-Id: {$ref: '#/components/headers/XTraceId'}
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/LedgerEntryListSuccess'}
+        '400': {$ref: '#/components/responses/Error400'}
+        '403': {$ref: '#/components/responses/Error403'}
+        '404': {$ref: '#/components/responses/Error404'}
+      x-permission: finance.advance_entry:read
+      x-idempotency: not-applicable
+      x-reauth: not-required
+      x-error-codes: [PLATFORM.AUTHZ.NOT_FOUND_OR_DENIED]
+  /api/v1/finance/receivable-agings:
+    get:
+      tags: [Agings]
+      operationId: listReceivableAgings
+      summary: 查询应收账龄
+      parameters:
+        - $ref: '#/components/parameters/LegalEntityId'
+        - $ref: '#/components/parameters/DeviceId'
+        - $ref: '#/components/parameters/InternalClient'
+        - $ref: '#/components/parameters/RequestId'
+        - $ref: '#/components/parameters/AccountingPeriodIdQuery'
+        - $ref: '#/components/parameters/AgingGroupBy'
+        - $ref: '#/components/parameters/AgingBucketFilter'
+        - $ref: '#/components/parameters/AgingExpand'
+      responses:
+        '200':
+          description: 按截至期间事件切片和 effective_open 汇总的应收账龄
+          headers:
+            X-Request-Id: {$ref: '#/components/headers/XRequestId'}
+            X-Trace-Id: {$ref: '#/components/headers/XTraceId'}
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/AgingListSuccess'}
+        '400': {$ref: '#/components/responses/Error400'}
+        '403': {$ref: '#/components/responses/Error403'}
+        '404': {$ref: '#/components/responses/Error404'}
+      x-permission: finance.receivable_entry:read
+      x-idempotency: not-applicable
+      x-reauth: not-required
+      x-error-codes: [PLATFORM.AUTHZ.NOT_FOUND_OR_DENIED]
+  /api/v1/finance/payable-agings:
+    get:
+      tags: [Agings]
+      operationId: listPayableAgings
+      summary: 查询应付账龄
+      parameters:
+        - $ref: '#/components/parameters/LegalEntityId'
+        - $ref: '#/components/parameters/DeviceId'
+        - $ref: '#/components/parameters/InternalClient'
+        - $ref: '#/components/parameters/RequestId'
+        - $ref: '#/components/parameters/AccountingPeriodIdQuery'
+        - $ref: '#/components/parameters/AgingGroupBy'
+        - $ref: '#/components/parameters/AgingBucketFilter'
+        - $ref: '#/components/parameters/AgingExpand'
+      responses:
+        '200':
+          description: 按截至期间事件切片和 effective_open 汇总的应付账龄
+          headers:
+            X-Request-Id: {$ref: '#/components/headers/XRequestId'}
+            X-Trace-Id: {$ref: '#/components/headers/XTraceId'}
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/AgingListSuccess'}
+        '400': {$ref: '#/components/responses/Error400'}
+        '403': {$ref: '#/components/responses/Error403'}
+        '404': {$ref: '#/components/responses/Error404'}
+      x-permission: finance.payable_entry:read
+      x-idempotency: not-applicable
+      x-reauth: not-required
+      x-error-codes: [PLATFORM.AUTHZ.NOT_FOUND_OR_DENIED]
+  /api/v1/finance/unbilled-ar-entries:
+    get:
+      tags: [Ledgers]
+      operationId: listUnbilledArEntries
+      summary: 查询已交付未开票净额
+      parameters:
+        - $ref: '#/components/parameters/LegalEntityId'
+        - $ref: '#/components/parameters/DeviceId'
+        - $ref: '#/components/parameters/InternalClient'
+        - $ref: '#/components/parameters/RequestId'
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/PageSize'
+        - $ref: '#/components/parameters/Cursor'
+        - $ref: '#/components/parameters/AccountingPeriodIdQuery'
+      responses:
+        '200':
+          description: 分页已交付未开票条目，meta 含净额与方向
+          headers:
+            X-Request-Id: {$ref: '#/components/headers/XRequestId'}
+            X-Trace-Id: {$ref: '#/components/headers/XTraceId'}
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/UnbilledArListSuccess'}
+        '400': {$ref: '#/components/responses/Error400'}
+        '403': {$ref: '#/components/responses/Error403'}
+        '404': {$ref: '#/components/responses/Error404'}
+      x-permission: finance.receivable_entry:read
+      x-idempotency: not-applicable
+      x-reauth: not-required
+      x-error-codes: [PLATFORM.AUTHZ.NOT_FOUND_OR_DENIED]
+  /api/v1/finance/overbilling-entries:
+    get:
+      tags: [Overbilling]
+      operationId: listOverbillingEntries
+      summary: 查询待处理超量开票
+      parameters:
+        - $ref: '#/components/parameters/LegalEntityId'
+        - $ref: '#/components/parameters/DeviceId'
+        - $ref: '#/components/parameters/InternalClient'
+        - $ref: '#/components/parameters/RequestId'
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/PageSize'
+        - $ref: '#/components/parameters/Cursor'
+        - $ref: '#/components/parameters/AccountingPeriodIdQuery'
+      responses:
+        '200':
+          description: 分页超量开票条目，meta 含法人期间挂账合计
+          headers:
+            X-Request-Id: {$ref: '#/components/headers/XRequestId'}
+            X-Trace-Id: {$ref: '#/components/headers/XTraceId'}
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/OverbillingListSuccess'}
+        '400': {$ref: '#/components/responses/Error400'}
+        '403': {$ref: '#/components/responses/Error403'}
+        '404': {$ref: '#/components/responses/Error404'}
+      x-permission: finance.overbilling_entry:read
+      x-idempotency: not-applicable
+      x-reauth: not-required
+      x-error-codes: [PLATFORM.AUTHZ.NOT_FOUND_OR_DENIED]
+  /api/v1/finance/overbilling-entries/{id}:
+    get:
+      tags: [Overbilling]
+      operationId: getOverbillingEntry
+      summary: 查询超量开票详情
+      parameters:
+        - $ref: '#/components/parameters/DocumentId'
+        - $ref: '#/components/parameters/LegalEntityId'
+        - $ref: '#/components/parameters/DeviceId'
+        - $ref: '#/components/parameters/InternalClient'
+        - $ref: '#/components/parameters/RequestId'
+      responses:
+        '200':
+          description: 超量开票详情与三条结清路径状态
+          headers:
+            X-Request-Id: {$ref: '#/components/headers/XRequestId'}
+            X-Trace-Id: {$ref: '#/components/headers/XTraceId'}
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/OverbillingSuccess'}
+        '403': {$ref: '#/components/responses/Error403'}
+        '404': {$ref: '#/components/responses/Error404'}
+      x-permission: finance.overbilling_entry:read
+      x-idempotency: not-applicable
+      x-reauth: not-required
+      x-error-codes: [PLATFORM.AUTHZ.NOT_FOUND_OR_DENIED]
+  /api/v1/finance/overbilling-entries/{id}/actions/settle-by-write-off:
+    post:
+      tags: [Overbilling]
+      operationId: settleOverbillingByWriteOff
+      summary: 审批后核销超量开票挂账
+      parameters:
+        - $ref: '#/components/parameters/DocumentId'
+        - $ref: '#/components/parameters/LegalEntityId'
+        - $ref: '#/components/parameters/DeviceId'
+        - $ref: '#/components/parameters/InternalClient'
+        - $ref: '#/components/parameters/RequestId'
+        - $ref: '#/components/parameters/IdempotencyKey'
+        - $ref: '#/components/parameters/ReauthToken'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/OverbillingWriteOffRequest'}
+      responses:
+        '200':
+          description: 路径三核销已提交或完成
+          headers:
+            X-Request-Id: {$ref: '#/components/headers/XRequestId'}
+            X-Trace-Id: {$ref: '#/components/headers/XTraceId'}
+            Idempotent-Replay: {$ref: '#/components/headers/IdempotentReplay'}
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/OverbillingSuccess'}
+        '400': {$ref: '#/components/responses/Error400'}
+        '403': {$ref: '#/components/responses/Error403'}
+        '404': {$ref: '#/components/responses/Error404'}
+        '409': {$ref: '#/components/responses/Error409'}
+      x-permission: finance.overbilling_entry:write_off
+      x-idempotency: required
+      x-reauth: required
+      x-error-codes:
+        - FINANCE.OVERBILLING_ENTRY.WRITTEN_OFF_REQUIRES_REVERSAL
+        - PLATFORM.CONCURRENCY.STALE_VERSION
+        - PLATFORM.IDEMPOTENCY.KEY_REQUIRED
+        - PLATFORM.IDEMPOTENCY.PAYLOAD_MISMATCH
+        - PLATFORM.AUTHZ.REAUTH_REQUIRED
+        - PLATFORM.AUTHZ.NOT_FOUND_OR_DENIED
+  /api/v1/finance/overbilling-entries/{id}/actions/reverse-write-off:
+    post:
+      tags: [Overbilling]
+      operationId: reverseOverbillingWriteOff
+      summary: 审批后冲回超量开票路径三核销
+      parameters:
+        - $ref: '#/components/parameters/DocumentId'
+        - $ref: '#/components/parameters/LegalEntityId'
+        - $ref: '#/components/parameters/DeviceId'
+        - $ref: '#/components/parameters/InternalClient'
+        - $ref: '#/components/parameters/RequestId'
+        - $ref: '#/components/parameters/IdempotencyKey'
+        - $ref: '#/components/parameters/ReauthToken'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/OverbillingReverseWriteOffRequest'}
+      responses:
+        '200':
+          description: 路径三核销已冲回
+          headers:
+            X-Request-Id: {$ref: '#/components/headers/XRequestId'}
+            X-Trace-Id: {$ref: '#/components/headers/XTraceId'}
+            Idempotent-Replay: {$ref: '#/components/headers/IdempotentReplay'}
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/OverbillingSuccess'}
+        '400': {$ref: '#/components/responses/Error400'}
+        '403': {$ref: '#/components/responses/Error403'}
+        '404': {$ref: '#/components/responses/Error404'}
+        '409': {$ref: '#/components/responses/Error409'}
+      x-permission: finance.overbilling_entry:reverse
+      x-idempotency: required
+      x-reauth: required
+      x-error-codes:
+        - PLATFORM.CONCURRENCY.STALE_VERSION
+        - PLATFORM.IDEMPOTENCY.KEY_REQUIRED
+        - PLATFORM.IDEMPOTENCY.PAYLOAD_MISMATCH
+        - PLATFORM.AUTHZ.REAUTH_REQUIRED
+        - PLATFORM.AUTHZ.NOT_FOUND_OR_DENIED
+  /api/v1/finance/reconciliations:
+    get:
+      tags: [Reconciliations]
+      operationId: listReconciliations
+      summary: 查询十项子账总账勾稽
+      parameters:
+        - $ref: '#/components/parameters/LegalEntityId'
+        - $ref: '#/components/parameters/DeviceId'
+        - $ref: '#/components/parameters/InternalClient'
+        - $ref: '#/components/parameters/RequestId'
+        - name: accounting_period_id
+          in: query
+          required: true
+          schema: {type: string, format: uuid}
+        - name: item
+          in: query
+          schema: {type: string}
+      responses:
+        '200':
+          description: 十项子账侧、总账侧、差额与差异事项引用
+          headers:
+            X-Request-Id: {$ref: '#/components/headers/XRequestId'}
+            X-Trace-Id: {$ref: '#/components/headers/XTraceId'}
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/ReconciliationListSuccess'}
+        '400': {$ref: '#/components/responses/Error400'}
+        '403': {$ref: '#/components/responses/Error403'}
+        '404': {$ref: '#/components/responses/Error404'}
+      x-permission: finance.reconciliation:read
+      x-idempotency: not-applicable
+      x-reauth: not-required
+      x-error-codes: [PLATFORM.AUTHZ.NOT_FOUND_OR_DENIED]
+  /api/v1/finance/cash-ledger-entries:
+    get:
+      tags: [Ledgers]
+      operationId: listCashLedgerEntries
+      summary: 查询全法人资金腿明细
+      parameters:
+        - $ref: '#/components/parameters/LegalEntityId'
+        - $ref: '#/components/parameters/DeviceId'
+        - $ref: '#/components/parameters/InternalClient'
+        - $ref: '#/components/parameters/RequestId'
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/PageSize'
+        - $ref: '#/components/parameters/Cursor'
+        - $ref: '#/components/parameters/AccountingPeriodIdQuery'
+        - name: filter[cash_account_id]
+          in: query
+          schema: {type: string, format: uuid}
+      responses:
+        '200':
+          description: 分页资金腿明细
+          headers:
+            X-Request-Id: {$ref: '#/components/headers/XRequestId'}
+            X-Trace-Id: {$ref: '#/components/headers/XTraceId'}
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/CashLedgerEntryListSuccess'}
+        '400': {$ref: '#/components/responses/Error400'}
+        '403': {$ref: '#/components/responses/Error403'}
+        '404': {$ref: '#/components/responses/Error404'}
+      x-permission: finance.cash_account:read
+      x-idempotency: not-applicable
+      x-reauth: not-required
+      x-error-codes: [PLATFORM.AUTHZ.NOT_FOUND_OR_DENIED]
+  /api/v1/finance/opening-balances/actions/import:
+    post:
+      tags: [OpeningBalances]
+      operationId: importOpeningBalances
+      summary: 导入往来及预收预付期初余额
+      description: 逐行独立事务；成功行不因其他行失败而回滚，且本入口不生成凭证。
+      parameters:
+        - $ref: '#/components/parameters/LegalEntityId'
+        - $ref: '#/components/parameters/DeviceId'
+        - $ref: '#/components/parameters/InternalClient'
+        - $ref: '#/components/parameters/RequestId'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/OpeningBalanceImportRequest'}
+      responses:
+        '200':
+          description: 逐行导入结果
+          headers:
+            X-Request-Id: {$ref: '#/components/headers/XRequestId'}
+            X-Trace-Id: {$ref: '#/components/headers/XTraceId'}
+            Idempotent-Replay: {$ref: '#/components/headers/IdempotentReplay'}
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/OpeningBalanceImportSuccess'}
+        '400': {$ref: '#/components/responses/Error400'}
+        '403': {$ref: '#/components/responses/Error403'}
+        '404': {$ref: '#/components/responses/Error404'}
+        '409': {$ref: '#/components/responses/Error409'}
+      x-permission:
+        RECEIVABLE: finance.receivable_entry:create
+        PAYABLE: finance.payable_entry:create
+        ADVANCE_RECEIPT: finance.advance_entry:create
+        ADVANCE_PAYMENT: finance.advance_entry:create
+      x-idempotency: required
+      x-reauth: not-required
+      x-error-codes:
+        - FINANCE.OPENING_BALANCE.PERIOD_NOT_FIRST
+        - FINANCE.OPENING_BALANCE.ROW_LIMIT_EXCEEDED
+        - FINANCE.OPENING_BALANCE.PARTY_NOT_FOUND
+        - PLATFORM.IDEMPOTENCY.KEY_REQUIRED
+        - PLATFORM.IDEMPOTENCY.PAYLOAD_MISMATCH
+        - PLATFORM.AUTHZ.NOT_FOUND_OR_DENIED
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: opaque-session-token
+  parameters:
+    DocumentId:
+      name: id
+      in: path
+      required: true
+      schema: {type: string, format: uuid}
+    LegalEntityId:
+      name: X-Legal-Entity-Id
+      in: header
+      required: true
+      schema:
+        type: string
+        format: uuid
+    DeviceId:
+      name: X-Device-Id
+      in: header
+      required: true
+      schema:
+        type: string
+        minLength: 1
+        maxLength: 64
+        pattern: '^[A-Za-z0-9_-]+$'
+    InternalClient:
+      name: X-Client
+      in: header
+      required: true
+      schema:
+        type: string
+        enum: [win, mac, ios, android, ops]
+    RequestId:
+      name: X-Request-Id
+      in: header
+      required: false
+      schema:
+        type: string
+        minLength: 8
+        maxLength: 64
+        pattern: '^[A-Za-z0-9_-]+$'
+    IdempotencyKey:
+      name: Idempotency-Key
+      in: header
+      required: true
+      description: 客户端生成的 UUIDv7；X-Reauth-Token 不参与 request_hash。
+      schema:
+        type: string
+        format: uuid
+        pattern: '^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$'
+    ReauthToken:
+      name: X-Reauth-Token
+      in: header
+      required: true
+      schema:
+        type: string
+        minLength: 1
+    OptionalReauthToken:
+      name: X-Reauth-Token
+      in: header
+      required: false
+      description: 仅在请求完整银行账号字段时提交；成功读取必须写审计。
+      schema:
+        type: string
+        minLength: 1
+    Page:
+      name: page
+      in: query
+      required: false
+      schema: {type: integer, minimum: 1, default: 1}
+    PageSize:
+      name: page_size
+      in: query
+      required: false
+      schema: {type: integer, minimum: 1, maximum: 200, default: 50}
+    Cursor:
+      name: cursor
+      in: query
+      required: false
+      schema: {type: string}
+    AccountingPeriodIdQuery:
+      name: accounting_period_id
+      in: query
+      required: false
+      schema: {type: string, format: uuid}
+    AgingGroupBy:
+      name: group_by
+      in: query
+      required: false
+      schema:
+        type: string
+        enum: [customer, contract, sales_order, bucket]
+        default: customer
+    AgingBucketFilter:
+      name: filter[bucket_code]
+      in: query
+      required: false
+      schema: {type: string, pattern: '^eq:[A-Za-z0-9_-]+$'}
+    AgingExpand:
+      name: expand
+      in: query
+      required: false
+      schema: {type: string, enum: [entries]}
+  headers:
+    XRequestId:
+      schema:
+        type: string
+    XTraceId:
+      schema:
+        type: string
+        pattern: '^[0-9a-f]{32}$'
+    IdempotentReplay:
+      description: 同一幂等载荷重放时为 true；首次响应可以省略。
+      schema:
+        type: boolean
+  schemas:
+    PositiveMoney:
+      type: string
+      description: 大于 0 的 numeric(18,2) 十进制定点字符串。
+      pattern: '^(?:0\.(?:0[1-9]|[1-9][0-9])|[1-9][0-9]{0,15}\.[0-9]{2})$'
+      examples: ['100.00']
+    Money:
+      type: string
+      description: 非负 numeric(18,2) 十进制定点字符串。
+      pattern: '^(?:0|[1-9][0-9]{0,15})\.[0-9]{2}$'
+      examples: ['0.00']
+    SignedMoney:
+      type: string
+      description: numeric(18,2) 有符号十进制定点字符串。
+      pattern: '^-?(?:0|[1-9][0-9]{0,15})\.[0-9]{2}$'
+    PaginationMeta:
+      type: object
+      additionalProperties: false
+      required: [page, page_size, total, total_pages]
+      properties:
+        page: {type: integer, minimum: 1}
+        page_size: {type: integer, minimum: 1, maximum: 200}
+        total: {type: integer, minimum: 0}
+        total_pages: {type: integer, minimum: 0}
+        next_cursor: {type: [string, 'null']}
+    RowVersionActionRequest:
+      type: object
+      additionalProperties: false
+      required: [row_version]
+      properties:
+        row_version: {type: integer, minimum: 1}
+    CashAccountCreateRequest:
+      type: object
+      additionalProperties: false
+      required:
+        - code
+        - account_name
+        - account_type
+        - ledger_account_id
+        - owner_user_id
+        - opening_balance
+        - opening_balance_period_id
+      properties:
+        code: {type: string, minLength: 1, maxLength: 32, pattern: '^[A-Z0-9_-]+$'}
+        account_name: {type: string, minLength: 1, maxLength: 200}
+        account_type: {type: string, enum: [BANK, CASH]}
+        ledger_account_id: {type: string, format: uuid}
+        bank_name: {type: [string, 'null'], maxLength: 200}
+        bank_account_no: {type: [string, 'null'], minLength: 4, maxLength: 64}
+        owner_user_id: {type: string, format: uuid}
+        opening_balance: {$ref: '#/components/schemas/SignedMoney'}
+        opening_balance_period_id: {type: [string, 'null'], format: uuid}
+        remark: {type: [string, 'null'], maxLength: 2000}
+      allOf:
+        - if:
+            properties: {account_type: {const: BANK}}
+            required: [account_type]
+          then:
+            required: [bank_name, bank_account_no]
+          else:
+            properties:
+              bank_account_no: {type: 'null'}
+              bank_name: {type: 'null'}
+        - if:
+            properties:
+              opening_balance: {not: {const: '0.00'}}
+            required: [opening_balance]
+          then:
+            properties:
+              opening_balance_period_id: {type: string, format: uuid}
+    CashAccountPatchRequest:
+      type: object
+      additionalProperties: false
+      minProperties: 2
+      required: [row_version]
+      properties:
+        row_version: {type: integer, minimum: 1}
+        account_name: {type: string, minLength: 1, maxLength: 200}
+        bank_name: {type: [string, 'null'], maxLength: 200}
+        bank_account_no: {type: [string, 'null'], minLength: 4, maxLength: 64}
+        owner_user_id: {type: string, format: uuid}
+        remark: {type: [string, 'null'], maxLength: 2000}
+    CashAccount:
+      type: object
+      additionalProperties: false
+      required:
+        - id
+        - legal_entity_id
+        - code
+        - account_name
+        - account_type
+        - ledger_account_id
+        - owner_user_id
+        - opening_balance
+        - opening_balance_period_id
+        - bank_account_no_last4
+        - is_active
+        - has_cash_flow
+        - row_version
+      properties:
+        id: {type: string, format: uuid}
+        legal_entity_id: {type: string, format: uuid}
+        code: {type: string}
+        account_name: {type: string}
+        account_type: {type: string, enum: [BANK, CASH]}
+        ledger_account_id: {type: string, format: uuid}
+        owner_user_id: {type: string, format: uuid}
+        opening_balance: {$ref: '#/components/schemas/SignedMoney'}
+        opening_balance_period_id: {type: [string, 'null'], format: uuid}
+        bank_name: {type: [string, 'null'], readOnly: true}
+        bank_account_no_last4: {type: [string, 'null'], pattern: '^[0-9A-Za-z]{4}$', readOnly: true}
+        bank_account_no: {type: [string, 'null'], readOnly: true}
+        is_active: {type: boolean}
+        deactivated_at: {type: [string, 'null'], format: date-time}
+        has_cash_flow: {type: boolean, readOnly: true}
+        remark: {type: [string, 'null']}
+        row_version: {type: integer, minimum: 1}
+    CashAccountListData:
+      type: object
+      additionalProperties: false
+      required: [items]
+      properties:
+        items:
+          type: array
+          items: {$ref: '#/components/schemas/CashAccount'}
+    SettlementLineInput:
+      type: object
+      additionalProperties: false
+      required: [entry_id, settled_amount, expected_effective_open]
+      properties:
+        entry_id: {type: string, format: uuid}
+        settled_amount: {$ref: '#/components/schemas/PositiveMoney'}
+        expected_effective_open: {$ref: '#/components/schemas/Money'}
+    ReceiptCreateRequest:
+      type: object
+      additionalProperties: false
+      required:
+        - customer_id
+        - receipt_date
+        - posting_date
+        - receipt_amount
+        - cash_account_id
+        - settlement_lines
+        - is_manual_settlement_order
+      properties:
+        customer_id: {type: string, format: uuid}
+        receipt_date: {type: string, format: date}
+        posting_date: {type: string, format: date}
+        receipt_amount: {$ref: '#/components/schemas/PositiveMoney'}
+        cash_account_id: {type: string, format: uuid}
+        settlement_lines:
+          type: array
+          maxItems: 200
+          items: {$ref: '#/components/schemas/SettlementLineInput'}
+        is_manual_settlement_order: {type: boolean}
+        attachment_object_ids:
+          type: array
+          maxItems: 50
+          uniqueItems: true
+          items: {type: string, format: uuid}
+        remark: {type: [string, 'null'], maxLength: 1000}
+    PaymentCreateRequest:
+      type: object
+      additionalProperties: false
+      required:
+        - payment_request_id
+        - supplier_id
+        - payment_date
+        - posting_date
+        - payment_amount
+        - cash_account_id
+        - settlement_lines
+      properties:
+        payment_request_id: {type: string, format: uuid}
+        supplier_id: {type: string, format: uuid}
+        payment_date: {type: string, format: date}
+        posting_date: {type: string, format: date}
+        payment_amount: {$ref: '#/components/schemas/PositiveMoney'}
+        cash_account_id: {type: string, format: uuid}
+        settlement_lines:
+          type: array
+          maxItems: 200
+          items: {$ref: '#/components/schemas/SettlementLineInput'}
+        attachment_object_ids:
+          type: array
+          maxItems: 50
+          uniqueItems: true
+          items: {type: string, format: uuid}
+        remark: {type: [string, 'null'], maxLength: 1000}
+    SettlementEffect:
+      type: object
+      additionalProperties: false
+      required:
+        - id
+        - entry_id
+        - effect_kind
+        - root_apply_id
+        - settled_amount
+        - source_doc_type
+        - source_doc_id
+        - business_date
+        - accounting_period_id
+      properties:
+        id: {type: string, format: uuid}
+        entry_id: {type: string, format: uuid}
+        effect_kind:
+          type: string
+          enum: [APPLY, RELEASE]
+          description: 金额方向的唯一判据；不得从 reverses_id 是否为空推断方向
+        funding_origin:
+          type: [string, 'null']
+          enum: [DIRECT_CASH, ADVANCE_AUTO, null]
+          description: 仅应收/应付效果非空；预收/预付效果固定为空
+        root_apply_id: {type: string, format: uuid}
+        reverses_id: {type: [string, 'null'], format: uuid}
+        settled_amount: {$ref: '#/components/schemas/PositiveMoney'}
+        source_doc_type:
+          type: string
+          enum:
+            - RECEIPT
+            - PAYMENT
+            - SALES_INVOICE
+            - PURCHASE_INVOICE
+            - CUSTOMER_REFUND
+            - SUPPLIER_REFUND
+            - INVOICE_REVERSAL
+            - CASH_DOC_REVERSAL
+        source_doc_id: {type: string, format: uuid}
+        funding_receipt_id: {type: [string, 'null'], format: uuid}
+        funding_payment_id: {type: [string, 'null'], format: uuid}
+        funding_advance_receipt_entry_id: {type: [string, 'null'], format: uuid}
+        funding_advance_payment_entry_id: {type: [string, 'null'], format: uuid}
+        target_type:
+          type: [string, 'null']
+          enum: [RECEIVABLE_ENTRY, PAYABLE_ENTRY, CUSTOMER_REFUND, SUPPLIER_REFUND, CASH_DOC_REVERSAL, null]
+          description: 仅预收/预付效果非空，取值须与台账侧匹配
+        target_id: {type: [string, 'null'], format: uuid}
+        refund_source_payment_link_id: {type: [string, 'null'], format: uuid}
+        business_date: {type: string, format: date}
+        accounting_period_id: {type: string, format: uuid}
+    ReceiptDocument:
+      type: object
+      additionalProperties: false
+      required: [id, doc_no, document_type, party_id, document_date, posting_date, amount, cash_account_id, settlement_amount, advance_amount, refunded_amount, settlement_effects, status, accounting_period_id, voucher_id, row_version, is_deferred]
+      properties:
+        id: {type: string, format: uuid}
+        doc_no: {type: string}
+        document_type: {const: RECEIPT}
+        party_id: {type: string, format: uuid, description: customer_id}
+        document_date: {type: string, format: date, description: receipt_date}
+        posting_date: {type: string, format: date}
+        amount: {$ref: '#/components/schemas/PositiveMoney'}
+        cash_account_id: {type: string, format: uuid}
+        settlement_amount:
+          allOf: [{$ref: '#/components/schemas/Money'}]
+          description: 最终追溯到本到款资金根的 DIRECT_CASH 与 ADVANCE_AUTO 应收核销净额
+        advance_amount:
+          allOf: [{$ref: '#/components/schemas/Money'}]
+          description: 本到款资金根下当前预收 advance_open 合计
+        refunded_amount:
+          allOf: [{$ref: '#/components/schemas/Money'}]
+          description: 未冲正客户退款来源链接合计
+        settlement_effects:
+          type: array
+          items: {$ref: '#/components/schemas/SettlementEffect'}
+        status: {type: string, enum: [DRAFT, REGISTERED, CANCELLED, REVERSED]}
+        accounting_period_id: {type: [string, 'null'], format: uuid}
+        voucher_id: {type: [string, 'null'], format: uuid}
+        row_version: {type: integer, minimum: 1}
+        is_deferred: {type: boolean}
+    PaymentDocument:
+      type: object
+      additionalProperties: false
+      required: [id, doc_no, document_type, party_id, payment_request_id, document_date, posting_date, amount, cash_account_id, settlement_amount, advance_amount, refunded_amount, settlement_effects, status, reauth_ref, approval_ref, accounting_period_id, voucher_id, row_version, is_deferred]
+      properties:
+        id: {type: string, format: uuid}
+        doc_no: {type: string}
+        document_type: {const: PAYMENT}
+        party_id: {type: string, format: uuid, description: supplier_id}
+        payment_request_id: {type: string, format: uuid}
+        document_date: {type: string, format: date, description: payment_date}
+        posting_date: {type: string, format: date}
+        amount: {$ref: '#/components/schemas/PositiveMoney'}
+        cash_account_id: {type: string, format: uuid}
+        settlement_amount:
+          allOf: [{$ref: '#/components/schemas/Money'}]
+          description: 最终追溯到本付款资金根的 DIRECT_CASH 与 ADVANCE_AUTO 应付核销净额；审批期间为 0.00
+        advance_amount:
+          allOf: [{$ref: '#/components/schemas/Money'}]
+          description: 本付款资金根下当前预付 advance_open 合计；审批期间为 0.00
+        refunded_amount:
+          allOf: [{$ref: '#/components/schemas/Money'}]
+          description: 未冲正供应商返款来源链接合计；审批期间为 0.00
+        settlement_effects:
+          type: array
+          items: {$ref: '#/components/schemas/SettlementEffect'}
+          description: 只在 REGISTERED 后非空
+        status: {type: string, enum: [DRAFT, PENDING_REAUTH_APPROVAL, REGISTERED, CANCELLED, REVERSED]}
+        reauth_ref: {type: [string, 'null'], format: uuid}
+        approval_ref: {type: [string, 'null'], format: uuid}
+        accounting_period_id: {type: [string, 'null'], format: uuid}
+        voucher_id: {type: [string, 'null'], format: uuid}
+        row_version: {type: integer, minimum: 1}
+        is_deferred: {type: boolean}
+    ReceiptDocumentListData:
+      type: object
+      additionalProperties: false
+      required: [items]
+      properties:
+        items:
+          type: array
+          items: {$ref: '#/components/schemas/ReceiptDocument'}
+    SettlementProposalLine:
+      type: object
+      additionalProperties: false
+      required: [entry_id, effective_open, proposed_amount]
+      properties:
+        entry_id: {type: string, format: uuid}
+        effective_open: {$ref: '#/components/schemas/Money'}
+        proposed_amount: {$ref: '#/components/schemas/Money'}
+    SettlementProposal:
+      type: object
+      additionalProperties: false
+      required: [side, party_id, amount, lines, advance_amount]
+      properties:
+        side: {type: string, enum: [AR, AP]}
+        party_id: {type: string, format: uuid}
+        amount: {$ref: '#/components/schemas/PositiveMoney'}
+        lines:
+          type: array
+          items: {$ref: '#/components/schemas/SettlementProposalLine'}
+        advance_amount: {$ref: '#/components/schemas/Money'}
+    LedgerEntry:
+      type: object
+      additionalProperties: false
+      required:
+        - id
+        - ledger_side
+        - party_id
+        - source_doc_type
+        - business_date
+        - accounting_period_id
+        - original_amount
+        - settled_amount
+        - open_amount
+        - settlement_effects
+      properties:
+        id: {type: string, format: uuid}
+        ledger_side: {type: string, enum: [RECEIVABLE, PAYABLE, ADVANCE_RECEIPT, ADVANCE_PAYMENT]}
+        party_id: {type: string, format: uuid}
+        entry_kind:
+          type: string
+          enum: [ORIGINAL, REVERSAL]
+          description: 仅 RECEIVABLE/PAYABLE 必填；预收预付不创建反向条目
+        source_doc_type: {type: string}
+        source_doc_id: {type: [string, 'null'], format: uuid}
+        source_invoice_id: {type: [string, 'null'], format: uuid}
+        invoice_reversal_id: {type: [string, 'null'], format: uuid}
+        reverses_entry_id: {type: [string, 'null'], format: uuid}
+        source_settlement_root_id: {type: [string, 'null'], format: uuid}
+        business_date: {type: string, format: date}
+        accounting_period_id: {type: string, format: uuid}
+        deferred_from_period_id: {type: [string, 'null'], format: uuid}
+        due_date: {type: [string, 'null'], format: date}
+        original_amount: {$ref: '#/components/schemas/Money'}
+        settled_amount: {$ref: '#/components/schemas/Money'}
+        open_amount:
+          allOf: [{$ref: '#/components/schemas/Money'}]
+          description: 存储同步投影；经营调用方不得直接把本字段当余额
+        row_open: {$ref: '#/components/schemas/Money'}
+        effective_open:
+          allOf: [{$ref: '#/components/schemas/Money'}]
+          description: 仅 RECEIVABLE/PAYABLE 返回；核销候选、账龄和信用占用的唯一当前余额
+        net_consumed: {$ref: '#/components/schemas/Money'}
+        advance_open:
+          allOf: [{$ref: '#/components/schemas/Money'}]
+          description: 仅 ADVANCE_RECEIPT/ADVANCE_PAYMENT 返回；预收预付唯一当前余额
+        settlement_effects:
+          type: array
+          items: {$ref: '#/components/schemas/SettlementEffect'}
+      allOf:
+        - oneOf:
+            - properties:
+                ledger_side: {type: string, enum: [RECEIVABLE, PAYABLE]}
+              required: [entry_kind, row_open, effective_open]
+            - properties:
+                ledger_side: {type: string, enum: [ADVANCE_RECEIPT, ADVANCE_PAYMENT]}
+              required: [net_consumed, advance_open]
+    LedgerEntryListData:
+      type: object
+      additionalProperties: false
+      required: [items]
+      properties:
+        items:
+          type: array
+          items: {$ref: '#/components/schemas/LedgerEntry'}
+    AgingRow:
+      type: object
+      additionalProperties: false
+      required: [group_key, bucket_code, effective_open]
+      properties:
+        group_key: {type: string}
+        bucket_code: {type: string}
+        effective_open: {$ref: '#/components/schemas/Money'}
+        entries:
+          type: array
+          items: {$ref: '#/components/schemas/LedgerEntry'}
+    AgingListData:
+      type: object
+      additionalProperties: false
+      required: [items]
+      properties:
+        items:
+          type: array
+          items: {$ref: '#/components/schemas/AgingRow'}
+    UnbilledArEntry:
+      type: object
+      additionalProperties: false
+      required: [id, delivery_confirmation_id, customer_id, posting_date, net_amount, direction]
+      properties:
+        id: {type: string, format: uuid}
+        delivery_confirmation_id: {type: string, format: uuid}
+        customer_id: {type: string, format: uuid}
+        posting_date: {type: string, format: date}
+        net_amount: {$ref: '#/components/schemas/SignedMoney'}
+        direction: {type: string, enum: [DEBIT, CREDIT, ZERO]}
+    UnbilledArListData:
+      type: object
+      additionalProperties: false
+      required: [items]
+      properties:
+        items:
+          type: array
+          items: {$ref: '#/components/schemas/UnbilledArEntry'}
+    UnbilledArMeta:
+      type: object
+      additionalProperties: false
+      required: [page, page_size, total, total_pages, net_amount, direction]
+      properties:
+        page: {type: integer, minimum: 1}
+        page_size: {type: integer, minimum: 1, maximum: 200}
+        total: {type: integer, minimum: 0}
+        total_pages: {type: integer, minimum: 0}
+        next_cursor: {type: [string, 'null']}
+        net_amount: {$ref: '#/components/schemas/SignedMoney'}
+        direction: {type: string, enum: [DEBIT, CREDIT, ZERO]}
+    OverbillingEntry:
+      type: object
+      additionalProperties: false
+      required:
+        - id
+        - supplier_id
+        - purchase_order_id
+        - purchase_invoice_id
+        - material_id
+        - overbilled_quantity
+        - unit_price
+        - original_amount
+        - settled_amount
+        - open_amount
+        - settled_quantity
+        - open_quantity
+        - status
+        - business_date
+        - accounting_period_id
+        - row_version
+      properties:
+        id: {type: string, format: uuid}
+        supplier_id: {type: string, format: uuid}
+        purchase_order_id: {type: string, format: uuid}
+        purchase_invoice_id: {type: string, format: uuid}
+        material_id: {type: string, format: uuid}
+        warehouse_id: {type: [string, 'null'], format: uuid}
+        overbilled_quantity:
+          type: string
+          description: 大于 0 的 numeric(18,6) 十进制定点字符串。
+          pattern: '^(?:0\.[0-9]{5}[1-9]|[1-9][0-9]{0,11}\.[0-9]{6})$'
+        unit_price:
+          type: string
+          description: 非负 numeric(18,6) 十进制定点字符串。
+          pattern: '^(?:0|[1-9][0-9]{0,11})\.[0-9]{6}$'
+        original_amount: {$ref: '#/components/schemas/PositiveMoney'}
+        settled_amount: {$ref: '#/components/schemas/Money'}
+        open_amount: {$ref: '#/components/schemas/Money'}
+        settled_quantity:
+          type: string
+          pattern: '^(?:0|[1-9][0-9]{0,11})\.[0-9]{6}$'
+        open_quantity:
+          type: string
+          pattern: '^(?:0|[1-9][0-9]{0,11})\.[0-9]{6}$'
+        status: {type: string, enum: [OPEN, PARTIALLY_SETTLED, SETTLED]}
+        latest_effective_settlement_path:
+          description: 从未被冲回的最新结清效果派生；只读展示，不是状态机字段。
+          type: [string, 'null']
+          enum: [PATH_ONE_RECEIPT_MATCH, PATH_TWO_RED_INVOICE, PATH_THREE_WRITE_OFF, null]
+        business_date: {type: string, format: date}
+        accounting_period_id: {type: string, format: uuid}
+        deferred_from_period_id: {type: [string, 'null'], format: uuid}
+        row_version: {type: integer, minimum: 1}
+    OverbillingListData:
+      type: object
+      additionalProperties: false
+      required: [items]
+      properties:
+        items:
+          type: array
+          items: {$ref: '#/components/schemas/OverbillingEntry'}
+    OverbillingMeta:
+      type: object
+      additionalProperties: false
+      required: [page, page_size, total, total_pages, period_open_amount]
+      properties:
+        page: {type: integer, minimum: 1}
+        page_size: {type: integer, minimum: 1, maximum: 200}
+        total: {type: integer, minimum: 0}
+        total_pages: {type: integer, minimum: 0}
+        next_cursor: {type: [string, 'null']}
+        period_open_amount: {$ref: '#/components/schemas/Money'}
+    OverbillingWriteOffRequest:
+      type: object
+      additionalProperties: false
+      required: [posting_date, amount, reason, row_version]
+      properties:
+        posting_date: {type: string, format: date}
+        amount: {$ref: '#/components/schemas/PositiveMoney'}
+        reason: {type: string, minLength: 1, maxLength: 1000}
+        row_version: {type: integer, minimum: 1}
+    OverbillingReverseWriteOffRequest:
+      type: object
+      additionalProperties: false
+      required: [posting_date, reason, row_version]
+      properties:
+        posting_date: {type: string, format: date}
+        reason: {type: string, minLength: 1, maxLength: 1000}
+        row_version: {type: integer, minimum: 1}
+    ReconciliationItem:
+      type: object
+      additionalProperties: false
+      required: [item, subledger_amount, general_ledger_amount, difference, difference_refs]
+      properties:
+        item: {type: string}
+        subledger_amount: {$ref: '#/components/schemas/SignedMoney'}
+        general_ledger_amount: {$ref: '#/components/schemas/SignedMoney'}
+        difference: {$ref: '#/components/schemas/SignedMoney'}
+        difference_refs:
+          type: array
+          items: {type: string, format: uuid}
+    ReconciliationListData:
+      type: object
+      additionalProperties: false
+      required: [accounting_period_id, items]
+      properties:
+        accounting_period_id: {type: string, format: uuid}
+        items:
+          type: array
+          minItems: 1
+          maxItems: 10
+          items: {$ref: '#/components/schemas/ReconciliationItem'}
+    CashLedgerEntry:
+      type: object
+      additionalProperties: false
+      required: [id, cash_account_id, source_doc_type, source_doc_id, posting_date, amount, direction]
+      properties:
+        id: {type: string, format: uuid}
+        cash_account_id: {type: string, format: uuid}
+        source_doc_type: {type: string, enum: [RECEIPT, PAYMENT, REFUND, CASH_DOCUMENT_REVERSAL]}
+        source_doc_id: {type: string, format: uuid}
+        posting_date: {type: string, format: date}
+        amount: {$ref: '#/components/schemas/PositiveMoney'}
+        direction: {type: string, enum: [IN, OUT]}
+        voucher_id: {type: string, format: uuid}
+    CashLedgerEntryListData:
+      type: object
+      additionalProperties: false
+      required: [items]
+      properties:
+        items:
+          type: array
+          items: {$ref: '#/components/schemas/CashLedgerEntry'}
+    CashLedgerMeta:
+      type: object
+      additionalProperties: false
+      required: [page, page_size, total, total_pages, opening_balance, period_in, period_out, closing_balance]
+      properties:
+        page: {type: integer, minimum: 1}
+        page_size: {type: integer, minimum: 1, maximum: 200}
+        total: {type: integer, minimum: 0}
+        total_pages: {type: integer, minimum: 0}
+        next_cursor: {type: [string, 'null']}
+        opening_balance: {$ref: '#/components/schemas/SignedMoney'}
+        period_in: {$ref: '#/components/schemas/Money'}
+        period_out: {$ref: '#/components/schemas/Money'}
+        closing_balance: {$ref: '#/components/schemas/SignedMoney'}
+    OpeningBalanceRow:
+      type: object
+      additionalProperties: false
+      required: [row_no, party_id, posting_date, amount]
+      properties:
+        row_no: {type: integer, minimum: 1}
+        party_id: {type: string, format: uuid}
+        posting_date: {type: string, format: date}
+        due_date: {type: [string, 'null'], format: date}
+        amount: {$ref: '#/components/schemas/PositiveMoney'}
+        source_reference: {type: [string, 'null'], maxLength: 200}
+    OpeningBalanceImportRequest:
+      type: object
+      additionalProperties: false
+      required: [ledger_side, accounting_period_id, rows]
+      properties:
+        ledger_side: {type: string, enum: [RECEIVABLE, PAYABLE, ADVANCE_RECEIPT, ADVANCE_PAYMENT]}
+        accounting_period_id: {type: string, format: uuid}
+        rows:
+          type: array
+          minItems: 1
+          maxItems: 10000
+          items: {$ref: '#/components/schemas/OpeningBalanceRow'}
+    OpeningBalanceRowResult:
+      type: object
+      additionalProperties: false
+      required: [row_no, status]
+      properties:
+        row_no: {type: integer, minimum: 1}
+        status: {type: string, enum: [SUCCEEDED, FAILED]}
+        entry_id: {type: [string, 'null'], format: uuid}
+        error_code: {type: [string, 'null']}
+    OpeningBalanceImportResult:
+      type: object
+      additionalProperties: false
+      required: [ledger_side, accounting_period_id, total_rows, succeeded_rows, failed_rows, rows]
+      properties:
+        ledger_side: {type: string, enum: [RECEIVABLE, PAYABLE, ADVANCE_RECEIPT, ADVANCE_PAYMENT]}
+        accounting_period_id: {type: string, format: uuid}
+        total_rows: {type: integer, minimum: 1}
+        succeeded_rows: {type: integer, minimum: 0}
+        failed_rows: {type: integer, minimum: 0}
+        rows:
+          type: array
+          items: {$ref: '#/components/schemas/OpeningBalanceRowResult'}
+    RefundSourcePaymentInput:
+      type: object
+      additionalProperties: false
+      required: [source_doc_type, source_doc_id, linked_amount]
+      properties:
+        source_doc_type:
+          type: string
+          enum: [RECEIPT, PAYMENT]
+        source_doc_id:
+          type: string
+          format: uuid
+        linked_amount:
+          $ref: '#/components/schemas/PositiveMoney'
+    RefundCreateRequest:
+      type: object
+      additionalProperties: false
+      required:
+        - refund_type
+        - party_id
+        - return_doc_type
+        - return_doc_id
+        - source_payments
+        - register_date
+        - posting_date
+        - refund_amount
+        - cash_account_id
+        - reason
+      properties:
+        refund_type:
+          type: string
+          enum: [CUSTOMER_REFUND, SUPPLIER_REFUND]
+        party_id:
+          type: string
+          format: uuid
+        return_doc_type:
+          type: string
+          enum: [SALES_RETURN, PURCHASE_RETURN]
+        return_doc_id:
+          type: string
+          format: uuid
+        invoice_reversal_id:
+          type: [string, 'null']
+          format: uuid
+          description: 退货部分已开票时必填；未开票时为空。
+        source_payments:
+          type: array
+          minItems: 1
+          maxItems: 200
+          items:
+            $ref: '#/components/schemas/RefundSourcePaymentInput'
+        register_date:
+          type: string
+          format: date
+        posting_date:
+          type: string
+          format: date
+        refund_amount:
+          $ref: '#/components/schemas/PositiveMoney'
+        cash_account_id:
+          type: string
+          format: uuid
+        reason:
+          type: string
+          minLength: 1
+          maxLength: 2000
+        attachment_object_ids:
+          type: array
+          maxItems: 50
+          uniqueItems: true
+          items:
+            type: string
+            format: uuid
+      allOf:
+        - if:
+            properties:
+              refund_type:
+                const: CUSTOMER_REFUND
+            required: [refund_type]
+          then:
+            properties:
+              return_doc_type:
+                const: SALES_RETURN
+              source_payments:
+                type: array
+                items:
+                  type: object
+                  properties:
+                    source_doc_type:
+                      const: RECEIPT
+          else:
+            properties:
+              return_doc_type:
+                const: PURCHASE_RETURN
+              source_payments:
+                type: array
+                items:
+                  type: object
+                  properties:
+                    source_doc_type:
+                      const: PAYMENT
+    CashDocumentReversalCreateRequest:
+      type: object
+      additionalProperties: false
+      required: [source_doc_type, source_doc_id, register_date, posting_date, reason]
+      properties:
+        source_doc_type:
+          type: string
+          enum: [RECEIPT, PAYMENT, REFUND]
+        source_doc_id:
+          type: string
+          format: uuid
+        register_date:
+          type: string
+          format: date
+        posting_date:
+          type: string
+          format: date
+        reason:
+          type: string
+          minLength: 1
+          maxLength: 2000
+        attachment_object_ids:
+          type: array
+          maxItems: 50
+          uniqueItems: true
+          items:
+            type: string
+            format: uuid
+    RefundSourcePaymentProjection:
+      type: object
+      additionalProperties: false
+      required:
+        - id
+        - source_doc_type
+        - source_doc_id
+        - linked_amount
+        - advance_consumed_amount
+        - settlement_released_amount
+      properties:
+        id:
+          type: string
+          format: uuid
+        source_doc_type:
+          type: string
+          enum: [RECEIPT, PAYMENT]
+        source_doc_id:
+          type: string
+          format: uuid
+        linked_amount:
+          $ref: '#/components/schemas/PositiveMoney'
+        advance_consumed_amount:
+          $ref: '#/components/schemas/Money'
+          readOnly: true
+        settlement_released_amount:
+          $ref: '#/components/schemas/Money'
+          readOnly: true
+    Refund:
+      type: object
+      additionalProperties: false
+      required:
+        - id
+        - doc_no
+        - status
+        - refund_type
+        - party_id
+        - return_doc_type
+        - return_doc_id
+        - source_payments
+        - register_date
+        - posting_date
+        - refund_amount
+        - cash_account_id
+        - reason
+        - reauth_ref
+        - approval_ref
+        - accounting_period_id
+        - voucher_id
+        - row_version
+        - is_deferred
+      properties:
+        id:
+          type: string
+          format: uuid
+        doc_no:
+          type: string
+        status:
+          type: string
+          enum: [PENDING_REAUTH_APPROVAL, REGISTERED, CANCELLED, REVERSED]
+        row_version:
+          type: integer
+          minimum: 1
+        refund_type:
+          type: string
+          enum: [CUSTOMER_REFUND, SUPPLIER_REFUND]
+        party_id:
+          type: string
+          format: uuid
+        return_doc_type:
+          type: string
+          enum: [SALES_RETURN, PURCHASE_RETURN]
+        return_doc_id:
+          type: string
+          format: uuid
+        invoice_reversal_id:
+          type: [string, 'null']
+          format: uuid
+        source_payments:
+          type: array
+          minItems: 1
+          items:
+            $ref: '#/components/schemas/RefundSourcePaymentProjection'
+        register_date:
+          type: string
+          format: date
+        posting_date:
+          type: string
+          format: date
+        refund_amount:
+          $ref: '#/components/schemas/PositiveMoney'
+        cash_account_id:
+          type: string
+          format: uuid
+        reason:
+          type: string
+        accounting_period_id:
+          type: [string, 'null']
+          format: uuid
+        voucher_id:
+          type: [string, 'null']
+          format: uuid
+        approval_ref:
+          type: [string, 'null']
+          format: uuid
+        reauth_ref:
+          type: [string, 'null']
+          format: uuid
+        is_deferred:
+          type: boolean
+    CashDocumentReversal:
+      type: object
+      additionalProperties: false
+      required:
+        - id
+        - doc_no
+        - status
+        - source_doc_type
+        - source_doc_id
+        - register_date
+        - posting_date
+        - reversed_amount
+        - reason
+        - accounting_period_id
+        - voucher_id
+        - is_deferred
+      properties:
+        id:
+          type: string
+          format: uuid
+        doc_no:
+          type: string
+        status:
+          const: REGISTERED
+        source_doc_type:
+          type: string
+          enum: [RECEIPT, PAYMENT, REFUND]
+        source_doc_id:
+          type: string
+          format: uuid
+        register_date:
+          type: string
+          format: date
+        posting_date:
+          type: string
+          format: date
+        reversed_amount:
+          $ref: '#/components/schemas/PositiveMoney'
+        reason:
+          type: string
+        accounting_period_id:
+          type: string
+          format: uuid
+        voucher_id:
+          type: string
+          format: uuid
+        is_deferred:
+          type: boolean
+    CashAccountSuccess:
+      type: object
+      additionalProperties: false
+      required: [success, data, error, meta, trace_id]
+      properties:
+        success: {const: true}
+        data: {$ref: '#/components/schemas/CashAccount'}
+        error: {type: 'null'}
+        meta: {type: object}
+        trace_id: {type: string, pattern: '^[0-9a-f]{32}$'}
+    CashAccountListSuccess:
+      type: object
+      additionalProperties: false
+      required: [success, data, error, meta, trace_id]
+      properties:
+        success: {const: true}
+        data: {$ref: '#/components/schemas/CashAccountListData'}
+        error: {type: 'null'}
+        meta: {$ref: '#/components/schemas/PaginationMeta'}
+        trace_id: {type: string, pattern: '^[0-9a-f]{32}$'}
+    ApprovalSubmission:
+      type: object
+      additionalProperties: false
+      required: [approval_ref, scenario, requested_action, status]
+      properties:
+        approval_ref: {type: string, format: uuid}
+        scenario: {type: string, enum: [CASH_ACCOUNT_MAINTAIN, RECEIPT_REGISTER]}
+        requested_action: {type: string, enum: [CREATE, UPDATE, ACTIVATE, DEACTIVATE, REGISTER]}
+        status: {const: PENDING_APPROVAL}
+    ApprovalSubmissionSuccess:
+      type: object
+      additionalProperties: false
+      required: [success, data, error, meta, trace_id]
+      properties:
+        success: {const: true}
+        data: {$ref: '#/components/schemas/ApprovalSubmission'}
+        error: {type: 'null'}
+        meta: {type: object}
+        trace_id: {type: string, pattern: '^[0-9a-f]{32}$'}
+    SettlementProposalSuccess:
+      type: object
+      additionalProperties: false
+      required: [success, data, error, meta, trace_id]
+      properties:
+        success: {const: true}
+        data: {$ref: '#/components/schemas/SettlementProposal'}
+        error: {type: 'null'}
+        meta: {type: object}
+        trace_id: {type: string, pattern: '^[0-9a-f]{32}$'}
+    ReceiptDocumentSuccess:
+      type: object
+      additionalProperties: false
+      required: [success, data, error, meta, trace_id]
+      properties:
+        success: {const: true}
+        data: {$ref: '#/components/schemas/ReceiptDocument'}
+        error: {type: 'null'}
+        meta: {type: object}
+        trace_id: {type: string, pattern: '^[0-9a-f]{32}$'}
+    ReceiptDocumentListSuccess:
+      type: object
+      additionalProperties: false
+      required: [success, data, error, meta, trace_id]
+      properties:
+        success: {const: true}
+        data: {$ref: '#/components/schemas/ReceiptDocumentListData'}
+        error: {type: 'null'}
+        meta: {$ref: '#/components/schemas/PaginationMeta'}
+        trace_id: {type: string, pattern: '^[0-9a-f]{32}$'}
+    PaymentDocumentSuccess:
+      type: object
+      additionalProperties: false
+      required: [success, data, error, meta, trace_id]
+      properties:
+        success: {const: true}
+        data: {$ref: '#/components/schemas/PaymentDocument'}
+        error: {type: 'null'}
+        meta: {type: object}
+        trace_id: {type: string, pattern: '^[0-9a-f]{32}$'}
+    LedgerEntrySuccess:
+      type: object
+      additionalProperties: false
+      required: [success, data, error, meta, trace_id]
+      properties:
+        success: {const: true}
+        data: {$ref: '#/components/schemas/LedgerEntry'}
+        error: {type: 'null'}
+        meta: {type: object}
+        trace_id: {type: string, pattern: '^[0-9a-f]{32}$'}
+    LedgerEntryListSuccess:
+      type: object
+      additionalProperties: false
+      required: [success, data, error, meta, trace_id]
+      properties:
+        success: {const: true}
+        data: {$ref: '#/components/schemas/LedgerEntryListData'}
+        error: {type: 'null'}
+        meta: {$ref: '#/components/schemas/PaginationMeta'}
+        trace_id: {type: string, pattern: '^[0-9a-f]{32}$'}
+    AgingListSuccess:
+      type: object
+      additionalProperties: false
+      required: [success, data, error, meta, trace_id]
+      properties:
+        success: {const: true}
+        data: {$ref: '#/components/schemas/AgingListData'}
+        error: {type: 'null'}
+        meta: {type: object}
+        trace_id: {type: string, pattern: '^[0-9a-f]{32}$'}
+    UnbilledArListSuccess:
+      type: object
+      additionalProperties: false
+      required: [success, data, error, meta, trace_id]
+      properties:
+        success: {const: true}
+        data: {$ref: '#/components/schemas/UnbilledArListData'}
+        error: {type: 'null'}
+        meta: {$ref: '#/components/schemas/UnbilledArMeta'}
+        trace_id: {type: string, pattern: '^[0-9a-f]{32}$'}
+    OverbillingSuccess:
+      type: object
+      additionalProperties: false
+      required: [success, data, error, meta, trace_id]
+      properties:
+        success: {const: true}
+        data: {$ref: '#/components/schemas/OverbillingEntry'}
+        error: {type: 'null'}
+        meta: {type: object}
+        trace_id: {type: string, pattern: '^[0-9a-f]{32}$'}
+    OverbillingListSuccess:
+      type: object
+      additionalProperties: false
+      required: [success, data, error, meta, trace_id]
+      properties:
+        success: {const: true}
+        data: {$ref: '#/components/schemas/OverbillingListData'}
+        error: {type: 'null'}
+        meta: {$ref: '#/components/schemas/OverbillingMeta'}
+        trace_id: {type: string, pattern: '^[0-9a-f]{32}$'}
+    ReconciliationListSuccess:
+      type: object
+      additionalProperties: false
+      required: [success, data, error, meta, trace_id]
+      properties:
+        success: {const: true}
+        data: {$ref: '#/components/schemas/ReconciliationListData'}
+        error: {type: 'null'}
+        meta: {type: object}
+        trace_id: {type: string, pattern: '^[0-9a-f]{32}$'}
+    CashLedgerEntryListSuccess:
+      type: object
+      additionalProperties: false
+      required: [success, data, error, meta, trace_id]
+      properties:
+        success: {const: true}
+        data: {$ref: '#/components/schemas/CashLedgerEntryListData'}
+        error: {type: 'null'}
+        meta: {$ref: '#/components/schemas/CashLedgerMeta'}
+        trace_id: {type: string, pattern: '^[0-9a-f]{32}$'}
+    OpeningBalanceImportSuccess:
+      type: object
+      additionalProperties: false
+      required: [success, data, error, meta, trace_id]
+      properties:
+        success: {const: true}
+        data: {$ref: '#/components/schemas/OpeningBalanceImportResult'}
+        error: {type: 'null'}
+        meta: {type: object}
+        trace_id: {type: string, pattern: '^[0-9a-f]{32}$'}
+    RefundSuccess:
+      type: object
+      additionalProperties: false
+      required: [success, data, error, meta, trace_id]
+      properties:
+        success:
+          const: true
+        data:
+          $ref: '#/components/schemas/Refund'
+        error:
+          type: 'null'
+        meta:
+          type: object
+        trace_id:
+          type: string
+          pattern: '^[0-9a-f]{32}$'
+    CashDocumentReversalSuccess:
+      type: object
+      additionalProperties: false
+      required: [success, data, error, meta, trace_id]
+      properties:
+        success:
+          const: true
+        data:
+          $ref: '#/components/schemas/CashDocumentReversal'
+        error:
+          type: 'null'
+        meta:
+          type: object
+        trace_id:
+          type: string
+          pattern: '^[0-9a-f]{32}$'
+    ErrorDetail:
+      type: object
+      additionalProperties: false
+      required: [field, reason, value]
+      properties:
+        field:
+          type: string
+        reason:
+          type: string
+        value:
+          type: [string, integer, boolean, 'null']
+    AppError:
+      type: object
+      additionalProperties: false
+      required: [code, category, message, details, retryable, incident_no, occurred_at, advice]
+      properties:
+        code:
+          type: string
+          pattern: '^[A-Z][A-Z0-9_]*(?:\.[A-Z][A-Z0-9_]*){2,}$'
+        category:
+          type: string
+          enum: [VALIDATION, BUSINESS_CONFLICT, PERMISSION_DENIED, EXTERNAL_SYSTEM, INFRASTRUCTURE]
+        message:
+          type: string
+        details:
+          type: array
+          description: 只含本单据内可见的字段或安全金额；不得返回表名、约束名或其他资金根。
+          items:
+            $ref: '#/components/schemas/ErrorDetail'
+        retryable:
+          type: boolean
+        incident_no:
+          type: string
+        occurred_at:
+          type: string
+          format: date-time
+        advice:
+          type: string
+    ErrorEnvelope:
+      type: object
+      additionalProperties: false
+      required: [success, data, error, meta, trace_id]
+      properties:
+        success:
+          const: false
+        data:
+          type: 'null'
+        error:
+          $ref: '#/components/schemas/AppError'
+        meta:
+          type: 'null'
+        trace_id:
+          type: string
+          pattern: '^[0-9a-f]{32}$'
+  responses:
+    Error400:
+      description: 输入校验失败
+      headers:
+        X-Request-Id: {$ref: '#/components/headers/XRequestId'}
+        X-Trace-Id: {$ref: '#/components/headers/XTraceId'}
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorEnvelope'
+    Error403:
+      description: 权限、审批或重新认证失败
+      headers:
+        X-Request-Id: {$ref: '#/components/headers/XRequestId'}
+        X-Trace-Id: {$ref: '#/components/headers/XTraceId'}
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorEnvelope'
+    Error404:
+      description: 记录不存在或无权访问；不泄露存在性
+      headers:
+        X-Request-Id: {$ref: '#/components/headers/XRequestId'}
+        X-Trace-Id: {$ref: '#/components/headers/XTraceId'}
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorEnvelope'
+    Error409:
+      description: 业务、并发、守恒、勾稽或幂等冲突
+      headers:
+        X-Request-Id: {$ref: '#/components/headers/XRequestId'}
+        X-Trace-Id: {$ref: '#/components/headers/XTraceId'}
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorEnvelope'
+    Error503:
+      description: 基础设施暂时不可用
+      headers:
+        X-Request-Id: {$ref: '#/components/headers/XRequestId'}
+        X-Trace-Id: {$ref: '#/components/headers/XTraceId'}
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorEnvelope'

@@ -1,0 +1,3060 @@
+openapi: 3.1.0
+info:
+  title: Enterprise Platform MCP Management and Inbound API — F-55 exact surface
+  version: 1.0.0-f55
+  description: |
+    本文件保留 F-55 MCP 管理面与入站 POST /mcp 的固定九 operation 历史输入，
+    不是现行 F-57 独立权威契约。该固定九模型已由 F-57 动态签名 manifest
+    capability 模型取代；下列 API 形状仅供 Tasks 14/16 再基线参考。
+  x-f57-status: HISTORICAL_SUPERSEDED
+  x-source-authority: F-55-section-4-historical-input
+  x-planned-implementation-tasks: [F57-14, F57-16]
+  x-implementation-state: NOT_IMPLEMENTED
+  x-scope: exact-nine-operation-surface
+  x-path-count: 9
+  x-operation-count: 9
+  x-mcp-protocol-version: '2026-07-28'
+  x-mcp-stable-error-count: 20
+  x-stable-error-codes:
+    - PLATFORM.REQUEST.INVALID_PAYLOAD
+    - PLATFORM.REQUEST.HEADER_MISSING
+    - PLATFORM.IDEMPOTENCY.KEY_REQUIRED
+    - PLATFORM.IDEMPOTENCY.PAYLOAD_MISMATCH
+    - PLATFORM.CONCURRENCY.STALE_VERSION
+    - PLATFORM.AUTHZ.NOT_FOUND_OR_DENIED
+    - PLATFORM.AUTHZ.OBJECT_FORBIDDEN
+    - PLATFORM.SYSTEM.SYNC_TIMEOUT
+    - MCP.PROTOCOL.VERSION_UNSUPPORTED
+    - MCP.REQUEST.INVALID
+    - MCP.PAYLOAD.TOO_LARGE
+    - MCP.PROTOCOL.HEADER_MISMATCH
+    - MCP.METHOD.NOT_ALLOWED
+    - MCP.MANIFEST.INVALID_OR_UNSIGNED
+    - MCP.MANIFEST.CAPABILITY_DENIED
+    - MCP.GRANT.INVALID_OR_EXPIRED
+    - MCP.DEVICE_PROOF.INVALID
+    - MCP.TOOL.NOT_VISIBLE_OR_DENIED
+    - MCP.RESOURCE.NOT_VISIBLE_OR_DENIED
+    - MCP.TOOL.HIGH_RISK_FORBIDDEN
+    - MCP.IDEMPOTENCY.REQUIRED
+    - MCP.CREDENTIAL.REF_INVALID
+    - MCP.REMOTE.UNAVAILABLE
+    - MCP.RESPONSE.SCHEMA_INVALID
+    - MCP.LOCAL.CONTAINMENT_FAILED
+    - MCP.AUDIT.UNAVAILABLE
+    - MCP.RATE_LIMITED
+    - MCP.CALL.TIMEOUT
+jsonSchemaDialect: https://json-schema.org/draft/2020-12/schema
+servers:
+  - url: /
+tags:
+  - name: McpConnectors
+  - name: McpHumanGrants
+  - name: McpInbound
+security:
+  - bearerAuth: []
+paths:
+  /api/v1/platform/mcp-connectors:
+    get:
+      tags: [McpConnectors]
+      operationId: listMcpConnectors
+      summary: 分页查看当前管理范围内的 MCP 连接器
+      description: |
+        query 只接受 cursor 与 page_size，未知参数以及 limit/page/sort/filter 均拒绝。
+        排序固定为 created_at DESC,id DESC；cursor 只表示位置，服务端每页重做完整授权。
+      parameters:
+        - $ref: '#/components/parameters/LegalEntityId'
+        - $ref: '#/components/parameters/DeviceId'
+        - $ref: '#/components/parameters/ServerAdminClient'
+        - $ref: '#/components/parameters/RequestId'
+        - $ref: '#/components/parameters/ConnectorCursor'
+        - $ref: '#/components/parameters/PageSize'
+      responses:
+        '200':
+          description: MCP 连接器键集分页结果
+          headers:
+            X-Request-Id: {$ref: '#/components/headers/XRequestId'}
+            X-Trace-Id: {$ref: '#/components/headers/XTraceId'}
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/McpConnectorListSuccess'}
+        '400': {$ref: '#/components/responses/ManagementError400'}
+        '403': {$ref: '#/components/responses/ManagementError403'}
+        '503': {$ref: '#/components/responses/ManagementError503'}
+      x-permission: platform.mcp.connector.manage
+      x-action: VIEW
+      x-query-parameters-closed: true
+      x-forbidden-query-parameters: [limit, page, sort, filter]
+      x-ordering: created_at DESC,id DESC
+      x-error-codes:
+        - PLATFORM.REQUEST.INVALID_PAYLOAD
+        - PLATFORM.REQUEST.HEADER_MISSING
+        - PLATFORM.AUTHZ.OBJECT_FORBIDDEN
+        - PLATFORM.SYSTEM.SYNC_TIMEOUT
+  /api/v1/platform/mcp-connectors/{id}:
+    get:
+      tags: [McpConnectors]
+      operationId: getMcpConnector
+      summary: 查看连接器、活动清单、健康和最近审计摘要
+      parameters:
+        - $ref: '#/components/parameters/ConnectorId'
+        - $ref: '#/components/parameters/LegalEntityId'
+        - $ref: '#/components/parameters/DeviceId'
+        - $ref: '#/components/parameters/ServerAdminClient'
+        - $ref: '#/components/parameters/RequestId'
+      responses:
+        '200':
+          description: 完整且脱敏的 MCP 连接器详情
+          headers:
+            X-Request-Id: {$ref: '#/components/headers/XRequestId'}
+            X-Trace-Id: {$ref: '#/components/headers/XTraceId'}
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/McpConnectorDetailSuccess'}
+        '400': {$ref: '#/components/responses/ManagementError400'}
+        '403': {$ref: '#/components/responses/ManagementError403'}
+        '404': {$ref: '#/components/responses/ManagementError404'}
+        '409': {$ref: '#/components/responses/ManagementManifestError409'}
+        '503': {$ref: '#/components/responses/ManagementError503'}
+      x-permission: platform.mcp.connector.manage
+      x-action: VIEW
+      x-query-parameters-closed: true
+      x-not-found-policy: absent-and-record-denied-are-indistinguishable
+      x-forbidden-response-fields: [secret, credential_value, request_name, request_uri, request_payload, response_payload]
+      x-error-codes:
+        - PLATFORM.REQUEST.INVALID_PAYLOAD
+        - PLATFORM.REQUEST.HEADER_MISSING
+        - PLATFORM.AUTHZ.OBJECT_FORBIDDEN
+        - PLATFORM.AUTHZ.NOT_FOUND_OR_DENIED
+        - MCP.MANIFEST.INVALID_OR_UNSIGNED
+        - PLATFORM.SYSTEM.SYNC_TIMEOUT
+  /api/v1/platform/mcp-connectors/{id}/manifest-versions:
+    get:
+      tags: [McpConnectors]
+      operationId: listMcpConnectorManifestVersions
+      summary: 分页查看连接器不可变 manifest 版本
+      description: |
+        query 只接受 cursor 与 page_size；排序固定为 version_no DESC,id DESC。
+        manifest 正文、signature 正文、origin、credential 和安装路径均不返回。
+      parameters:
+        - $ref: '#/components/parameters/ConnectorId'
+        - $ref: '#/components/parameters/LegalEntityId'
+        - $ref: '#/components/parameters/DeviceId'
+        - $ref: '#/components/parameters/ServerAdminClient'
+        - $ref: '#/components/parameters/RequestId'
+        - $ref: '#/components/parameters/ManifestVersionCursor'
+        - $ref: '#/components/parameters/PageSize'
+      responses:
+        '200':
+          description: manifest 版本键集分页结果
+          headers:
+            X-Request-Id: {$ref: '#/components/headers/XRequestId'}
+            X-Trace-Id: {$ref: '#/components/headers/XTraceId'}
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/McpManifestVersionListSuccess'}
+        '400': {$ref: '#/components/responses/ManagementError400'}
+        '403': {$ref: '#/components/responses/ManagementError403'}
+        '404': {$ref: '#/components/responses/ManagementError404'}
+        '409': {$ref: '#/components/responses/ManagementManifestError409'}
+        '503': {$ref: '#/components/responses/ManagementError503'}
+      x-permission: platform.mcp.connector.manage
+      x-action: VIEW
+      x-query-parameters-closed: true
+      x-forbidden-query-parameters: [limit, page, sort, filter]
+      x-ordering: version_no DESC,id DESC
+      x-not-found-policy: absent-and-record-denied-are-indistinguishable
+      x-error-codes:
+        - PLATFORM.REQUEST.INVALID_PAYLOAD
+        - PLATFORM.REQUEST.HEADER_MISSING
+        - PLATFORM.AUTHZ.OBJECT_FORBIDDEN
+        - PLATFORM.AUTHZ.NOT_FOUND_OR_DENIED
+        - MCP.MANIFEST.INVALID_OR_UNSIGNED
+        - PLATFORM.SYSTEM.SYNC_TIMEOUT
+  /api/v1/platform/mcp-connectors/{id}/actions/enable:
+    post:
+      tags: [McpConnectors]
+      operationId: enableMcpConnector
+      summary: 启用具有活动已批准 manifest 的连接器
+      parameters:
+        - $ref: '#/components/parameters/ConnectorId'
+        - $ref: '#/components/parameters/LegalEntityId'
+        - $ref: '#/components/parameters/DeviceId'
+        - $ref: '#/components/parameters/ServerAdminClient'
+        - $ref: '#/components/parameters/RequestId'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/McpConnectorEnableRequest'}
+      responses:
+        '200':
+          description: 连接器已启用
+          headers:
+            X-Request-Id: {$ref: '#/components/headers/XRequestId'}
+            X-Trace-Id: {$ref: '#/components/headers/XTraceId'}
+            Idempotent-Replay: {$ref: '#/components/headers/IdempotentReplay'}
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/McpConnectorEnableSuccess'}
+        '400': {$ref: '#/components/responses/ManagementWriteError400'}
+        '403': {$ref: '#/components/responses/ManagementError403'}
+        '404': {$ref: '#/components/responses/ManagementError404'}
+        '409': {$ref: '#/components/responses/ManagementEnableError409'}
+        '503': {$ref: '#/components/responses/ManagementEnableError503'}
+      x-permission: platform.mcp.connector.manage
+      x-action: UPDATE
+      x-query-parameters-closed: true
+      x-not-found-policy: absent-and-record-denied-are-indistinguishable
+      x-idempotency: required
+      x-preconditions: [unique-active-approved-manifest, credential-probe-passed, license-valid]
+      x-error-codes:
+        - PLATFORM.REQUEST.INVALID_PAYLOAD
+        - PLATFORM.REQUEST.HEADER_MISSING
+        - PLATFORM.IDEMPOTENCY.KEY_REQUIRED
+        - PLATFORM.IDEMPOTENCY.PAYLOAD_MISMATCH
+        - PLATFORM.CONCURRENCY.STALE_VERSION
+        - PLATFORM.AUTHZ.OBJECT_FORBIDDEN
+        - PLATFORM.AUTHZ.NOT_FOUND_OR_DENIED
+        - MCP.MANIFEST.INVALID_OR_UNSIGNED
+        - MCP.CREDENTIAL.REF_INVALID
+        - MCP.LOCAL.CONTAINMENT_FAILED
+        - PLATFORM.SYSTEM.SYNC_TIMEOUT
+  /api/v1/platform/mcp-connectors/{id}/actions/disable:
+    post:
+      tags: [McpConnectors]
+      operationId: disableMcpConnector
+      summary: 停用连接器并保留其数据、版本和审计
+      parameters:
+        - $ref: '#/components/parameters/ConnectorId'
+        - $ref: '#/components/parameters/LegalEntityId'
+        - $ref: '#/components/parameters/DeviceId'
+        - $ref: '#/components/parameters/ServerAdminClient'
+        - $ref: '#/components/parameters/RequestId'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/McpConnectorDisableRequest'}
+      responses:
+        '200':
+          description: 连接器已停用，既有数据仍安全保留
+          headers:
+            X-Request-Id: {$ref: '#/components/headers/XRequestId'}
+            X-Trace-Id: {$ref: '#/components/headers/XTraceId'}
+            Idempotent-Replay: {$ref: '#/components/headers/IdempotentReplay'}
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/McpConnectorDisableSuccess'}
+        '400': {$ref: '#/components/responses/ManagementWriteError400'}
+        '403': {$ref: '#/components/responses/ManagementError403'}
+        '404': {$ref: '#/components/responses/ManagementError404'}
+        '409': {$ref: '#/components/responses/ManagementError409'}
+        '503': {$ref: '#/components/responses/ManagementError503'}
+      x-permission: platform.mcp.connector.manage
+      x-action: UPDATE
+      x-query-parameters-closed: true
+      x-not-found-policy: absent-and-record-denied-are-indistinguishable
+      x-idempotency: required
+      x-state-lock: connector-session-advisory-exclusive-through-terminal-inflight
+      x-error-codes:
+        - PLATFORM.REQUEST.INVALID_PAYLOAD
+        - PLATFORM.REQUEST.HEADER_MISSING
+        - PLATFORM.IDEMPOTENCY.KEY_REQUIRED
+        - PLATFORM.IDEMPOTENCY.PAYLOAD_MISMATCH
+        - PLATFORM.CONCURRENCY.STALE_VERSION
+        - PLATFORM.AUTHZ.OBJECT_FORBIDDEN
+        - PLATFORM.AUTHZ.NOT_FOUND_OR_DENIED
+        - PLATFORM.SYSTEM.SYNC_TIMEOUT
+  /api/v1/platform/mcp-human-grants/actions/issue:
+    post:
+      tags: [McpHumanGrants]
+      operationId: issueMcpHumanGrant
+      summary: 为当前已登录人员和设备签发短期最小授权
+      description: |
+        Idempotency-Key 明确禁止；携带时返回 PLATFORM.REQUEST.INVALID_PAYLOAD，
+        details 只含字段级原因 “Idempotency-Key is forbidden for this endpoint”。
+        bearer_token_once 仅在本次成功响应出现一次，不进入通用响应缓存；响应丢失
+        后不能重放旧 token，只能撤销旧 grant（或等待过期）再重新签发。
+      parameters:
+        - $ref: '#/components/parameters/LegalEntityId'
+        - $ref: '#/components/parameters/DeviceId'
+        - $ref: '#/components/parameters/GrantClient'
+        - $ref: '#/components/parameters/RequestId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/McpHumanGrantIssueRequest'}
+      responses:
+        '201':
+          description: 已签发一次性显示的短期 bearer token
+          headers:
+            X-Request-Id: {$ref: '#/components/headers/XRequestId'}
+            X-Trace-Id: {$ref: '#/components/headers/XTraceId'}
+            Cache-Control: {$ref: '#/components/headers/NoStore'}
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/McpHumanGrantIssueSuccess'}
+        '400': {$ref: '#/components/responses/ManagementError400'}
+        '403': {$ref: '#/components/responses/ManagementGrantIssueError403'}
+        '404': {$ref: '#/components/responses/ManagementGrantIssueError404'}
+        '409': {$ref: '#/components/responses/ManagementManifestError409'}
+        '503': {$ref: '#/components/responses/ManagementError503'}
+      x-permission: platform.mcp.grant.issue
+      x-action: CREATE
+      x-query-parameters-closed: true
+      x-not-found-policy: connector-or-manifest-absent-and-record-denied-are-indistinguishable
+      x-idempotency: forbidden
+      x-forbidden-request-headers: [Idempotency-Key]
+      x-response-cache: forbidden
+      x-error-codes:
+        - PLATFORM.REQUEST.INVALID_PAYLOAD
+        - PLATFORM.REQUEST.HEADER_MISSING
+        - PLATFORM.AUTHZ.OBJECT_FORBIDDEN
+        - PLATFORM.AUTHZ.NOT_FOUND_OR_DENIED
+        - MCP.MANIFEST.CAPABILITY_DENIED
+        - MCP.TOOL.NOT_VISIBLE_OR_DENIED
+        - MCP.RESOURCE.NOT_VISIBLE_OR_DENIED
+        - MCP.MANIFEST.INVALID_OR_UNSIGNED
+        - PLATFORM.SYSTEM.SYNC_TIMEOUT
+  /api/v1/platform/mcp-human-grants:
+    get:
+      tags: [McpHumanGrants]
+      operationId: listActiveMcpHumanGrants
+      summary: 分页查看当前可见的活动 MCP 人类授权
+      parameters:
+        - $ref: '#/components/parameters/LegalEntityId'
+        - $ref: '#/components/parameters/DeviceId'
+        - $ref: '#/components/parameters/GrantClient'
+        - $ref: '#/components/parameters/RequestId'
+        - $ref: '#/components/parameters/ActiveGrantState'
+        - $ref: '#/components/parameters/GrantCursor'
+        - $ref: '#/components/parameters/PageSize'
+      responses:
+        '200':
+          description: 仅包含 ACTIVE grant 的键集分页结果
+          headers:
+            X-Request-Id: {$ref: '#/components/headers/XRequestId'}
+            X-Trace-Id: {$ref: '#/components/headers/XTraceId'}
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/McpHumanGrantListSuccess'}
+        '400': {$ref: '#/components/responses/ManagementError400'}
+        '403': {$ref: '#/components/responses/ManagementError403'}
+        '503': {$ref: '#/components/responses/ManagementError503'}
+      x-query-parameters-closed: true
+      x-forbidden-query-parameters: [limit, page, sort, filter]
+      x-ordering: issued_at DESC,id DESC
+      x-authorization:
+        owner: current valid session/device and item.user_id equals current user
+        non_owner: platform.mcp.connector.manage + VIEW and target connector current object scope
+      x-token-fields-forbidden: [bearer_token_once, token_hash, device_public_key, source_session_id]
+      x-error-codes:
+        - PLATFORM.REQUEST.INVALID_PAYLOAD
+        - PLATFORM.REQUEST.HEADER_MISSING
+        - PLATFORM.AUTHZ.OBJECT_FORBIDDEN
+        - PLATFORM.SYSTEM.SYNC_TIMEOUT
+  /api/v1/platform/mcp-human-grants/{id}/actions/revoke:
+    post:
+      tags: [McpHumanGrants]
+      operationId: revokeMcpHumanGrant
+      summary: 撤销本人或当前安全管理范围内的 MCP 人类授权
+      parameters:
+        - $ref: '#/components/parameters/GrantId'
+        - $ref: '#/components/parameters/LegalEntityId'
+        - $ref: '#/components/parameters/DeviceId'
+        - $ref: '#/components/parameters/GrantClient'
+        - $ref: '#/components/parameters/RequestId'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/McpHumanGrantRevokeRequest'}
+      responses:
+        '200':
+          description: grant 已不可逆撤销
+          headers:
+            X-Request-Id: {$ref: '#/components/headers/XRequestId'}
+            X-Trace-Id: {$ref: '#/components/headers/XTraceId'}
+            Idempotent-Replay: {$ref: '#/components/headers/IdempotentReplay'}
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/McpHumanGrantRevokeSuccess'}
+        '400': {$ref: '#/components/responses/ManagementWriteError400'}
+        '403': {$ref: '#/components/responses/ManagementError403'}
+        '404': {$ref: '#/components/responses/ManagementError404'}
+        '409': {$ref: '#/components/responses/ManagementError409'}
+        '503': {$ref: '#/components/responses/ManagementError503'}
+      x-idempotency: required
+      x-query-parameters-closed: true
+      x-authorization:
+        owner: current valid session/device and grant.user_id equals current user
+        non_owner: platform.mcp.connector.manage + UPDATE and target connector current object scope
+      x-not-found-policy: absent-and-record-denied-are-indistinguishable
+      x-error-codes:
+        - PLATFORM.REQUEST.INVALID_PAYLOAD
+        - PLATFORM.REQUEST.HEADER_MISSING
+        - PLATFORM.IDEMPOTENCY.KEY_REQUIRED
+        - PLATFORM.IDEMPOTENCY.PAYLOAD_MISMATCH
+        - PLATFORM.CONCURRENCY.STALE_VERSION
+        - PLATFORM.AUTHZ.OBJECT_FORBIDDEN
+        - PLATFORM.AUTHZ.NOT_FOUND_OR_DENIED
+        - PLATFORM.SYSTEM.SYNC_TIMEOUT
+  /mcp:
+    post:
+      tags: [McpInbound]
+      operationId: invokeInboundMcp
+      summary: 使用短期人类 grant 与设备证明调用冻结的 MCP 六方法
+      description: |
+        唯一协议版本为 2026-07-28，应用方法恰为 server/discover、tools/list、
+        tools/call、resources/list、resources/templates/list、resources/read；ping、
+        initialize、notification、response、batch 与未知方法均拒绝。Content-Type
+        必须精确为 application/json，Accept 必须精确为
+        application/json, text/event-stream。Mcp-Method 必须与 body method 逐字
+        相等；Mcp-Name 只在 tools/call 与 resources/read 必填并分别等于
+        params.name/params.uri，其余四方法必须缺席。Authorization bearer token、
+        Mcp-Name 和全部设备证明 header 均按 secret 脱敏。
+        外部提交 X-Client（尤其 X-Client:mcp）不建立任何身份；该 header 被拒绝，
+        ClientKind::Mcp 只由 grant middleware 内部赋值。未知普通 HTTP header 忽略；
+        HTTP header 名按 ASCII 大小写不敏感处理；normalized lower-case 前缀
+        mcp-param-（展示名 Mcp-Param-*）不参与路由、授权或审计，但其所有
+        mixed/lower/upper case 变体仍在 proxy、core、gateway、tracing、access log、
+        错误与 crash metadata 全链按 secret 脱敏。
+        设备证明的 exact LF preimage、对完整 bearer token 与 exact HTTP body bytes
+        的 SHA-256、low-S 校验以及 counter/audit 顺序逐字遵循 live F-55 §4.2/§4.7。
+      security:
+        - mcpHumanBearer: []
+      parameters:
+        - $ref: '#/components/parameters/McpAccept'
+        - $ref: '#/components/parameters/McpProtocolVersion'
+        - $ref: '#/components/parameters/McpMethod'
+        - $ref: '#/components/parameters/McpName'
+        - $ref: '#/components/parameters/McpGrantId'
+        - $ref: '#/components/parameters/McpDeviceId'
+        - $ref: '#/components/parameters/McpProofCounter'
+        - $ref: '#/components/parameters/McpProofTimestamp'
+        - $ref: '#/components/parameters/McpProof'
+      requestBody:
+        required: true
+        x-max-exact-http-body-bytes: 1048576
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/McpJsonRpcRequest'}
+      responses:
+        '200':
+          description: 单一即时 application/json terminal JSON-RPC result；不建立 session 或重放流
+          headers:
+            X-Request-Id: {$ref: '#/components/headers/XRequestId'}
+            X-Trace-Id: {$ref: '#/components/headers/XTraceId'}
+            X-EP-MCP-Proof-Counter-Accepted: {$ref: '#/components/headers/McpProofCounterAcceptedRequired'}
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/McpJsonRpcSuccessResponse'}
+        '400': {$ref: '#/components/responses/McpError400'}
+        '403': {$ref: '#/components/responses/McpError403'}
+        '404': {$ref: '#/components/responses/McpError404'}
+        '409': {$ref: '#/components/responses/McpError409'}
+        '413': {$ref: '#/components/responses/McpError413'}
+        '429': {$ref: '#/components/responses/McpError429'}
+        '502': {$ref: '#/components/responses/McpError502'}
+        '503': {$ref: '#/components/responses/McpError503'}
+        '504': {$ref: '#/components/responses/McpError504'}
+      x-required-header-values:
+        Authorization: Bearer epmcp1.<43 canonical base64url-no-pad chars>
+        Content-Type: application/json
+        Accept: application/json, text/event-stream
+        MCP-Protocol-Version: '2026-07-28'
+      x-query-parameters-closed: true
+      x-conditional-headers:
+        Mcp-Method: required-and-exact-body-method-match
+        Mcp-Name: required-for-tools-call-or-resources-read-and-forbidden-otherwise
+      x-product-transport-header-contract-closed: true
+      x-unknown-http-headers: ignored-without-routing-or-authorization-effect
+      x-mcp-param-headers: ignored-without-routing-authorization-or-audit-effect
+      x-ignored-request-header-prefixes-ascii-case-insensitive: [mcp-param-]
+      x-secret-request-headers:
+        - Authorization
+        - Mcp-Name
+        - X-EP-MCP-Grant-Id
+        - X-EP-MCP-Device-Id
+        - X-EP-MCP-Proof-Counter
+        - X-EP-MCP-Proof-Timestamp
+        - X-EP-MCP-Proof
+      x-secret-request-header-prefixes-ascii-case-insensitive: [mcp-param-]
+      x-secret-header-case-variant-canary-required: true
+      x-secret-header-zero-persistence-surfaces: [reverse-proxy, core, gateway, tracing, access-log, error, crash-metadata]
+      x-secret-response-headers: [X-EP-MCP-Proof-Counter-Accepted]
+      x-forbidden-request-headers: [Mcp-Session-Id, Last-Event-ID, X-Client]
+      x-request-json-bytes-max: 1048576
+      x-terminal-json-bytes-max: 8388608
+      x-sse-terminal-body-bytes-max-outbound-only: 8388631
+      x-route-timeout-ms: 32000
+      x-mcp-deadline-ms: 30000
+      x-get-delete-status: 405
+      x-error-codes:
+        - MCP.PROTOCOL.VERSION_UNSUPPORTED
+        - MCP.REQUEST.INVALID
+        - MCP.PAYLOAD.TOO_LARGE
+        - MCP.PROTOCOL.HEADER_MISMATCH
+        - MCP.METHOD.NOT_ALLOWED
+        - MCP.MANIFEST.INVALID_OR_UNSIGNED
+        - MCP.MANIFEST.CAPABILITY_DENIED
+        - MCP.GRANT.INVALID_OR_EXPIRED
+        - MCP.DEVICE_PROOF.INVALID
+        - MCP.TOOL.NOT_VISIBLE_OR_DENIED
+        - MCP.RESOURCE.NOT_VISIBLE_OR_DENIED
+        - MCP.TOOL.HIGH_RISK_FORBIDDEN
+        - MCP.IDEMPOTENCY.REQUIRED
+        - MCP.CREDENTIAL.REF_INVALID
+        - MCP.REMOTE.UNAVAILABLE
+        - MCP.RESPONSE.SCHEMA_INVALID
+        - MCP.LOCAL.CONTAINMENT_FAILED
+        - MCP.AUDIT.UNAVAILABLE
+        - MCP.RATE_LIMITED
+        - MCP.CALL.TIMEOUT
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: opaque-session-token
+    mcpHumanBearer:
+      type: http
+      scheme: bearer
+      bearerFormat: epmcp1-canonical-one-time-secret
+      description: |
+        Authorization 必须为 Bearer 后接 exact 50-byte token：
+        `epmcp1.` + 43-char canonical base64url-no-pad（解码恰 32 random bytes）。
+      x-bearer-token-schema: '#/components/schemas/McpHumanBearerToken'
+  parameters:
+    ConnectorId:
+      name: id
+      in: path
+      required: true
+      schema: {$ref: '#/components/schemas/LowercaseUuid'}
+    GrantId:
+      name: id
+      in: path
+      required: true
+      schema: {$ref: '#/components/schemas/LowercaseUuid'}
+    LegalEntityId:
+      name: X-Legal-Entity-Id
+      in: header
+      required: true
+      schema: {$ref: '#/components/schemas/LowercaseUuid'}
+    DeviceId:
+      name: X-Device-Id
+      in: header
+      required: true
+      schema: {$ref: '#/components/schemas/DeviceIdentifier'}
+    ServerAdminClient:
+      name: X-Client
+      in: header
+      required: true
+      schema:
+        type: string
+        const: server_admin
+    GrantClient:
+      name: X-Client
+      in: header
+      required: true
+      schema:
+        type: string
+        enum: [win, mac, ios, android, server_admin]
+    RequestId:
+      name: X-Request-Id
+      in: header
+      required: false
+      schema: {$ref: '#/components/schemas/RequestIdentifier'}
+    IdempotencyKey:
+      name: Idempotency-Key
+      in: header
+      required: true
+      description: 客户端为本次写入生成的 canonical lowercase UUIDv7。
+      schema: {$ref: '#/components/schemas/LowercaseUuidV7'}
+    ConnectorCursor:
+      name: cursor
+      in: query
+      required: false
+      description: |
+        epcur1.<base64url-no-pad>；解码后的 endpoint-bound RFC 8785 JCS 为
+        1..512 bytes，endpoint 固定 MCP_CONNECTORS，位置键为 created_at,id。
+        必须解码、重做 JCS/base64url 并与输入逐 byte 相等；不回显输入 cursor。
+      schema: {$ref: '#/components/schemas/EpCursor'}
+      x-endpoint: MCP_CONNECTORS
+      x-sort-key: created_at DESC,id DESC
+      x-decoded-schema: '#/components/schemas/McpConnectorsCursorV1'
+    ManifestVersionCursor:
+      name: cursor
+      in: query
+      required: false
+      description: |
+        epcur1.<base64url-no-pad>；解码后的 endpoint-bound RFC 8785 JCS 为
+        1..512 bytes，绑定 connector_id 与 endpoint MCP_MANIFEST_VERSIONS，位置键为
+        version_no,id。服务端生成新 cursor，不回显输入。
+      schema: {$ref: '#/components/schemas/EpCursor'}
+      x-endpoint: MCP_MANIFEST_VERSIONS
+      x-sort-key: version_no DESC,id DESC
+      x-decoded-schema: '#/components/schemas/McpManifestVersionsCursorV1'
+    GrantCursor:
+      name: cursor
+      in: query
+      required: false
+      description: |
+        epcur1.<base64url-no-pad>；解码后的 endpoint-bound RFC 8785 JCS 为
+        1..512 bytes，endpoint 固定 MCP_HUMAN_GRANTS_ACTIVE，位置键为 issued_at,id。
+        服务端生成新 cursor，不回显输入。
+      schema: {$ref: '#/components/schemas/EpCursor'}
+      x-endpoint: MCP_HUMAN_GRANTS_ACTIVE
+      x-sort-key: issued_at DESC,id DESC
+      x-decoded-schema: '#/components/schemas/McpHumanGrantsActiveCursorV1'
+    PageSize:
+      name: page_size
+      in: query
+      required: false
+      schema:
+        type: integer
+        minimum: 1
+        maximum: 100
+        default: 50
+    ActiveGrantState:
+      name: state
+      in: query
+      required: true
+      schema:
+        type: string
+        const: ACTIVE
+    McpAccept:
+      name: Accept
+      in: header
+      required: true
+      description: 必须逐字为 `application/json, text/event-stream`；不接受协商改写。
+      schema:
+        type: string
+        const: application/json, text/event-stream
+      x-openapi-special-header-runtime-required: true
+    McpProtocolVersion:
+      name: MCP-Protocol-Version
+      in: header
+      required: true
+      schema:
+        type: string
+        const: '2026-07-28'
+    McpMethod:
+      name: Mcp-Method
+      in: header
+      required: true
+      description: 必须与 JSON-RPC body method 逐字相等且大小写敏感。
+      schema: {$ref: '#/components/schemas/McpAllowedMethod'}
+    McpName:
+      name: Mcp-Name
+      in: header
+      required: false
+      description: |
+        tools/call 时必填并等于 params.name；resources/read 时必填并等于
+        params.uri；server/discover、tools/list、resources/list、
+        resources/templates/list 时必须缺席。安全值直接传输，否则使用 F-55
+        canonical `=?base64?{RFC4648-standard-base64-with-padding}?=`；header 最多
+        2743 bytes，解码后 UTF-8 最多 2048 bytes，只解码一次并逐 byte 比对；
+        解码值再次匹配 sentinel、多个 sentinel 或任何尾随字节均拒绝。
+      schema:
+        oneOf:
+          - type: string
+            minLength: 1
+            maxLength: 2048
+            pattern: '^(?![=][?]base64[?])[!-~]+$'
+          - type: string
+            minLength: 15
+            maxLength: 2743
+            pattern: '^[=][?]base64[?](?:(?:[A-Za-z0-9+/]{4})+|(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=))[?]=$'
+            x-decoded-utf8-bytes: 1..2048
+            x-canonical-round-trip-required: true
+            x-decoded-sentinel: forbidden
+      x-conditional-required: tools/call-or-resources/read
+      x-forbidden-for: [server/discover, tools/list, resources/list, resources/templates/list]
+    McpGrantId:
+      name: X-EP-MCP-Grant-Id
+      in: header
+      required: true
+      schema: {$ref: '#/components/schemas/LowercaseUuid'}
+    McpDeviceId:
+      name: X-EP-MCP-Device-Id
+      in: header
+      required: true
+      schema: {$ref: '#/components/schemas/DeviceIdentifier'}
+    McpProofCounter:
+      name: X-EP-MCP-Proof-Counter
+      in: header
+      required: true
+      description: canonical 无前导零 u64 十进制文本；首个 counter 为 1，之后严格加一。
+      schema:
+        type: string
+        pattern: '^[1-9][0-9]{0,19}$'
+        maxLength: 20
+        x-decoded-type: u64
+        x-decoded-maximum: 18446744073709551615
+    McpProofTimestamp:
+      name: X-EP-MCP-Proof-Timestamp
+      in: header
+      required: true
+      description: canonical 无前导零 Unix seconds；服务器验收时必须位于当前时间 ±60 秒。
+      schema:
+        type: string
+        pattern: '^(?:0|[1-9][0-9]{0,18})$'
+        maxLength: 19
+        x-decoded-type: nonnegative-int64
+        x-decoded-maximum: 9223372036854775807
+    McpProof:
+      name: X-EP-MCP-Proof
+      in: header
+      required: true
+      description: canonical base64url-no-pad 的 low-S IEEE-P1363 ECDSA P-256 r||s，解码恰 64 bytes。
+      schema:
+        type: string
+        minLength: 86
+        maxLength: 86
+        pattern: '^[A-Za-z0-9_-]{85}[AQgw]$'
+        x-decoded-bytes: 64
+        x-canonical-round-trip-required: true
+  headers:
+    XRequestId:
+      required: true
+      schema: {$ref: '#/components/schemas/RequestIdentifier'}
+    XTraceId:
+      required: true
+      schema: {$ref: '#/components/schemas/TraceId'}
+    IdempotentReplay:
+      description: 同一幂等载荷成功重放时为 true；首次响应可以省略。
+      schema: {type: boolean}
+    NoStore:
+      required: true
+      schema:
+        type: string
+        const: no-store
+    McpProofCounterAccepted:
+      required: false
+      description: |
+        仅 counter 原子 UPDATE 成功后出现，值必须等于本次请求 counter；随后所有
+        成功、业务/权限/外部失败以及 ATTEMPT 审计失败都必须带。UPDATE 前的协议、
+        header、token、proof、rate、inflight 拒绝不得带。客户端无此 header 时不推进
+        counter；网络结果不确定时撤销 grant 并重签，绝不猜测重试。本 header 必须
+        透传但不得进入日志、tracing、错误正文、审计或 CORS 通配暴露。
+      schema:
+        type: string
+        pattern: '^[1-9][0-9]{0,19}$'
+        maxLength: 20
+        x-decoded-type: u64
+        x-decoded-maximum: 18446744073709551615
+    McpProofCounterAcceptedRequired:
+      required: true
+      description: |
+        Counter UPDATE 已成功；本 header 必须出现且值逐字等于请求 counter。
+        代理只透传，不得记录、追踪或通过 CORS 通配暴露。
+      schema:
+        type: string
+        pattern: '^[1-9][0-9]{0,19}$'
+        maxLength: 20
+        x-decoded-type: u64
+        x-decoded-maximum: 18446744073709551615
+  schemas:
+    LowercaseUuid:
+      type: string
+      format: uuid
+      pattern: '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$'
+    LowercaseUuidV7:
+      type: string
+      format: uuid
+      pattern: '^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$'
+    RequestIdentifier:
+      type: string
+      minLength: 8
+      maxLength: 64
+      pattern: '^[A-Za-z0-9_-]+$'
+    DeviceIdentifier:
+      type: string
+      minLength: 1
+      maxLength: 64
+      pattern: '^[A-Za-z0-9_-]+$'
+    TraceId:
+      type: string
+      pattern: '^[0-9a-f]{32}$'
+    Sha256LowerHex:
+      type: string
+      pattern: '^[0-9a-f]{64}$'
+    McpHumanBearerToken:
+      type: string
+      minLength: 50
+      maxLength: 50
+      pattern: '^epmcp1\.[A-Za-z0-9_-]{43}$'
+      x-decoded-random-bytes: 32
+      x-canonical-base64url-round-trip-required: true
+    UtcRfc3339:
+      type: string
+      format: date-time
+      pattern: '^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(?:\.[0-9]+)?Z$'
+    NullableUtcRfc3339:
+      oneOf:
+        - $ref: '#/components/schemas/UtcRfc3339'
+        - type: 'null'
+    NullableLowercaseUuid:
+      oneOf:
+        - $ref: '#/components/schemas/LowercaseUuid'
+        - type: 'null'
+    NullableString:
+      type: [string, 'null']
+    RowVersion:
+      type: integer
+      format: int64
+      minimum: 0
+      maximum: 9223372036854775807
+    SecurityLevel:
+      type: integer
+      enum: [10, 20, 30, 40]
+    DataScopeTags:
+      type: array
+      minItems: 0
+      maxItems: 256
+      uniqueItems: true
+      items:
+        type: string
+        minLength: 1
+        maxLength: 128
+        pattern: '^[a-z0-9_-]+:[A-Za-z0-9_-]+$'
+      x-runtime-order: ascending-UTF-8-bytes
+    EpCursor:
+      type: string
+      minLength: 8
+      maxLength: 690
+      pattern: '^epcur1\.[A-Za-z0-9_-]{1,683}$'
+      description: 解码后 1..512 bytes 的 endpoint-bound RFC 8785 JCS；必须 canonical round-trip。
+      x-decoded-min-bytes: 1
+      x-decoded-max-bytes: 512
+      x-canonicalization: RFC8785-JCS-then-RFC4648-base64url-no-pad
+    CursorUtcMicroseconds:
+      type: string
+      format: date-time
+      pattern: '^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}\.[0-9]{6}Z$'
+    McpConnectorsCursorV1:
+      type: object
+      additionalProperties: false
+      required: [schema_version, endpoint, created_at, id]
+      properties:
+        schema_version: {const: 1}
+        endpoint: {const: MCP_CONNECTORS}
+        created_at: {$ref: '#/components/schemas/CursorUtcMicroseconds'}
+        id: {$ref: '#/components/schemas/LowercaseUuid'}
+      x-max-jcs-bytes: 512
+    McpManifestVersionsCursorV1:
+      type: object
+      additionalProperties: false
+      required: [schema_version, endpoint, connector_id, version_no, id]
+      properties:
+        schema_version: {const: 1}
+        endpoint: {const: MCP_MANIFEST_VERSIONS}
+        connector_id: {$ref: '#/components/schemas/LowercaseUuid'}
+        version_no:
+          type: integer
+          format: int32
+          minimum: 1
+          maximum: 2147483647
+        id: {$ref: '#/components/schemas/LowercaseUuid'}
+      x-max-jcs-bytes: 512
+      x-path-binding: connector_id equals path id
+    McpHumanGrantsActiveCursorV1:
+      type: object
+      additionalProperties: false
+      required: [schema_version, endpoint, issued_at, id, state]
+      properties:
+        schema_version: {const: 1}
+        endpoint: {const: MCP_HUMAN_GRANTS_ACTIVE}
+        issued_at: {$ref: '#/components/schemas/CursorUtcMicroseconds'}
+        id: {$ref: '#/components/schemas/LowercaseUuid'}
+        state: {const: ACTIVE}
+      x-max-jcs-bytes: 512
+    McpDirection:
+      type: string
+      enum: [INBOUND, OUTBOUND]
+    McpTransport:
+      type: string
+      enum: [INBOUND_HTTPS, REMOTE_STREAMABLE_HTTP, LOCAL_SIGNED_STDIO, LOCAL_WINDOWS_HYPERV_CONTAINER]
+    McpConnectorStatus:
+      type: string
+      enum: [REGISTERED, PENDING_APPROVAL, ENABLED, DISABLED, REVOKED]
+    McpManifestStatus:
+      type: string
+      enum: [DRAFT, PENDING_APPROVAL, APPROVED, ACTIVE, SUPERSEDED, REJECTED, REVOKED]
+    McpAllowedMethod:
+      type: string
+      enum: [server/discover, tools/list, tools/call, resources/list, resources/templates/list, resources/read]
+    McpConnectorListItemV1:
+      type: object
+      additionalProperties: false
+      required: [id, code, name, direction, transport, status, security_level, data_scope_tags, row_version, created_at, updated_at]
+      properties:
+        id: {$ref: '#/components/schemas/LowercaseUuid'}
+        code:
+          type: string
+          minLength: 1
+          maxLength: 64
+          pattern: '^[a-z][a-z0-9._-]{0,63}$'
+        name:
+          type: string
+          minLength: 1
+          maxLength: 200
+        direction: {$ref: '#/components/schemas/McpDirection'}
+        transport: {$ref: '#/components/schemas/McpTransport'}
+        status: {$ref: '#/components/schemas/McpConnectorStatus'}
+        security_level: {$ref: '#/components/schemas/SecurityLevel'}
+        data_scope_tags: {$ref: '#/components/schemas/DataScopeTags'}
+        row_version: {$ref: '#/components/schemas/RowVersion'}
+        created_at: {$ref: '#/components/schemas/UtcRfc3339'}
+        updated_at: {$ref: '#/components/schemas/UtcRfc3339'}
+      x-invariant: INBOUND uses INBOUND_HTTPS; OUTBOUND uses one of the other three transports.
+    McpActiveManifestSummaryV1:
+      type: object
+      additionalProperties: false
+      required: [id, version_no, protocol_version, manifest_digest, signer_subject, status, approved_at, activated_at]
+      properties:
+        id: {$ref: '#/components/schemas/LowercaseUuid'}
+        version_no:
+          type: integer
+          format: int32
+          minimum: 1
+          maximum: 2147483647
+        protocol_version: {const: '2026-07-28'}
+        manifest_digest: {$ref: '#/components/schemas/Sha256LowerHex'}
+        signer_subject:
+          type: string
+          minLength: 1
+          maxLength: 512
+        status: {const: ACTIVE}
+        approved_at: {$ref: '#/components/schemas/UtcRfc3339'}
+        activated_at: {$ref: '#/components/schemas/UtcRfc3339'}
+    NullableMcpActiveManifestSummaryV1:
+      oneOf:
+        - $ref: '#/components/schemas/McpActiveManifestSummaryV1'
+        - type: 'null'
+    McpConnectorHealthV1:
+      type: object
+      additionalProperties: false
+      required: [state, checked_at, stable_code]
+      properties:
+        state:
+          type: string
+          enum: [HEALTHY, DEGRADED, UNAVAILABLE, NOT_APPLICABLE]
+        checked_at: {$ref: '#/components/schemas/NullableUtcRfc3339'}
+        stable_code:
+          oneOf:
+            - $ref: '#/components/schemas/McpStableErrorCode'
+            - type: 'null'
+      oneOf:
+        - properties:
+            state: {const: HEALTHY}
+            checked_at: {$ref: '#/components/schemas/UtcRfc3339'}
+            stable_code: {type: 'null'}
+        - properties:
+            state:
+              type: string
+              enum: [DEGRADED, UNAVAILABLE]
+            checked_at: {$ref: '#/components/schemas/UtcRfc3339'}
+            stable_code: {$ref: '#/components/schemas/McpStableErrorCode'}
+        - properties:
+            state: {const: NOT_APPLICABLE}
+            checked_at: {type: 'null'}
+            stable_code: {type: 'null'}
+    McpRecentAuditSummaryV1:
+      type: object
+      additionalProperties: false
+      required: [last_invocation_at, last_outcome, last_incident_no]
+      properties:
+        last_invocation_at: {$ref: '#/components/schemas/NullableUtcRfc3339'}
+        last_outcome:
+          oneOf:
+            - type: string
+              enum: [SUCCEEDED, REJECTED, FAILED, TIMEOUT, CANCELLED, UNKNOWN_AFTER_CRASH]
+            - type: 'null'
+        last_incident_no:
+          oneOf:
+            - type: string
+              minLength: 1
+              maxLength: 128
+            - type: 'null'
+      oneOf:
+        - properties:
+            last_invocation_at: {type: 'null'}
+            last_outcome: {type: 'null'}
+            last_incident_no: {type: 'null'}
+        - properties:
+            last_invocation_at: {$ref: '#/components/schemas/UtcRfc3339'}
+            last_outcome: {const: SUCCEEDED}
+            last_incident_no:
+              oneOf:
+                - type: string
+                  minLength: 1
+                  maxLength: 128
+                - type: 'null'
+        - properties:
+            last_invocation_at: {$ref: '#/components/schemas/UtcRfc3339'}
+            last_outcome:
+              type: string
+              enum: [REJECTED, FAILED, TIMEOUT, CANCELLED, UNKNOWN_AFTER_CRASH]
+            last_incident_no:
+              type: string
+              minLength: 1
+              maxLength: 128
+    McpConnectorDetailV1:
+      type: object
+      additionalProperties: false
+      required: [id, code, name, direction, transport, status, security_level, data_scope_tags, row_version, created_at, updated_at, active_manifest, health, recent_audit]
+      properties:
+        id: {$ref: '#/components/schemas/LowercaseUuid'}
+        code:
+          type: string
+          minLength: 1
+          maxLength: 64
+          pattern: '^[a-z][a-z0-9._-]{0,63}$'
+        name:
+          type: string
+          minLength: 1
+          maxLength: 200
+        direction: {$ref: '#/components/schemas/McpDirection'}
+        transport: {$ref: '#/components/schemas/McpTransport'}
+        status: {$ref: '#/components/schemas/McpConnectorStatus'}
+        security_level: {$ref: '#/components/schemas/SecurityLevel'}
+        data_scope_tags: {$ref: '#/components/schemas/DataScopeTags'}
+        row_version: {$ref: '#/components/schemas/RowVersion'}
+        created_at: {$ref: '#/components/schemas/UtcRfc3339'}
+        updated_at: {$ref: '#/components/schemas/UtcRfc3339'}
+        active_manifest: {$ref: '#/components/schemas/NullableMcpActiveManifestSummaryV1'}
+        health: {$ref: '#/components/schemas/McpConnectorHealthV1'}
+        recent_audit: {$ref: '#/components/schemas/McpRecentAuditSummaryV1'}
+      x-forbidden-fields:
+        - manifest_json
+        - signature
+        - signature_key_ref
+        - credential_ref
+        - credential_value
+        - installed_root_ref
+        - request_name
+        - request_uri
+        - request_payload
+        - response_payload
+    McpManifestVersionAdminViewV1:
+      type: object
+      additionalProperties: false
+      required: [id, connector_id, version_no, protocol_version, manifest_digest, signer_subject, transport, status, approval_ref, approved_at, rejected_at, rejected_reason, activated_at, superseded_at, materialized, row_version, created_at]
+      properties:
+        id: {$ref: '#/components/schemas/LowercaseUuid'}
+        connector_id: {$ref: '#/components/schemas/LowercaseUuid'}
+        version_no:
+          type: integer
+          format: int32
+          minimum: 1
+          maximum: 2147483647
+        protocol_version: {const: '2026-07-28'}
+        manifest_digest: {$ref: '#/components/schemas/Sha256LowerHex'}
+        signer_subject:
+          type: string
+          minLength: 1
+          maxLength: 512
+        transport: {$ref: '#/components/schemas/McpTransport'}
+        status: {$ref: '#/components/schemas/McpManifestStatus'}
+        approval_ref: {$ref: '#/components/schemas/NullableLowercaseUuid'}
+        approved_at: {$ref: '#/components/schemas/NullableUtcRfc3339'}
+        rejected_at: {$ref: '#/components/schemas/NullableUtcRfc3339'}
+        rejected_reason:
+          oneOf:
+            - type: string
+              minLength: 1
+              maxLength: 2000
+            - type: 'null'
+        activated_at: {$ref: '#/components/schemas/NullableUtcRfc3339'}
+        superseded_at: {$ref: '#/components/schemas/NullableUtcRfc3339'}
+        materialized: {type: boolean}
+        row_version: {$ref: '#/components/schemas/RowVersion'}
+        created_at: {$ref: '#/components/schemas/UtcRfc3339'}
+      x-status-nullability-invariants:
+        - DRAFT has all approval, result and activation fields null.
+        - PENDING_APPROVAL has approval_ref and no conclusion or activation time.
+        - APPROVED, ACTIVE and SUPERSEDED have approval_ref and approved_at and no rejection fields.
+        - ACTIVE also has activated_at; SUPERSEDED also has activated_at and superseded_at.
+        - REJECTED has approval_ref, rejected_at and rejected_reason and no approval or activation fields.
+        - REVOKED only preserves facts formed on its prior legal path.
+      oneOf:
+        - properties:
+            status: {const: DRAFT}
+            approval_ref: {type: 'null'}
+            approved_at: {type: 'null'}
+            rejected_at: {type: 'null'}
+            rejected_reason: {type: 'null'}
+            activated_at: {type: 'null'}
+            superseded_at: {type: 'null'}
+        - properties:
+            status: {const: PENDING_APPROVAL}
+            approval_ref: {$ref: '#/components/schemas/LowercaseUuid'}
+            approved_at: {type: 'null'}
+            rejected_at: {type: 'null'}
+            rejected_reason: {type: 'null'}
+            activated_at: {type: 'null'}
+            superseded_at: {type: 'null'}
+        - properties:
+            status: {const: APPROVED}
+            approval_ref: {$ref: '#/components/schemas/LowercaseUuid'}
+            approved_at: {$ref: '#/components/schemas/UtcRfc3339'}
+            rejected_at: {type: 'null'}
+            rejected_reason: {type: 'null'}
+            activated_at: {type: 'null'}
+            superseded_at: {type: 'null'}
+        - properties:
+            status: {const: ACTIVE}
+            approval_ref: {$ref: '#/components/schemas/LowercaseUuid'}
+            approved_at: {$ref: '#/components/schemas/UtcRfc3339'}
+            rejected_at: {type: 'null'}
+            rejected_reason: {type: 'null'}
+            activated_at: {$ref: '#/components/schemas/UtcRfc3339'}
+            superseded_at: {type: 'null'}
+        - properties:
+            status: {const: SUPERSEDED}
+            approval_ref: {$ref: '#/components/schemas/LowercaseUuid'}
+            approved_at: {$ref: '#/components/schemas/UtcRfc3339'}
+            rejected_at: {type: 'null'}
+            rejected_reason: {type: 'null'}
+            activated_at: {$ref: '#/components/schemas/UtcRfc3339'}
+            superseded_at: {$ref: '#/components/schemas/UtcRfc3339'}
+        - properties:
+            status: {const: REJECTED}
+            approval_ref: {$ref: '#/components/schemas/LowercaseUuid'}
+            approved_at: {type: 'null'}
+            rejected_at: {$ref: '#/components/schemas/UtcRfc3339'}
+            rejected_reason:
+              type: string
+              minLength: 1
+              maxLength: 2000
+            activated_at: {type: 'null'}
+            superseded_at: {type: 'null'}
+        - properties:
+            status: {const: REVOKED}
+          oneOf:
+            - properties:
+                approval_ref: {type: 'null'}
+                approved_at: {type: 'null'}
+                rejected_at: {type: 'null'}
+                rejected_reason: {type: 'null'}
+                activated_at: {type: 'null'}
+                superseded_at: {type: 'null'}
+            - properties:
+                approval_ref: {$ref: '#/components/schemas/LowercaseUuid'}
+                approved_at: {type: 'null'}
+                rejected_at: {type: 'null'}
+                rejected_reason: {type: 'null'}
+                activated_at: {type: 'null'}
+                superseded_at: {type: 'null'}
+            - properties:
+                approval_ref: {$ref: '#/components/schemas/LowercaseUuid'}
+                approved_at: {$ref: '#/components/schemas/UtcRfc3339'}
+                rejected_at: {type: 'null'}
+                rejected_reason: {type: 'null'}
+                activated_at: {type: 'null'}
+                superseded_at: {type: 'null'}
+            - properties:
+                approval_ref: {$ref: '#/components/schemas/LowercaseUuid'}
+                approved_at: {$ref: '#/components/schemas/UtcRfc3339'}
+                rejected_at: {type: 'null'}
+                rejected_reason: {type: 'null'}
+                activated_at: {$ref: '#/components/schemas/UtcRfc3339'}
+                superseded_at: {type: 'null'}
+            - properties:
+                approval_ref: {$ref: '#/components/schemas/LowercaseUuid'}
+                approved_at: {$ref: '#/components/schemas/UtcRfc3339'}
+                rejected_at: {type: 'null'}
+                rejected_reason: {type: 'null'}
+                activated_at: {$ref: '#/components/schemas/UtcRfc3339'}
+                superseded_at: {$ref: '#/components/schemas/UtcRfc3339'}
+            - properties:
+                approval_ref: {$ref: '#/components/schemas/LowercaseUuid'}
+                approved_at: {type: 'null'}
+                rejected_at: {$ref: '#/components/schemas/UtcRfc3339'}
+                rejected_reason:
+                  type: string
+                  minLength: 1
+                  maxLength: 2000
+                activated_at: {type: 'null'}
+                superseded_at: {type: 'null'}
+      allOf:
+        - oneOf:
+            - properties:
+                transport:
+                  type: string
+                  enum: [INBOUND_HTTPS, REMOTE_STREAMABLE_HTTP]
+                materialized: {const: true}
+            - properties:
+                transport:
+                  type: string
+                  enum: [LOCAL_SIGNED_STDIO, LOCAL_WINDOWS_HYPERV_CONTAINER]
+                status:
+                  type: string
+                  enum: [DRAFT, PENDING_APPROVAL, REJECTED]
+                materialized: {const: false}
+            - properties:
+                transport:
+                  type: string
+                  enum: [LOCAL_SIGNED_STDIO, LOCAL_WINDOWS_HYPERV_CONTAINER]
+                status: {const: APPROVED}
+                materialized: {type: boolean}
+            - properties:
+                transport:
+                  type: string
+                  enum: [LOCAL_SIGNED_STDIO, LOCAL_WINDOWS_HYPERV_CONTAINER]
+                status:
+                  type: string
+                  enum: [ACTIVE, SUPERSEDED]
+                materialized: {const: true}
+            - properties:
+                transport:
+                  type: string
+                  enum: [LOCAL_SIGNED_STDIO, LOCAL_WINDOWS_HYPERV_CONTAINER]
+                status: {const: REVOKED}
+              oneOf:
+                - properties:
+                    approved_at: {type: 'null'}
+                    materialized: {const: false}
+                - properties:
+                    approved_at: {$ref: '#/components/schemas/UtcRfc3339'}
+                    activated_at: {type: 'null'}
+                    materialized: {type: boolean}
+                - properties:
+                    approved_at: {$ref: '#/components/schemas/UtcRfc3339'}
+                    activated_at: {$ref: '#/components/schemas/UtcRfc3339'}
+                    materialized: {const: true}
+    McpConnectorEnableRequest:
+      type: object
+      additionalProperties: false
+      required: [row_version]
+      properties:
+        row_version: {$ref: '#/components/schemas/RowVersion'}
+    McpConnectorDisableRequest:
+      type: object
+      additionalProperties: false
+      required: [row_version, reason]
+      properties:
+        row_version: {$ref: '#/components/schemas/RowVersion'}
+        reason:
+          type: string
+          minLength: 1
+          maxLength: 500
+    McpConnectorEnabledDataV1:
+      type: object
+      additionalProperties: false
+      required: [id, status, row_version]
+      properties:
+        id: {$ref: '#/components/schemas/LowercaseUuid'}
+        status: {const: ENABLED}
+        row_version: {$ref: '#/components/schemas/RowVersion'}
+    McpConnectorDisabledDataV1:
+      type: object
+      additionalProperties: false
+      required: [id, status, row_version]
+      properties:
+        id: {$ref: '#/components/schemas/LowercaseUuid'}
+        status: {const: DISABLED}
+        row_version: {$ref: '#/components/schemas/RowVersion'}
+    ToolNameArray:
+      type: array
+      minItems: 0
+      maxItems: 256
+      uniqueItems: true
+      items:
+        type: string
+        minLength: 1
+        maxLength: 128
+        pattern: '^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$'
+      x-runtime-order: ascending-UTF-8-bytes
+    ResourceUriTemplateArray:
+      type: array
+      minItems: 0
+      maxItems: 256
+      uniqueItems: true
+      items:
+        type: string
+        minLength: 1
+        maxLength: 2048
+        x-max-utf8-bytes: 2048
+        x-runtime-validation: F-55-McpResourceTemplateV1-canonical-compiler
+      x-runtime-order: ascending-UTF-8-bytes
+      x-runtime-validation: F-55-McpResourceTemplateV1-canonical-compiler
+    McpHumanGrantIssueRequest:
+      type: object
+      additionalProperties: false
+      required: [legal_entity_id, connector_id, manifest_version_id, tool_names, resource_uri_templates]
+      properties:
+        legal_entity_id: {$ref: '#/components/schemas/LowercaseUuid'}
+        connector_id: {$ref: '#/components/schemas/LowercaseUuid'}
+        manifest_version_id: {$ref: '#/components/schemas/LowercaseUuid'}
+        tool_names: {$ref: '#/components/schemas/ToolNameArray'}
+        resource_uri_templates: {$ref: '#/components/schemas/ResourceUriTemplateArray'}
+        ttl_seconds:
+          type: integer
+          minimum: 1
+          maximum: 600
+          description: 省略时取当前下调后 mcp.grant_ttl_seconds；提交值不得超过该当前配置。
+          x-current-config-maximum: mcp.grant_ttl_seconds
+          x-config-default-and-hard-maximum: 600
+        max_calls:
+          type: integer
+          minimum: 1
+          maximum: 100
+          description: 省略时取当前下调后 mcp.max_calls_per_grant；提交值不得超过该当前配置。
+          x-current-config-maximum: mcp.max_calls_per_grant
+          x-config-default-and-hard-maximum: 100
+      anyOf:
+        - required: [tool_names]
+          properties:
+            tool_names:
+              type: array
+              minItems: 1
+              maxItems: 256
+        - required: [resource_uri_templates]
+          properties:
+            resource_uri_templates:
+              type: array
+              minItems: 1
+              maxItems: 256
+      x-invariants:
+        - tool_names and resource_uri_templates cannot both be empty.
+        - legal_entity_id equals X-Legal-Entity-Id and the current session legal entity.
+        - connector is INBOUND and ENABLED and manifest_version_id is its unique current ACTIVE manifest.
+    McpHumanGrantIssuedDataV1:
+      type: object
+      additionalProperties: false
+      required: [grant_id, bearer_token_once, expires_at, max_calls]
+      properties:
+        grant_id: {$ref: '#/components/schemas/LowercaseUuid'}
+        bearer_token_once: {$ref: '#/components/schemas/McpHumanBearerToken'}
+        expires_at: {$ref: '#/components/schemas/UtcRfc3339'}
+        max_calls:
+          type: integer
+          minimum: 1
+          maximum: 100
+      x-secret-display: once-only
+    McpHumanGrantActiveViewV1:
+      type: object
+      additionalProperties: false
+      required: [id, user_id, connector_id, manifest_version_id, allowed_tool_names, allowed_resource_uri_templates, max_calls, used_calls, issued_at, expires_at, state, row_version]
+      properties:
+        id: {$ref: '#/components/schemas/LowercaseUuid'}
+        user_id: {$ref: '#/components/schemas/LowercaseUuid'}
+        connector_id: {$ref: '#/components/schemas/LowercaseUuid'}
+        manifest_version_id: {$ref: '#/components/schemas/LowercaseUuid'}
+        allowed_tool_names: {$ref: '#/components/schemas/ToolNameArray'}
+        allowed_resource_uri_templates: {$ref: '#/components/schemas/ResourceUriTemplateArray'}
+        max_calls:
+          type: integer
+          minimum: 1
+          maximum: 100
+        used_calls:
+          type: integer
+          minimum: 0
+          maximum: 100
+        issued_at: {$ref: '#/components/schemas/UtcRfc3339'}
+        expires_at: {$ref: '#/components/schemas/UtcRfc3339'}
+        state: {const: ACTIVE}
+        row_version: {$ref: '#/components/schemas/RowVersion'}
+      x-invariants:
+        - used_calls is less than max_calls for an ACTIVE row.
+        - the two allowed arrays cannot both be empty.
+    McpHumanGrantRevokeRequest:
+      type: object
+      additionalProperties: false
+      required: [row_version]
+      properties:
+        row_version: {$ref: '#/components/schemas/RowVersion'}
+    McpHumanGrantRevokedDataV1:
+      type: object
+      additionalProperties: false
+      required: [id, state, revoked_at, row_version]
+      properties:
+        id: {$ref: '#/components/schemas/LowercaseUuid'}
+        state: {const: REVOKED}
+        revoked_at: {$ref: '#/components/schemas/UtcRfc3339'}
+        row_version: {$ref: '#/components/schemas/RowVersion'}
+    CursorPageMetaV1:
+      type: object
+      additionalProperties: false
+      required: [page_size, next_cursor]
+      properties:
+        page_size:
+          type: integer
+          minimum: 1
+          maximum: 100
+          description: 本次实际使用的 page_size；省略请求参数时为 50。
+        next_cursor:
+          oneOf:
+            - $ref: '#/components/schemas/EpCursor'
+            - type: 'null'
+      x-next-cursor-rule: encode-page-last-item-only-if-more-rows-otherwise-null
+      x-server-generates-new-cursor: true
+    EmptyMeta:
+      type: object
+      additionalProperties: false
+      maxProperties: 0
+    McpConnectorListDataV1:
+      type: object
+      additionalProperties: false
+      required: [items]
+      properties:
+        items:
+          type: array
+          minItems: 0
+          maxItems: 100
+          items: {$ref: '#/components/schemas/McpConnectorListItemV1'}
+    McpManifestVersionListDataV1:
+      type: object
+      additionalProperties: false
+      required: [items]
+      properties:
+        items:
+          type: array
+          minItems: 0
+          maxItems: 100
+          items: {$ref: '#/components/schemas/McpManifestVersionAdminViewV1'}
+    McpHumanGrantListDataV1:
+      type: object
+      additionalProperties: false
+      required: [items]
+      properties:
+        items:
+          type: array
+          minItems: 0
+          maxItems: 100
+          items: {$ref: '#/components/schemas/McpHumanGrantActiveViewV1'}
+    McpConnectorListSuccess:
+      type: object
+      additionalProperties: false
+      required: [success, data, error, meta, trace_id]
+      properties:
+        success: {const: true}
+        data: {$ref: '#/components/schemas/McpConnectorListDataV1'}
+        error: {type: 'null'}
+        meta: {$ref: '#/components/schemas/CursorPageMetaV1'}
+        trace_id: {$ref: '#/components/schemas/TraceId'}
+    McpConnectorDetailSuccess:
+      type: object
+      additionalProperties: false
+      required: [success, data, error, meta, trace_id]
+      properties:
+        success: {const: true}
+        data: {$ref: '#/components/schemas/McpConnectorDetailV1'}
+        error: {type: 'null'}
+        meta: {$ref: '#/components/schemas/EmptyMeta'}
+        trace_id: {$ref: '#/components/schemas/TraceId'}
+    McpManifestVersionListSuccess:
+      type: object
+      additionalProperties: false
+      required: [success, data, error, meta, trace_id]
+      properties:
+        success: {const: true}
+        data: {$ref: '#/components/schemas/McpManifestVersionListDataV1'}
+        error: {type: 'null'}
+        meta: {$ref: '#/components/schemas/CursorPageMetaV1'}
+        trace_id: {$ref: '#/components/schemas/TraceId'}
+    McpConnectorEnableSuccess:
+      type: object
+      additionalProperties: false
+      required: [success, data, error, meta, trace_id]
+      properties:
+        success: {const: true}
+        data: {$ref: '#/components/schemas/McpConnectorEnabledDataV1'}
+        error: {type: 'null'}
+        meta: {$ref: '#/components/schemas/EmptyMeta'}
+        trace_id: {$ref: '#/components/schemas/TraceId'}
+    McpConnectorDisableSuccess:
+      type: object
+      additionalProperties: false
+      required: [success, data, error, meta, trace_id]
+      properties:
+        success: {const: true}
+        data: {$ref: '#/components/schemas/McpConnectorDisabledDataV1'}
+        error: {type: 'null'}
+        meta: {$ref: '#/components/schemas/EmptyMeta'}
+        trace_id: {$ref: '#/components/schemas/TraceId'}
+    McpHumanGrantIssueSuccess:
+      type: object
+      additionalProperties: false
+      required: [success, data, error, meta, trace_id]
+      properties:
+        success: {const: true}
+        data: {$ref: '#/components/schemas/McpHumanGrantIssuedDataV1'}
+        error: {type: 'null'}
+        meta: {$ref: '#/components/schemas/EmptyMeta'}
+        trace_id: {$ref: '#/components/schemas/TraceId'}
+    McpHumanGrantListSuccess:
+      type: object
+      additionalProperties: false
+      required: [success, data, error, meta, trace_id]
+      properties:
+        success: {const: true}
+        data: {$ref: '#/components/schemas/McpHumanGrantListDataV1'}
+        error: {type: 'null'}
+        meta: {$ref: '#/components/schemas/CursorPageMetaV1'}
+        trace_id: {$ref: '#/components/schemas/TraceId'}
+    McpHumanGrantRevokeSuccess:
+      type: object
+      additionalProperties: false
+      required: [success, data, error, meta, trace_id]
+      properties:
+        success: {const: true}
+        data: {$ref: '#/components/schemas/McpHumanGrantRevokedDataV1'}
+        error: {type: 'null'}
+        meta: {$ref: '#/components/schemas/EmptyMeta'}
+        trace_id: {$ref: '#/components/schemas/TraceId'}
+    McpStableErrorCode:
+      type: string
+      enum:
+        - MCP.PROTOCOL.VERSION_UNSUPPORTED
+        - MCP.REQUEST.INVALID
+        - MCP.PAYLOAD.TOO_LARGE
+        - MCP.PROTOCOL.HEADER_MISMATCH
+        - MCP.METHOD.NOT_ALLOWED
+        - MCP.MANIFEST.INVALID_OR_UNSIGNED
+        - MCP.MANIFEST.CAPABILITY_DENIED
+        - MCP.GRANT.INVALID_OR_EXPIRED
+        - MCP.DEVICE_PROOF.INVALID
+        - MCP.TOOL.NOT_VISIBLE_OR_DENIED
+        - MCP.RESOURCE.NOT_VISIBLE_OR_DENIED
+        - MCP.TOOL.HIGH_RISK_FORBIDDEN
+        - MCP.IDEMPOTENCY.REQUIRED
+        - MCP.CREDENTIAL.REF_INVALID
+        - MCP.REMOTE.UNAVAILABLE
+        - MCP.RESPONSE.SCHEMA_INVALID
+        - MCP.LOCAL.CONTAINMENT_FAILED
+        - MCP.AUDIT.UNAVAILABLE
+        - MCP.RATE_LIMITED
+        - MCP.CALL.TIMEOUT
+    JsonRpcId:
+      oneOf:
+        - type: string
+        - type: number
+    JsonRpcIdOrNull:
+      oneOf:
+        - $ref: '#/components/schemas/JsonRpcId'
+        - type: 'null'
+    JsonObjectValue:
+      type: object
+      additionalProperties: false
+      patternProperties:
+        '^.*$': {$ref: '#/components/schemas/JsonValue'}
+      propertyNames:
+        maxLength: 4096
+      description: |
+        JSON object value. Where used for arguments/structuredContent/schema documents,
+        the active signed binding or trusted schema registry applies the actual closed field schema.
+    JsonArrayValue:
+      type: array
+      items: {$ref: '#/components/schemas/JsonValue'}
+    JsonValue:
+      oneOf:
+        - type: 'null'
+        - type: boolean
+        - type: number
+        - type: string
+        - $ref: '#/components/schemas/JsonArrayValue'
+        - $ref: '#/components/schemas/JsonObjectValue'
+      description: 通用 binding JSON 与 JSON Schema 值；合法 JSON decimal number 允许。仅 request _meta extension 使用独立的 i64/u64 integer 收紧。
+    McpMetaExtensionObject:
+      type: object
+      additionalProperties: false
+      maxProperties: 64
+      propertyNames:
+        maxLength: 4096
+      patternProperties:
+        '^.*$': {$ref: '#/components/schemas/McpMetaExtensionValue'}
+    McpMetaExtensionArray:
+      type: array
+      maxItems: 64
+      items: {$ref: '#/components/schemas/McpMetaExtensionValue'}
+    McpMetaExtensionValue:
+      oneOf:
+        - type: 'null'
+        - type: boolean
+        - type: integer
+          minimum: -9223372036854775808
+          maximum: 18446744073709551615
+        - type: string
+          maxLength: 4096
+        - $ref: '#/components/schemas/McpMetaExtensionArray'
+        - $ref: '#/components/schemas/McpMetaExtensionObject'
+      x-runtime-max-depth: 8
+      x-max-compact-utf8-bytes-per-extension-value: 16384
+    McpClientCapabilities:
+      type: object
+      additionalProperties: false
+      maxProperties: 0
+    McpClientInfo:
+      type: object
+      additionalProperties: false
+      required: [name, version]
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 64
+          x-length-unit: Unicode-scalar-values
+        version:
+          type: string
+          minLength: 1
+          maxLength: 64
+          x-length-unit: Unicode-scalar-values
+    McpRequestMeta:
+      type: object
+      additionalProperties: false
+      minProperties: 3
+      maxProperties: 35
+      required:
+        - io.modelcontextprotocol/protocolVersion
+        - io.modelcontextprotocol/clientCapabilities
+        - io.modelcontextprotocol/clientInfo
+      properties:
+        io.modelcontextprotocol/protocolVersion: {const: '2026-07-28'}
+        io.modelcontextprotocol/clientCapabilities: {$ref: '#/components/schemas/McpClientCapabilities'}
+        io.modelcontextprotocol/clientInfo: {$ref: '#/components/schemas/McpClientInfo'}
+      patternProperties:
+        '^(?!io\.modelcontextprotocol/(?:protocolVersion|clientCapabilities|clientInfo)$)(?!.*(?:^|/)(?:progressToken|logLevel|trace|baggage|inputResponses|requestState)$)(?=.{1,128}$)(?=.*\/)[A-Za-z0-9][A-Za-z0-9._/-]{0,127}$': {$ref: '#/components/schemas/McpMetaExtensionValue'}
+      x-extension-member-count: 0..32
+      x-max-compact-utf8-bytes: 65536
+      x-extension-values-discarded-after-validation: true
+    McpMetaOnlyParams:
+      type: object
+      additionalProperties: false
+      required: [_meta]
+      properties:
+        _meta: {$ref: '#/components/schemas/McpRequestMeta'}
+    McpToolsCallParams:
+      type: object
+      additionalProperties: false
+      required: [_meta, name, arguments]
+      properties:
+        _meta: {$ref: '#/components/schemas/McpRequestMeta'}
+        name:
+          type: string
+          minLength: 1
+          maxLength: 128
+          pattern: '^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$'
+        arguments:
+          $ref: '#/components/schemas/JsonObjectValue'
+          x-runtime-schema: active-manifest-binding-request-schema
+    McpResourcesReadParams:
+      type: object
+      additionalProperties: false
+      required: [_meta, uri]
+      properties:
+        _meta: {$ref: '#/components/schemas/McpRequestMeta'}
+        uri:
+          type: string
+          minLength: 1
+          maxLength: 2048
+          x-max-utf8-bytes: 2048
+          x-runtime-validation: F-55-canonical-expanded-resource-URI
+    McpServerDiscoverRequest:
+      type: object
+      additionalProperties: false
+      required: [jsonrpc, id, method, params]
+      properties:
+        jsonrpc: {const: '2.0'}
+        id: {$ref: '#/components/schemas/JsonRpcId'}
+        method: {const: server/discover}
+        params: {$ref: '#/components/schemas/McpMetaOnlyParams'}
+    McpToolsListRequest:
+      type: object
+      additionalProperties: false
+      required: [jsonrpc, id, method, params]
+      properties:
+        jsonrpc: {const: '2.0'}
+        id: {$ref: '#/components/schemas/JsonRpcId'}
+        method: {const: tools/list}
+        params: {$ref: '#/components/schemas/McpMetaOnlyParams'}
+    McpToolsCallRequest:
+      type: object
+      additionalProperties: false
+      required: [jsonrpc, id, method, params]
+      properties:
+        jsonrpc: {const: '2.0'}
+        id: {$ref: '#/components/schemas/JsonRpcId'}
+        method: {const: tools/call}
+        params: {$ref: '#/components/schemas/McpToolsCallParams'}
+    McpResourcesListRequest:
+      type: object
+      additionalProperties: false
+      required: [jsonrpc, id, method, params]
+      properties:
+        jsonrpc: {const: '2.0'}
+        id: {$ref: '#/components/schemas/JsonRpcId'}
+        method: {const: resources/list}
+        params: {$ref: '#/components/schemas/McpMetaOnlyParams'}
+    McpResourceTemplatesListRequest:
+      type: object
+      additionalProperties: false
+      required: [jsonrpc, id, method, params]
+      properties:
+        jsonrpc: {const: '2.0'}
+        id: {$ref: '#/components/schemas/JsonRpcId'}
+        method: {const: resources/templates/list}
+        params: {$ref: '#/components/schemas/McpMetaOnlyParams'}
+    McpResourcesReadRequest:
+      type: object
+      additionalProperties: false
+      required: [jsonrpc, id, method, params]
+      properties:
+        jsonrpc: {const: '2.0'}
+        id: {$ref: '#/components/schemas/JsonRpcId'}
+        method: {const: resources/read}
+        params: {$ref: '#/components/schemas/McpResourcesReadParams'}
+    McpJsonRpcRequest:
+      oneOf:
+        - $ref: '#/components/schemas/McpServerDiscoverRequest'
+        - $ref: '#/components/schemas/McpToolsListRequest'
+        - $ref: '#/components/schemas/McpToolsCallRequest'
+        - $ref: '#/components/schemas/McpResourcesListRequest'
+        - $ref: '#/components/schemas/McpResourceTemplatesListRequest'
+        - $ref: '#/components/schemas/McpResourcesReadRequest'
+      x-single-object-only: true
+      x-batch-notification-response-rejected: true
+    McpServerInfo:
+      type: object
+      additionalProperties: false
+      required: [name, version]
+      properties:
+        name: {const: ep-core-mcp}
+        version:
+          type: string
+          minLength: 1
+          maxLength: 128
+          description: 当前 Authenticode 签名产品构建版本。
+    McpSuccessMeta:
+      type: object
+      additionalProperties: false
+      required: [io.modelcontextprotocol/serverInfo]
+      properties:
+        io.modelcontextprotocol/serverInfo: {$ref: '#/components/schemas/McpServerInfo'}
+    McpToolsCapability:
+      type: object
+      additionalProperties: false
+      required: [listChanged]
+      properties:
+        listChanged: {const: false}
+    McpResourcesCapability:
+      type: object
+      additionalProperties: false
+      required: [subscribe, listChanged]
+      properties:
+        subscribe: {const: false}
+        listChanged: {const: false}
+    McpDiscoverCapabilities:
+      type: object
+      additionalProperties: false
+      required: []
+      minProperties: 0
+      maxProperties: 2
+      properties:
+        tools: {$ref: '#/components/schemas/McpToolsCapability'}
+        resources: {$ref: '#/components/schemas/McpResourcesCapability'}
+      x-presence-rule: a capability member appears only when its active-manifest set is nonempty.
+    McpServerDiscoverResult:
+      type: object
+      additionalProperties: false
+      required: [resultType, supportedVersions, capabilities, ttlMs, cacheScope, _meta]
+      properties:
+        resultType: {const: complete}
+        supportedVersions:
+          type: array
+          minItems: 1
+          maxItems: 1
+          prefixItems:
+            - const: '2026-07-28'
+          items: false
+        capabilities: {$ref: '#/components/schemas/McpDiscoverCapabilities'}
+        ttlMs: {const: 0}
+        cacheScope: {const: private}
+        _meta: {$ref: '#/components/schemas/McpSuccessMeta'}
+    McpToolListItem:
+      type: object
+      additionalProperties: false
+      required: [name, title, inputSchema, outputSchema]
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 128
+          pattern: '^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$'
+        title:
+          type: string
+          minLength: 1
+          maxLength: 128
+          pattern: '^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$'
+        inputSchema:
+          $ref: '#/components/schemas/JsonObjectValue'
+          x-source: trusted-schema-registry-by-binding-code-version
+        outputSchema:
+          $ref: '#/components/schemas/JsonObjectValue'
+          x-source: trusted-schema-registry-by-binding-code-version
+      x-invariant: title equals name byte-for-byte.
+    McpToolsListResult:
+      type: object
+      additionalProperties: false
+      required: [resultType, tools, ttlMs, cacheScope, _meta]
+      properties:
+        resultType: {const: complete}
+        tools:
+          type: array
+          minItems: 0
+          maxItems: 256
+          uniqueItems: true
+          items: {$ref: '#/components/schemas/McpToolListItem'}
+          x-runtime-order: name-ascending-UTF-8-bytes
+        ttlMs: {const: 0}
+        cacheScope: {const: private}
+        _meta: {$ref: '#/components/schemas/McpSuccessMeta'}
+    McpTextContent:
+      type: object
+      additionalProperties: false
+      required: [type, text]
+      properties:
+        type: {const: text}
+        text:
+          type: string
+          maxLength: 8388608
+          x-overall-terminal-byte-limit-still-applies: true
+    McpToolsCallSuccessResult:
+      type: object
+      additionalProperties: false
+      required: [resultType, content, structuredContent, isError, _meta]
+      properties:
+        resultType: {const: complete}
+        content:
+          type: array
+          minItems: 1
+          maxItems: 1
+          prefixItems:
+            - $ref: '#/components/schemas/McpTextContent'
+          items: false
+        structuredContent:
+          $ref: '#/components/schemas/JsonObjectValue'
+          x-runtime-schema: active-binding-allowed-output-projection
+        isError: {const: false}
+        _meta: {$ref: '#/components/schemas/McpSuccessMeta'}
+      x-invariant: content[0].text equals RFC8785-JCS(structuredContent).
+    McpToolsCallBusinessErrorResult:
+      type: object
+      additionalProperties: false
+      required: [resultType, content, isError, _meta]
+      properties:
+        resultType: {const: complete}
+        content:
+          type: array
+          minItems: 1
+          maxItems: 1
+          prefixItems:
+            - $ref: '#/components/schemas/McpTextContent'
+          items: false
+        isError: {const: true}
+        _meta: {$ref: '#/components/schemas/McpSuccessMeta'}
+      x-structured-content: forbidden
+      x-content: one-sanitized-owner-business-error
+    McpToolsCallResult:
+      oneOf:
+        - $ref: '#/components/schemas/McpToolsCallSuccessResult'
+        - $ref: '#/components/schemas/McpToolsCallBusinessErrorResult'
+    McpResourceListItem:
+      type: object
+      additionalProperties: false
+      required: [uri, name, title, mimeType]
+      properties:
+        uri:
+          type: string
+          minLength: 1
+          maxLength: 2048
+          x-max-utf8-bytes: 2048
+          x-source: active-manifest-resource-binding-with-zero-template-variables
+          x-runtime-validation: F-55-canonical-literal-resource-URI
+          x-template-variable-count: 0
+        name:
+          type: string
+          minLength: 1
+          maxLength: 2048
+        title:
+          type: string
+          minLength: 1
+          maxLength: 2048
+        mimeType: {const: application/json}
+      x-invariant: name and title both equal uri byte-for-byte; uri is canonical and contains no template variable.
+    McpResourcesListResult:
+      type: object
+      additionalProperties: false
+      required: [resultType, resources, ttlMs, cacheScope, _meta]
+      properties:
+        resultType: {const: complete}
+        resources:
+          type: array
+          minItems: 0
+          maxItems: 256
+          uniqueItems: true
+          items: {$ref: '#/components/schemas/McpResourceListItem'}
+          x-runtime-order: uri-ascending-UTF-8-bytes
+        ttlMs: {const: 0}
+        cacheScope: {const: private}
+        _meta: {$ref: '#/components/schemas/McpSuccessMeta'}
+      x-membership: only canonical literal resource bindings with zero template variables
+      x-disjoint-from: McpResourceTemplatesListResult.resourceTemplates
+    McpResourceTemplateListItem:
+      type: object
+      additionalProperties: false
+      required: [uriTemplate, name, title, mimeType]
+      properties:
+        uriTemplate:
+          type: string
+          minLength: 1
+          maxLength: 2048
+          x-max-utf8-bytes: 2048
+          x-source: active-manifest-resource-binding-with-template-variables
+          x-runtime-validation: F-55-RFC6570-Level-1-resource-template-compiler
+          x-template-variable-count: 1..16
+        name:
+          type: string
+          minLength: 1
+          maxLength: 2048
+        title:
+          type: string
+          minLength: 1
+          maxLength: 2048
+        mimeType: {const: application/json}
+      x-invariant: name and title both equal uriTemplate byte-for-byte; uriTemplate is canonical and contains 1..16 variables.
+    McpResourceTemplatesListResult:
+      type: object
+      additionalProperties: false
+      required: [resultType, resourceTemplates, ttlMs, cacheScope, _meta]
+      properties:
+        resultType: {const: complete}
+        resourceTemplates:
+          type: array
+          minItems: 0
+          maxItems: 256
+          uniqueItems: true
+          items: {$ref: '#/components/schemas/McpResourceTemplateListItem'}
+          x-runtime-order: uriTemplate-ascending-UTF-8-bytes
+        ttlMs: {const: 0}
+        cacheScope: {const: private}
+        _meta: {$ref: '#/components/schemas/McpSuccessMeta'}
+      x-membership: only canonical RFC6570-Level-1 resource bindings with 1..16 variables
+      x-disjoint-from: McpResourcesListResult.resources
+    McpResourceReadContent:
+      type: object
+      additionalProperties: false
+      required: [uri, mimeType, text]
+      properties:
+        uri:
+          type: string
+          minLength: 1
+          maxLength: 2048
+          x-max-utf8-bytes: 2048
+          x-runtime-validation: F-55-canonical-expanded-resource-URI
+        mimeType: {const: application/json}
+        text:
+          type: string
+          maxLength: 8388608
+          description: 允许字段投影后的 RFC 8785 JCS。
+      x-invariant: uri equals request params.uri byte-for-byte after the single canonical Mcp-Name decode.
+    McpResourcesReadResult:
+      type: object
+      additionalProperties: false
+      required: [resultType, contents, ttlMs, cacheScope, _meta]
+      properties:
+        resultType: {const: complete}
+        contents:
+          type: array
+          minItems: 1
+          maxItems: 1
+          prefixItems:
+            - $ref: '#/components/schemas/McpResourceReadContent'
+          items: false
+        ttlMs: {const: 0}
+        cacheScope: {const: private}
+        _meta: {$ref: '#/components/schemas/McpSuccessMeta'}
+    McpServerDiscoverSuccessResponse:
+      type: object
+      additionalProperties: false
+      required: [jsonrpc, id, result]
+      properties:
+        jsonrpc: {const: '2.0'}
+        id: {$ref: '#/components/schemas/JsonRpcId'}
+        result: {$ref: '#/components/schemas/McpServerDiscoverResult'}
+    McpToolsListSuccessResponse:
+      type: object
+      additionalProperties: false
+      required: [jsonrpc, id, result]
+      properties:
+        jsonrpc: {const: '2.0'}
+        id: {$ref: '#/components/schemas/JsonRpcId'}
+        result: {$ref: '#/components/schemas/McpToolsListResult'}
+    McpToolsCallSuccessResponse:
+      type: object
+      additionalProperties: false
+      required: [jsonrpc, id, result]
+      properties:
+        jsonrpc: {const: '2.0'}
+        id: {$ref: '#/components/schemas/JsonRpcId'}
+        result: {$ref: '#/components/schemas/McpToolsCallResult'}
+    McpResourcesListSuccessResponse:
+      type: object
+      additionalProperties: false
+      required: [jsonrpc, id, result]
+      properties:
+        jsonrpc: {const: '2.0'}
+        id: {$ref: '#/components/schemas/JsonRpcId'}
+        result: {$ref: '#/components/schemas/McpResourcesListResult'}
+    McpResourceTemplatesListSuccessResponse:
+      type: object
+      additionalProperties: false
+      required: [jsonrpc, id, result]
+      properties:
+        jsonrpc: {const: '2.0'}
+        id: {$ref: '#/components/schemas/JsonRpcId'}
+        result: {$ref: '#/components/schemas/McpResourceTemplatesListResult'}
+    McpResourcesReadSuccessResponse:
+      type: object
+      additionalProperties: false
+      required: [jsonrpc, id, result]
+      properties:
+        jsonrpc: {const: '2.0'}
+        id: {$ref: '#/components/schemas/JsonRpcId'}
+        result: {$ref: '#/components/schemas/McpResourcesReadResult'}
+    McpJsonRpcSuccessResponse:
+      oneOf:
+        - $ref: '#/components/schemas/McpServerDiscoverSuccessResponse'
+        - $ref: '#/components/schemas/McpToolsListSuccessResponse'
+        - $ref: '#/components/schemas/McpToolsCallSuccessResponse'
+        - $ref: '#/components/schemas/McpResourcesListSuccessResponse'
+        - $ref: '#/components/schemas/McpResourceTemplatesListSuccessResponse'
+        - $ref: '#/components/schemas/McpResourcesReadSuccessResponse'
+      x-id-rule: echo-request-id-exact-JSON-type-and-value
+    McpRpcMessage:
+      type: string
+      minLength: 1
+      maxLength: 256
+      x-value-source: fixed-generic-message-registry
+    McpRequestInvalidErrorData:
+      type: object
+      additionalProperties: false
+      required: [stable_code, request_id]
+      properties:
+        stable_code: {const: MCP.REQUEST.INVALID}
+        request_id: {$ref: '#/components/schemas/RequestIdentifier'}
+      x-field-order: [stable_code, request_id]
+    McpHeaderMismatchErrorData:
+      type: object
+      additionalProperties: false
+      required: [stable_code, request_id]
+      properties:
+        stable_code: {const: MCP.PROTOCOL.HEADER_MISMATCH}
+        request_id: {$ref: '#/components/schemas/RequestIdentifier'}
+      x-field-order: [stable_code, request_id]
+    McpProtocolVersionErrorData:
+      type: object
+      additionalProperties: false
+      required: [stable_code, request_id, supported, requested]
+      properties:
+        stable_code: {const: MCP.PROTOCOL.VERSION_UNSUPPORTED}
+        request_id: {$ref: '#/components/schemas/RequestIdentifier'}
+        supported:
+          type: array
+          minItems: 1
+          maxItems: 1
+          prefixItems:
+            - const: '2026-07-28'
+          items: false
+        requested:
+          type: string
+          minLength: 1
+          maxLength: 64
+          pattern: '^[!-~]{1,64}$'
+      x-field-order: [stable_code, request_id, supported, requested]
+      x-reachability: header-and-body-versions-match-and-are-visible-ASCII-but-unsupported
+    McpIdempotencyRequiredErrorData:
+      type: object
+      additionalProperties: false
+      required: [stable_code, request_id]
+      properties:
+        stable_code: {const: MCP.IDEMPOTENCY.REQUIRED}
+        request_id: {$ref: '#/components/schemas/RequestIdentifier'}
+      x-field-order: [stable_code, request_id]
+    McpPayloadTooLargeErrorData:
+      type: object
+      additionalProperties: false
+      required: [stable_code, request_id]
+      properties:
+        stable_code: {const: MCP.PAYLOAD.TOO_LARGE}
+        request_id: {$ref: '#/components/schemas/RequestIdentifier'}
+      x-field-order: [stable_code, request_id]
+    McpPermissionErrorData403:
+      type: object
+      additionalProperties: false
+      required: [stable_code, request_id]
+      properties:
+        stable_code:
+          type: string
+          enum:
+            - MCP.MANIFEST.CAPABILITY_DENIED
+            - MCP.GRANT.INVALID_OR_EXPIRED
+            - MCP.DEVICE_PROOF.INVALID
+            - MCP.TOOL.HIGH_RISK_FORBIDDEN
+        request_id: {$ref: '#/components/schemas/RequestIdentifier'}
+      x-field-order: [stable_code, request_id]
+    McpMethodNotAllowedErrorData:
+      type: object
+      additionalProperties: false
+      required: [stable_code, request_id]
+      properties:
+        stable_code: {const: MCP.METHOD.NOT_ALLOWED}
+        request_id: {$ref: '#/components/schemas/RequestIdentifier'}
+      x-field-order: [stable_code, request_id]
+    McpNamedObjectNotVisibleErrorData:
+      type: object
+      additionalProperties: false
+      required: [stable_code, request_id]
+      properties:
+        stable_code:
+          type: string
+          enum: [MCP.TOOL.NOT_VISIBLE_OR_DENIED, MCP.RESOURCE.NOT_VISIBLE_OR_DENIED]
+        request_id: {$ref: '#/components/schemas/RequestIdentifier'}
+      x-field-order: [stable_code, request_id]
+    McpManifestInvalidErrorData:
+      type: object
+      additionalProperties: false
+      required: [stable_code, request_id]
+      properties:
+        stable_code: {const: MCP.MANIFEST.INVALID_OR_UNSIGNED}
+        request_id: {$ref: '#/components/schemas/RequestIdentifier'}
+      x-field-order: [stable_code, request_id]
+    McpRateLimitedErrorData:
+      type: object
+      additionalProperties: false
+      required: [stable_code, request_id]
+      properties:
+        stable_code: {const: MCP.RATE_LIMITED}
+        request_id: {$ref: '#/components/schemas/RequestIdentifier'}
+      x-field-order: [stable_code, request_id]
+    McpExternalErrorData502:
+      type: object
+      additionalProperties: false
+      required: [stable_code, request_id]
+      properties:
+        stable_code:
+          type: string
+          enum: [MCP.REMOTE.UNAVAILABLE, MCP.RESPONSE.SCHEMA_INVALID]
+        request_id: {$ref: '#/components/schemas/RequestIdentifier'}
+      x-field-order: [stable_code, request_id]
+    McpInfrastructureErrorData503:
+      type: object
+      additionalProperties: false
+      required: [stable_code, request_id]
+      properties:
+        stable_code:
+          type: string
+          enum: [MCP.CREDENTIAL.REF_INVALID, MCP.LOCAL.CONTAINMENT_FAILED, MCP.AUDIT.UNAVAILABLE]
+        request_id: {$ref: '#/components/schemas/RequestIdentifier'}
+      x-field-order: [stable_code, request_id]
+      x-retryability:
+        MCP.CREDENTIAL.REF_INVALID: true
+        MCP.LOCAL.CONTAINMENT_FAILED: true
+        MCP.AUDIT.UNAVAILABLE: false
+    McpTimeoutErrorData:
+      type: object
+      additionalProperties: false
+      required: [stable_code, request_id]
+      properties:
+        stable_code: {const: MCP.CALL.TIMEOUT}
+        request_id: {$ref: '#/components/schemas/RequestIdentifier'}
+      x-field-order: [stable_code, request_id]
+    McpRpcParseErrorPayload400:
+      type: object
+      additionalProperties: false
+      required: [code, message, data]
+      properties:
+        code: {const: -32700}
+        message: {$ref: '#/components/schemas/McpRpcMessage'}
+        data: {$ref: '#/components/schemas/McpRequestInvalidErrorData'}
+      x-field-order: [code, message, data]
+      x-trigger: exact HTTP body is not a syntactically valid single JSON value
+    McpRpcInvalidRequestPayload400:
+      type: object
+      additionalProperties: false
+      required: [code, message, data]
+      properties:
+        code: {const: -32600}
+        message: {$ref: '#/components/schemas/McpRpcMessage'}
+        data: {$ref: '#/components/schemas/McpRequestInvalidErrorData'}
+      x-field-order: [code, message, data]
+      x-trigger: syntactically valid JSON but invalid JSON-RPC request shape, id, params or extra business field
+    McpRpcKnownIdErrorPayload400:
+      type: object
+      additionalProperties: false
+      required: [code, message, data]
+      properties:
+        code: {type: integer, enum: [-32022, -32020, -32000]}
+        message: {$ref: '#/components/schemas/McpRpcMessage'}
+        data: {}
+      oneOf:
+        - properties:
+            code: {const: -32022}
+            data: {$ref: '#/components/schemas/McpProtocolVersionErrorData'}
+        - properties:
+            code: {const: -32020}
+            data: {$ref: '#/components/schemas/McpHeaderMismatchErrorData'}
+        - properties:
+            code: {const: -32000}
+            data: {$ref: '#/components/schemas/McpIdempotencyRequiredErrorData'}
+      x-field-order: [code, message, data]
+    McpRpcErrorPayload403:
+      type: object
+      additionalProperties: false
+      required: [code, message, data]
+      properties:
+        code: {const: -32000}
+        message: {$ref: '#/components/schemas/McpRpcMessage'}
+        data: {$ref: '#/components/schemas/McpPermissionErrorData403'}
+      x-field-order: [code, message, data]
+    McpRpcErrorPayload404:
+      type: object
+      additionalProperties: false
+      required: [code, message, data]
+      properties:
+        code:
+          type: integer
+          enum: [-32601, -32602]
+        message: {$ref: '#/components/schemas/McpRpcMessage'}
+        data: {}
+      oneOf:
+        - properties:
+            code: {const: -32601}
+            data: {$ref: '#/components/schemas/McpMethodNotAllowedErrorData'}
+        - properties:
+            code: {const: -32602}
+            data: {$ref: '#/components/schemas/McpNamedObjectNotVisibleErrorData'}
+      x-field-order: [code, message, data]
+    McpRpcErrorPayload409:
+      type: object
+      additionalProperties: false
+      required: [code, message, data]
+      properties:
+        code: {const: -32000}
+        message: {$ref: '#/components/schemas/McpRpcMessage'}
+        data: {$ref: '#/components/schemas/McpManifestInvalidErrorData'}
+      x-field-order: [code, message, data]
+    McpRpcErrorPayload413:
+      type: object
+      additionalProperties: false
+      required: [code, message, data]
+      properties:
+        code: {const: -32600}
+        message: {$ref: '#/components/schemas/McpRpcMessage'}
+        data: {$ref: '#/components/schemas/McpPayloadTooLargeErrorData'}
+      x-field-order: [code, message, data]
+    McpRpcErrorPayload429:
+      type: object
+      additionalProperties: false
+      required: [code, message, data]
+      properties:
+        code: {const: -32000}
+        message: {$ref: '#/components/schemas/McpRpcMessage'}
+        data: {$ref: '#/components/schemas/McpRateLimitedErrorData'}
+      x-field-order: [code, message, data]
+    McpRpcErrorPayload502:
+      type: object
+      additionalProperties: false
+      required: [code, message, data]
+      properties:
+        code: {const: -32000}
+        message: {$ref: '#/components/schemas/McpRpcMessage'}
+        data: {$ref: '#/components/schemas/McpExternalErrorData502'}
+      x-field-order: [code, message, data]
+    McpRpcErrorPayload503:
+      type: object
+      additionalProperties: false
+      required: [code, message, data]
+      properties:
+        code: {const: -32000}
+        message: {$ref: '#/components/schemas/McpRpcMessage'}
+        data: {$ref: '#/components/schemas/McpInfrastructureErrorData503'}
+      x-field-order: [code, message, data]
+    McpRpcErrorPayload504:
+      type: object
+      additionalProperties: false
+      required: [code, message, data]
+      properties:
+        code: {const: -32000}
+        message: {$ref: '#/components/schemas/McpRpcMessage'}
+        data: {$ref: '#/components/schemas/McpTimeoutErrorData'}
+      x-field-order: [code, message, data]
+    McpRpcErrorResponse400:
+      type: object
+      additionalProperties: false
+      required: [jsonrpc, id, error]
+      properties:
+        jsonrpc: {const: '2.0'}
+        id: {$ref: '#/components/schemas/JsonRpcIdOrNull'}
+        error: {}
+      oneOf:
+        - properties:
+            id: {type: 'null'}
+            error: {$ref: '#/components/schemas/McpRpcParseErrorPayload400'}
+          x-trigger: invalid JSON; request id cannot be determined
+        - properties:
+            id: {type: 'null'}
+            error: {$ref: '#/components/schemas/McpRpcInvalidRequestPayload400'}
+          x-trigger: invalid request whose id is absent, invalid or otherwise indeterminate
+        - properties:
+            id: {$ref: '#/components/schemas/JsonRpcId'}
+            error: {$ref: '#/components/schemas/McpRpcInvalidRequestPayload400'}
+          x-trigger: invalid request with a valid determinable id; echo that exact id
+        - properties:
+            id: {$ref: '#/components/schemas/JsonRpcId'}
+            error: {$ref: '#/components/schemas/McpRpcKnownIdErrorPayload400'}
+          x-trigger: protocol-version, transport-header or owner-command idempotency rejection with a valid id
+      x-field-order: [jsonrpc, id, error]
+      x-id-rule: invalid JSON or indeterminate request id uses null; otherwise echo exact request-id JSON type and value.
+    McpRpcErrorResponse403:
+      type: object
+      additionalProperties: false
+      required: [jsonrpc, id, error]
+      properties:
+        jsonrpc: {const: '2.0'}
+        id: {$ref: '#/components/schemas/JsonRpcId'}
+        error: {$ref: '#/components/schemas/McpRpcErrorPayload403'}
+      x-field-order: [jsonrpc, id, error]
+      x-id-rule: echo-request-id-exact-JSON-type-and-value
+    McpRpcErrorResponse404:
+      type: object
+      additionalProperties: false
+      required: [jsonrpc, id, error]
+      properties:
+        jsonrpc: {const: '2.0'}
+        id: {$ref: '#/components/schemas/JsonRpcId'}
+        error: {$ref: '#/components/schemas/McpRpcErrorPayload404'}
+      x-field-order: [jsonrpc, id, error]
+      x-id-rule: echo-request-id-exact-JSON-type-and-value
+    McpRpcErrorResponse409:
+      type: object
+      additionalProperties: false
+      required: [jsonrpc, id, error]
+      properties:
+        jsonrpc: {const: '2.0'}
+        id: {$ref: '#/components/schemas/JsonRpcId'}
+        error: {$ref: '#/components/schemas/McpRpcErrorPayload409'}
+      x-field-order: [jsonrpc, id, error]
+      x-id-rule: echo-request-id-exact-JSON-type-and-value
+    McpRpcErrorResponse413:
+      type: object
+      additionalProperties: false
+      required: [jsonrpc, id, error]
+      properties:
+        jsonrpc: {const: '2.0'}
+        id: {$ref: '#/components/schemas/JsonRpcIdOrNull'}
+        error: {$ref: '#/components/schemas/McpRpcErrorPayload413'}
+      oneOf:
+        - properties:
+            id: {type: 'null'}
+          x-trigger: oversized inbound request body prevents determining request id
+        - properties:
+            id: {$ref: '#/components/schemas/JsonRpcId'}
+          x-trigger: request id is determinable, including oversized terminal response after dispatch
+      x-field-order: [jsonrpc, id, error]
+      x-id-rule: unresolved request id is null; otherwise echo request id exact JSON type and value
+    McpRpcErrorResponse429:
+      type: object
+      additionalProperties: false
+      required: [jsonrpc, id, error]
+      properties:
+        jsonrpc: {const: '2.0'}
+        id: {$ref: '#/components/schemas/JsonRpcId'}
+        error: {$ref: '#/components/schemas/McpRpcErrorPayload429'}
+      x-field-order: [jsonrpc, id, error]
+      x-id-rule: echo-request-id-exact-JSON-type-and-value
+    McpRpcErrorResponse502:
+      type: object
+      additionalProperties: false
+      required: [jsonrpc, id, error]
+      properties:
+        jsonrpc: {const: '2.0'}
+        id: {$ref: '#/components/schemas/JsonRpcId'}
+        error: {$ref: '#/components/schemas/McpRpcErrorPayload502'}
+      x-field-order: [jsonrpc, id, error]
+      x-id-rule: echo-request-id-exact-JSON-type-and-value
+    McpRpcErrorResponse503:
+      type: object
+      additionalProperties: false
+      required: [jsonrpc, id, error]
+      properties:
+        jsonrpc: {const: '2.0'}
+        id: {$ref: '#/components/schemas/JsonRpcId'}
+        error: {$ref: '#/components/schemas/McpRpcErrorPayload503'}
+      x-field-order: [jsonrpc, id, error]
+      x-id-rule: echo-request-id-exact-JSON-type-and-value
+    McpRpcErrorResponse504:
+      type: object
+      additionalProperties: false
+      required: [jsonrpc, id, error]
+      properties:
+        jsonrpc: {const: '2.0'}
+        id: {$ref: '#/components/schemas/JsonRpcId'}
+        error: {$ref: '#/components/schemas/McpRpcErrorPayload504'}
+      x-field-order: [jsonrpc, id, error]
+      x-id-rule: echo-request-id-exact-JSON-type-and-value
+    McpJsonRpcErrorResponse:
+      oneOf:
+        - $ref: '#/components/schemas/McpRpcErrorResponse400'
+        - $ref: '#/components/schemas/McpRpcErrorResponse403'
+        - $ref: '#/components/schemas/McpRpcErrorResponse404'
+        - $ref: '#/components/schemas/McpRpcErrorResponse409'
+        - $ref: '#/components/schemas/McpRpcErrorResponse413'
+        - $ref: '#/components/schemas/McpRpcErrorResponse429'
+        - $ref: '#/components/schemas/McpRpcErrorResponse502'
+        - $ref: '#/components/schemas/McpRpcErrorResponse503'
+        - $ref: '#/components/schemas/McpRpcErrorResponse504'
+      x-id-rule: echo-request-id-exact-JSON-type-and-value-except-indeterminate-id-is-null
+    McpJsonRpcTerminalResponse:
+      oneOf:
+        - $ref: '#/components/schemas/McpJsonRpcSuccessResponse'
+        - $ref: '#/components/schemas/McpJsonRpcErrorResponse'
+      x-max-compact-utf8-bytes: 8388608
+      x-single-terminal-message: true
+      x-no-session-or-replay-cursor: true
+      x-not-used-as-http-200-schema: true
+    ErrorDetail:
+      type: object
+      additionalProperties: false
+      required: [field, reason, value]
+      properties:
+        field:
+          type: string
+          minLength: 1
+          maxLength: 256
+        reason:
+          type: string
+          minLength: 1
+          maxLength: 500
+        value:
+          type: [string, integer, boolean, 'null']
+    AppError400:
+      type: object
+      additionalProperties: false
+      required: [code, category, message, details, retryable, incident_no, occurred_at, advice]
+      properties:
+        code:
+          type: string
+          enum:
+            - PLATFORM.REQUEST.INVALID_PAYLOAD
+            - PLATFORM.REQUEST.HEADER_MISSING
+            - PLATFORM.IDEMPOTENCY.KEY_REQUIRED
+            - MCP.PROTOCOL.VERSION_UNSUPPORTED
+            - MCP.REQUEST.INVALID
+            - MCP.PROTOCOL.HEADER_MISMATCH
+            - MCP.IDEMPOTENCY.REQUIRED
+        category: {const: VALIDATION}
+        message: {type: string}
+        details:
+          type: array
+          minItems: 0
+          maxItems: 32
+          items: {$ref: '#/components/schemas/ErrorDetail'}
+        retryable: {const: false}
+        incident_no: {type: string}
+        occurred_at: {$ref: '#/components/schemas/UtcRfc3339'}
+        advice: {type: string}
+      x-http-status: 400
+    AppError403:
+      type: object
+      additionalProperties: false
+      required: [code, category, message, details, retryable, incident_no, occurred_at, advice]
+      properties:
+        code:
+          type: string
+          enum:
+            - PLATFORM.AUTHZ.OBJECT_FORBIDDEN
+            - MCP.MANIFEST.CAPABILITY_DENIED
+            - MCP.GRANT.INVALID_OR_EXPIRED
+            - MCP.DEVICE_PROOF.INVALID
+            - MCP.TOOL.HIGH_RISK_FORBIDDEN
+        category: {const: PERMISSION_DENIED}
+        message: {type: string}
+        details:
+          type: array
+          maxItems: 0
+          items: {$ref: '#/components/schemas/ErrorDetail'}
+        retryable: {const: false}
+        incident_no: {type: string}
+        occurred_at: {$ref: '#/components/schemas/UtcRfc3339'}
+        advice: {type: string}
+      x-http-status: 403
+    AppError404:
+      type: object
+      additionalProperties: false
+      required: [code, category, message, details, retryable, incident_no, occurred_at, advice]
+      properties:
+        code:
+          type: string
+          enum:
+            - PLATFORM.AUTHZ.NOT_FOUND_OR_DENIED
+            - MCP.METHOD.NOT_ALLOWED
+            - MCP.TOOL.NOT_VISIBLE_OR_DENIED
+            - MCP.RESOURCE.NOT_VISIBLE_OR_DENIED
+        category: {const: PERMISSION_DENIED}
+        message: {type: string}
+        details:
+          type: array
+          maxItems: 0
+          items: {$ref: '#/components/schemas/ErrorDetail'}
+        retryable: {const: false}
+        incident_no: {type: string}
+        occurred_at: {$ref: '#/components/schemas/UtcRfc3339'}
+        advice: {type: string}
+      x-http-status: 404
+    AppError409:
+      type: object
+      additionalProperties: false
+      required: [code, category, message, details, retryable, incident_no, occurred_at, advice]
+      properties:
+        code:
+          type: string
+          enum:
+            - PLATFORM.IDEMPOTENCY.PAYLOAD_MISMATCH
+            - PLATFORM.CONCURRENCY.STALE_VERSION
+            - MCP.MANIFEST.INVALID_OR_UNSIGNED
+        category: {const: BUSINESS_CONFLICT}
+        message: {type: string}
+        details:
+          type: array
+          minItems: 0
+          maxItems: 32
+          items: {$ref: '#/components/schemas/ErrorDetail'}
+        retryable: {const: false}
+        incident_no: {type: string}
+        occurred_at: {$ref: '#/components/schemas/UtcRfc3339'}
+        advice: {type: string}
+      x-http-status: 409
+    AppError413:
+      type: object
+      additionalProperties: false
+      required: [code, category, message, details, retryable, incident_no, occurred_at, advice]
+      properties:
+        code: {const: MCP.PAYLOAD.TOO_LARGE}
+        category: {const: VALIDATION}
+        message: {type: string}
+        details:
+          type: array
+          minItems: 0
+          maxItems: 32
+          items: {$ref: '#/components/schemas/ErrorDetail'}
+        retryable: {const: false}
+        incident_no: {type: string}
+        occurred_at: {$ref: '#/components/schemas/UtcRfc3339'}
+        advice: {type: string}
+      x-http-status: 413
+    AppError429:
+      type: object
+      additionalProperties: false
+      required: [code, category, message, details, retryable, incident_no, occurred_at, advice]
+      properties:
+        code: {const: MCP.RATE_LIMITED}
+        category: {const: INFRASTRUCTURE}
+        message: {type: string}
+        details:
+          type: array
+          maxItems: 0
+          items: {$ref: '#/components/schemas/ErrorDetail'}
+        retryable: {const: true}
+        incident_no: {type: string}
+        occurred_at: {$ref: '#/components/schemas/UtcRfc3339'}
+        advice: {type: string}
+      x-http-status: 429
+    AppError502:
+      type: object
+      additionalProperties: false
+      required: [code, category, message, details, retryable, incident_no, occurred_at, advice]
+      properties:
+        code:
+          type: string
+          enum: [MCP.REMOTE.UNAVAILABLE, MCP.RESPONSE.SCHEMA_INVALID]
+        category: {const: EXTERNAL_SYSTEM}
+        message: {type: string}
+        details:
+          type: array
+          maxItems: 0
+          items: {$ref: '#/components/schemas/ErrorDetail'}
+        retryable: {const: true}
+        incident_no: {type: string}
+        occurred_at: {$ref: '#/components/schemas/UtcRfc3339'}
+        advice: {type: string}
+      x-http-status: 502
+    AppError503Retryable:
+      type: object
+      additionalProperties: false
+      required: [code, category, message, details, retryable, incident_no, occurred_at, advice]
+      properties:
+        code:
+          type: string
+          enum: [PLATFORM.SYSTEM.SYNC_TIMEOUT, MCP.CREDENTIAL.REF_INVALID, MCP.LOCAL.CONTAINMENT_FAILED]
+        category: {const: INFRASTRUCTURE}
+        message: {type: string}
+        details:
+          type: array
+          maxItems: 0
+          items: {$ref: '#/components/schemas/ErrorDetail'}
+        retryable: {const: true}
+        incident_no: {type: string}
+        occurred_at: {$ref: '#/components/schemas/UtcRfc3339'}
+        advice: {type: string}
+      x-http-status: 503
+    AppError503AuditUnavailable:
+      type: object
+      additionalProperties: false
+      required: [code, category, message, details, retryable, incident_no, occurred_at, advice]
+      properties:
+        code: {const: MCP.AUDIT.UNAVAILABLE}
+        category: {const: INFRASTRUCTURE}
+        message: {type: string}
+        details:
+          type: array
+          maxItems: 0
+          items: {$ref: '#/components/schemas/ErrorDetail'}
+        retryable: {const: false}
+        incident_no: {type: string}
+        occurred_at: {$ref: '#/components/schemas/UtcRfc3339'}
+        advice: {type: string}
+      x-http-status: 503
+      x-automatic-retry: forbidden
+    AppError503:
+      oneOf:
+        - $ref: '#/components/schemas/AppError503Retryable'
+        - $ref: '#/components/schemas/AppError503AuditUnavailable'
+    AppError504:
+      type: object
+      additionalProperties: false
+      required: [code, category, message, details, retryable, incident_no, occurred_at, advice]
+      properties:
+        code: {const: MCP.CALL.TIMEOUT}
+        category: {const: EXTERNAL_SYSTEM}
+        message: {type: string}
+        details:
+          type: array
+          maxItems: 0
+          items: {$ref: '#/components/schemas/ErrorDetail'}
+        retryable: {const: true}
+        incident_no: {type: string}
+        occurred_at: {$ref: '#/components/schemas/UtcRfc3339'}
+        advice: {type: string}
+      x-http-status: 504
+    ManagementAppError400Base:
+      allOf:
+        - $ref: '#/components/schemas/AppError400'
+        - properties:
+            code:
+              type: string
+              enum: [PLATFORM.REQUEST.INVALID_PAYLOAD, PLATFORM.REQUEST.HEADER_MISSING]
+    ManagementAppError400IdempotentWrite:
+      allOf:
+        - $ref: '#/components/schemas/AppError400'
+        - properties:
+            code:
+              type: string
+              enum: [PLATFORM.REQUEST.INVALID_PAYLOAD, PLATFORM.REQUEST.HEADER_MISSING, PLATFORM.IDEMPOTENCY.KEY_REQUIRED]
+    ManagementAppError403Base:
+      allOf:
+        - $ref: '#/components/schemas/AppError403'
+        - properties:
+            code: {const: PLATFORM.AUTHZ.OBJECT_FORBIDDEN}
+    ManagementAppError403GrantIssue:
+      allOf:
+        - $ref: '#/components/schemas/AppError403'
+        - properties:
+            code:
+              type: string
+              enum: [PLATFORM.AUTHZ.OBJECT_FORBIDDEN, MCP.MANIFEST.CAPABILITY_DENIED]
+    ManagementAppError404Base:
+      allOf:
+        - $ref: '#/components/schemas/AppError404'
+        - properties:
+            code: {const: PLATFORM.AUTHZ.NOT_FOUND_OR_DENIED}
+    ManagementAppError404GrantIssue:
+      allOf:
+        - $ref: '#/components/schemas/AppError404'
+        - properties:
+            code:
+              type: string
+              enum: [PLATFORM.AUTHZ.NOT_FOUND_OR_DENIED, MCP.TOOL.NOT_VISIBLE_OR_DENIED, MCP.RESOURCE.NOT_VISIBLE_OR_DENIED]
+    ManagementAppError409Manifest:
+      allOf:
+        - $ref: '#/components/schemas/AppError409'
+        - properties:
+            code: {const: MCP.MANIFEST.INVALID_OR_UNSIGNED}
+    ManagementAppError409Mutation:
+      allOf:
+        - $ref: '#/components/schemas/AppError409'
+        - properties:
+            code:
+              type: string
+              enum: [PLATFORM.IDEMPOTENCY.PAYLOAD_MISMATCH, PLATFORM.CONCURRENCY.STALE_VERSION]
+    ManagementAppError409Enable:
+      allOf:
+        - $ref: '#/components/schemas/AppError409'
+        - properties:
+            code:
+              type: string
+              enum: [PLATFORM.IDEMPOTENCY.PAYLOAD_MISMATCH, PLATFORM.CONCURRENCY.STALE_VERSION, MCP.MANIFEST.INVALID_OR_UNSIGNED]
+    ManagementAppError503Base:
+      allOf:
+        - $ref: '#/components/schemas/AppError503'
+        - properties:
+            code: {const: PLATFORM.SYSTEM.SYNC_TIMEOUT}
+    ManagementAppError503Enable:
+      allOf:
+        - $ref: '#/components/schemas/AppError503'
+        - properties:
+            code:
+              type: string
+              enum: [PLATFORM.SYSTEM.SYNC_TIMEOUT, MCP.CREDENTIAL.REF_INVALID, MCP.LOCAL.CONTAINMENT_FAILED]
+    ErrorEnvelope400:
+      type: object
+      additionalProperties: false
+      required: [success, data, error, meta, trace_id]
+      properties:
+        success: {const: false}
+        data: {type: 'null'}
+        error: {$ref: '#/components/schemas/ManagementAppError400Base'}
+        meta: {type: 'null'}
+        trace_id: {$ref: '#/components/schemas/TraceId'}
+    ErrorEnvelope403:
+      type: object
+      additionalProperties: false
+      required: [success, data, error, meta, trace_id]
+      properties:
+        success: {const: false}
+        data: {type: 'null'}
+        error: {$ref: '#/components/schemas/ManagementAppError403Base'}
+        meta: {type: 'null'}
+        trace_id: {$ref: '#/components/schemas/TraceId'}
+    ErrorEnvelope404:
+      type: object
+      additionalProperties: false
+      required: [success, data, error, meta, trace_id]
+      properties:
+        success: {const: false}
+        data: {type: 'null'}
+        error: {$ref: '#/components/schemas/ManagementAppError404Base'}
+        meta: {type: 'null'}
+        trace_id: {$ref: '#/components/schemas/TraceId'}
+    ErrorEnvelope409:
+      type: object
+      additionalProperties: false
+      required: [success, data, error, meta, trace_id]
+      properties:
+        success: {const: false}
+        data: {type: 'null'}
+        error: {$ref: '#/components/schemas/ManagementAppError409Mutation'}
+        meta: {type: 'null'}
+        trace_id: {$ref: '#/components/schemas/TraceId'}
+    ErrorEnvelope413:
+      type: object
+      additionalProperties: false
+      required: [success, data, error, meta, trace_id]
+      properties:
+        success: {const: false}
+        data: {type: 'null'}
+        error: {$ref: '#/components/schemas/AppError413'}
+        meta: {type: 'null'}
+        trace_id: {$ref: '#/components/schemas/TraceId'}
+    ErrorEnvelope429:
+      type: object
+      additionalProperties: false
+      required: [success, data, error, meta, trace_id]
+      properties:
+        success: {const: false}
+        data: {type: 'null'}
+        error: {$ref: '#/components/schemas/AppError429'}
+        meta: {type: 'null'}
+        trace_id: {$ref: '#/components/schemas/TraceId'}
+    ErrorEnvelope502:
+      type: object
+      additionalProperties: false
+      required: [success, data, error, meta, trace_id]
+      properties:
+        success: {const: false}
+        data: {type: 'null'}
+        error: {$ref: '#/components/schemas/AppError502'}
+        meta: {type: 'null'}
+        trace_id: {$ref: '#/components/schemas/TraceId'}
+    ErrorEnvelope503:
+      type: object
+      additionalProperties: false
+      required: [success, data, error, meta, trace_id]
+      properties:
+        success: {const: false}
+        data: {type: 'null'}
+        error: {$ref: '#/components/schemas/ManagementAppError503Base'}
+        meta: {type: 'null'}
+        trace_id: {$ref: '#/components/schemas/TraceId'}
+    ErrorEnvelope504:
+      type: object
+      additionalProperties: false
+      required: [success, data, error, meta, trace_id]
+      properties:
+        success: {const: false}
+        data: {type: 'null'}
+        error: {$ref: '#/components/schemas/AppError504'}
+        meta: {type: 'null'}
+        trace_id: {$ref: '#/components/schemas/TraceId'}
+    ManagementWriteErrorEnvelope400:
+      type: object
+      additionalProperties: false
+      required: [success, data, error, meta, trace_id]
+      properties:
+        success: {const: false}
+        data: {type: 'null'}
+        error: {$ref: '#/components/schemas/ManagementAppError400IdempotentWrite'}
+        meta: {type: 'null'}
+        trace_id: {$ref: '#/components/schemas/TraceId'}
+    ManagementGrantIssueErrorEnvelope403:
+      type: object
+      additionalProperties: false
+      required: [success, data, error, meta, trace_id]
+      properties:
+        success: {const: false}
+        data: {type: 'null'}
+        error: {$ref: '#/components/schemas/ManagementAppError403GrantIssue'}
+        meta: {type: 'null'}
+        trace_id: {$ref: '#/components/schemas/TraceId'}
+    ManagementGrantIssueErrorEnvelope404:
+      type: object
+      additionalProperties: false
+      required: [success, data, error, meta, trace_id]
+      properties:
+        success: {const: false}
+        data: {type: 'null'}
+        error: {$ref: '#/components/schemas/ManagementAppError404GrantIssue'}
+        meta: {type: 'null'}
+        trace_id: {$ref: '#/components/schemas/TraceId'}
+    ManagementManifestErrorEnvelope409:
+      type: object
+      additionalProperties: false
+      required: [success, data, error, meta, trace_id]
+      properties:
+        success: {const: false}
+        data: {type: 'null'}
+        error: {$ref: '#/components/schemas/ManagementAppError409Manifest'}
+        meta: {type: 'null'}
+        trace_id: {$ref: '#/components/schemas/TraceId'}
+    ManagementEnableErrorEnvelope409:
+      type: object
+      additionalProperties: false
+      required: [success, data, error, meta, trace_id]
+      properties:
+        success: {const: false}
+        data: {type: 'null'}
+        error: {$ref: '#/components/schemas/ManagementAppError409Enable'}
+        meta: {type: 'null'}
+        trace_id: {$ref: '#/components/schemas/TraceId'}
+    ManagementEnableErrorEnvelope503:
+      type: object
+      additionalProperties: false
+      required: [success, data, error, meta, trace_id]
+      properties:
+        success: {const: false}
+        data: {type: 'null'}
+        error: {$ref: '#/components/schemas/ManagementAppError503Enable'}
+        meta: {type: 'null'}
+        trace_id: {$ref: '#/components/schemas/TraceId'}
+  responses:
+    ManagementError400:
+      description: 管理请求 header、字段、cursor、page_size 或禁止的幂等头无效
+      headers:
+        X-Request-Id: {$ref: '#/components/headers/XRequestId'}
+        X-Trace-Id: {$ref: '#/components/headers/XTraceId'}
+      content:
+        application/json:
+          schema: {$ref: '#/components/schemas/ErrorEnvelope400'}
+    ManagementWriteError400:
+      description: 管理写请求 header、字段或必需 Idempotency-Key 无效
+      headers:
+        X-Request-Id: {$ref: '#/components/headers/XRequestId'}
+        X-Trace-Id: {$ref: '#/components/headers/XTraceId'}
+      content:
+        application/json:
+          schema: {$ref: '#/components/schemas/ManagementWriteErrorEnvelope400'}
+    ManagementError403:
+      description: 当前主体对对象类型或动作无权；不返回策略细节
+      headers:
+        X-Request-Id: {$ref: '#/components/headers/XRequestId'}
+        X-Trace-Id: {$ref: '#/components/headers/XTraceId'}
+      content:
+        application/json:
+          schema: {$ref: '#/components/schemas/ErrorEnvelope403'}
+    ManagementGrantIssueError403:
+      description: 无对象权限，或请求能力不属于当前 ACTIVE manifest
+      headers:
+        X-Request-Id: {$ref: '#/components/headers/XRequestId'}
+        X-Trace-Id: {$ref: '#/components/headers/XTraceId'}
+      content:
+        application/json:
+          schema: {$ref: '#/components/schemas/ManagementGrantIssueErrorEnvelope403'}
+    ManagementError404:
+      description: 对象不存在或对当前范围不可见；同码同形态
+      headers:
+        X-Request-Id: {$ref: '#/components/headers/XRequestId'}
+        X-Trace-Id: {$ref: '#/components/headers/XTraceId'}
+      content:
+        application/json:
+          schema: {$ref: '#/components/schemas/ErrorEnvelope404'}
+    ManagementGrantIssueError404:
+      description: connector/manifest 不存在或不可见，或 manifest 内能力被当前范围裁剪
+      headers:
+        X-Request-Id: {$ref: '#/components/headers/XRequestId'}
+        X-Trace-Id: {$ref: '#/components/headers/XTraceId'}
+      content:
+        application/json:
+          schema: {$ref: '#/components/schemas/ManagementGrantIssueErrorEnvelope404'}
+    ManagementError409:
+      description: 幂等载荷、row_version、状态或 manifest 完整性冲突
+      headers:
+        X-Request-Id: {$ref: '#/components/headers/XRequestId'}
+        X-Trace-Id: {$ref: '#/components/headers/XTraceId'}
+      content:
+        application/json:
+          schema: {$ref: '#/components/schemas/ErrorEnvelope409'}
+    ManagementManifestError409:
+      description: 当前 manifest 形状、签名或完整性事实无效
+      headers:
+        X-Request-Id: {$ref: '#/components/headers/XRequestId'}
+        X-Trace-Id: {$ref: '#/components/headers/XTraceId'}
+      content:
+        application/json:
+          schema: {$ref: '#/components/schemas/ManagementManifestErrorEnvelope409'}
+    ManagementEnableError409:
+      description: enable 的幂等载荷、row_version、状态或 manifest 完整性冲突
+      headers:
+        X-Request-Id: {$ref: '#/components/headers/XRequestId'}
+        X-Trace-Id: {$ref: '#/components/headers/XTraceId'}
+      content:
+        application/json:
+          schema: {$ref: '#/components/schemas/ManagementEnableErrorEnvelope409'}
+    ManagementError503:
+      description: 管理请求同步处理或必要本地收容/credential 检查不可用
+      headers:
+        X-Request-Id: {$ref: '#/components/headers/XRequestId'}
+        X-Trace-Id: {$ref: '#/components/headers/XTraceId'}
+      content:
+        application/json:
+          schema: {$ref: '#/components/schemas/ErrorEnvelope503'}
+    ManagementEnableError503:
+      description: 同步处理、credential probe 或本地收容检查不可用
+      headers:
+        X-Request-Id: {$ref: '#/components/headers/XRequestId'}
+        X-Trace-Id: {$ref: '#/components/headers/XTraceId'}
+      content:
+        application/json:
+          schema: {$ref: '#/components/schemas/ManagementEnableErrorEnvelope503'}
+    McpError400:
+      description: 非法 JSON/request、协议版本/header 或 owner command 幂等标识无效
+      headers:
+        X-Request-Id: {$ref: '#/components/headers/XRequestId'}
+        X-Trace-Id: {$ref: '#/components/headers/XTraceId'}
+        X-EP-MCP-Proof-Counter-Accepted: {$ref: '#/components/headers/McpProofCounterAccepted'}
+      content:
+        application/json:
+          schema: {$ref: '#/components/schemas/McpRpcErrorResponse400'}
+      x-accepted-counter-header:
+        absent: [MCP.REQUEST.INVALID, MCP.PROTOCOL.VERSION_UNSUPPORTED, MCP.PROTOCOL.HEADER_MISMATCH]
+        required-after-counter-update: [MCP.IDEMPOTENCY.REQUIRED]
+    McpError403:
+      description: grant、device proof、manifest capability 或高风险禁区拒绝
+      headers:
+        X-Request-Id: {$ref: '#/components/headers/XRequestId'}
+        X-Trace-Id: {$ref: '#/components/headers/XTraceId'}
+        X-EP-MCP-Proof-Counter-Accepted: {$ref: '#/components/headers/McpProofCounterAccepted'}
+      content:
+        application/json:
+          schema: {$ref: '#/components/schemas/McpRpcErrorResponse403'}
+      x-accepted-counter-header:
+        absent: [MCP.GRANT.INVALID_OR_EXPIRED, MCP.DEVICE_PROOF.INVALID]
+        required-after-counter-update: [MCP.MANIFEST.CAPABILITY_DENIED, MCP.TOOL.HIGH_RISK_FORBIDDEN]
+    McpError404:
+      description: 方法、tool 或 resource 不允许/不可见，不泄露存在性
+      headers:
+        X-Request-Id: {$ref: '#/components/headers/XRequestId'}
+        X-Trace-Id: {$ref: '#/components/headers/XTraceId'}
+        X-EP-MCP-Proof-Counter-Accepted: {$ref: '#/components/headers/McpProofCounterAccepted'}
+      content:
+        application/json:
+          schema: {$ref: '#/components/schemas/McpRpcErrorResponse404'}
+      x-accepted-counter-header:
+        absent: [MCP.METHOD.NOT_ALLOWED]
+        required-after-counter-update: [MCP.TOOL.NOT_VISIBLE_OR_DENIED, MCP.RESOURCE.NOT_VISIBLE_OR_DENIED]
+    McpError409:
+      description: manifest 形状、签名或当前完整性事实无效
+      headers:
+        X-Request-Id: {$ref: '#/components/headers/XRequestId'}
+        X-Trace-Id: {$ref: '#/components/headers/XTraceId'}
+        X-EP-MCP-Proof-Counter-Accepted: {$ref: '#/components/headers/McpProofCounterAcceptedRequired'}
+      content:
+        application/json:
+          schema: {$ref: '#/components/schemas/McpRpcErrorResponse409'}
+    McpError413:
+      description: request 或 terminal payload 超过固定字节上限
+      headers:
+        X-Request-Id: {$ref: '#/components/headers/XRequestId'}
+        X-Trace-Id: {$ref: '#/components/headers/XTraceId'}
+        X-EP-MCP-Proof-Counter-Accepted: {$ref: '#/components/headers/McpProofCounterAccepted'}
+      content:
+        application/json:
+          schema: {$ref: '#/components/schemas/McpRpcErrorResponse413'}
+      x-accepted-counter-header:
+        absent-trigger: inbound request body exceeds 1048576 bytes before counter update
+        required-trigger: terminal response exceeds 8388608 bytes after counter update
+    McpError429:
+      description: connector 固定速率或在途容量命中；counter UPDATE 前不消费调用
+      headers:
+        X-Request-Id: {$ref: '#/components/headers/XRequestId'}
+        X-Trace-Id: {$ref: '#/components/headers/XTraceId'}
+      content:
+        application/json:
+          schema: {$ref: '#/components/schemas/McpRpcErrorResponse429'}
+      x-accepted-counter-header: forbidden-before-counter-update
+    McpError502:
+      description: 远端不可用或 terminal response schema 无效
+      headers:
+        X-Request-Id: {$ref: '#/components/headers/XRequestId'}
+        X-Trace-Id: {$ref: '#/components/headers/XTraceId'}
+        X-EP-MCP-Proof-Counter-Accepted: {$ref: '#/components/headers/McpProofCounterAcceptedRequired'}
+      content:
+        application/json:
+          schema: {$ref: '#/components/schemas/McpRpcErrorResponse502'}
+    McpError503:
+      description: credential、local containment 或审计确认不可用；MCP.AUDIT.UNAVAILABLE 禁止自动重试
+      headers:
+        X-Request-Id: {$ref: '#/components/headers/XRequestId'}
+        X-Trace-Id: {$ref: '#/components/headers/XTraceId'}
+        X-EP-MCP-Proof-Counter-Accepted: {$ref: '#/components/headers/McpProofCounterAccepted'}
+      content:
+        application/json:
+          schema: {$ref: '#/components/schemas/McpRpcErrorResponse503'}
+      x-audit-unavailable-automatic-retry: forbidden
+      x-accepted-counter-header: conditional-on-whether-the-single-counter-update-already-committed
+    McpError504:
+      description: MCP 调用超过 30 秒绝对时限
+      headers:
+        X-Request-Id: {$ref: '#/components/headers/XRequestId'}
+        X-Trace-Id: {$ref: '#/components/headers/XTraceId'}
+        X-EP-MCP-Proof-Counter-Accepted: {$ref: '#/components/headers/McpProofCounterAcceptedRequired'}
+      content:
+        application/json:
+          schema: {$ref: '#/components/schemas/McpRpcErrorResponse504'}

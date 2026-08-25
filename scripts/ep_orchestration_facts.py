@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# F-57：HISTORICAL_LINUX_RESEARCH_ONLY；输出不得作为 Windows Server 2022 生产证据。
 """把两套编排文件各自压成同一张「编排事实表」，供等价性核对逐项比对。
 
 两套文件的语法毫无共同之处：一套是 systemd 单元，一套是 YAML。直接比文本比不了，

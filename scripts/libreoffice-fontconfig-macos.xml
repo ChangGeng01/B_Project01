@@ -1,0 +1,25 @@
+<?xml version="1.0"?>
+<!DOCTYPE fontconfig SYSTEM "urn:fontconfig:fonts.dtd">
+<fontconfig>
+  <!-- The bundled headless LibreOffice runtime does not inherit macOS font
+       discovery. Keep Chinese DOCX render QA deterministic by explicitly
+       exposing the system font roots used by the document builders. -->
+  <dir>/System/Library/Fonts</dir>
+  <dir>/System/Library/Fonts/Supplemental</dir>
+  <dir>/Library/Fonts</dir>
+  <cachedir prefix="xdg">fontconfig</cachedir>
+
+  <!-- The production DOCX intentionally targets Microsoft YaHei on Windows.
+       For macOS-only visual QA, substitute an installed CJK font without
+       changing the font declaration stored in the DOCX. -->
+  <match target="pattern">
+    <test qual="any" name="family">
+      <string>Microsoft YaHei</string>
+    </test>
+    <edit name="family" mode="prepend" binding="strong">
+      <string>PingFang SC</string>
+      <string>Hiragino Sans GB</string>
+      <string>Heiti SC</string>
+    </edit>
+  </match>
+</fontconfig>

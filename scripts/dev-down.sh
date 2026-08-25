@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# F-57：HISTORICAL_LINUX_DEV_ONLY；不得作为 Windows Server 2022 生产停机或发布证据。
 # 停掉 scripts/dev-up.sh 起的本地开发环境。
 #
 # 默认只停容器，命名卷原样留着：库里的数据是开发过程中攒出来的，

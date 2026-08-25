@@ -1,3 +1,4 @@
+# F-57：HISTORICAL_LINUX_RESEARCH_ONLY；禁止用于当前 Windows Server 2022 生产部署或发布验收。
 # app-db.slice：规格第 13.1 章配额表第 1 行「PostgreSQL 16」的 cgroup 承载物，承载进程 PostgreSQL 16。
 # 本单元不写任何配额取值。四类取值一律只落在 app-db.slice.d/10-resource-limits.conf 一处，
 # 单元里再写一份就是第二套取值，改一处漏一处时无从判定哪一处为准。

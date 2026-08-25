@@ -1,5 +1,7 @@
 # deploy/ 单机编排：交付物 D-05 与 D-13
 
+> **F-57 状态：`HISTORICAL_LINUX_RESEARCH_ONLY`。** 下文 Podman、Docker Compose、systemd、Linux 路径和生产命令已被 Windows Server 2022 原生服务设计取代，只作历史研究材料。
+
 `deploy/README.md` 已交付的是 D-06 的资源限额 drop-in。本文件接它后面那一句，
 交付它明确排除在外的三样：八个 slice 单元本身、Podman Quadlet 与 Docker Compose 两套等价编排文件，
 以及交付物 D-13 的本地开发环境。

@@ -1,0 +1,632 @@
+openapi: 3.1.0
+info:
+  title: Enterprise Platform Local AI Reporting API — F-55 exact surface
+  version: 1.0.0-f55
+  description: |
+    本文件仅保留 F-55 本地 AI 报表 HTTP 面的历史输入，不是现行 F-57 独立权威
+    契约，也不表示存在真实模型 API。F-57 当前只计划后续 provider/governance
+    契约并在 Task 15 提供 null implementation；本地模型实现明确延期。
+  x-f57-status: HISTORICAL_INPUT_LOCAL_AI_DEFERRED
+  x-source-authority: F-55-historical-input
+  x-planned-implementation-tasks: [F57-14, F57-15]
+  x-implementation-state: NOT_IMPLEMENTED_LOCAL_MODEL_DEFERRED
+  x-scope: exact-two-path-surface
+  x-stable-error-codes:
+    - PLATFORM.REQUEST.INVALID_PAYLOAD
+    - PLATFORM.REQUEST.HEADER_MISSING
+    - AI.MODEL_PACKAGE.SIGNATURE_INVALID
+    - AI.MODEL_PACKAGE.NOT_ACTIVE
+    - AI.QUERY_PLAN.INVALID
+    - AI.INPUT.CONTEXT_LIMIT_EXCEEDED
+    - AI.QUERY_PLAN.NOT_VISIBLE_OR_DENIED
+    - AI.QUERY_PLAN.CONFIRMATION_REQUIRED
+    - AI.QUERY_PLAN.TOKEN_INVALID_OR_EXPIRED
+    - AI.QUERY_PLAN.SECURITY_CONTEXT_CHANGED
+    - AI.QUERY_PLAN.IDEMPOTENCY_NOT_ALLOWED
+    - AI.INFERENCE.CONCURRENCY_LIMIT
+    - AI.RESOURCE.BASELINE_NOT_CERTIFIED
+    - REPORTING.ANALYTIC_QUERY.RESULT_TOO_LARGE
+    - REPORTING.ANALYTIC_QUERY.STATEMENT_TIMEOUT
+    - REPORTING.ANALYTIC_QUERY.RESOURCE_LIMIT_EXCEEDED
+    - PLATFORM.SYSTEM.SYNC_TIMEOUT
+    - PLATFORM.AUTHZ.OBJECT_FORBIDDEN
+jsonSchemaDialect: https://json-schema.org/draft/2020-12/schema
+servers:
+  - url: /
+tags:
+  - name: LocalAiReporting
+security:
+  - bearerAuth: []
+paths:
+  /api/v1/reporting/ai-query-plans/actions/compose:
+    post:
+      tags: [LocalAiReporting]
+      operationId: composeAiQueryPlan
+      summary: 在本地签名模型中生成待人确认的查询方案
+      description: |
+        只接收人的问题和固定语言。数据目录、权限、固定提示词和模型参数均由服务端确定。
+        返回仅用于人工确认的摘要和五分钟一次性签名 plan token，不执行查询。
+      parameters:
+        - $ref: '#/components/parameters/LegalEntityId'
+        - $ref: '#/components/parameters/DeviceId'
+        - $ref: '#/components/parameters/InternalClient'
+        - $ref: '#/components/parameters/RequestId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AiComposeRequest'
+      responses:
+        '200':
+          description: 查询方案已生成，尚未执行
+          headers:
+            X-Request-Id: {$ref: '#/components/headers/XRequestId'}
+            X-Trace-Id: {$ref: '#/components/headers/XTraceId'}
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/AiComposeSuccess'}
+        '400': {$ref: '#/components/responses/ComposeError400'}
+        '403': {$ref: '#/components/responses/Error403'}
+        '404': {$ref: '#/components/responses/Error404'}
+        '409': {$ref: '#/components/responses/ComposeError409'}
+        '429': {$ref: '#/components/responses/Error429'}
+        '503': {$ref: '#/components/responses/ComposeError503'}
+      x-permission: reporting.ai_analysis.compose
+      x-capability: ReportingReportPrint+Read
+      x-idempotency: forbidden
+      x-forbidden-request-headers: [Idempotency-Key]
+      x-ai-timeout-ms: 120000
+      x-route-timeout-ms: 122000
+      x-error-codes:
+        - PLATFORM.REQUEST.INVALID_PAYLOAD
+        - PLATFORM.REQUEST.HEADER_MISSING
+        - AI.MODEL_PACKAGE.SIGNATURE_INVALID
+        - AI.MODEL_PACKAGE.NOT_ACTIVE
+        - AI.QUERY_PLAN.INVALID
+        - AI.INPUT.CONTEXT_LIMIT_EXCEEDED
+        - AI.QUERY_PLAN.NOT_VISIBLE_OR_DENIED
+        - AI.QUERY_PLAN.IDEMPOTENCY_NOT_ALLOWED
+        - AI.INFERENCE.CONCURRENCY_LIMIT
+        - AI.RESOURCE.BASELINE_NOT_CERTIFIED
+        - PLATFORM.SYSTEM.SYNC_TIMEOUT
+        - PLATFORM.AUTHZ.OBJECT_FORBIDDEN
+  /api/v1/reporting/ai-query-plans/actions/execute:
+    post:
+      tags: [LocalAiReporting]
+      operationId: executeAiQueryPlan
+      summary: 在用户明确确认后执行签名查询方案
+      description: |
+        执行前重新检查会话、设备、法人、权限、密级、字段、记录范围、目录和模型事实。
+        该只读 POST 明确禁止 Idempotency-Key；携带时以
+        AI.QUERY_PLAN.IDEMPOTENCY_NOT_ALLOWED 拒绝。truncated 只表示 limit+1 行截断，
+        不表示字节截断。
+      parameters:
+        - $ref: '#/components/parameters/LegalEntityId'
+        - $ref: '#/components/parameters/DeviceId'
+        - $ref: '#/components/parameters/InternalClient'
+        - $ref: '#/components/parameters/RequestId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AiExecuteRequest'
+      responses:
+        '200':
+          description: 只读分析结果；整个 compact JSON 封套不超过 8,388,608 bytes
+          headers:
+            X-Request-Id: {$ref: '#/components/headers/XRequestId'}
+            X-Trace-Id: {$ref: '#/components/headers/XTraceId'}
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/AiExecuteSuccess'}
+        '400': {$ref: '#/components/responses/ExecuteError400'}
+        '403': {$ref: '#/components/responses/Error403'}
+        '409': {$ref: '#/components/responses/ExecuteError409'}
+        '503': {$ref: '#/components/responses/ExecuteError503'}
+      x-permission: reporting.ai_analysis.execute
+      x-capability: ReportingReportPrint+Read
+      x-idempotency: forbidden
+      x-forbidden-request-headers: [Idempotency-Key]
+      x-max-compact-success-json-bytes: 8388608
+      x-byte-overflow-behavior: discard-all-and-return-REPORTING.ANALYTIC_QUERY.RESULT_TOO_LARGE
+      x-error-codes:
+        - PLATFORM.REQUEST.INVALID_PAYLOAD
+        - PLATFORM.REQUEST.HEADER_MISSING
+        - AI.MODEL_PACKAGE.SIGNATURE_INVALID
+        - AI.MODEL_PACKAGE.NOT_ACTIVE
+        - AI.QUERY_PLAN.INVALID
+        - AI.QUERY_PLAN.CONFIRMATION_REQUIRED
+        - AI.QUERY_PLAN.TOKEN_INVALID_OR_EXPIRED
+        - AI.QUERY_PLAN.SECURITY_CONTEXT_CHANGED
+        - AI.QUERY_PLAN.IDEMPOTENCY_NOT_ALLOWED
+        - AI.RESOURCE.BASELINE_NOT_CERTIFIED
+        - REPORTING.ANALYTIC_QUERY.RESULT_TOO_LARGE
+        - REPORTING.ANALYTIC_QUERY.STATEMENT_TIMEOUT
+        - REPORTING.ANALYTIC_QUERY.RESOURCE_LIMIT_EXCEEDED
+        - PLATFORM.SYSTEM.SYNC_TIMEOUT
+        - PLATFORM.AUTHZ.OBJECT_FORBIDDEN
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: opaque-session-token
+  parameters:
+    LegalEntityId:
+      name: X-Legal-Entity-Id
+      in: header
+      required: true
+      schema: {$ref: '#/components/schemas/Uuid'}
+    DeviceId:
+      name: X-Device-Id
+      in: header
+      required: true
+      schema:
+        type: string
+        minLength: 1
+        maxLength: 64
+        pattern: '^[A-Za-z0-9_-]+$'
+    InternalClient:
+      name: X-Client
+      in: header
+      required: true
+      schema:
+        type: string
+        enum: [win, mac, ios, android, ops, server_admin]
+    RequestId:
+      name: X-Request-Id
+      in: header
+      required: false
+      schema:
+        type: string
+        minLength: 8
+        maxLength: 64
+        pattern: '^[A-Za-z0-9_-]+$'
+  headers:
+    XRequestId:
+      schema: {type: string}
+    XTraceId:
+      schema: {$ref: '#/components/schemas/TraceId'}
+  schemas:
+    Uuid:
+      type: string
+      format: uuid
+      pattern: '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$'
+    TraceId:
+      type: string
+      pattern: '^[0-9a-f]{32}$'
+    EmptyMeta:
+      type: object
+      additionalProperties: false
+      maxProperties: 0
+    AiComposeRequest:
+      type: object
+      additionalProperties: false
+      required: [question, locale]
+      properties:
+        question:
+          type: string
+          minLength: 1
+          maxLength: 2000
+          x-length-unit: Unicode-scalar-values
+        locale:
+          type: string
+          enum: [zh-CN]
+    AiExecuteRequest:
+      type: object
+      additionalProperties: false
+      required: [plan_token, confirmed]
+      properties:
+        plan_token:
+          type: string
+          pattern: '^epai1\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]{86}$'
+          description: F-55 EP-AI-PLAN-TOKEN-V1 canonical opaque signed token.
+        confirmed:
+          type: boolean
+          description: false is a well-formed request that returns AI.QUERY_PLAN.CONFIRMATION_REQUIRED (409); only true may execute.
+    AiHumanConfirmation:
+      type: object
+      additionalProperties: false
+      required: [dataset_label, selected_fields, filters, grouping, aggregation, ordering, limit]
+      properties:
+        dataset_label: {type: string}
+        selected_fields:
+          type: array
+          maxItems: 80
+          items: {type: string}
+        filters:
+          type: array
+          maxItems: 32
+          items: {type: string}
+        grouping:
+          type: array
+          maxItems: 16
+          items: {type: string}
+        aggregation:
+          type: array
+          maxItems: 16
+          items: {type: string}
+        ordering:
+          type: array
+          maxItems: 3
+          items: {type: string}
+        limit: {type: integer, minimum: 1, maximum: 1000}
+    AiModelIdentity:
+      type: object
+      additionalProperties: false
+      required: [code, version]
+      properties:
+        code: {type: string}
+        version: {type: string}
+    AiComposeData:
+      type: object
+      additionalProperties: false
+      required: [turn_id, plan_token, expires_at, human_confirmation, model]
+      properties:
+        turn_id:
+          $ref: '#/components/schemas/Uuid'
+        plan_token:
+          type: string
+          pattern: '^epai1\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]{86}$'
+        expires_at: {type: string, format: date-time}
+        human_confirmation: {$ref: '#/components/schemas/AiHumanConfirmation'}
+        model: {$ref: '#/components/schemas/AiModelIdentity'}
+    AiResultColumn:
+      type: object
+      additionalProperties: false
+      required: [result_code, display_name, data_type, aggregation]
+      properties:
+        result_code:
+          type: string
+          pattern: '^(?:[a-z][a-z0-9_]*|agg_(?:[1-9]|1[0-6]))$'
+        display_name: {type: string}
+        data_type:
+          type: string
+          enum: [TEXT, INTEGER, DECIMAL, BOOLEAN, DATE, DATE_TIME, UUID]
+        aggregation:
+          type: [string, 'null']
+          enum: [SUM, COUNT, MIN, MAX, AVG, null]
+    AiResultScalar:
+      oneOf:
+        - {type: 'null'}
+        - {type: integer}
+        - {type: boolean}
+        - type: string
+          description: TEXT, canonical DECIMAL, DATE, DATE_TIME or UUID according to the matching column.
+      x-invariant: Value JSON type and canonical text grammar must match the same-position column data_type.
+    AiResultRow:
+      type: array
+      minItems: 1
+      maxItems: 80
+      items: {$ref: '#/components/schemas/AiResultScalar'}
+      x-invariant: Row length equals columns length.
+    AiExecuteData:
+      type: object
+      additionalProperties: false
+      required: [turn_id, dataset_code, columns, rows, row_count, truncated, executed_at]
+      properties:
+        turn_id: {$ref: '#/components/schemas/Uuid'}
+        dataset_code: {type: string}
+        columns:
+          type: array
+          minItems: 1
+          maxItems: 80
+          uniqueItems: true
+          items: {$ref: '#/components/schemas/AiResultColumn'}
+          x-invariant: result_code is unique and order defines every row's positional schema.
+        rows:
+          type: array
+          maxItems: 1000
+          items: {$ref: '#/components/schemas/AiResultRow'}
+        row_count: {type: integer, minimum: 0, maximum: 1000}
+        truncated:
+          type: boolean
+          description: Only limit+1 row truncation; never byte truncation.
+        executed_at: {type: string, format: date-time}
+      x-invariants:
+        - row_count equals rows length
+        - every row length equals columns length
+        - compact whole success envelope is at most 8388608 UTF-8 bytes
+    AiComposeSuccess:
+      type: object
+      additionalProperties: false
+      required: [success, data, error, meta, trace_id]
+      properties:
+        success: {const: true}
+        data: {$ref: '#/components/schemas/AiComposeData'}
+        error: {type: 'null'}
+        meta: {$ref: '#/components/schemas/EmptyMeta'}
+        trace_id: {$ref: '#/components/schemas/TraceId'}
+    AiExecuteSuccess:
+      type: object
+      additionalProperties: false
+      required: [success, data, error, meta, trace_id]
+      properties:
+        success: {const: true}
+        data: {$ref: '#/components/schemas/AiExecuteData'}
+        error: {type: 'null'}
+        meta: {$ref: '#/components/schemas/EmptyMeta'}
+        trace_id: {$ref: '#/components/schemas/TraceId'}
+    ErrorDetail:
+      type: object
+      additionalProperties: false
+      required: [field, reason, value]
+      properties:
+        field: {type: string}
+        reason: {type: string}
+        value:
+          type: [string, integer, boolean, 'null']
+    ComposeAppError400:
+      type: object
+      additionalProperties: false
+      required: [code, category, message, details, retryable, incident_no, occurred_at, advice]
+      properties:
+        code:
+          type: string
+          enum: [PLATFORM.REQUEST.INVALID_PAYLOAD, PLATFORM.REQUEST.HEADER_MISSING, AI.QUERY_PLAN.INVALID, AI.INPUT.CONTEXT_LIMIT_EXCEEDED, AI.QUERY_PLAN.IDEMPOTENCY_NOT_ALLOWED]
+        category: {const: VALIDATION}
+        message: {type: string, minLength: 1, maxLength: 2000}
+        details:
+          type: array
+          maxItems: 32
+          items: {$ref: '#/components/schemas/ErrorDetail'}
+        retryable: {const: false}
+        incident_no: {type: string, minLength: 1, maxLength: 64}
+        occurred_at: {type: string, format: date-time}
+        advice: {type: string, minLength: 1, maxLength: 2000}
+    ExecuteAppError400:
+      type: object
+      additionalProperties: false
+      required: [code, category, message, details, retryable, incident_no, occurred_at, advice]
+      properties:
+        code:
+          type: string
+          enum: [PLATFORM.REQUEST.INVALID_PAYLOAD, PLATFORM.REQUEST.HEADER_MISSING, AI.QUERY_PLAN.INVALID, AI.QUERY_PLAN.IDEMPOTENCY_NOT_ALLOWED, REPORTING.ANALYTIC_QUERY.RESULT_TOO_LARGE]
+        category: {const: VALIDATION}
+        message: {type: string, minLength: 1, maxLength: 2000}
+        details:
+          type: array
+          maxItems: 32
+          items: {$ref: '#/components/schemas/ErrorDetail'}
+        retryable: {const: false}
+        incident_no: {type: string, minLength: 1, maxLength: 64}
+        occurred_at: {type: string, format: date-time}
+        advice: {type: string, minLength: 1, maxLength: 2000}
+    AppError403:
+      type: object
+      additionalProperties: false
+      required: [code, category, message, details, retryable, incident_no, occurred_at, advice]
+      properties:
+        code: {const: PLATFORM.AUTHZ.OBJECT_FORBIDDEN}
+        category: {const: PERMISSION_DENIED}
+        message: {type: string, minLength: 1, maxLength: 2000}
+        details:
+          type: array
+          maxItems: 0
+          items: {$ref: '#/components/schemas/ErrorDetail'}
+        retryable: {const: false}
+        incident_no: {type: string, minLength: 1, maxLength: 64}
+        occurred_at: {type: string, format: date-time}
+        advice: {type: string, minLength: 1, maxLength: 2000}
+    AppError404:
+      type: object
+      additionalProperties: false
+      required: [code, category, message, details, retryable, incident_no, occurred_at, advice]
+      properties:
+        code: {const: AI.QUERY_PLAN.NOT_VISIBLE_OR_DENIED}
+        category: {const: PERMISSION_DENIED}
+        message: {type: string, minLength: 1, maxLength: 2000}
+        details:
+          type: array
+          maxItems: 0
+          items: {$ref: '#/components/schemas/ErrorDetail'}
+        retryable: {const: false}
+        incident_no: {type: string, minLength: 1, maxLength: 64}
+        occurred_at: {type: string, format: date-time}
+        advice: {type: string, minLength: 1, maxLength: 2000}
+    ComposeAppError409:
+      type: object
+      additionalProperties: false
+      required: [code, category, message, details, retryable, incident_no, occurred_at, advice]
+      properties:
+        code: {const: AI.MODEL_PACKAGE.SIGNATURE_INVALID}
+        category: {const: BUSINESS_CONFLICT}
+        message: {type: string, minLength: 1, maxLength: 2000}
+        details:
+          type: array
+          maxItems: 32
+          items: {$ref: '#/components/schemas/ErrorDetail'}
+        retryable: {const: false}
+        incident_no: {type: string, minLength: 1, maxLength: 64}
+        occurred_at: {type: string, format: date-time}
+        advice: {type: string, minLength: 1, maxLength: 2000}
+    ExecuteAppError409:
+      type: object
+      additionalProperties: false
+      required: [code, category, message, details, retryable, incident_no, occurred_at, advice]
+      properties:
+        code:
+          type: string
+          enum: [AI.MODEL_PACKAGE.SIGNATURE_INVALID, AI.QUERY_PLAN.CONFIRMATION_REQUIRED, AI.QUERY_PLAN.TOKEN_INVALID_OR_EXPIRED, AI.QUERY_PLAN.SECURITY_CONTEXT_CHANGED]
+        category: {const: BUSINESS_CONFLICT}
+        message: {type: string, minLength: 1, maxLength: 2000}
+        details:
+          type: array
+          maxItems: 32
+          items: {$ref: '#/components/schemas/ErrorDetail'}
+        retryable: {const: false}
+        incident_no: {type: string, minLength: 1, maxLength: 64}
+        occurred_at: {type: string, format: date-time}
+        advice: {type: string, minLength: 1, maxLength: 2000}
+    AppError429:
+      type: object
+      additionalProperties: false
+      required: [code, category, message, details, retryable, incident_no, occurred_at, advice]
+      properties:
+        code: {const: AI.INFERENCE.CONCURRENCY_LIMIT}
+        category: {const: INFRASTRUCTURE}
+        message: {type: string, minLength: 1, maxLength: 2000}
+        details:
+          type: array
+          maxItems: 0
+          items: {$ref: '#/components/schemas/ErrorDetail'}
+        retryable: {const: true}
+        incident_no: {type: string, minLength: 1, maxLength: 64}
+        occurred_at: {type: string, format: date-time}
+        advice: {type: string, minLength: 1, maxLength: 2000}
+    ComposeAppError503:
+      type: object
+      additionalProperties: false
+      required: [code, category, message, details, retryable, incident_no, occurred_at, advice]
+      properties:
+        code:
+          type: string
+          enum: [AI.MODEL_PACKAGE.NOT_ACTIVE, AI.RESOURCE.BASELINE_NOT_CERTIFIED, PLATFORM.SYSTEM.SYNC_TIMEOUT]
+        category: {const: INFRASTRUCTURE}
+        message: {type: string, minLength: 1, maxLength: 2000}
+        details:
+          type: array
+          maxItems: 0
+          items: {$ref: '#/components/schemas/ErrorDetail'}
+        retryable: {const: true}
+        incident_no: {type: string, minLength: 1, maxLength: 64}
+        occurred_at: {type: string, format: date-time}
+        advice: {type: string, minLength: 1, maxLength: 2000}
+    ExecuteAppError503:
+      type: object
+      additionalProperties: false
+      required: [code, category, message, details, retryable, incident_no, occurred_at, advice]
+      properties:
+        code:
+          type: string
+          enum: [AI.MODEL_PACKAGE.NOT_ACTIVE, AI.RESOURCE.BASELINE_NOT_CERTIFIED, REPORTING.ANALYTIC_QUERY.STATEMENT_TIMEOUT, REPORTING.ANALYTIC_QUERY.RESOURCE_LIMIT_EXCEEDED, PLATFORM.SYSTEM.SYNC_TIMEOUT]
+        category: {const: INFRASTRUCTURE}
+        message: {type: string, minLength: 1, maxLength: 2000}
+        details:
+          type: array
+          maxItems: 0
+          items: {$ref: '#/components/schemas/ErrorDetail'}
+        retryable: {const: true}
+        incident_no: {type: string, minLength: 1, maxLength: 64}
+        occurred_at: {type: string, format: date-time}
+        advice: {type: string, minLength: 1, maxLength: 2000}
+    ComposeErrorEnvelope400:
+      type: object
+      additionalProperties: false
+      required: [success, data, error, meta, trace_id]
+      properties: {success: {const: false}, data: {type: 'null'}, error: {$ref: '#/components/schemas/ComposeAppError400'}, meta: {type: 'null'}, trace_id: {$ref: '#/components/schemas/TraceId'}}
+    ExecuteErrorEnvelope400:
+      type: object
+      additionalProperties: false
+      required: [success, data, error, meta, trace_id]
+      properties: {success: {const: false}, data: {type: 'null'}, error: {$ref: '#/components/schemas/ExecuteAppError400'}, meta: {type: 'null'}, trace_id: {$ref: '#/components/schemas/TraceId'}}
+    ErrorEnvelope403:
+      type: object
+      additionalProperties: false
+      required: [success, data, error, meta, trace_id]
+      properties: {success: {const: false}, data: {type: 'null'}, error: {$ref: '#/components/schemas/AppError403'}, meta: {type: 'null'}, trace_id: {$ref: '#/components/schemas/TraceId'}}
+    ErrorEnvelope404:
+      type: object
+      additionalProperties: false
+      required: [success, data, error, meta, trace_id]
+      properties: {success: {const: false}, data: {type: 'null'}, error: {$ref: '#/components/schemas/AppError404'}, meta: {type: 'null'}, trace_id: {$ref: '#/components/schemas/TraceId'}}
+    ComposeErrorEnvelope409:
+      type: object
+      additionalProperties: false
+      required: [success, data, error, meta, trace_id]
+      properties: {success: {const: false}, data: {type: 'null'}, error: {$ref: '#/components/schemas/ComposeAppError409'}, meta: {type: 'null'}, trace_id: {$ref: '#/components/schemas/TraceId'}}
+    ExecuteErrorEnvelope409:
+      type: object
+      additionalProperties: false
+      required: [success, data, error, meta, trace_id]
+      properties: {success: {const: false}, data: {type: 'null'}, error: {$ref: '#/components/schemas/ExecuteAppError409'}, meta: {type: 'null'}, trace_id: {$ref: '#/components/schemas/TraceId'}}
+    ErrorEnvelope429:
+      type: object
+      additionalProperties: false
+      required: [success, data, error, meta, trace_id]
+      properties: {success: {const: false}, data: {type: 'null'}, error: {$ref: '#/components/schemas/AppError429'}, meta: {type: 'null'}, trace_id: {$ref: '#/components/schemas/TraceId'}}
+    ComposeErrorEnvelope503:
+      type: object
+      additionalProperties: false
+      required: [success, data, error, meta, trace_id]
+      properties: {success: {const: false}, data: {type: 'null'}, error: {$ref: '#/components/schemas/ComposeAppError503'}, meta: {type: 'null'}, trace_id: {$ref: '#/components/schemas/TraceId'}}
+    ExecuteErrorEnvelope503:
+      type: object
+      additionalProperties: false
+      required: [success, data, error, meta, trace_id]
+      properties: {success: {const: false}, data: {type: 'null'}, error: {$ref: '#/components/schemas/ExecuteAppError503'}, meta: {type: 'null'}, trace_id: {$ref: '#/components/schemas/TraceId'}}
+  responses:
+    ComposeError400:
+      description: compose 请求头、请求体、模型计划、context 或禁用幂等头校验失败
+      headers:
+        X-Request-Id: {$ref: '#/components/headers/XRequestId'}
+        X-Trace-Id: {$ref: '#/components/headers/XTraceId'}
+      content:
+        application/json:
+          schema: {$ref: '#/components/schemas/ComposeErrorEnvelope400'}
+    ExecuteError400:
+      description: execute 请求头、请求体、计划或结果字节上限校验失败
+      headers:
+        X-Request-Id: {$ref: '#/components/headers/XRequestId'}
+        X-Trace-Id: {$ref: '#/components/headers/XTraceId'}
+      content:
+        application/json:
+          schema: {$ref: '#/components/schemas/ExecuteErrorEnvelope400'}
+    Error404:
+      description: 仅 compose 的目录 code 不存在或不可见；同码同形态且不泄露存在性
+      headers:
+        X-Request-Id: {$ref: '#/components/headers/XRequestId'}
+        X-Trace-Id: {$ref: '#/components/headers/XTraceId'}
+      content:
+        application/json:
+          schema: {$ref: '#/components/schemas/ErrorEnvelope404'}
+    Error403:
+      description: 当前主体对 AI 分析对象类型完全无权
+      headers:
+        X-Request-Id: {$ref: '#/components/headers/XRequestId'}
+        X-Trace-Id: {$ref: '#/components/headers/XTraceId'}
+      content:
+        application/json:
+          schema: {$ref: '#/components/schemas/ErrorEnvelope403'}
+    ComposeError409:
+      description: compose 发现模型包签名或完整性冲突
+      headers:
+        X-Request-Id: {$ref: '#/components/headers/XRequestId'}
+        X-Trace-Id: {$ref: '#/components/headers/XTraceId'}
+      content:
+        application/json:
+          schema: {$ref: '#/components/schemas/ComposeErrorEnvelope409'}
+    ExecuteError409:
+      description: execute 的模型包、token、确认或当前安全事实冲突
+      headers:
+        X-Request-Id: {$ref: '#/components/headers/XRequestId'}
+        X-Trace-Id: {$ref: '#/components/headers/XTraceId'}
+      content:
+        application/json:
+          schema: {$ref: '#/components/schemas/ExecuteErrorEnvelope409'}
+    Error429:
+      description: 本地推理固定并发/排队上限命中
+      headers:
+        X-Request-Id: {$ref: '#/components/headers/XRequestId'}
+        X-Trace-Id: {$ref: '#/components/headers/XTraceId'}
+      content:
+        application/json:
+          schema: {$ref: '#/components/schemas/ErrorEnvelope429'}
+    ComposeError503:
+      description: compose 无活动模型、资源认证门禁未成立或同步期限已到
+      headers:
+        X-Request-Id: {$ref: '#/components/headers/XRequestId'}
+        X-Trace-Id: {$ref: '#/components/headers/XTraceId'}
+      content:
+        application/json:
+          schema: {$ref: '#/components/schemas/ComposeErrorEnvelope503'}
+    ExecuteError503:
+      description: execute 无活动模型、资源认证门禁未成立、查询资源/statement 上限或同步期限命中
+      headers:
+        X-Request-Id: {$ref: '#/components/headers/XRequestId'}
+        X-Trace-Id: {$ref: '#/components/headers/XTraceId'}
+      content:
+        application/json:
+          schema: {$ref: '#/components/schemas/ExecuteErrorEnvelope503'}

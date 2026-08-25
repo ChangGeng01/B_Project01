@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# F-57：HISTORICAL_LINUX_RESEARCH_ONLY；输出不得作为 Windows Server 2022 生产证据。
 """读 Compose 文件并抽出与 Quadlet 同形的编排事实表。
 
 本机没有 PyYAML，也没有 docker compose config 可调，所以这里自带一个只认本项目所用构造的

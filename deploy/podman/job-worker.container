@@ -1,3 +1,4 @@
+# F-57：HISTORICAL_LINUX_RESEARCH_ONLY；禁止用于当前 Windows Server 2022 生产部署或发布验收。
 # job-worker：Outbox 消费、报表与文档渲染、批处理、内部对账，技术基线第 2 节进程表第 2 行。
 [Unit]
 Description=EP 单机部署：job-worker

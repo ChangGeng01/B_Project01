@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# F-57：HISTORICAL_LINUX_RESEARCH_ONLY；不得作为 Windows Server 2022 生产编排证据。
 # verify-orchestration-equivalence.py 的负样例集：每条规则一个故意违反的样本，
 # 断言的是规则本身——不只看退出码，还要求输出里出现该规则的名字，
 # 否则一个「凡事都判不符」的坏脚本也能把这些样例全过掉。

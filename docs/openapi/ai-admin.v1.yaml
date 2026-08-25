@@ -1,0 +1,540 @@
+openapi: 3.1.0
+info:
+  title: Enterprise Platform AI Model Administration API — F-55 exact surface
+  version: 1.0.0-f55
+  description: |
+    本文件保留 F-55 ServerAdmin AI 模型包只读管理面的历史输入，不是现行 F-57
+    独立权威契约。其当前契约地位已由 F-57 服务器 Control Center 与 provider
+    administration 取代；下列两个 GET operation 及禁止 action 的形状仅供再基线参考。
+  x-f57-status: HISTORICAL_SUPERSEDED
+  x-source-authority: F-55-section-5.3-historical-input
+  x-planned-implementation-tasks: [F57-15, F57-16]
+  x-implementation-state: NOT_IMPLEMENTED
+  x-scope: exact-two-get-surface
+  x-path-count: 2
+  x-operation-count: 2
+  x-stable-error-codes:
+    - PLATFORM.REQUEST.INVALID_PAYLOAD
+    - PLATFORM.REQUEST.HEADER_MISSING
+    - PLATFORM.AUTHZ.NOT_FOUND_OR_DENIED
+    - PLATFORM.AUTHZ.OBJECT_FORBIDDEN
+    - AI.MODEL_PACKAGE.SIGNATURE_INVALID
+jsonSchemaDialect: https://json-schema.org/draft/2020-12/schema
+servers:
+  - url: /
+tags:
+  - name: AiModelPackageAdministration
+security:
+  - bearerAuth: []
+paths:
+  /api/v1/platform/ai-model-packages:
+    get:
+      tags: [AiModelPackageAdministration]
+      operationId: listAiModelPackagesForAdministration
+      summary: 查看已登记 AI 模型包
+      description: |
+        只接受 cursor 与 page_size。任何 limit、page、sort、filter 或其他未知
+        query parameter 均以 PLATFORM.REQUEST.INVALID_PAYLOAD 拒绝。结果固定按
+        created_at DESC,id DESC 排序；cursor 只是位置，不携带或缓存授权。
+        任一候选项的认证报告缺字段、摘要不符或验签失败时，整页以
+        AI.MODEL_PACKAGE.SIGNATURE_INVALID 拒绝，不返回部分或半可信条目。
+      parameters:
+        - $ref: '#/components/parameters/LegalEntityId'
+        - $ref: '#/components/parameters/DeviceId'
+        - $ref: '#/components/parameters/ServerAdminClient'
+        - $ref: '#/components/parameters/RequestId'
+        - $ref: '#/components/parameters/AiModelPackageCursor'
+        - $ref: '#/components/parameters/PageSize'
+      responses:
+        '200':
+          description: 按冻结键集顺序返回模型包；items 永不为 null
+          headers:
+            X-Request-Id: {$ref: '#/components/headers/XRequestId'}
+            X-Trace-Id: {$ref: '#/components/headers/XTraceId'}
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/AiModelPackageListSuccess'}
+        '400': {$ref: '#/components/responses/Error400'}
+        '403': {$ref: '#/components/responses/Error403'}
+        '409': {$ref: '#/components/responses/Error409'}
+      x-permission: platform.admin.ai_model.view
+      x-capability: PlatformAdminLowcodeOps+Read
+      x-client: server_admin
+      x-idempotency: not-applicable
+      x-query-parameters-closed: true
+      x-forbidden-query-parameters: [limit, page, sort, filter]
+      x-ordering: created_at DESC,id DESC
+      x-page-size-default: 50
+      x-page-size-maximum: 100
+      x-cursor-authorizes-nothing: true
+      x-error-codes:
+        - PLATFORM.REQUEST.INVALID_PAYLOAD
+        - PLATFORM.REQUEST.HEADER_MISSING
+        - PLATFORM.AUTHZ.OBJECT_FORBIDDEN
+        - AI.MODEL_PACKAGE.SIGNATURE_INVALID
+  /api/v1/platform/ai-model-packages/{id}:
+    get:
+      tags: [AiModelPackageAdministration]
+      operationId: getAiModelPackageForAdministration
+      summary: 查看单个 AI 模型包
+      description: |
+        返回一个完整且已重新核验证据的 AiModelPackageAdminViewV1。记录不存在
+        与记录对当前安全上下文不可见使用完全相同的 404 封套；不得泄露存在性。
+        认证报告缺字段、摘要不符或验签失败时，以
+        AI.MODEL_PACKAGE.SIGNATURE_INVALID 拒绝，不返回半可信字段。
+      parameters:
+        - $ref: '#/components/parameters/AiModelPackageId'
+        - $ref: '#/components/parameters/LegalEntityId'
+        - $ref: '#/components/parameters/DeviceId'
+        - $ref: '#/components/parameters/ServerAdminClient'
+        - $ref: '#/components/parameters/RequestId'
+      responses:
+        '200':
+          description: 单个完整模型包管理视图
+          headers:
+            X-Request-Id: {$ref: '#/components/headers/XRequestId'}
+            X-Trace-Id: {$ref: '#/components/headers/XTraceId'}
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/AiModelPackageDetailSuccess'}
+        '400': {$ref: '#/components/responses/Error400'}
+        '403': {$ref: '#/components/responses/Error403'}
+        '404': {$ref: '#/components/responses/Error404'}
+        '409': {$ref: '#/components/responses/Error409'}
+      x-permission: platform.admin.ai_model.view
+      x-capability: PlatformAdminLowcodeOps+Read
+      x-client: server_admin
+      x-idempotency: not-applicable
+      x-query-parameters-closed: true
+      x-forbidden-query-parameters: [cursor, page_size, limit, page, sort, filter]
+      x-not-found-policy: absent-and-record-denied-are-indistinguishable
+      x-error-codes:
+        - PLATFORM.REQUEST.INVALID_PAYLOAD
+        - PLATFORM.REQUEST.HEADER_MISSING
+        - PLATFORM.AUTHZ.NOT_FOUND_OR_DENIED
+        - PLATFORM.AUTHZ.OBJECT_FORBIDDEN
+        - AI.MODEL_PACKAGE.SIGNATURE_INVALID
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: opaque-session-token
+  parameters:
+    AiModelPackageId:
+      name: id
+      in: path
+      required: true
+      schema: {$ref: '#/components/schemas/LowercaseUuid'}
+    LegalEntityId:
+      name: X-Legal-Entity-Id
+      in: header
+      required: true
+      schema: {$ref: '#/components/schemas/LowercaseUuid'}
+    DeviceId:
+      name: X-Device-Id
+      in: header
+      required: true
+      schema:
+        type: string
+        minLength: 1
+        maxLength: 64
+        pattern: '^[A-Za-z0-9_-]+$'
+    ServerAdminClient:
+      name: X-Client
+      in: header
+      required: true
+      schema:
+        type: string
+        const: server_admin
+    RequestId:
+      name: X-Request-Id
+      in: header
+      required: false
+      schema:
+        type: string
+        minLength: 8
+        maxLength: 64
+        pattern: '^[A-Za-z0-9_-]+$'
+    AiModelPackageCursor:
+      name: cursor
+      in: query
+      required: false
+      description: |
+        唯一 wire grammar 为 epcur1.<base64url-no-pad(JCS(AiModelPackageCursorV1))>。
+        解码后最多 512 bytes；重做 RFC 8785 JCS 与 base64url-no-pad 必须与输入逐
+        byte 相等。查询谓词固定为 (created_at,id) < (cursor.created_at,cursor.id)。
+      schema:
+        type: string
+        minLength: 9
+        maxLength: 690
+        pattern: '^epcur1\.[A-Za-z0-9_-]+$'
+      x-decoded-schema: '#/components/schemas/AiModelPackageCursorV1'
+      x-decoded-max-bytes: 512
+      x-canonicalization: RFC8785-JCS-then-RFC4648-base64url-no-pad
+    PageSize:
+      name: page_size
+      in: query
+      required: false
+      schema:
+        type: integer
+        minimum: 1
+        maximum: 100
+        default: 50
+  headers:
+    XRequestId:
+      required: true
+      schema:
+        type: string
+        minLength: 8
+        maxLength: 64
+        pattern: '^[A-Za-z0-9_-]+$'
+    XTraceId:
+      required: true
+      schema: {$ref: '#/components/schemas/TraceId'}
+  schemas:
+    LowercaseUuid:
+      type: string
+      format: uuid
+      pattern: '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$'
+    TraceId:
+      type: string
+      pattern: '^[0-9a-f]{32}$'
+    Sha256LowerHex:
+      type: string
+      pattern: '^[0-9a-f]{64}$'
+    UtcRfc3339:
+      type: string
+      format: date-time
+      pattern: '^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(?:\.[0-9]+)?Z$'
+    NullableUtcRfc3339:
+      oneOf:
+        - $ref: '#/components/schemas/UtcRfc3339'
+        - type: 'null'
+    CertificationReportRef:
+      type: string
+      pattern: '^ep-evidence://ai-resource/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[89ab][0-9a-f]{3}-[0-9a-f]{12}/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[89ab][0-9a-f]{3}-[0-9a-f]{12}/(?:cpu-local|gpu-local)/sha256/[0-9a-f]{64}$'
+    AiModelPackageCursorV1:
+      type: object
+      additionalProperties: false
+      required: [schema_version, endpoint, created_at, id]
+      properties:
+        schema_version: {const: 1}
+        endpoint: {const: AI_MODEL_PACKAGES}
+        created_at:
+          type: string
+          format: date-time
+          pattern: '^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}\.[0-9]{6}Z$'
+        id: {$ref: '#/components/schemas/LowercaseUuid'}
+      x-max-jcs-bytes: 512
+    AiModelPackageAdminViewV1:
+      type: object
+      additionalProperties: false
+      required:
+        - id
+        - model_code
+        - model_version
+        - runtime_abi_version
+        - package_digest
+        - manifest_digest
+        - signer_subject
+        - signature_kind
+        - prompt_template_version
+        - max_context_tokens
+        - max_concurrent_requests
+        - execution_profile
+        - resource_formula_version
+        - certification_report_ref
+        - certification_report_digest
+        - verified_at
+        - certified_at
+        - activated_at
+        - disabled_at
+        - revoked_at
+        - status
+        - row_version
+      properties:
+        id: {$ref: '#/components/schemas/LowercaseUuid'}
+        model_code:
+          type: string
+          minLength: 1
+          maxLength: 64
+          pattern: '^[a-z0-9._-]+$'
+        model_version:
+          type: string
+          minLength: 1
+          maxLength: 64
+          pattern: '^[A-Za-z0-9._+-]+$'
+        runtime_abi_version:
+          type: integer
+          const: 1
+        package_digest: {$ref: '#/components/schemas/Sha256LowerHex'}
+        manifest_digest: {$ref: '#/components/schemas/Sha256LowerHex'}
+        signer_subject:
+          type: string
+          minLength: 1
+          maxLength: 512
+        signature_kind:
+          type: string
+          enum: [PROD_AUTHENTICODE, DEV_ECDSA_P256]
+        prompt_template_version:
+          type: string
+          minLength: 1
+          maxLength: 64
+        max_context_tokens:
+          type: integer
+          minimum: 2049
+          maximum: 2147483647
+        max_concurrent_requests:
+          type: integer
+          const: 15
+        execution_profile:
+          type: string
+          enum: [CPU_LOCAL, GPU_LOCAL]
+        resource_formula_version:
+          type: string
+          const: AI_RAM_V1_0_095_HOST
+        certification_report_ref:
+          oneOf:
+            - $ref: '#/components/schemas/CertificationReportRef'
+            - type: 'null'
+        certification_report_digest:
+          oneOf:
+            - $ref: '#/components/schemas/Sha256LowerHex'
+            - type: 'null'
+        verified_at: {$ref: '#/components/schemas/NullableUtcRfc3339'}
+        certified_at: {$ref: '#/components/schemas/NullableUtcRfc3339'}
+        activated_at: {$ref: '#/components/schemas/NullableUtcRfc3339'}
+        disabled_at: {$ref: '#/components/schemas/NullableUtcRfc3339'}
+        revoked_at: {$ref: '#/components/schemas/NullableUtcRfc3339'}
+        status:
+          type: string
+          enum: [REGISTERED, VERIFIED, CERTIFIED, ACTIVE, DISABLED, REVOKED]
+        row_version:
+          type: integer
+          minimum: 0
+          maximum: 9223372036854775807
+          x-wire-type: nonnegative-i64-json-integer
+      oneOf:
+        - required: [certification_report_ref, certification_report_digest]
+          properties:
+            certification_report_ref: {$ref: '#/components/schemas/CertificationReportRef'}
+            certification_report_digest: {$ref: '#/components/schemas/Sha256LowerHex'}
+        - required: [certification_report_ref, certification_report_digest]
+          properties:
+            certification_report_ref: {type: 'null'}
+            certification_report_digest: {type: 'null'}
+      x-certification-fields: both-null-or-both-non-null
+      x-forbidden-fields:
+        - installed_root_ref
+        - install_receipt_id
+        - prompt_body
+        - tokenizer_bytes
+        - weight_bytes
+        - file_path
+        - signature_body
+        - secret
+        - download_url
+    AiModelPackageListData:
+      type: object
+      additionalProperties: false
+      required: [items]
+      properties:
+        items:
+          type: array
+          minItems: 0
+          maxItems: 100
+          items: {$ref: '#/components/schemas/AiModelPackageAdminViewV1'}
+    AiModelPackageListMeta:
+      type: object
+      additionalProperties: false
+      required: [page_size, next_cursor]
+      properties:
+        page_size:
+          type: integer
+          minimum: 1
+          maximum: 100
+          description: 本次实际使用的 page_size；省略请求参数时为 50。
+        next_cursor:
+          description: 仅确实存在后续页时，取本页末项的 created_at 与 id 编码；空页或末页为 null。
+          oneOf:
+            - type: string
+              minLength: 9
+              maxLength: 690
+              pattern: '^epcur1\.[A-Za-z0-9_-]+$'
+            - type: 'null'
+          x-decoded-schema: '#/components/schemas/AiModelPackageCursorV1'
+          x-decoded-max-bytes: 512
+          x-canonicalization: RFC8785-JCS-then-RFC4648-base64url-no-pad
+      x-next-cursor-rule: encode-page-last-item-only-if-more-rows-otherwise-null
+    EmptyMeta:
+      type: object
+      additionalProperties: false
+      maxProperties: 0
+    AiModelPackageListSuccess:
+      type: object
+      additionalProperties: false
+      required: [success, data, error, meta, trace_id]
+      properties:
+        success: {const: true}
+        data: {$ref: '#/components/schemas/AiModelPackageListData'}
+        error: {type: 'null'}
+        meta: {$ref: '#/components/schemas/AiModelPackageListMeta'}
+        trace_id: {$ref: '#/components/schemas/TraceId'}
+    AiModelPackageDetailSuccess:
+      type: object
+      additionalProperties: false
+      required: [success, data, error, meta, trace_id]
+      properties:
+        success: {const: true}
+        data: {$ref: '#/components/schemas/AiModelPackageAdminViewV1'}
+        error: {type: 'null'}
+        meta: {$ref: '#/components/schemas/EmptyMeta'}
+        trace_id: {$ref: '#/components/schemas/TraceId'}
+    ErrorDetail:
+      type: object
+      additionalProperties: false
+      required: [field, reason, value]
+      properties:
+        field: {type: string}
+        reason: {type: string}
+        value:
+          type: [string, integer, boolean, 'null']
+    AppError400:
+      type: object
+      additionalProperties: false
+      required: [code, category, message, details, retryable, incident_no, occurred_at, advice]
+      properties:
+        code:
+          type: string
+          enum: [PLATFORM.REQUEST.INVALID_PAYLOAD, PLATFORM.REQUEST.HEADER_MISSING]
+        category: {const: VALIDATION}
+        message: {type: string}
+        details:
+          type: array
+          items: {$ref: '#/components/schemas/ErrorDetail'}
+        retryable: {const: false}
+        incident_no: {type: string}
+        occurred_at: {$ref: '#/components/schemas/UtcRfc3339'}
+        advice: {type: string}
+    AppError403:
+      type: object
+      additionalProperties: false
+      required: [code, category, message, details, retryable, incident_no, occurred_at, advice]
+      properties:
+        code: {const: PLATFORM.AUTHZ.OBJECT_FORBIDDEN}
+        category: {const: PERMISSION_DENIED}
+        message: {type: string}
+        details:
+          type: array
+          maxItems: 0
+          items: {$ref: '#/components/schemas/ErrorDetail'}
+        retryable: {const: false}
+        incident_no: {type: string}
+        occurred_at: {$ref: '#/components/schemas/UtcRfc3339'}
+        advice: {type: string}
+    AppError404:
+      type: object
+      additionalProperties: false
+      required: [code, category, message, details, retryable, incident_no, occurred_at, advice]
+      properties:
+        code: {const: PLATFORM.AUTHZ.NOT_FOUND_OR_DENIED}
+        category: {const: PERMISSION_DENIED}
+        message: {type: string}
+        details:
+          type: array
+          maxItems: 0
+          items: {$ref: '#/components/schemas/ErrorDetail'}
+        retryable: {const: false}
+        incident_no: {type: string}
+        occurred_at: {$ref: '#/components/schemas/UtcRfc3339'}
+        advice: {type: string}
+    AppError409:
+      type: object
+      additionalProperties: false
+      required: [code, category, message, details, retryable, incident_no, occurred_at, advice]
+      properties:
+        code: {const: AI.MODEL_PACKAGE.SIGNATURE_INVALID}
+        category: {const: BUSINESS_CONFLICT}
+        message: {type: string}
+        details:
+          type: array
+          maxItems: 0
+          items: {$ref: '#/components/schemas/ErrorDetail'}
+        retryable: {const: false}
+        incident_no: {type: string}
+        occurred_at: {$ref: '#/components/schemas/UtcRfc3339'}
+        advice: {type: string}
+    ErrorEnvelope400:
+      type: object
+      additionalProperties: false
+      required: [success, data, error, meta, trace_id]
+      properties:
+        success: {const: false}
+        data: {type: 'null'}
+        error: {$ref: '#/components/schemas/AppError400'}
+        meta: {type: 'null'}
+        trace_id: {$ref: '#/components/schemas/TraceId'}
+    ErrorEnvelope403:
+      type: object
+      additionalProperties: false
+      required: [success, data, error, meta, trace_id]
+      properties:
+        success: {const: false}
+        data: {type: 'null'}
+        error: {$ref: '#/components/schemas/AppError403'}
+        meta: {type: 'null'}
+        trace_id: {$ref: '#/components/schemas/TraceId'}
+    ErrorEnvelope404:
+      type: object
+      additionalProperties: false
+      required: [success, data, error, meta, trace_id]
+      properties:
+        success: {const: false}
+        data: {type: 'null'}
+        error: {$ref: '#/components/schemas/AppError404'}
+        meta: {type: 'null'}
+        trace_id: {$ref: '#/components/schemas/TraceId'}
+    ErrorEnvelope409:
+      type: object
+      additionalProperties: false
+      required: [success, data, error, meta, trace_id]
+      properties:
+        success: {const: false}
+        data: {type: 'null'}
+        error: {$ref: '#/components/schemas/AppError409'}
+        meta: {type: 'null'}
+        trace_id: {$ref: '#/components/schemas/TraceId'}
+  responses:
+    Error400:
+      description: 请求头、cursor、page_size 或未知 query parameter 无效
+      headers:
+        X-Request-Id: {$ref: '#/components/headers/XRequestId'}
+        X-Trace-Id: {$ref: '#/components/headers/XTraceId'}
+      content:
+        application/json:
+          schema: {$ref: '#/components/schemas/ErrorEnvelope400'}
+    Error403:
+      description: 当前用户对 AI 模型包对象类型完全无权
+      headers:
+        X-Request-Id: {$ref: '#/components/headers/XRequestId'}
+        X-Trace-Id: {$ref: '#/components/headers/XTraceId'}
+      content:
+        application/json:
+          schema: {$ref: '#/components/schemas/ErrorEnvelope403'}
+    Error404:
+      description: 详情记录不存在或对当前安全上下文不可见；同码同形态
+      headers:
+        X-Request-Id: {$ref: '#/components/headers/XRequestId'}
+        X-Trace-Id: {$ref: '#/components/headers/XTraceId'}
+      content:
+        application/json:
+          schema: {$ref: '#/components/schemas/ErrorEnvelope404'}
+    Error409:
+      description: 认证报告、摘要、签名或当前模型包事实未通过完整性验证
+      headers:
+        X-Request-Id: {$ref: '#/components/headers/XRequestId'}
+        X-Trace-Id: {$ref: '#/components/headers/XTraceId'}
+      content:
+        application/json:
+          schema: {$ref: '#/components/schemas/ErrorEnvelope409'}

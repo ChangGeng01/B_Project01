@@ -1,3 +1,4 @@
+# F-57：HISTORICAL_LINUX_RESEARCH_ONLY；禁止用于当前 Windows Server 2022 生产部署或发布验收。
 # plugin-host：服务端签名 WASM Component 的受控宿主，无数据库连接。
 # 本进程建 /run/ep/ipc/plugin.sock 供 core-server 连接，因此不排在 core-server 之后。
 [Unit]

@@ -1,3 +1,4 @@
+# F-57：HISTORICAL_LINUX_RESEARCH_ONLY；禁止用于当前 Windows Server 2022 生产部署或发布验收。
 # PostgreSQL 16，规格第 13.1 章的事务数据库单实例。
 # 建库参数不在此处取值：ADR-0003 已把 CREATE DATABASE 的 collation 与编码交给
 # db/bootstrap/00_database.sql，该脚本按裁定 C-01 由阶段 2 交付。这里给一个 POSTGRES_INITDB_ARGS

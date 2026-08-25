@@ -1,0 +1,1967 @@
+openapi: 3.1.0
+info:
+  title: Enterprise Platform Invoice API — Stage 10 full surface
+  version: 1.0.0-stage10
+  description: |
+    本文件保留阶段 10/F-50 的 16 个 invoice HTTP method/path operation，只是 F-57
+    当前主题输入，尚待精确再基线；它不是现行、已实现的完整 F-57 机器契约。
+    蓝票和红票金额、税率只存在于非空 lines；
+    写请求的头对象禁止 `tax_rate`、`net_amount`、`untaxed_amount`、`tax_amount`、`gross_amount`。
+    号码以 InvoiceIdentifierInput 统一表达，HTTP、插件和三个 Excel v2 模板必须归一到本文件的
+    四个行/号码输入类型后调用同一验证器。
+  x-f57-status: CURRENT_SUBJECT_INPUT_PENDING_EXACT_REBASELINE
+  x-source-authority: F-50-current-subject-input
+  x-planned-implementation-tasks: [F57-20]
+  x-implementation-state: NOT_IMPLEMENTED_AS_FULL_F57_MACHINE_CONTRACT
+  x-scope: stage10-full-surface
+jsonSchemaDialect: https://json-schema.org/draft/2020-12/schema
+servers:
+  - url: /
+tags:
+  - name: InvoiceApplications
+  - name: SalesInvoices
+  - name: PurchaseInvoices
+  - name: InvoiceReversals
+  - name: InvoiceImports
+security:
+  - bearerAuth: []
+paths:
+  /api/v1/invoice/invoice-applications:
+    post:
+      tags: [InvoiceApplications]
+      operationId: createInvoiceApplication
+      summary: 创建发票申请
+      parameters:
+        - $ref: '#/components/parameters/LegalEntityId'
+        - $ref: '#/components/parameters/DeviceId'
+        - $ref: '#/components/parameters/InternalClient'
+        - $ref: '#/components/parameters/RequestId'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/InvoiceApplicationCreateRequest'}
+      responses:
+        '201':
+          description: 发票申请已创建
+          headers:
+            X-Request-Id: {$ref: '#/components/headers/XRequestId'}
+            X-Trace-Id: {$ref: '#/components/headers/XTraceId'}
+            Idempotent-Replay: {$ref: '#/components/headers/IdempotentReplay'}
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/InvoiceApplicationSuccess'}
+        '400': {$ref: '#/components/responses/Error400'}
+        '403': {$ref: '#/components/responses/Error403'}
+        '404': {$ref: '#/components/responses/Error404'}
+        '409': {$ref: '#/components/responses/Error409'}
+      x-permission: invoice.invoice_application:create
+      x-idempotency: required
+      x-reauth: not-required
+      x-error-codes:
+        - INVOICE.INVOICE_APPLICATION.CONTRACT_NOT_EFFECTIVE
+        - INVOICE.INVOICE_APPLICATION.CUMULATIVE_RATIO_EXCEEDED
+        - INVOICE.INVOICE_APPLICATION.EXPECTED_DATE_BEFORE_APPLICATION_DATE
+        - PLATFORM.IDEMPOTENCY.KEY_REQUIRED
+        - PLATFORM.IDEMPOTENCY.PAYLOAD_MISMATCH
+        - PLATFORM.AUTHZ.NOT_FOUND_OR_DENIED
+    get:
+      tags: [InvoiceApplications]
+      operationId: listInvoiceApplications
+      summary: 查询发票申请列表
+      parameters:
+        - $ref: '#/components/parameters/LegalEntityId'
+        - $ref: '#/components/parameters/DeviceId'
+        - $ref: '#/components/parameters/InternalClient'
+        - $ref: '#/components/parameters/RequestId'
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/PageSize'
+        - $ref: '#/components/parameters/Cursor'
+        - name: filter[customer_id]
+          in: query
+          schema: {type: string, format: uuid}
+        - name: filter[contract_id]
+          in: query
+          schema: {type: string, format: uuid}
+        - name: filter[status]
+          in: query
+          schema: {type: string}
+        - name: filter[application_date]
+          in: query
+          schema: {type: string}
+        - name: sort
+          in: query
+          description: 白名单为 `application_date`、`created_at`、`doc_no`；默认 `created_at:desc,id:desc`。
+          schema: {type: string}
+      responses:
+        '200':
+          description: 分页发票申请
+          headers:
+            X-Request-Id: {$ref: '#/components/headers/XRequestId'}
+            X-Trace-Id: {$ref: '#/components/headers/XTraceId'}
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/InvoiceApplicationListSuccess'}
+        '400': {$ref: '#/components/responses/Error400'}
+        '403': {$ref: '#/components/responses/Error403'}
+        '404': {$ref: '#/components/responses/Error404'}
+      x-permission: invoice.invoice_application:read
+      x-idempotency: not-applicable
+      x-reauth: not-required
+      x-error-codes:
+        - PLATFORM.AUTHZ.SORT_FIELD_FORBIDDEN
+        - PLATFORM.AUTHZ.NOT_FOUND_OR_DENIED
+  /api/v1/invoice/invoice-applications/{id}:
+    get:
+      tags: [InvoiceApplications]
+      operationId: getInvoiceApplication
+      summary: 查询发票申请详情
+      parameters:
+        - $ref: '#/components/parameters/DocumentId'
+        - $ref: '#/components/parameters/LegalEntityId'
+        - $ref: '#/components/parameters/DeviceId'
+        - $ref: '#/components/parameters/InternalClient'
+        - $ref: '#/components/parameters/RequestId'
+      responses:
+        '200':
+          description: 发票申请详情及已开具发票引用
+          headers:
+            X-Request-Id: {$ref: '#/components/headers/XRequestId'}
+            X-Trace-Id: {$ref: '#/components/headers/XTraceId'}
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/InvoiceApplicationSuccess'}
+        '403': {$ref: '#/components/responses/Error403'}
+        '404': {$ref: '#/components/responses/Error404'}
+      x-permission: invoice.invoice_application:read
+      x-idempotency: not-applicable
+      x-reauth: not-required
+      x-error-codes: [PLATFORM.AUTHZ.NOT_FOUND_OR_DENIED]
+    patch:
+      tags: [InvoiceApplications]
+      operationId: updateInvoiceApplication
+      summary: 修改草稿发票申请
+      parameters:
+        - $ref: '#/components/parameters/DocumentId'
+        - $ref: '#/components/parameters/LegalEntityId'
+        - $ref: '#/components/parameters/DeviceId'
+        - $ref: '#/components/parameters/InternalClient'
+        - $ref: '#/components/parameters/RequestId'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/InvoiceApplicationPatchRequest'}
+      responses:
+        '200':
+          description: 发票申请已修改
+          headers:
+            X-Request-Id: {$ref: '#/components/headers/XRequestId'}
+            X-Trace-Id: {$ref: '#/components/headers/XTraceId'}
+            Idempotent-Replay: {$ref: '#/components/headers/IdempotentReplay'}
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/InvoiceApplicationSuccess'}
+        '400': {$ref: '#/components/responses/Error400'}
+        '403': {$ref: '#/components/responses/Error403'}
+        '404': {$ref: '#/components/responses/Error404'}
+        '409': {$ref: '#/components/responses/Error409'}
+      x-permission: invoice.invoice_application:update
+      x-idempotency: required
+      x-reauth: not-required
+      x-error-codes:
+        - PLATFORM.CONCURRENCY.STALE_VERSION
+        - PLATFORM.IDEMPOTENCY.KEY_REQUIRED
+        - PLATFORM.IDEMPOTENCY.PAYLOAD_MISMATCH
+        - PLATFORM.AUTHZ.NOT_FOUND_OR_DENIED
+  /api/v1/invoice/invoice-applications/{id}/actions/submit-for-approval:
+    post:
+      tags: [InvoiceApplications]
+      operationId: submitInvoiceApplicationForApproval
+      summary: 提交发票申请审批
+      parameters:
+        - $ref: '#/components/parameters/DocumentId'
+        - $ref: '#/components/parameters/LegalEntityId'
+        - $ref: '#/components/parameters/DeviceId'
+        - $ref: '#/components/parameters/InternalClient'
+        - $ref: '#/components/parameters/RequestId'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/RowVersionActionRequest'}
+      responses:
+        '200':
+          description: 发票申请已提交审批
+          headers:
+            X-Request-Id: {$ref: '#/components/headers/XRequestId'}
+            X-Trace-Id: {$ref: '#/components/headers/XTraceId'}
+            Idempotent-Replay: {$ref: '#/components/headers/IdempotentReplay'}
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/InvoiceApplicationSuccess'}
+        '400': {$ref: '#/components/responses/Error400'}
+        '403': {$ref: '#/components/responses/Error403'}
+        '404': {$ref: '#/components/responses/Error404'}
+        '409': {$ref: '#/components/responses/Error409'}
+      x-permission: invoice.invoice_application:submit
+      x-idempotency: required
+      x-reauth: not-required
+      x-error-codes:
+        - INVOICE.INVOICE_APPLICATION.INVALID_TRANSITION
+        - PLATFORM.CONCURRENCY.STALE_VERSION
+        - PLATFORM.IDEMPOTENCY.KEY_REQUIRED
+        - PLATFORM.IDEMPOTENCY.PAYLOAD_MISMATCH
+        - PLATFORM.AUTHZ.NOT_FOUND_OR_DENIED
+  /api/v1/invoice/invoice-applications/{id}/actions/withdraw:
+    post:
+      tags: [InvoiceApplications]
+      operationId: withdrawInvoiceApplication
+      summary: 撤回发票申请
+      parameters:
+        - $ref: '#/components/parameters/DocumentId'
+        - $ref: '#/components/parameters/LegalEntityId'
+        - $ref: '#/components/parameters/DeviceId'
+        - $ref: '#/components/parameters/InternalClient'
+        - $ref: '#/components/parameters/RequestId'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/RowVersionActionRequest'}
+      responses:
+        '200':
+          description: 发票申请已撤回
+          headers:
+            X-Request-Id: {$ref: '#/components/headers/XRequestId'}
+            X-Trace-Id: {$ref: '#/components/headers/XTraceId'}
+            Idempotent-Replay: {$ref: '#/components/headers/IdempotentReplay'}
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/InvoiceApplicationSuccess'}
+        '400': {$ref: '#/components/responses/Error400'}
+        '403': {$ref: '#/components/responses/Error403'}
+        '404': {$ref: '#/components/responses/Error404'}
+        '409': {$ref: '#/components/responses/Error409'}
+      x-permission: invoice.invoice_application:submit
+      x-idempotency: required
+      x-reauth: not-required
+      x-error-codes:
+        - INVOICE.INVOICE_APPLICATION.APPROVAL_ALREADY_STARTED
+        - PLATFORM.CONCURRENCY.STALE_VERSION
+        - PLATFORM.IDEMPOTENCY.KEY_REQUIRED
+        - PLATFORM.IDEMPOTENCY.PAYLOAD_MISMATCH
+        - PLATFORM.AUTHZ.NOT_FOUND_OR_DENIED
+  /api/v1/invoice/invoice-applications/{id}/actions/cancel:
+    post:
+      tags: [InvoiceApplications]
+      operationId: cancelInvoiceApplication
+      summary: 取消发票申请
+      parameters:
+        - $ref: '#/components/parameters/DocumentId'
+        - $ref: '#/components/parameters/LegalEntityId'
+        - $ref: '#/components/parameters/DeviceId'
+        - $ref: '#/components/parameters/InternalClient'
+        - $ref: '#/components/parameters/RequestId'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/CancelActionRequest'}
+      responses:
+        '200':
+          description: 发票申请已取消
+          headers:
+            X-Request-Id: {$ref: '#/components/headers/XRequestId'}
+            X-Trace-Id: {$ref: '#/components/headers/XTraceId'}
+            Idempotent-Replay: {$ref: '#/components/headers/IdempotentReplay'}
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/InvoiceApplicationSuccess'}
+        '400': {$ref: '#/components/responses/Error400'}
+        '403': {$ref: '#/components/responses/Error403'}
+        '404': {$ref: '#/components/responses/Error404'}
+        '409': {$ref: '#/components/responses/Error409'}
+      x-permission: invoice.invoice_application:cancel
+      x-idempotency: required
+      x-reauth: not-required
+      x-error-codes:
+        - INVOICE.INVOICE_APPLICATION.ISSUED_INVOICE_EXISTS
+        - PLATFORM.CONCURRENCY.STALE_VERSION
+        - PLATFORM.IDEMPOTENCY.KEY_REQUIRED
+        - PLATFORM.IDEMPOTENCY.PAYLOAD_MISMATCH
+        - PLATFORM.AUTHZ.NOT_FOUND_OR_DENIED
+  /api/v1/invoice/sales-invoices:
+    post:
+      tags: [SalesInvoices]
+      operationId: registerSalesInvoice
+      summary: 登记多行销项蓝票
+      parameters:
+        - $ref: '#/components/parameters/LegalEntityId'
+        - $ref: '#/components/parameters/DeviceId'
+        - $ref: '#/components/parameters/InternalClient'
+        - $ref: '#/components/parameters/RequestId'
+        - $ref: '#/components/parameters/IdempotencyKey'
+        - $ref: '#/components/parameters/ReauthToken'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SalesInvoiceCreateRequest'
+      responses:
+        '201':
+          description: 销项发票、号码登记、应收条目及凭证已原子写入
+          headers:
+            X-Request-Id:
+              $ref: '#/components/headers/XRequestId'
+            X-Trace-Id:
+              $ref: '#/components/headers/XTraceId'
+            Idempotent-Replay:
+              $ref: '#/components/headers/IdempotentReplay'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SalesInvoiceSuccess'
+        '400':
+          $ref: '#/components/responses/Error400'
+        '403':
+          $ref: '#/components/responses/Error403'
+        '404':
+          $ref: '#/components/responses/Error404'
+        '409':
+          $ref: '#/components/responses/Error409'
+        '503':
+          $ref: '#/components/responses/Error503'
+      x-forbidden-head-properties: &forbiddenInvoiceHeadProperties
+        - tax_rate
+        - net_amount
+        - untaxed_amount
+        - tax_amount
+        - gross_amount
+      x-permission: invoice.sales_invoice:issue
+      x-idempotency: required
+      x-reauth: required
+      x-error-codes:
+        - INVOICE.SALES_INVOICE.RATIO_EXCEEDS_REMAINING
+        - INVOICE.SALES_INVOICE.ISSUE_DATE_IN_FUTURE
+        - INVOICE.SALES_INVOICE.POSTING_DATE_IN_FUTURE
+        - INVOICE.INVOICE_LINE.HEAD_AMOUNT_FORBIDDEN
+        - INVOICE.INVOICE_LINE.TAX_AMOUNT_OUT_OF_TOLERANCE
+        - INVOICE.INVOICE_LINE.AMOUNT_EQUATION_INVALID
+        - INVOICE.INVOICE_NUMBER.FORMAT_INVALID
+        - INVOICE.INVOICE_NUMBER.DUPLICATED
+        - INVOICE.INVOICE_NUMBER.OWNER_MISMATCH
+        - PLATFORM.IDEMPOTENCY.KEY_REQUIRED
+        - PLATFORM.IDEMPOTENCY.PAYLOAD_MISMATCH
+        - PLATFORM.AUTHZ.REAUTH_REQUIRED
+        - PLATFORM.AUTHZ.NOT_FOUND_OR_DENIED
+    get:
+      tags: [SalesInvoices]
+      operationId: listSalesInvoices
+      summary: 查询销项发票列表
+      parameters:
+        - $ref: '#/components/parameters/LegalEntityId'
+        - $ref: '#/components/parameters/DeviceId'
+        - $ref: '#/components/parameters/InternalClient'
+        - $ref: '#/components/parameters/RequestId'
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/PageSize'
+        - $ref: '#/components/parameters/Cursor'
+        - name: filter[customer_id]
+          in: query
+          schema: {type: string}
+        - name: filter[status]
+          in: query
+          schema: {type: string}
+        - name: filter[issue_date]
+          in: query
+          schema: {type: string}
+        - name: filter[accounting_period_id]
+          in: query
+          schema: {type: string}
+        - name: filter[invoice_no]
+          in: query
+          schema: {type: string}
+        - name: sort
+          in: query
+          description: 白名单为 `issue_date`、`created_at`、`doc_no`；默认 `created_at:desc,id:desc`。
+          schema: {type: string}
+      responses:
+        '200':
+          description: 分页销项发票
+          headers:
+            X-Request-Id: {$ref: '#/components/headers/XRequestId'}
+            X-Trace-Id: {$ref: '#/components/headers/XTraceId'}
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SalesInvoiceListSuccess'
+        '400':
+          $ref: '#/components/responses/Error400'
+        '403':
+          $ref: '#/components/responses/Error403'
+        '404':
+          $ref: '#/components/responses/Error404'
+      x-permission: invoice.sales_invoice:read
+      x-idempotency: not-applicable
+      x-reauth: not-required
+      x-error-codes:
+        - PLATFORM.AUTHZ.SORT_FIELD_FORBIDDEN
+        - PLATFORM.AUTHZ.NOT_FOUND_OR_DENIED
+  /api/v1/invoice/sales-invoices/{id}:
+    get:
+      tags: [SalesInvoices]
+      operationId: getSalesInvoice
+      summary: 查询销项发票头、行、号码与剩余可冲金额
+      parameters:
+        - $ref: '#/components/parameters/DocumentId'
+        - $ref: '#/components/parameters/LegalEntityId'
+        - $ref: '#/components/parameters/DeviceId'
+        - $ref: '#/components/parameters/InternalClient'
+        - $ref: '#/components/parameters/RequestId'
+      responses:
+        '200':
+          description: 销项发票详情
+          headers:
+            X-Request-Id: {$ref: '#/components/headers/XRequestId'}
+            X-Trace-Id: {$ref: '#/components/headers/XTraceId'}
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SalesInvoiceSuccess'
+        '403':
+          $ref: '#/components/responses/Error403'
+        '404':
+          $ref: '#/components/responses/Error404'
+      x-permission: invoice.sales_invoice:read
+      x-idempotency: not-applicable
+      x-reauth: not-required
+      x-error-codes:
+        - PLATFORM.AUTHZ.NOT_FOUND_OR_DENIED
+  /api/v1/invoice/purchase-invoices:
+    post:
+      tags: [PurchaseInvoices]
+      operationId: registerPurchaseInvoice
+      summary: 直接登记进项蓝票，或原子受理一笔门户上传
+      description: |
+        请求是严格二选一：直接登记携带 supplier_id、invoice_date、identifier 和 lines；门户受理只携带
+        supplier_invoice_upload_id 与 posting_date。门户受理时供应商、票面日期、号码、业务引用、附件和
+        全部行从锁后的上传记录复制，不接受客户端再提交另一套头行内容；成功后由 invoice 事务通过
+        SupplierInvoiceUploadWritebackPort 推进 ACCEPTED，不存在独立接受 HTTP 端点。
+      parameters:
+        - $ref: '#/components/parameters/LegalEntityId'
+        - $ref: '#/components/parameters/DeviceId'
+        - $ref: '#/components/parameters/InternalClient'
+        - $ref: '#/components/parameters/RequestId'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PurchaseInvoiceCreateRequest'
+      responses:
+        '201':
+          description: 进项发票、号码登记、应付条目、凭证及可选门户受理状态已原子写入
+          headers:
+            X-Request-Id:
+              $ref: '#/components/headers/XRequestId'
+            X-Trace-Id:
+              $ref: '#/components/headers/XTraceId'
+            Idempotent-Replay:
+              $ref: '#/components/headers/IdempotentReplay'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PurchaseInvoiceSuccess'
+        '400':
+          $ref: '#/components/responses/Error400'
+        '403':
+          $ref: '#/components/responses/Error403'
+        '404':
+          $ref: '#/components/responses/Error404'
+        '409':
+          $ref: '#/components/responses/Error409'
+        '503':
+          $ref: '#/components/responses/Error503'
+      x-forbidden-head-properties: *forbiddenInvoiceHeadProperties
+      x-permission: invoice.purchase_invoice_ledger:create
+      x-idempotency: required
+      x-reauth: not-required
+      x-error-codes:
+        - INVOICE.PURCHASE_INVOICE.RECEIPT_LINE_ALREADY_INVOICED
+        - INVOICE.PURCHASE_INVOICE.QUANTITY_EXCEEDS_RECEIPT
+        - INVOICE.PURCHASE_INVOICE.AMOUNT_MISMATCH_WITH_ORDER
+        - INVOICE.PURCHASE_INVOICE.POSTING_DATE_IN_FUTURE
+        - INVOICE.INVOICE_LINE.HEAD_AMOUNT_FORBIDDEN
+        - INVOICE.INVOICE_LINE.TAX_AMOUNT_OUT_OF_TOLERANCE
+        - INVOICE.INVOICE_LINE.AMOUNT_EQUATION_INVALID
+        - INVOICE.INVOICE_NUMBER.FORMAT_INVALID
+        - INVOICE.INVOICE_NUMBER.DUPLICATED
+        - INVOICE.INVOICE_NUMBER.OWNER_MISMATCH
+        - PORTAL.SUPPLIER_INVOICE_UPLOAD.STATE_CHANGED
+        - PORTAL.SUPPLIER_INVOICE_UPLOAD.CONTENT_MISMATCH
+        - PLATFORM.IDEMPOTENCY.KEY_REQUIRED
+        - PLATFORM.IDEMPOTENCY.PAYLOAD_MISMATCH
+        - PLATFORM.AUTHZ.NOT_FOUND_OR_DENIED
+    get:
+      tags: [PurchaseInvoices]
+      operationId: listPurchaseInvoices
+      summary: 查询进项发票列表
+      parameters:
+        - $ref: '#/components/parameters/LegalEntityId'
+        - $ref: '#/components/parameters/DeviceId'
+        - $ref: '#/components/parameters/InternalClient'
+        - $ref: '#/components/parameters/RequestId'
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/PageSize'
+        - $ref: '#/components/parameters/Cursor'
+        - name: filter[supplier_id]
+          in: query
+          schema: {type: string}
+        - name: filter[status]
+          in: query
+          schema: {type: string}
+        - name: filter[invoice_date]
+          in: query
+          schema: {type: string}
+        - name: filter[accounting_period_id]
+          in: query
+          schema: {type: string}
+        - name: filter[purchase_order_id]
+          in: query
+          schema: {type: string}
+        - name: filter[invoice_no]
+          in: query
+          schema: {type: string}
+        - name: sort
+          in: query
+          description: 白名单为 `invoice_date`、`created_at`、`doc_no`；默认 `created_at:desc,id:desc`。
+          schema: {type: string}
+      responses:
+        '200':
+          description: 分页进项发票
+          headers:
+            X-Request-Id: {$ref: '#/components/headers/XRequestId'}
+            X-Trace-Id: {$ref: '#/components/headers/XTraceId'}
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PurchaseInvoiceListSuccess'
+        '400':
+          $ref: '#/components/responses/Error400'
+        '403':
+          $ref: '#/components/responses/Error403'
+        '404':
+          $ref: '#/components/responses/Error404'
+      x-permission: invoice.purchase_invoice_ledger:read
+      x-idempotency: not-applicable
+      x-reauth: not-required
+      x-error-codes:
+        - PLATFORM.AUTHZ.SORT_FIELD_FORBIDDEN
+        - PLATFORM.AUTHZ.NOT_FOUND_OR_DENIED
+  /api/v1/invoice/purchase-invoices/{id}:
+    get:
+      tags: [PurchaseInvoices]
+      operationId: getPurchaseInvoice
+      summary: 查询进项发票头、行、号码与剩余可冲金额
+      parameters:
+        - $ref: '#/components/parameters/DocumentId'
+        - $ref: '#/components/parameters/LegalEntityId'
+        - $ref: '#/components/parameters/DeviceId'
+        - $ref: '#/components/parameters/InternalClient'
+        - $ref: '#/components/parameters/RequestId'
+      responses:
+        '200':
+          description: 进项发票详情
+          headers:
+            X-Request-Id: {$ref: '#/components/headers/XRequestId'}
+            X-Trace-Id: {$ref: '#/components/headers/XTraceId'}
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PurchaseInvoiceSuccess'
+        '403':
+          $ref: '#/components/responses/Error403'
+        '404':
+          $ref: '#/components/responses/Error404'
+      x-permission: invoice.purchase_invoice_ledger:read
+      x-idempotency: not-applicable
+      x-reauth: not-required
+      x-error-codes:
+        - PLATFORM.AUTHZ.NOT_FOUND_OR_DENIED
+  /api/v1/invoice/invoice-reversals:
+    post:
+      tags: [InvoiceReversals]
+      operationId: registerInvoiceReversal
+      summary: 作废销项票或登记销项/进项红票
+      description: |
+        同一路径用 reversal_kind 区分严格的 VOID 命令与 RED_LETTER 登记。VOID 只接受原销项票 id、
+        原票 row_version、作废原因和 posting_date，服务端生成全部行且不占新号码。RED_LETTER 必须
+        携带方向对应的唯一原票 id、法定号码和非空 lines，可分次部分红冲。
+      parameters:
+        - $ref: '#/components/parameters/LegalEntityId'
+        - $ref: '#/components/parameters/DeviceId'
+        - $ref: '#/components/parameters/InternalClient'
+        - $ref: '#/components/parameters/RequestId'
+        - $ref: '#/components/parameters/IdempotencyKey'
+        - $ref: '#/components/parameters/ReauthToken'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/InvoiceReversalCreateRequest'
+      responses:
+        '201':
+          description: 冲销头行、核销释放、往来投影及一张凭证已原子写入
+          headers:
+            X-Request-Id:
+              $ref: '#/components/headers/XRequestId'
+            X-Trace-Id:
+              $ref: '#/components/headers/XTraceId'
+            Idempotent-Replay:
+              $ref: '#/components/headers/IdempotentReplay'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/InvoiceReversalSuccess'
+        '400':
+          $ref: '#/components/responses/Error400'
+        '403':
+          $ref: '#/components/responses/Error403'
+        '404':
+          $ref: '#/components/responses/Error404'
+        '409':
+          $ref: '#/components/responses/Error409'
+        '503':
+          $ref: '#/components/responses/Error503'
+      x-forbidden-head-properties: *forbiddenInvoiceHeadProperties
+      x-permission: invoice.invoice_reversal:create
+      x-idempotency: required
+      x-reauth: required
+      x-error-codes:
+        - INVOICE.INVOICE_REVERSAL.SOURCE_INVOICE_NOT_REGISTERED
+        - INVOICE.INVOICE_REVERSAL.RECEIPT_PLAN_ISSUED_AMOUNT_NEGATIVE
+        - INVOICE.INVOICE_LINE.HEAD_AMOUNT_FORBIDDEN
+        - INVOICE.INVOICE_LINE.TAX_AMOUNT_OUT_OF_TOLERANCE
+        - INVOICE.INVOICE_LINE.AMOUNT_EQUATION_INVALID
+        - INVOICE.INVOICE_REVERSAL.LINE_SOURCE_MISMATCH
+        - INVOICE.INVOICE_REVERSAL.EFFECT_KIND_INVALID
+        - INVOICE.INVOICE_REVERSAL.REMAINING_AMOUNT_EXCEEDED
+        - INVOICE.INVOICE_REVERSAL.REMAINING_QUANTITY_EXCEEDED
+        - INVOICE.INVOICE_REVERSAL.STATE_CHANGED
+        - INVOICE.INVOICE_NUMBER.FORMAT_INVALID
+        - INVOICE.INVOICE_NUMBER.DUPLICATED
+        - INVOICE.INVOICE_NUMBER.OWNER_MISMATCH
+        - FINANCE.SETTLEMENT.RELEASE_ALLOCATION_MISMATCH
+        - FINANCE.RECONCILIATION.BALANCE_MISMATCH
+        - PLATFORM.IDEMPOTENCY.KEY_REQUIRED
+        - PLATFORM.IDEMPOTENCY.PAYLOAD_MISMATCH
+        - PLATFORM.AUTHZ.REAUTH_REQUIRED
+        - PLATFORM.AUTHZ.NOT_FOUND_OR_DENIED
+  /api/v1/invoice/sales-invoices/actions/import-batch:
+    post:
+      tags: [InvoiceImports]
+      operationId: createInvoiceImportBatch
+      summary: 上传发票登记 Excel v2 批次
+      description: |
+        文件内模板标识只允许 `sales-invoice-register-v2`、`purchase-invoice-register-v2`、
+        `invoice-reversal-register-v2`。同一 document_key 的重复头字段必须逐字一致，line_no 从 1 起且
+        组内唯一。旧模板或任何头金额/头税率列整份拒绝，不能静默忽略。该路径属于阶段 10
+        冻结的 49 个公开 operation，是三种 F-50 v2 发票登记模板的统一批次入口。
+      parameters:
+        - $ref: '#/components/parameters/LegalEntityId'
+        - $ref: '#/components/parameters/DeviceId'
+        - $ref: '#/components/parameters/InternalClient'
+        - $ref: '#/components/parameters/RequestId'
+        - $ref: '#/components/parameters/IdempotencyKey'
+        - $ref: '#/components/parameters/ReauthToken'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/InvoiceImportBatchRequest'
+      responses:
+        '202':
+          description: 批次已受理
+          headers:
+            X-Request-Id:
+              $ref: '#/components/headers/XRequestId'
+            X-Trace-Id:
+              $ref: '#/components/headers/XTraceId'
+            Idempotent-Replay:
+              $ref: '#/components/headers/IdempotentReplay'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/InvoiceImportAcceptedSuccess'
+        '400':
+          $ref: '#/components/responses/Error400'
+        '403':
+          $ref: '#/components/responses/Error403'
+        '409':
+          $ref: '#/components/responses/Error409'
+      x-permission:
+        - invoice.sales_invoice:issue
+        - invoice.sales_invoice:import
+      x-idempotency: required
+      x-reauth: required
+      x-error-codes:
+        - INVOICE.IMPORT_BATCH.ROW_LIMIT_EXCEEDED
+        - INVOICE.IMPORT.TEMPLATE_VERSION_UNSUPPORTED
+        - INVOICE.IMPORT.GROUP_HEADER_MISMATCH
+        - INVOICE.INVOICE_LINE.HEAD_AMOUNT_FORBIDDEN
+        - PLATFORM.IDEMPOTENCY.KEY_REQUIRED
+        - PLATFORM.IDEMPOTENCY.PAYLOAD_MISMATCH
+        - PLATFORM.AUTHZ.REAUTH_REQUIRED
+  /api/v1/invoice/invoice-import-batches/{id}:
+    get:
+      tags: [InvoiceImports]
+      operationId: getInvoiceImportBatch
+      summary: 查询发票登记导入批次
+      parameters:
+        - $ref: '#/components/parameters/DocumentId'
+        - $ref: '#/components/parameters/LegalEntityId'
+        - $ref: '#/components/parameters/DeviceId'
+        - $ref: '#/components/parameters/InternalClient'
+        - $ref: '#/components/parameters/RequestId'
+      responses:
+        '200':
+          description: 导入批次状态
+          headers:
+            X-Request-Id: {$ref: '#/components/headers/XRequestId'}
+            X-Trace-Id: {$ref: '#/components/headers/XTraceId'}
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/InvoiceImportBatchSuccess'
+        '403':
+          $ref: '#/components/responses/Error403'
+        '404':
+          $ref: '#/components/responses/Error404'
+      x-permission: invoice.sales_invoice:read
+      x-idempotency: not-applicable
+      x-reauth: not-required
+      x-error-codes:
+        - PLATFORM.AUTHZ.NOT_FOUND_OR_DENIED
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: opaque-session-token
+  parameters:
+    DocumentId:
+      name: id
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+    LegalEntityId:
+      name: X-Legal-Entity-Id
+      in: header
+      required: true
+      schema:
+        type: string
+        format: uuid
+    DeviceId:
+      name: X-Device-Id
+      in: header
+      required: true
+      schema:
+        type: string
+        minLength: 1
+        maxLength: 64
+        pattern: '^[A-Za-z0-9_-]+$'
+    InternalClient:
+      name: X-Client
+      in: header
+      required: true
+      schema:
+        type: string
+        enum: [win, mac, ios, android, ops]
+    RequestId:
+      name: X-Request-Id
+      in: header
+      required: false
+      schema:
+        type: string
+        minLength: 8
+        maxLength: 64
+        pattern: '^[A-Za-z0-9_-]+$'
+    IdempotencyKey:
+      name: Idempotency-Key
+      in: header
+      required: true
+      description: 客户端生成的 UUIDv7；X-Reauth-Token 不参与 request_hash。
+      schema:
+        type: string
+        format: uuid
+        pattern: '^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$'
+    ReauthToken:
+      name: X-Reauth-Token
+      in: header
+      required: true
+      schema:
+        type: string
+        minLength: 1
+    Page:
+      name: page
+      in: query
+      schema:
+        type: integer
+        minimum: 1
+        default: 1
+    PageSize:
+      name: page_size
+      in: query
+      schema:
+        type: integer
+        minimum: 1
+        maximum: 200
+        default: 20
+    Cursor:
+      name: cursor
+      in: query
+      schema:
+        type: string
+        minLength: 1
+  headers:
+    XRequestId:
+      schema:
+        type: string
+    XTraceId:
+      schema:
+        type: string
+        pattern: '^[0-9a-f]{32}$'
+    IdempotentReplay:
+      description: 同一幂等载荷重放时为 true；首次响应可以省略。
+      schema:
+        type: boolean
+  schemas:
+    Money:
+      type: string
+      description: 非负 numeric(18,2) 十进制定点字符串。
+      pattern: '^(?:0|[1-9][0-9]{0,15})\.[0-9]{2}$'
+      examples: ['0.00']
+    PositiveMoney:
+      type: string
+      description: 大于 0 的 numeric(18,2) 十进制定点字符串。
+      pattern: '^(?:0\.(?:0[1-9]|[1-9][0-9])|[1-9][0-9]{0,15}\.[0-9]{2})$'
+      examples: ['100.00']
+    SignedMoney:
+      type: string
+      description: numeric(18,2) 有符号十进制定点字符串。
+      pattern: '^-?(?:0|[1-9][0-9]{0,15})\.[0-9]{2}$'
+    Decimal6:
+      type: string
+      description: 非负 numeric(18,6) 十进制定点字符串。
+      pattern: '^(?:0|[1-9][0-9]{0,11})\.[0-9]{6}$'
+      examples: ['1.000000']
+    PositiveDecimal6:
+      type: string
+      description: 大于 0 的 numeric(18,6) 十进制定点字符串。
+      pattern: '^(?:0\.(?:0{5}[1-9]|0{4}[1-9][0-9]|0{3}[1-9][0-9]{2}|0{2}[1-9][0-9]{3}|0[1-9][0-9]{4}|[1-9][0-9]{5})|[1-9][0-9]{0,11}\.[0-9]{6})$'
+      examples: ['1.000000']
+    Rate6:
+      type: string
+      description: 0 到 1 的 numeric(9,6) 十进制定点字符串。
+      pattern: '^(?:0\.[0-9]{6}|1\.000000)$'
+      examples: ['0.130000']
+    PositiveRate6:
+      type: string
+      description: 大于 0 且不超过 1 的 numeric(9,6) 十进制定点字符串。
+      pattern: '^(?:0\.(?:0{5}[1-9]|0{4}[1-9][0-9]|0{3}[1-9][0-9]{2}|0{2}[1-9][0-9]{3}|0[1-9][0-9]{4}|[1-9][0-9]{5})|1\.000000)$'
+    InvoiceApplicationCreateRequest:
+      type: object
+      additionalProperties: false
+      required:
+        - customer_id
+        - contract_id
+        - sales_order_ids
+        - receipt_plan_line_ids
+        - application_date
+        - issue_content
+        - issue_ratio
+        - expected_receipt_date
+      properties:
+        customer_id: {type: string, format: uuid}
+        contract_id: {type: string, format: uuid}
+        sales_order_ids:
+          type: array
+          minItems: 1
+          uniqueItems: true
+          items: {type: string, format: uuid}
+        receipt_plan_line_ids:
+          type: array
+          minItems: 1
+          uniqueItems: true
+          items: {type: string, format: uuid}
+        application_date: {type: string, format: date}
+        issue_content: {type: string, minLength: 1, maxLength: 500}
+        issue_ratio: {$ref: '#/components/schemas/PositiveRate6'}
+        expected_receipt_date: {type: string, format: date}
+        remark: {type: [string, 'null'], maxLength: 1000}
+    InvoiceApplicationPatchRequest:
+      type: object
+      additionalProperties: false
+      minProperties: 2
+      required: [row_version]
+      properties:
+        row_version: {type: integer, minimum: 1}
+        sales_order_ids:
+          type: array
+          minItems: 1
+          uniqueItems: true
+          items: {type: string, format: uuid}
+        receipt_plan_line_ids:
+          type: array
+          minItems: 1
+          uniqueItems: true
+          items: {type: string, format: uuid}
+        application_date: {type: string, format: date}
+        issue_content: {type: string, minLength: 1, maxLength: 500}
+        issue_ratio: {$ref: '#/components/schemas/PositiveRate6'}
+        expected_receipt_date: {type: string, format: date}
+        remark: {type: [string, 'null'], maxLength: 1000}
+    RowVersionActionRequest:
+      type: object
+      additionalProperties: false
+      required: [row_version]
+      properties:
+        row_version: {type: integer, minimum: 1}
+    CancelActionRequest:
+      type: object
+      additionalProperties: false
+      required: [row_version, reason]
+      properties:
+        row_version: {type: integer, minimum: 1}
+        reason: {type: string, minLength: 1, maxLength: 500}
+    IssuedInvoiceReference:
+      type: object
+      additionalProperties: false
+      required: [id, doc_no, status, gross_amount]
+      properties:
+        id: {type: string, format: uuid}
+        doc_no: {type: string}
+        status: {type: string}
+        gross_amount: {$ref: '#/components/schemas/Money'}
+    InvoiceApplication:
+      type: object
+      additionalProperties: false
+      required:
+        - id
+        - doc_no
+        - customer_id
+        - contract_id
+        - sales_order_ids
+        - receipt_plan_line_ids
+        - application_date
+        - issue_content
+        - issue_ratio
+        - application_amount
+        - remaining_ratio
+        - expected_receipt_date
+        - status
+        - issued_invoices
+        - row_version
+      properties:
+        id: {type: string, format: uuid}
+        doc_no: {type: string}
+        customer_id: {type: string, format: uuid}
+        contract_id: {type: string, format: uuid}
+        sales_order_ids:
+          type: array
+          items: {type: string, format: uuid}
+        receipt_plan_line_ids:
+          type: array
+          items: {type: string, format: uuid}
+        application_date: {type: string, format: date}
+        issue_content: {type: string}
+        issue_ratio: {$ref: '#/components/schemas/Rate6'}
+        application_amount: {$ref: '#/components/schemas/Money'}
+        remaining_ratio: {$ref: '#/components/schemas/Rate6'}
+        expected_receipt_date: {type: string, format: date}
+        remark: {type: [string, 'null']}
+        status:
+          type: string
+          enum: [DRAFT, PENDING_APPROVAL, APPROVED, PARTIALLY_ISSUED, ISSUED, CANCELLED]
+        issued_invoices:
+          type: array
+          items: {$ref: '#/components/schemas/IssuedInvoiceReference'}
+        row_version: {type: integer, minimum: 1}
+    InvoiceIdentifierInput:
+      oneOf:
+        - title: 统一 20 位编号
+          type: object
+          additionalProperties: false
+          required: [invoice_medium, number_scheme, invoice_no]
+          properties:
+            invoice_medium:
+              type: string
+              enum: [ELECTRONIC, PAPER]
+            number_scheme:
+              const: UNIFIED_20
+            invoice_code:
+              type: 'null'
+            invoice_no:
+              type: string
+              pattern: '^[0-9]{20}$'
+        - title: 旧制代码加号码
+          type: object
+          additionalProperties: false
+          required: [invoice_medium, number_scheme, invoice_code, invoice_no]
+          properties:
+            invoice_medium:
+              type: string
+              enum: [ELECTRONIC, PAPER]
+            number_scheme:
+              const: LEGACY_CODE_NUMBER
+            invoice_code:
+              type: string
+              pattern: '^(?:[0-9]{10}|[0-9]{12})$'
+            invoice_no:
+              type: string
+              pattern: '^[0-9]{8}$'
+    SalesInvoiceLineInput:
+      type: object
+      additionalProperties: false
+      required:
+        - line_no
+        - sales_order_id
+        - sales_order_line_id
+        - item_kind
+        - item_id
+        - uom_code
+        - quantity
+        - net_unit_price
+        - tax_rate
+        - net_amount
+        - tax_amount
+        - gross_amount
+      properties:
+        line_no:
+          type: integer
+          minimum: 1
+          maximum: 32767
+        sales_order_id:
+          type: string
+          format: uuid
+        sales_order_line_id:
+          type: string
+          format: uuid
+        item_kind:
+          type: string
+          enum: [PRODUCT, MATERIAL]
+        item_id:
+          type: string
+          format: uuid
+        uom_code:
+          type: string
+          minLength: 1
+          maxLength: 64
+        quantity:
+          $ref: '#/components/schemas/PositiveDecimal6'
+        net_unit_price:
+          $ref: '#/components/schemas/PositiveDecimal6'
+        tax_rate:
+          $ref: '#/components/schemas/Rate6'
+        net_amount:
+          $ref: '#/components/schemas/PositiveMoney'
+        tax_amount:
+          $ref: '#/components/schemas/Money'
+        gross_amount:
+          $ref: '#/components/schemas/PositiveMoney'
+      description: gross_amount 必须逐分等于 net_amount + tax_amount；税额按 F-50 half-up 与配置容差校验。
+    PurchaseInvoiceLineInput:
+      type: object
+      additionalProperties: false
+      required:
+        - line_no
+        - purchase_order_id
+        - purchase_order_line_id
+        - cost_kind
+        - quantity
+        - net_unit_price
+        - tax_rate
+        - net_amount
+        - tax_amount
+        - gross_amount
+      properties:
+        line_no:
+          type: integer
+          minimum: 1
+          maximum: 32767
+        purchase_order_id:
+          type: string
+          format: uuid
+        purchase_order_line_id:
+          type: string
+          format: uuid
+        goods_receipt_id:
+          type: [string, 'null']
+          format: uuid
+        goods_receipt_line_id:
+          type: [string, 'null']
+          format: uuid
+        cost_kind:
+          type: string
+          enum: [INVENTORY_TYPE, DIRECT_EXPENSE_TYPE]
+        item_id:
+          type: [string, 'null']
+          format: uuid
+        quantity:
+          $ref: '#/components/schemas/PositiveDecimal6'
+        net_unit_price:
+          $ref: '#/components/schemas/PositiveDecimal6'
+        tax_rate:
+          $ref: '#/components/schemas/Rate6'
+        net_amount:
+          $ref: '#/components/schemas/PositiveMoney'
+        tax_amount:
+          $ref: '#/components/schemas/Money'
+        gross_amount:
+          $ref: '#/components/schemas/PositiveMoney'
+      oneOf:
+        - title: 直接费用行
+          properties:
+            cost_kind: {const: DIRECT_EXPENSE_TYPE}
+            goods_receipt_id: {type: 'null'}
+            goods_receipt_line_id: {type: 'null'}
+        - title: 未关联收货的物料超量行
+          required: [item_id]
+          properties:
+            cost_kind: {const: INVENTORY_TYPE}
+            item_id: {type: string, format: uuid}
+            goods_receipt_id: {type: 'null'}
+            goods_receipt_line_id: {type: 'null'}
+        - title: 已关联收货的物料行
+          required: [item_id, goods_receipt_id, goods_receipt_line_id]
+          properties:
+            cost_kind: {const: INVENTORY_TYPE}
+            item_id: {type: string, format: uuid}
+            goods_receipt_id: {type: string, format: uuid}
+            goods_receipt_line_id: {type: string, format: uuid}
+      description: goods_receipt_id 与 goods_receipt_line_id 同时为空或同时非空；直接费用行必须同空，物料行必须有 item_id；gross_amount 必须精确等于前两项。
+    InvoiceReversalLineInput:
+      type: object
+      additionalProperties: false
+      required:
+        - quantity_effect_kind
+        - pricing_effect_kind
+        - quantity
+        - tax_rate
+        - net_amount
+        - tax_amount
+        - gross_amount
+      properties:
+        source_sales_invoice_line_id:
+          type: [string, 'null']
+          format: uuid
+        source_purchase_invoice_line_id:
+          type: [string, 'null']
+          format: uuid
+        quantity_effect_kind:
+          type: string
+          enum: [REDUCE, NONE]
+        pricing_effect_kind:
+          type: string
+          enum: [ORIGINAL_UNIT_PRICE, ADJUSTED]
+        quantity:
+          $ref: '#/components/schemas/Decimal6'
+        tax_rate:
+          $ref: '#/components/schemas/Rate6'
+        net_amount:
+          $ref: '#/components/schemas/Money'
+        tax_amount:
+          $ref: '#/components/schemas/Money'
+        gross_amount:
+          $ref: '#/components/schemas/PositiveMoney'
+      oneOf:
+        - title: 按原单价减少数量
+          properties:
+            quantity_effect_kind: {const: REDUCE}
+            pricing_effect_kind: {const: ORIGINAL_UNIT_PRICE}
+            quantity:
+              $ref: '#/components/schemas/PositiveDecimal6'
+        - title: 调整金额并减少数量
+          properties:
+            quantity_effect_kind: {const: REDUCE}
+            pricing_effect_kind: {const: ADJUSTED}
+            quantity:
+              $ref: '#/components/schemas/PositiveDecimal6'
+        - title: 只调整金额或税额
+          properties:
+            quantity_effect_kind: {const: NONE}
+            pricing_effect_kind: {const: ADJUSTED}
+            quantity: {const: '0.000000'}
+      anyOf:
+        - properties:
+            net_amount:
+              $ref: '#/components/schemas/PositiveMoney'
+        - properties:
+            tax_amount:
+              $ref: '#/components/schemas/PositiveMoney'
+      allOf:
+        - oneOf:
+            - title: 销项来源行
+              required: [source_sales_invoice_line_id]
+              properties:
+                source_sales_invoice_line_id: {type: string, format: uuid}
+                source_purchase_invoice_line_id: {type: 'null'}
+            - title: 进项来源行
+              required: [source_purchase_invoice_line_id]
+              properties:
+                source_sales_invoice_line_id: {type: 'null'}
+                source_purchase_invoice_line_id: {type: string, format: uuid}
+      description: |
+        两种来源行 id 恰有一个非空并与头方向一致；tax_rate 必须等于原行。gross_amount 精确等于
+        net_amount + tax_amount。NONE + ORIGINAL_UNIT_PRICE 永远非法；纯税特例仅限 NONE + ADJUSTED。
+    SalesInvoiceCreateRequest:
+      type: object
+      additionalProperties: false
+      required:
+        - invoice_application_id
+        - issue_date
+        - posting_date
+        - issue_content
+        - issued_ratio
+        - identifier
+        - lines
+      properties:
+        invoice_application_id:
+          type: string
+          format: uuid
+        issue_date:
+          type: string
+          format: date
+        posting_date:
+          type: string
+          format: date
+        issue_content:
+          type: string
+          minLength: 1
+          maxLength: 500
+        issued_ratio:
+          $ref: '#/components/schemas/PositiveRate6'
+        identifier:
+          $ref: '#/components/schemas/InvoiceIdentifierInput'
+        lines:
+          type: array
+          minItems: 1
+          maxItems: 200
+          items:
+            $ref: '#/components/schemas/SalesInvoiceLineInput'
+        attachment_object_ids:
+          type: array
+          maxItems: 50
+          uniqueItems: true
+          items:
+            type: string
+            format: uuid
+    DirectPurchaseInvoiceCreateRequest:
+      type: object
+      additionalProperties: false
+      required: [supplier_id, invoice_date, posting_date, identifier, lines]
+      properties:
+        supplier_id:
+          type: string
+          format: uuid
+        invoice_date:
+          type: string
+          format: date
+        posting_date:
+          type: string
+          format: date
+        identifier:
+          $ref: '#/components/schemas/InvoiceIdentifierInput'
+        lines:
+          type: array
+          minItems: 1
+          maxItems: 200
+          items:
+            $ref: '#/components/schemas/PurchaseInvoiceLineInput'
+        attachment_object_ids:
+          type: array
+          maxItems: 50
+          uniqueItems: true
+          items:
+            type: string
+            format: uuid
+      description: 同一请求全部 lines[].cost_kind 必须同值；服务端由此唯一派生发票头 cost_kind 与凭证来源类型。
+    PortalPurchaseInvoiceAcceptanceRequest:
+      type: object
+      additionalProperties: false
+      required: [supplier_invoice_upload_id, posting_date]
+      properties:
+        supplier_invoice_upload_id:
+          type: string
+          format: uuid
+        posting_date:
+          type: string
+          format: date
+    PurchaseInvoiceCreateRequest:
+      oneOf:
+        - $ref: '#/components/schemas/DirectPurchaseInvoiceCreateRequest'
+        - $ref: '#/components/schemas/PortalPurchaseInvoiceAcceptanceRequest'
+    VoidSalesInvoiceRequest:
+      type: object
+      additionalProperties: false
+      required: [reversal_kind, source_sales_invoice_id, posting_date, reason, row_version]
+      properties:
+        reversal_kind:
+          const: VOID
+        source_sales_invoice_id:
+          type: string
+          format: uuid
+        posting_date:
+          type: string
+          format: date
+        reason:
+          type: string
+          minLength: 1
+          maxLength: 2000
+        row_version:
+          type: integer
+          minimum: 1
+    OutputRedLetterRequest:
+      type: object
+      additionalProperties: false
+      required:
+        - reversal_kind
+        - direction
+        - source_sales_invoice_id
+        - register_date
+        - posting_date
+        - identifier
+        - reason
+        - lines
+      properties:
+        reversal_kind: {const: RED_LETTER}
+        direction: {const: OUTPUT}
+        source_sales_invoice_id:
+          type: string
+          format: uuid
+        register_date:
+          type: string
+          format: date
+        posting_date:
+          type: string
+          format: date
+        identifier:
+          $ref: '#/components/schemas/InvoiceIdentifierInput'
+        reason:
+          type: string
+          minLength: 1
+          maxLength: 2000
+        lines:
+          type: array
+          minItems: 1
+          maxItems: 200
+          items:
+            allOf:
+              - $ref: '#/components/schemas/InvoiceReversalLineInput'
+              - required: [source_sales_invoice_line_id]
+                properties:
+                  source_sales_invoice_line_id: {type: string, format: uuid}
+                  source_purchase_invoice_line_id: {type: 'null'}
+        attachment_object_ids:
+          type: array
+          maxItems: 50
+          uniqueItems: true
+          items:
+            type: string
+            format: uuid
+    InputRedLetterRequest:
+      type: object
+      additionalProperties: false
+      required:
+        - reversal_kind
+        - direction
+        - source_purchase_invoice_id
+        - register_date
+        - posting_date
+        - identifier
+        - reason
+        - lines
+      properties:
+        reversal_kind: {const: RED_LETTER}
+        direction: {const: INPUT}
+        source_purchase_invoice_id:
+          type: string
+          format: uuid
+        register_date:
+          type: string
+          format: date
+        posting_date:
+          type: string
+          format: date
+        identifier:
+          $ref: '#/components/schemas/InvoiceIdentifierInput'
+        reason:
+          type: string
+          minLength: 1
+          maxLength: 2000
+        overbilling_entry_id:
+          type: [string, 'null']
+          format: uuid
+        lines:
+          type: array
+          minItems: 1
+          maxItems: 200
+          items:
+            allOf:
+              - $ref: '#/components/schemas/InvoiceReversalLineInput'
+              - required: [source_purchase_invoice_line_id]
+                properties:
+                  source_sales_invoice_line_id: {type: 'null'}
+                  source_purchase_invoice_line_id: {type: string, format: uuid}
+        attachment_object_ids:
+          type: array
+          maxItems: 50
+          uniqueItems: true
+          items:
+            type: string
+            format: uuid
+    InvoiceReversalCreateRequest:
+      oneOf:
+        - $ref: '#/components/schemas/VoidSalesInvoiceRequest'
+        - $ref: '#/components/schemas/OutputRedLetterRequest'
+        - $ref: '#/components/schemas/InputRedLetterRequest'
+    SalesInvoiceLine:
+      type: object
+      additionalProperties: false
+      required:
+        - id
+        - line_no
+        - sales_order_id
+        - sales_order_line_id
+        - item_kind
+        - item_id
+        - uom_code
+        - quantity
+        - net_unit_price
+        - tax_rate
+        - net_amount
+        - tax_amount
+        - gross_amount
+        - remaining_quantity
+        - remaining_net
+        - remaining_tax
+        - remaining_gross
+      properties:
+        id: {type: string, format: uuid}
+        line_no: {type: integer, minimum: 1}
+        sales_order_id: {type: string, format: uuid}
+        sales_order_line_id: {type: string, format: uuid}
+        item_kind: {type: string, enum: [PRODUCT, MATERIAL]}
+        item_id: {type: string, format: uuid}
+        uom_code: {type: string}
+        quantity: {$ref: '#/components/schemas/PositiveDecimal6'}
+        net_unit_price: {$ref: '#/components/schemas/PositiveDecimal6'}
+        tax_rate: {$ref: '#/components/schemas/Rate6'}
+        net_amount: {$ref: '#/components/schemas/PositiveMoney'}
+        tax_amount: {$ref: '#/components/schemas/Money'}
+        gross_amount: {$ref: '#/components/schemas/PositiveMoney'}
+        remaining_quantity: {$ref: '#/components/schemas/Decimal6'}
+        remaining_net: {$ref: '#/components/schemas/Money'}
+        remaining_tax: {$ref: '#/components/schemas/Money'}
+        remaining_gross: {$ref: '#/components/schemas/Money'}
+    PurchaseInvoiceLine:
+      type: object
+      additionalProperties: false
+      required:
+        - id
+        - line_no
+        - purchase_order_id
+        - purchase_order_line_id
+        - cost_kind
+        - quantity
+        - net_unit_price
+        - tax_rate
+        - net_amount
+        - tax_amount
+        - gross_amount
+        - remaining_quantity
+        - remaining_net
+        - remaining_tax
+        - remaining_gross
+        - accrual_reversal_amount
+        - price_variance_in_stock_amount
+        - price_variance_released_amount
+        - overbilling_amount
+      properties:
+        id: {type: string, format: uuid}
+        line_no: {type: integer, minimum: 1}
+        purchase_order_id: {type: string, format: uuid}
+        purchase_order_line_id: {type: string, format: uuid}
+        goods_receipt_id: {type: [string, 'null'], format: uuid}
+        goods_receipt_line_id: {type: [string, 'null'], format: uuid}
+        cost_kind: {type: string, enum: [INVENTORY_TYPE, DIRECT_EXPENSE_TYPE]}
+        item_id: {type: [string, 'null'], format: uuid}
+        quantity: {$ref: '#/components/schemas/PositiveDecimal6'}
+        net_unit_price: {$ref: '#/components/schemas/PositiveDecimal6'}
+        tax_rate: {$ref: '#/components/schemas/Rate6'}
+        net_amount: {$ref: '#/components/schemas/PositiveMoney'}
+        tax_amount: {$ref: '#/components/schemas/Money'}
+        gross_amount: {$ref: '#/components/schemas/PositiveMoney'}
+        remaining_quantity: {$ref: '#/components/schemas/Decimal6'}
+        remaining_net: {$ref: '#/components/schemas/Money'}
+        remaining_tax: {$ref: '#/components/schemas/Money'}
+        remaining_gross: {$ref: '#/components/schemas/Money'}
+        accrual_reversal_amount:
+          $ref: '#/components/schemas/Money'
+        price_variance_in_stock_amount:
+          $ref: '#/components/schemas/SignedMoney'
+        price_variance_released_amount:
+          $ref: '#/components/schemas/SignedMoney'
+        overbilling_amount:
+          $ref: '#/components/schemas/Money'
+      description: |
+        四个服务端结果字段始终返回；不适用时为 0.00。INVENTORY_TYPE 的两项价差允许为负，
+        DIRECT_EXPENSE_TYPE 的暂估回冲、两项价差与超量挂账均为 0.00。
+    SalesInvoice:
+      type: object
+      additionalProperties: false
+      required:
+        - id
+        - doc_no
+        - status
+        - row_version
+        - invoice_application_id
+        - customer_id
+        - contract_id
+        - issue_date
+        - posting_date
+        - issue_content
+        - issued_ratio
+        - identifier
+        - invoice_number_registry_id
+        - net_amount
+        - tax_amount
+        - gross_amount
+        - advance_auto_applied_amount
+        - lines
+        - receivable_entry_id
+        - voucher_id
+        - accounting_period_id
+        - is_deferred
+      properties:
+        id: {type: string, format: uuid}
+        doc_no: {type: string}
+        status:
+          type: string
+          enum: [ISSUED, PARTIALLY_RED_REVERSED, VOIDED, RED_REVERSED]
+        row_version: {type: integer, minimum: 1}
+        invoice_application_id: {type: string, format: uuid}
+        customer_id: {type: string, format: uuid}
+        contract_id: {type: string, format: uuid}
+        issue_date: {type: string, format: date}
+        posting_date: {type: string, format: date}
+        issue_content: {type: string}
+        issued_ratio: {$ref: '#/components/schemas/Rate6'}
+        identifier: {$ref: '#/components/schemas/InvoiceIdentifierInput'}
+        invoice_number_registry_id: {type: string, format: uuid}
+        net_amount: {$ref: '#/components/schemas/PositiveMoney'}
+        tax_amount: {$ref: '#/components/schemas/Money'}
+        gross_amount: {$ref: '#/components/schemas/PositiveMoney'}
+        advance_auto_applied_amount: {$ref: '#/components/schemas/Money'}
+        lines:
+          type: array
+          minItems: 1
+          items: {$ref: '#/components/schemas/SalesInvoiceLine'}
+        receivable_entry_id: {type: string, format: uuid}
+        voucher_id: {type: string, format: uuid}
+        accounting_period_id: {type: string, format: uuid}
+        is_deferred: {type: boolean}
+    PurchaseInvoice:
+      type: object
+      additionalProperties: false
+      required:
+        - id
+        - doc_no
+        - status
+        - row_version
+        - supplier_id
+        - purchase_order_id
+        - supplier_invoice_upload_id
+        - cost_kind
+        - invoice_date
+        - posting_date
+        - identifier
+        - invoice_number_registry_id
+        - net_amount
+        - tax_amount
+        - gross_amount
+        - accrual_reversal_amount
+        - price_variance_in_stock_amount
+        - price_variance_released_amount
+        - overbilling_amount
+        - advance_auto_applied_amount
+        - lines
+        - payable_entry_id
+        - voucher_id
+        - accounting_period_id
+        - is_deferred
+      properties:
+        id: {type: string, format: uuid}
+        doc_no: {type: string}
+        status:
+          type: string
+          enum: [REGISTERED, PARTIALLY_REVERSED, REVERSED]
+        row_version: {type: integer, minimum: 1}
+        supplier_id: {type: string, format: uuid}
+        purchase_order_id: {type: [string, 'null'], format: uuid}
+        supplier_invoice_upload_id: {type: [string, 'null'], format: uuid}
+        cost_kind: {type: string, enum: [INVENTORY_TYPE, DIRECT_EXPENSE_TYPE]}
+        invoice_date: {type: string, format: date}
+        posting_date: {type: string, format: date}
+        identifier: {$ref: '#/components/schemas/InvoiceIdentifierInput'}
+        invoice_number_registry_id: {type: string, format: uuid}
+        net_amount: {$ref: '#/components/schemas/PositiveMoney'}
+        tax_amount: {$ref: '#/components/schemas/Money'}
+        gross_amount: {$ref: '#/components/schemas/PositiveMoney'}
+        accrual_reversal_amount: {$ref: '#/components/schemas/Money'}
+        price_variance_in_stock_amount: {$ref: '#/components/schemas/SignedMoney'}
+        price_variance_released_amount: {$ref: '#/components/schemas/SignedMoney'}
+        overbilling_amount: {$ref: '#/components/schemas/Money'}
+        advance_auto_applied_amount: {$ref: '#/components/schemas/Money'}
+        lines:
+          type: array
+          minItems: 1
+          items: {$ref: '#/components/schemas/PurchaseInvoiceLine'}
+        payable_entry_id: {type: string, format: uuid}
+        voucher_id: {type: string, format: uuid}
+        accounting_period_id: {type: string, format: uuid}
+        is_deferred: {type: boolean}
+    InvoiceReversalLine:
+      type: object
+      additionalProperties: false
+      required:
+        - id
+        - source_effect_seq
+        - quantity_effect_kind
+        - pricing_effect_kind
+        - quantity
+        - tax_rate
+        - net_amount
+        - tax_amount
+        - gross_amount
+      properties:
+        id: {type: string, format: uuid}
+        source_effect_seq: {type: integer, minimum: 1}
+        source_sales_invoice_line_id: {type: [string, 'null'], format: uuid}
+        source_purchase_invoice_line_id: {type: [string, 'null'], format: uuid}
+        quantity_effect_kind: {type: string, enum: [REDUCE, NONE]}
+        pricing_effect_kind: {type: string, enum: [ORIGINAL_UNIT_PRICE, ADJUSTED]}
+        quantity: {$ref: '#/components/schemas/Decimal6'}
+        tax_rate: {$ref: '#/components/schemas/Rate6'}
+        net_amount: {$ref: '#/components/schemas/Money'}
+        tax_amount: {$ref: '#/components/schemas/Money'}
+        gross_amount: {$ref: '#/components/schemas/PositiveMoney'}
+    InvoiceReversal:
+      type: object
+      additionalProperties: false
+      required:
+        - id
+        - doc_no
+        - status
+        - reversal_kind
+        - direction
+        - register_date
+        - posting_date
+        - reason
+        - net_amount
+        - tax_amount
+        - gross_amount
+        - released_settlement_amount
+        - lines
+        - voucher_id
+        - accounting_period_id
+        - is_deferred
+      properties:
+        id: {type: string, format: uuid}
+        doc_no: {type: string}
+        status: {const: REGISTERED}
+        reversal_kind: {type: string, enum: [VOID, RED_LETTER]}
+        direction: {type: string, enum: [OUTPUT, INPUT]}
+        source_sales_invoice_id: {type: [string, 'null'], format: uuid}
+        source_purchase_invoice_id: {type: [string, 'null'], format: uuid}
+        register_date: {type: string, format: date}
+        posting_date: {type: string, format: date}
+        reason: {type: string}
+        identifier:
+          oneOf:
+            - $ref: '#/components/schemas/InvoiceIdentifierInput'
+            - type: 'null'
+          description: VOID 为 null；RED_LETTER 为法定号码。
+        invoice_number_registry_id: {type: [string, 'null'], format: uuid}
+        net_amount: {$ref: '#/components/schemas/Money'}
+        tax_amount: {$ref: '#/components/schemas/Money'}
+        gross_amount: {$ref: '#/components/schemas/PositiveMoney'}
+        released_settlement_amount: {$ref: '#/components/schemas/Money'}
+        lines:
+          type: array
+          minItems: 1
+          items: {$ref: '#/components/schemas/InvoiceReversalLine'}
+        voucher_id: {type: string, format: uuid}
+        accounting_period_id: {type: string, format: uuid}
+        is_deferred: {type: boolean}
+    PaginationMeta:
+      type: object
+      additionalProperties: false
+      required: [page, page_size, total, total_pages]
+      properties:
+        page: {type: integer, minimum: 1}
+        page_size: {type: integer, minimum: 1, maximum: 200}
+        total: {type: integer, minimum: 0}
+        total_pages: {type: integer, minimum: 0}
+        next_cursor: {type: [string, 'null']}
+    InvoiceApplicationListData:
+      type: object
+      additionalProperties: false
+      required: [items]
+      properties:
+        items:
+          type: array
+          items: {$ref: '#/components/schemas/InvoiceApplication'}
+    SalesInvoiceListData:
+      type: object
+      additionalProperties: false
+      required: [items]
+      properties:
+        items:
+          type: array
+          items: {$ref: '#/components/schemas/SalesInvoice'}
+    PurchaseInvoiceListData:
+      type: object
+      additionalProperties: false
+      required: [items]
+      properties:
+        items:
+          type: array
+          items: {$ref: '#/components/schemas/PurchaseInvoice'}
+    SalesInvoiceSuccess:
+      type: object
+      additionalProperties: false
+      required: [success, data, error, meta, trace_id]
+      properties:
+        success: {const: true}
+        data: {$ref: '#/components/schemas/SalesInvoice'}
+        error: {type: 'null'}
+        meta: {type: object}
+        trace_id: {type: string, pattern: '^[0-9a-f]{32}$'}
+    PurchaseInvoiceSuccess:
+      type: object
+      additionalProperties: false
+      required: [success, data, error, meta, trace_id]
+      properties:
+        success: {const: true}
+        data: {$ref: '#/components/schemas/PurchaseInvoice'}
+        error: {type: 'null'}
+        meta: {type: object}
+        trace_id: {type: string, pattern: '^[0-9a-f]{32}$'}
+    InvoiceApplicationSuccess:
+      type: object
+      additionalProperties: false
+      required: [success, data, error, meta, trace_id]
+      properties:
+        success: {const: true}
+        data: {$ref: '#/components/schemas/InvoiceApplication'}
+        error: {type: 'null'}
+        meta: {type: object}
+        trace_id: {type: string, pattern: '^[0-9a-f]{32}$'}
+    InvoiceApplicationListSuccess:
+      type: object
+      additionalProperties: false
+      required: [success, data, error, meta, trace_id]
+      properties:
+        success: {const: true}
+        data: {$ref: '#/components/schemas/InvoiceApplicationListData'}
+        error: {type: 'null'}
+        meta: {$ref: '#/components/schemas/PaginationMeta'}
+        trace_id: {type: string, pattern: '^[0-9a-f]{32}$'}
+    InvoiceReversalSuccess:
+      type: object
+      additionalProperties: false
+      required: [success, data, error, meta, trace_id]
+      properties:
+        success: {const: true}
+        data: {$ref: '#/components/schemas/InvoiceReversal'}
+        error: {type: 'null'}
+        meta: {type: object}
+        trace_id: {type: string, pattern: '^[0-9a-f]{32}$'}
+    SalesInvoiceListSuccess:
+      type: object
+      additionalProperties: false
+      required: [success, data, error, meta, trace_id]
+      properties:
+        success: {const: true}
+        data: {$ref: '#/components/schemas/SalesInvoiceListData'}
+        error: {type: 'null'}
+        meta: {$ref: '#/components/schemas/PaginationMeta'}
+        trace_id: {type: string, pattern: '^[0-9a-f]{32}$'}
+    PurchaseInvoiceListSuccess:
+      type: object
+      additionalProperties: false
+      required: [success, data, error, meta, trace_id]
+      properties:
+        success: {const: true}
+        data: {$ref: '#/components/schemas/PurchaseInvoiceListData'}
+        error: {type: 'null'}
+        meta: {$ref: '#/components/schemas/PaginationMeta'}
+        trace_id: {type: string, pattern: '^[0-9a-f]{32}$'}
+    InvoiceImportBatchRequest:
+      type: object
+      additionalProperties: false
+      required: [file_object_id, template_version]
+      properties:
+        file_object_id:
+          type: string
+          format: uuid
+        template_version: {$ref: '#/components/schemas/InvoiceTemplateVersion'}
+    InvoiceImportAccepted:
+      type: object
+      additionalProperties: false
+      required: [task_id, batch_id]
+      properties:
+        task_id: {type: string, format: uuid}
+        batch_id: {type: string, format: uuid}
+    InvoiceImportAcceptedSuccess:
+      type: object
+      additionalProperties: false
+      required: [success, data, error, meta, trace_id]
+      properties:
+        success: {const: true}
+        data: {$ref: '#/components/schemas/InvoiceImportAccepted'}
+        error: {type: 'null'}
+        meta: {type: object}
+        trace_id: {type: string, pattern: '^[0-9a-f]{32}$'}
+    InvoiceTemplateVersion:
+      type: string
+      enum:
+        - sales-invoice-register-v2
+        - purchase-invoice-register-v2
+        - invoice-reversal-register-v2
+    InvoiceImportBatch:
+      type: object
+      additionalProperties: false
+      required:
+        - id
+        - doc_no
+        - status
+        - total_rows
+        - succeeded_rows
+        - failed_rows
+        - file_object_id
+      properties:
+        id: {type: string, format: uuid}
+        doc_no: {type: string}
+        status:
+          type: string
+          enum: [PENDING, RUNNING, SUCCEEDED, PARTIALLY_FAILED, FAILED]
+        total_rows: {type: integer, minimum: 0}
+        succeeded_rows: {type: integer, minimum: 0}
+        failed_rows: {type: integer, minimum: 0}
+        file_object_id: {type: string, format: uuid}
+        result_object_id: {type: [string, 'null'], format: uuid}
+        started_at: {type: [string, 'null'], format: date-time}
+        finished_at: {type: [string, 'null'], format: date-time}
+    InvoiceImportBatchSuccess:
+      type: object
+      additionalProperties: false
+      required: [success, data, error, meta, trace_id]
+      properties:
+        success: {const: true}
+        data: {$ref: '#/components/schemas/InvoiceImportBatch'}
+        error: {type: 'null'}
+        meta: {type: object}
+        trace_id: {type: string, pattern: '^[0-9a-f]{32}$'}
+    ErrorDetail:
+      type: object
+      additionalProperties: false
+      required: [field, reason, value]
+      properties:
+        field: {type: string}
+        reason: {type: string}
+        value: {type: [string, integer, boolean, 'null']}
+    AppError:
+      type: object
+      additionalProperties: false
+      required: [code, category, message, details, retryable, incident_no, occurred_at, advice]
+      properties:
+        code:
+          type: string
+          pattern: '^[A-Z][A-Z0-9_]*(?:\.[A-Z][A-Z0-9_]*){2,}$'
+        category:
+          type: string
+          enum: [VALIDATION, BUSINESS_CONFLICT, PERMISSION_DENIED, EXTERNAL_SYSTEM, INFRASTRUCTURE]
+        message: {type: string}
+        details:
+          type: array
+          description: 号码重复仅在有权读取原单据时返回业务链接；无权时为空。
+          items: {$ref: '#/components/schemas/ErrorDetail'}
+        retryable: {type: boolean}
+        incident_no: {type: string}
+        occurred_at: {type: string, format: date-time}
+        advice: {type: string}
+    ErrorEnvelope:
+      type: object
+      additionalProperties: false
+      required: [success, data, error, meta, trace_id]
+      properties:
+        success: {const: false}
+        data: {type: 'null'}
+        error: {$ref: '#/components/schemas/AppError'}
+        meta: {type: 'null'}
+        trace_id: {type: string, pattern: '^[0-9a-f]{32}$'}
+  responses:
+    Error400:
+      description: 输入、金额、税额、号码或模板校验失败
+      headers:
+        X-Request-Id: {$ref: '#/components/headers/XRequestId'}
+        X-Trace-Id: {$ref: '#/components/headers/XTraceId'}
+      content:
+        application/json:
+          schema: {$ref: '#/components/schemas/ErrorEnvelope'}
+    Error403:
+      description: 权限、审批或重新认证失败
+      headers:
+        X-Request-Id: {$ref: '#/components/headers/XRequestId'}
+        X-Trace-Id: {$ref: '#/components/headers/XTraceId'}
+      content:
+        application/json:
+          schema: {$ref: '#/components/schemas/ErrorEnvelope'}
+    Error404:
+      description: 记录不存在或无权访问；不泄露存在性
+      headers:
+        X-Request-Id: {$ref: '#/components/headers/XRequestId'}
+        X-Trace-Id: {$ref: '#/components/headers/XTraceId'}
+      content:
+        application/json:
+          schema: {$ref: '#/components/schemas/ErrorEnvelope'}
+    Error409:
+      description: 状态、号码、累计冲销、守恒、勾稽或幂等冲突
+      headers:
+        X-Request-Id: {$ref: '#/components/headers/XRequestId'}
+        X-Trace-Id: {$ref: '#/components/headers/XTraceId'}
+      content:
+        application/json:
+          schema: {$ref: '#/components/schemas/ErrorEnvelope'}
+    Error503:
+      description: 基础设施暂时不可用
+      headers:
+        X-Request-Id: {$ref: '#/components/headers/XRequestId'}
+        X-Trace-Id: {$ref: '#/components/headers/XTraceId'}
+      content:
+        application/json:
+          schema: {$ref: '#/components/schemas/ErrorEnvelope'}

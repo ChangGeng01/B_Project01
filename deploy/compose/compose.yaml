@@ -1,3 +1,4 @@
+# F-57 HISTORICAL_LINUX_RESEARCH_ONLY: 禁止用于生产或作为现行部署入口。
 # EP 单机编排，Docker Compose 一侧。规格第 13.2 章的编排取值是「Docker Compose 或 Podman 加 systemd」，
 # 两者择一部署，因此本文件与 deploy/podman/ 下的 Quadlet 单元必须等价，
 # 等价性由 scripts/verify-orchestration-equivalence.py 逐项核对，不靠人眼比对。

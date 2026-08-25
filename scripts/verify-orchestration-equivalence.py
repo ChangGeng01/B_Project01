@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# F-57：HISTORICAL_LINUX_RESEARCH_ONLY；输出不得作为 Windows Server 2022 生产编排证据。
 """核对两套单机编排是否等价，以及它们引用的 slice 与资源限额 drop-in 是否对得上。
 
 规格第 13.2 章把编排取值定为「Docker Compose 或 Podman 加 systemd」，两者择一部署。

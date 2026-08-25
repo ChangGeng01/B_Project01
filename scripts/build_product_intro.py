@@ -21,6 +21,8 @@ from docx.oxml import OxmlElement
 from docx.oxml.ns import qn
 from docx.shared import Inches, Pt, RGBColor
 
+from docx_package_hygiene import sanitize_docx_package
+
 
 WORKSPACE = Path(__file__).resolve().parents[1]
 DEFAULT_OUTPUT = WORKSPACE / "docs" / "介绍" / "企业一体化经营管理平台-产品介绍与功能大纲.docx"
@@ -36,11 +38,14 @@ LIST_MARKER_DXA = 270
 LIST_TEXT_DXA = 540
 LIST_HANGING_DXA = 270
 
-# A single pan-CJK font prevents missing-glyph boxes while preserving a clean
-# sans-serif appearance for Latin text and numerals. The QA renderer receives
-# this TrueType font through its explicit SAL_FONTPATH.
-LATIN_FONT = "Arial Unicode MS"
-CHINESE_FONT = "Arial Unicode MS"
+# Windows Server 2022 is the production authority host. Use its standard Latin
+# face and the Simplified Chinese UI face, while declaring zh-CN on every text
+# layer so Word/LibreOffice can choose an installed CJK fallback on other hosts.
+LATIN_FONT = "Arial"
+CHINESE_FONT = "Microsoft YaHei"
+WESTERN_LANG = "en-US"
+EAST_ASIA_LANG = "zh-CN"
+BIDI_LANG = "ar-SA"
 
 NAVY = "0B2545"
 BLUE = "2E74B5"
@@ -156,6 +161,25 @@ def rgb(hex_color: str) -> RGBColor:
     return RGBColor.from_string(hex_color)
 
 
+def set_language_properties(rpr) -> None:
+    lang = rpr.find(qn("w:lang"))
+    if lang is None:
+        lang = OxmlElement("w:lang")
+        rpr.append(lang)
+    lang.set(qn("w:val"), WESTERN_LANG)
+    lang.set(qn("w:eastAsia"), EAST_ASIA_LANG)
+    lang.set(qn("w:bidi"), BIDI_LANG)
+
+
+def set_font_properties(fonts, *, latin_font: str, east_asia_font: str) -> None:
+    for attribute in ("asciiTheme", "hAnsiTheme", "eastAsiaTheme", "cstheme"):
+        fonts.attrib.pop(qn(f"w:{attribute}"), None)
+    fonts.set(qn("w:ascii"), latin_font)
+    fonts.set(qn("w:hAnsi"), latin_font)
+    fonts.set(qn("w:eastAsia"), east_asia_font)
+    fonts.set(qn("w:cs"), latin_font)
+
+
 def set_run_font(
     run,
     *,
@@ -167,10 +191,13 @@ def set_run_font(
     east_asia_font: str = CHINESE_FONT,
 ):
     run.font.name = latin_font
-    run._element.get_or_add_rPr().rFonts.set(qn("w:ascii"), latin_font)
-    run._element.get_or_add_rPr().rFonts.set(qn("w:hAnsi"), latin_font)
-    run._element.get_or_add_rPr().rFonts.set(qn("w:eastAsia"), east_asia_font)
-    run._element.get_or_add_rPr().rFonts.set(qn("w:cs"), latin_font)
+    rpr = run._element.get_or_add_rPr()
+    set_font_properties(
+        rpr.rFonts,
+        latin_font=latin_font,
+        east_asia_font=east_asia_font,
+    )
+    set_language_properties(rpr)
     if size is not None:
         run.font.size = Pt(size)
     run.font.color.rgb = rgb(color)
@@ -187,10 +214,39 @@ def set_style_font(style, *, size: float, color: str, bold: bool = False):
     style.font.bold = bold
     style.font.color.rgb = rgb(color)
     rpr = style._element.get_or_add_rPr()
-    rpr.rFonts.set(qn("w:ascii"), LATIN_FONT)
-    rpr.rFonts.set(qn("w:hAnsi"), LATIN_FONT)
-    rpr.rFonts.set(qn("w:eastAsia"), CHINESE_FONT)
-    rpr.rFonts.set(qn("w:cs"), LATIN_FONT)
+    set_font_properties(
+        rpr.rFonts,
+        latin_font=LATIN_FONT,
+        east_asia_font=CHINESE_FONT,
+    )
+    set_language_properties(rpr)
+
+
+def configure_document_defaults(doc: Document) -> None:
+    """Declare fonts and languages even for runs without direct formatting."""
+    styles = doc.styles.element
+    doc_defaults = styles.find(qn("w:docDefaults"))
+    if doc_defaults is None:
+        doc_defaults = OxmlElement("w:docDefaults")
+        styles.insert(0, doc_defaults)
+    rpr_default = doc_defaults.find(qn("w:rPrDefault"))
+    if rpr_default is None:
+        rpr_default = OxmlElement("w:rPrDefault")
+        doc_defaults.insert(0, rpr_default)
+    rpr = rpr_default.find(qn("w:rPr"))
+    if rpr is None:
+        rpr = OxmlElement("w:rPr")
+        rpr_default.append(rpr)
+    fonts = rpr.find(qn("w:rFonts"))
+    if fonts is None:
+        fonts = OxmlElement("w:rFonts")
+        rpr.insert(0, fonts)
+    set_font_properties(
+        fonts,
+        latin_font=LATIN_FONT,
+        east_asia_font=CHINESE_FONT,
+    )
+    set_language_properties(rpr)
 
 
 def configure_styles(doc: Document):
@@ -343,10 +399,13 @@ def create_numbering(doc: Document, *, decimal: bool) -> int:
 
     rpr = OxmlElement("w:rPr")
     fonts = OxmlElement("w:rFonts")
-    fonts.set(qn("w:ascii"), LATIN_FONT)
-    fonts.set(qn("w:hAnsi"), LATIN_FONT)
-    fonts.set(qn("w:eastAsia"), CHINESE_FONT)
+    set_font_properties(
+        fonts,
+        latin_font=LATIN_FONT,
+        east_asia_font=CHINESE_FONT,
+    )
     rpr.append(fonts)
+    set_language_properties(rpr)
     lvl.append(rpr)
     abstract.append(lvl)
     # OOXML CT_Numbering 要求全部 w:abstractNum 排在 w:num 之前，追加到末尾会破坏部件结构
@@ -389,10 +448,14 @@ def add_bullet(
     *,
     bold_lead: str | None = None,
     compact: bool = False,
+    font_size: float | None = None,
+    line_spacing: float | None = None,
 ):
     p = doc.add_paragraph()
     apply_num(p, bullet_num_id, compact=compact)
-    font_size = 10.5 if compact else 11
+    if line_spacing is not None:
+        p.paragraph_format.line_spacing = line_spacing
+    font_size = font_size if font_size is not None else (10.5 if compact else 11)
     if bold_lead and text.startswith(bold_lead):
         lead = p.add_run(bold_lead)
         set_run_font(lead, size=font_size, color=BODY, bold=True)
@@ -587,6 +650,7 @@ def add_heading(doc: Document, text: str, level: int, *, page_break_before: bool
 
 def build_document():
     doc = Document()
+    configure_document_defaults(doc)
     section = doc.sections[0]
     configure_section(section)
     configure_header_footer(section)
@@ -598,7 +662,7 @@ def build_document():
     props.title = "企业一体化经营管理平台 - 产品介绍与功能大纲"
     props.subject = "面向非技术读者的产品介绍（总体设计阶段，功能以正式发布版本为准）"
     props.author = "企业一体化经营管理平台"
-    props.keywords = "企业管理, CRM, 合同, 订单, 采购, 财务, 售后, 私有化"
+    props.keywords = "企业管理, CRM, 合同, 订单, 采购, 财务, 售后, 私有化, 自动化, 能力包, MCP"
     props.comments = ""
     props.last_modified_by = "企业一体化经营管理平台"
     generated_at = datetime.now(timezone.utc)
@@ -634,7 +698,7 @@ def build_document():
 
     add_body(
         doc,
-        "本文档说明产品的总体设计和功能规划。产品正在分阶段研发，文中功能不代表当前均已可用，实际范围以正式发布版本和验收清单为准，详见第 9 节。",
+        "文档状态：F-57 现行产品介绍。当前只完成总体设计、需求追踪和实施计划，F-57 功能尚未实现；实际交付必须以正式发布版本、合同和验收清单为准，详见第 9 节。",
     )
 
     add_heading(doc, "这是一套什么软件？", 1)
@@ -644,17 +708,17 @@ def build_document():
     )
     add_body(
         doc,
-        "一笔业务从销售录入合同开始，一直跟踪到合同审批、订单、采购、收货、交付、开票、收款、付款和售后，并汇总成收入、成本、交付和利润。首版内置的外部对接只有电子签章一类，企业已有系统可作为外部数据源，通过接口和文件导入导出交换数据。",
+        "一笔业务从商机和报价开始，一直跟踪到合同、订单、采购、收货、交付、开票、收付款和售后，再持续回到复购、续签、维保和经营改进。系统用耐久自动化把责任、效果、证据、异常与重新开启连成闭环；MCP 是受治理的工具层，服务器控制中心是权威管理面。本地模型延后开发，当前只冻结可替换 AI provider、权限、审计和隔离契约。",
     )
 
     add_table(
         doc,
         ["项目", "说明"],
         [
-            ["使用设备", "Windows、macOS、iOS（iPhone）、Android；iPad 可运行 iOS 客户端，首版不做平板版式适配，也不纳入四端验收"],
-            ["部署方式", "企业机房、私有云，或企业自己的国内云服务器；核心交易数据库为 PostgreSQL，详见第 6 节"],
-            ["数据原则", "每个客户独立部署；数据、备份和日志由客户控制"],
-            ["核心特点", "合同贯穿全程、单据自动接力、高度定制、严格权限、完整审计"],
+            ["使用设备", "员工 Workbench 支持 Windows、macOS、iOS 和 Android 并自适应屏幕；权威服务器控制中心只运行在 Windows Server 2022"],
+            ["部署方式", "企业自控物理机或企业自控 IaaS 上的一台 Windows Server 2022 作为唯一写权威；服务器外备份目标、离线轮换介质和洁净恢复能力独立配置。核心交易数据库为自管 PostgreSQL 16，详见第 6 节"],
+            ["数据原则", "每个客户独立部署；同一客户数据库按法人行级权限和独立密钥域隔离；权威节点承载内容或可关联客户的持久数据与衍生数据全部落加密 HDD，Workbench 只允许最小、加密、可撤销、非权威缓存"],
+            ["核心特点", "全链路闭环、长周期耐久自动化、动态权限、签名配置代、能力包热插拔、受控 MCP、高度定制和完整审计"],
             ["适用范围", "首版面向中国大陆业务，仅支持简体中文与人民币；不含多币种、外汇和进出口"],
         ],
         [2700, 6660],
@@ -667,16 +731,16 @@ def build_document():
         "尤其适合以合同和订单驱动经营，销售、采购、仓库、财务和售后需要紧密协同的企业，也适合多法人、多部门、多地点、重视数据保密或需要大量定制流程的组织。",
     )
 
-    add_heading(doc, "1. 一笔订单怎样走完全程", 1, page_break_before=True)
+    add_heading(doc, "1. 一笔订单怎样走完全程", 1)
     add_body(doc, "用最常见的一笔订单来理解这套系统：")
     flow_steps = [
         ("销售建单：", "销售录入合同，选择客户、产品、数量、价格和交期，系统自动带出已有资料，并校验价格权限、库存可用量、交期和客户信用额度。"),
-        ("合同审批：", "关键条款、折扣、付款计划和附件按各自审批链审批，不能越权跳过；管理层是合同审批的必经节点，意见、版本和附件全程留痕。"),
+        ("合同审批：", "关键条款、折扣、付款计划和附件按当前风险策略进入审批或会签，不能越权跳过；授权依据、意见、版本和附件全程留痕。"),
         ("合同生效：", "合同生效后自动生成销售订单、采购需求、项目任务、收款计划和交付节点，派生单据与合同双向可追溯。"),
-        ("采购订货：", "采购查看已生效的合同与采购需求，按合同下达采购订单并可分批订货，供应商可通过门户确认订单与交期。"),
+        ("采购订货：", "采购查看合同来源和已批准的采购需求，按采购需求下达采购订单并可分批订货，供应商可通过门户确认订单与交期。"),
         ("收货入账：", "收货按物料、批次和序列号写入库存台账，并按采购订单不含税单价暂估入库金额；采购发票登记后回冲暂估，按发票不含税单价调整入库成本并形成应付明细。"),
-        ("发票申请与开具：", "销售按合同和订单提交发票申请，管理层审批后由财务登记开具结果，回写申请单状态与剩余可开比例，并形成应收。"),
-        ("交付确认：", "发货或合同交付节点确认后确认收入，并同步按加权平均单价结转销货成本。"),
+        ("发票申请与开具：", "销售按合同和订单提交发票申请，经当前策略解析出的授权审批人批准后，由财务登记开具结果，回写状态与剩余可开比例并形成应收。"),
+        ("交付确认：", "发货或合同交付节点确认后确认收入；仅非直运 INVENTORY 行按当前移动加权成本同步结转销货成本。DROP_SHIP 和 DIRECT_EXPENSE 行不产生本方库存或虚构销货成本腿，实际成本来自已确认且未冲销的直接采购、外购服务发票或其他权威成本事实。"),
         ("到款与付款登记：", "财务按订单和发票登记到款，按采购发票登记付款，支持分次收付款，未核销部分进入账龄；暂无可核销发票的款项先挂预收或预付，后续开票或采购发票登记时自动核销。"),
         ("售后工单：", "售后技术支持记录形成工单，关联原订单、合同、产品、批次、设备和保修，并进入客户档案。"),
         ("管理层看数：", "管理层随时查看收入、成本、交付和利润，并可按期间、客户、产品和合同下钻。"),
@@ -708,85 +772,89 @@ def build_document():
         body_font_size=9.9,
     )
 
-    add_heading(doc, "3. 核心业务功能", 1, page_break_before=True)
+    add_heading(doc, "3. 核心业务功能", 1)
 
     add_heading(doc, "客户与销售", 2)
     add_body(doc, "统一管理客户档案、联系人和客户 360 视图，销售建单时自动带出客户、产品和价目资料。")
     add_bullet(doc, "销售可查看客户的历史合同、回款、投诉、设备和服务记录。", bullet_num_id)
     add_bullet(doc, "维护产品价目，录入合同和下单时校验价格权限，折扣随合同审批链审批。", bullet_num_id)
-    add_bullet(doc, "首版不含线索、商机、漏斗、市场活动、销售预测和渠道佣金。", bullet_num_id)
+    add_bullet(doc, "支持商机、报价、跟进和转合同或订单；市场活动、销售预测和渠道佣金继续延期。", bullet_num_id)
 
     add_heading(doc, "合同管理", 2)
     add_body(doc, "重点把合同的三类信息管清楚：关键条款、收付款信息、合同附件。")
-    add_bullet(doc, "支持模板、条款、修订版本、批注、审批、电子签章、实体印章、履约和义务跟踪，合同也可以合并。", bullet_num_id)
+    add_bullet(doc, "支持模板、条款、修订版本、批注、审批、通过经认证 provider 的电子签章、实体印章、履约和义务跟踪，合同也可以合并。", bullet_num_id)
     add_bullet(doc, "支持合同续签：按原合同派生续签版本，保留与原合同的关联关系，以及原合同的履约记录、收付款计划和已派生单据的追溯链路；续签版本重新审批生效后派生新的订单、收款计划和交付节点。", bullet_num_id)
     add_bullet(doc, "支持合同到期提醒：按合同有效期、交付节点日期和收付款计划到期日生成提醒。", bullet_num_id)
-    add_bullet(doc, "合同审批后，可自动生成订单、采购需求、项目任务、收款计划和交付节点。", bullet_num_id)
-    add_bullet(doc, "合同变更按新版本重新派生或调整已派生的单据，派生单据与合同双向可追溯。", bullet_num_id)
+    add_bullet(doc, "合同完成签署并生效后，可自动生成订单、采购需求、项目任务、收款计划和交付节点。", bullet_num_id)
+    add_bullet(doc, "合同变更只影响未履行义务，由新版本和正式影响计划生成或调整下游新版本；已经交付、开票、收付款、出入库、签章或产生其他业务效果的事实保持不可变，需要时只能追加冲销、更正、退换或补偿事实。派生单据与合同双向可追溯。", bullet_num_id)
     add_bullet(doc, "合同生效属高风险操作，须重新确认身份，审批链不能越权跳过。", bullet_num_id)
 
     add_heading(doc, "订单管理", 2)
-    add_body(doc, "销售下单后，系统自动检查价格权限、合同、库存可用量、交期和客户信用额度。")
-    add_bullet(doc, "客户信用额度由应收未收金额与在途订单金额推算，超出可用额度时按配置阻断或转审批。", bullet_num_id)
-    add_bullet(doc, "支持订单变更、分批交付、退货、换货和直运；订阅、租赁与寄售作为订单类型登记：订阅与租赁登记周期和租期，寄售只登记订单类型，不含寄售在库台账与代销结算，货权转移仍以交付确认为准。", bullet_num_id)
+    add_body(doc, "销售订单只能来自已生效合同版本、已接受报价版本，或经独立审批的人工建单依据，三者必须且只能选择一项；每张订单冻结完整商业快照，并校验价格权限、库存可用量、交期和客户信用额度。")
+    add_bullet(doc, "客户信用占用由应收有效未收、已交付未开票和在途订单三部分组成，同一订单金额在生命周期任一时点只落入其中一处，不能重复占用；可用额度不足时按配置阻断或转独立审批。", bullet_num_id)
+    add_bullet(doc, "支持订单变更、拆分、合并、取消、分批交付、退货、换货和直运；STANDARD 与 DROP_SHIP 是首版必须完成的预发布认证目标，当前仍未实现、未认证，证据通过前不得宣称可用。寄售、订阅和租赁只保留类型化 provider seam，不提供可执行菜单、接口或营销声明。", bullet_num_id)
     add_bullet(doc, "每次变更都保留版本和审批记录，避免口头修改造成部门信息不一致。", bullet_num_id)
 
     add_heading(doc, "采购与供应商", 2)
-    add_body(doc, "合同、销售订单、项目任务或库存不足都可以自动形成采购建议。")
-    add_bullet(doc, "采购查看审批生效的合同，按合同下达采购订单并可分批订货，覆盖收货、退货、采购发票和付款申请。", bullet_num_id)
+    add_body(doc, "采购需求可由合同、销售订单、项目、库存补货、经审批人工需求或受控外部生产请求形成；合并、拆分和部分订购后仍保存逐来源数量并保持总量守恒。")
+    add_bullet(doc, "采购按已批准采购需求下达采购订单，可合并、拆分和分批订货，覆盖询比价、授标、收货、退货、采购发票和付款申请。", bullet_num_id)
     add_bullet(doc, "记录供应商准入与资质，以及价格、交期、质量和风险信息。", bullet_num_id)
     add_bullet(doc, "供应商可通过门户确认采购订单与交期、提交送货通知、上传发票、查询收付款对账并维护自身档案。", bullet_num_id)
-    add_bullet(doc, "首版不含询比价、招投标、VMI 和供应商绩效评分模型。", bullet_num_id)
+    add_bullet(doc, "支持询价、供应商报价、比价与选择审计；招投标和 VMI 继续延期，供应商价格、交期、质量和风险评价纳入主档。", bullet_num_id)
 
-    add_heading(doc, "3. 核心业务功能（续）", 1, page_break_before=True)
+    add_heading(doc, "3. 核心业务功能（续）", 1)
 
     add_heading(doc, "库存与存货计价", 2)
     add_body(doc, "管理仓库与库存台账、收发存记录、可用量查询，以及批次与序列号标识。")
     add_bullet(doc, "收货、出库和退货按物料、批次和序列号登记，可用量直接支撑下单校验和交期判断。", bullet_num_id)
     add_bullet(doc, "存货计价采用移动加权平均一种方法：收票前按采购订单不含税单价暂估入库，收票后按发票不含税单价调整，差额对仍在库部分调整加权平均单价、对已出库部分计入当期成本；出库按加权平均单价结转金额，数量账与金额账同步更新。", bullet_num_id)
-    add_bullet(doc, "提供按仓库和物料的库存金额查询与期末库存价值表；退货回冲不重算历史成本：销售退货以及采购发票已登记的采购退货按退货时的加权平均单价回冲，采购发票尚未登记的采购退货按该次收货的原暂估单价原额回冲。", bullet_num_id)
-    add_bullet(doc, "首版不含库位、质检、预留、拣货、波次、调拨和盘点，也不含先进先出、标准成本和采购费用分摊。", bullet_num_id)
+    add_bullet(doc, "退货只追加冲回事实，不重算历史：非直运 INVENTORY 销售退货始终按所关联原交付确认行的实际成本分段回收入库；物料采购退货不论是否已收票，库存一律按退货时锁后的当前移动加权账面价值出库，若退货后结存数量归零则全额出清剩余库存金额；原暂估、发票、红字和价差由 GRNI 与成本链另行勾稽。", bullet_num_id)
+    add_bullet(doc, "首版不含高级 WMS 的库位、质检、销售分配库存预留、拣货、波次、调拨和盘点；售后工单的服务配件预留、领用、退回和报损属于当前范围。首版也不含先进先出、标准成本和采购费用分摊。", bullet_num_id)
 
-    add_heading(doc, "财务：应收应付、开票与总账", 2)
-    add_body(doc, "业务单据按固定规则生成财务记录，减少重复录入；开票与收付款在系统内登记，不依赖外部账套。")
+    add_heading(doc, "经营财务：应收应付、开票与经营账", 2)
+    add_body(doc, "业务单据按固定规则生成经营财务事实，减少重复录入；平台闭合履约、收付款、发票、成本与毛利，法定财税通过专业系统连接器承接。")
     add_bullet(doc, "应收台账按客户、合同、订单和发票记录应收明细、收款计划、到款核销和账龄；应付台账按供应商、采购订单和采购发票记录应付明细、付款申请、付款核销和账龄。", bullet_num_id)
     add_bullet(doc, "发票申请、审批、开具登记与合同收款计划的勾稽在系统内连成一条链路；开票有误时可在系统内登记作废或红字冲销。", bullet_num_id)
     add_bullet(doc, "到款和付款按订单与发票登记，支持分次收付款，一笔款项可核销多张发票或订单；银行与现金账户档案和资金流水由人工登记。", bullet_num_id)
     add_bullet(doc, "预收与预付纳入台账：收到尚无应收可核销的款项按合同收款计划挂预收账款，付出尚无应付可核销的款项挂预付账款，后续开票或采购发票登记时自动核销，核销后的余额进入应收应付台账并参与账龄。", bullet_num_id)
-    add_bullet(doc, "简易总账提供会计科目表、凭证生成、科目余额表、总账与明细账查询、试算平衡、月度期间开闭和年度损益结转；已过账凭证只能以红字冲销或更正凭证追加更正。", bullet_num_id)
-    add_bullet(doc, "成本来源只有两类：交付确认时按加权平均结转的销货成本，以及直接关联合同、订单或项目的采购发票与外购服务费用；可按合同、订单、客户和项目查询成本并得出毛利。", bullet_num_id)
-    add_bullet(doc, "收入确认只有一种口径：交付确认时确认收入并同步结转销货成本，开票时形成应收和销项税额。", bullet_num_id)
-    add_bullet(doc, "首版为人民币单一账簿，发票开具指按实际开票结果在系统内登记；不含固定资产、预算、费用报销、管理会计、合并报表、多币种、外汇、进出口、信用证、银企直连、自动对账和税务平台直连。", bullet_num_id)
+    add_bullet(doc, "经营账保存不可变且平衡的内部经营分录、受控经营科目映射、试算、业务子账对账和经营期间永久锁定；锁定后不反结账、不重开。迟到事实进入下一个开放经营期间，同时保留原业务日期、顺延依据和追加更正链。它不冒充法定科目、法定凭证账簿、税务申报、工资或法定年结。", bullet_num_id)
+    add_bullet(doc, "经营成本按权威事实聚合：非直运库存行在交付确认时按移动加权结转销货成本；DROP_SHIP、外购服务及其他 DIRECT_EXPENSE 成本来自已确认且未冲销的采购发票或成本捕获；服务成本来自配件估价、已批准工时和费用；项目还可纳入经批准的其他经营成本。每项均保存来源、冲销和更正链，并可按合同、订单、客户和项目下钻计算毛利。", bullet_num_id)
+    add_bullet(doc, "收入确认当前只有交付确认一种时点：所有适用行确认收入，但只有非直运 INVENTORY 行同步结转销货成本；DROP_SHIP 和 DIRECT_EXPENSE 行不产生虚构库存或销货成本腿。开票时形成应收和销项税额。", bullet_num_id)
+    add_bullet(doc, "第一阶段按人民币经营事实和实际开票结果登记。只有权威登记表已具名的法定财税、电子发票、银行与支付能力保留受治理 provider 接口，并且必须逐个完成签名登记和认证后才能启用；工资、固定资产、预算、费用报销、合并报表、多币种和外汇仍属不支持或延期范围，不能靠通用 provider 宣称可用。", bullet_num_id)
 
     add_heading(doc, "售后工单与设备台账", 2)
-    add_body(doc, "售后技术支持记录形成工单，关联原订单、合同、产品、批次、设备和保修。")
+    add_body(doc, "售后覆盖安装、维修、巡检、保养和技术支持五类工单，关联原订单、合同、产品、批次、设备、保修和服务权益。")
     add_bullet(doc, "设备台账记录设备编号或序列号、型号、所属客户、关联产品与批次、交付与安装日期和当前状态。", bullet_num_id)
     add_bullet(doc, "保修记录起止日期、保修范围和条款文本，建工单时自动读取在保状态。", bullet_num_id)
     add_bullet(doc, "客户投诉与工单进入客户 360 视图，退换修登记与订单的退货、换货打通。", bullet_num_id)
-    add_bullet(doc, "工单按流程设定的时限自动提醒和升级；首版不含现场派工调度、服务权益计费和售后知识库。", bullet_num_id)
+    add_bullet(doc, "工单按能力、位置、负载、SLA、回避和职责分离动态派工，记录现场照片、签字、配件、工时、成本、根因、纠正措施和回访；当前可按合同或保修规则派生服务权益并生成周期维护任务，周期账单/催收与售后知识库继续延期。", bullet_num_id)
 
     add_heading(doc, "报表与经营看板", 2)
     add_body(doc, "报表和看板的数据直接来自业务单据，管理层不必等月底手工汇总。")
-    add_bullet(doc, "预置收入、成本、利润、交付四类指标和一个默认管理驾驶舱，并配套应收账龄、应付账龄两张基础表。", bullet_num_id)
-    add_bullet(doc, "四类指标可按期间、客户、产品和合同下钻；交付看合同交付节点与订单分批交付的按期完成率和逾期清单。", bullet_num_id)
-    add_bullet(doc, "报表设计器支持拖拽设计、筛选、分组、汇总和像素级打印模板，企业可以建立自己的指标。", bullet_num_id)
+    add_bullet(doc, "首版计划预置收入、成本、毛利、交付、应收应付账龄、采购周期、库存、服务 SLA/成本/满意度、项目风险，以及目标闭环、未知效果和自动化健康指标，并提供默认管理驾驶舱。", bullet_num_id)
+    add_bullet(doc, "每个指标都保存公式版本、来源水位和证据，可按适用的期间、法人、客户、产品、合同、订单、项目、工单和责任链下钻；关闭、重开、冲销和异常不会被静默排除。", bullet_num_id)
+    add_bullet(doc, "支持自定义指标、报表、看板和打印模板，并作为受审批的同一配置代发布、验证和回滚；具体编辑交互以实施验收版本为准。", bullet_num_id)
     add_bullet(doc, "报表和看板的结果继承法人、记录和字段级权限，无权查看的数据不会出现在结果中。", bullet_num_id)
-    add_bullet(doc, "首版不含内嵌电子表格、报表订阅与定时分发，以及外部 BI 平台的语义层对接。", bullet_num_id)
+    add_bullet(doc, "指标必须解释公式并下钻到来源证据；内嵌电子表格和外部 BI 语义层继续延期，定时任务通过受治理自动化执行。", bullet_num_id)
 
-    add_heading(doc, "4. 首版模块安装范围与后续版本", 1, page_break_before=True)
+    add_heading(doc, "4. 首版模块安装范围与后续版本", 1)
     add_body(
         doc,
-        "首版按模块交付。首版范围内的模块都可以按许可证安装、启用、停用、再启用和升级；停用只关闭该模块的界面入口、写入接口、定时任务和对外事件，历史数据继续保留，授权范围内仍可查询和审计检索。",
+        "首版计划按模块交付。首版范围内的模块完成实现与验收后，可以按许可证安装、启用、停用、再启用和升级；停用只关闭该模块的界面入口、写入接口、定时任务和对外事件，历史数据继续保留，授权范围内仍可查询和审计检索。",
     )
 
-    add_heading(doc, "首版可以安装的能力", 2)
+    add_heading(doc, "首版能力概览（易读分组，非模块注册表）", 2)
+    add_body(doc, "下面九组只为非技术读者理解，不是安装、许可或数据库模块登记。唯一机器可执行的内置模块闭集仍是 15 个 ModuleCode：mdm、crm、cpq、clm、sales、procure、inventory、costing、project、service、finance、ledger、invoice、portal、reporting；审批、自动化、权限、附件、搜索、MCP、provider、AI 契约和服务器控制中心属于平台公共能力，不构成第 16 个模块。")
     first_release_modules = [
-        ("核心业务：", "主数据、客户档案与客户 360、合同（含续签与到期提醒）、销售订单与客户信用额度校验、采购与供应商、库存台账与存货计价、成本归集、项目任务与交付节点、售后工单与设备台账。"),
-        ("财务：", "应收与应付台账、预收预付台账、发票申请与开具登记、到款与付款登记、简易总账与期间结账。"),
-        ("报表与经营看板：", "报表设计器、仪表盘、企业自定义指标、打印模板，以及收入、成本、交付、利润的预置指标与默认管理驾驶舱。"),
-        ("供应商门户：", "供应商查看与确认采购订单和交期、提交送货通知、上传发票、查询收付款对账、维护自身资质与价格交期档案。"),
-        ("电子签章连接器：", "合同审批通过后发起签署，回传签署结果与带签章的合同文件，用印留痕并归入合同附件与审计。"),
-        ("其他：", "全文检索，以及订阅与租赁两种订单类型。"),
+        ("核心业务：", "主数据、客户与客户 360、商机与报价、合同、STANDARD/DROP_SHIP 销售、询比价采购、基础库存、项目与交付、投诉、售后工单、设备和周期维保。"),
+        ("经营财务：", "应收应付、预收预付、发票、收付款、退款返款、核销、账龄、现金流、内部平衡经营分录、试算、子账对账、经营期间和毛利。"),
+        ("耐久自动化与动态权限：", "以目标、责任、效果、证据、异常、闭环和周期驱动长链工作；任务按能力动态找人，角色与岗位只作模板。"),
+        ("报表与平台定制：", "可定义关系型业务对象、字段、关系、表单、列表、菜单、流程、权限、报表、看板、打印模板和品牌，并作为同一签名配置代发布、回滚。"),
+        ("客户与供应商门户：", "客户按白名单查看业务并确认交付、提交投诉或服务请求；供应商只使用订单交期、ASN、发票、对账和自有资料五类能力。"),
+        ("受治理 MCP 与 provider：", "本地文件、Office 格式、REST/Webhook/MCP、SMTP 和 AD/LDAP 是必须完成认证的核心 provider 目标；证据通过前相应能力保持关闭。其他厂商连接器逐项取证后以签名能力包启用。MCP 不能直连数据库。"),
+        ("AI 契约：", "交付可替换 AI provider、模型与工具版本、最小外发、权限、审计和隔离契约；本地模型本身延期，确定性主链不依赖 AI。"),
+        ("服务器控制中心：", "权威节点提供配置代、动态权限、能力包、自动化、审计、安全、磁盘、备份、恢复和降级状态管理；它不是第五个办公客户端，也没有绕权超级管理员。"),
+        ("公共基础：", "审批会签、SLA、通知、附件、全局搜索、模板、Excel 导入导出、审计和可解释错误。"),
     ]
     for lead, rest in first_release_modules:
         add_bullet(doc, lead + rest, bullet_num_id, bold_lead=lead, compact=True)
@@ -794,24 +862,28 @@ def build_document():
     add_heading(doc, "属于后续版本的能力", 2)
     add_body(
         doc,
-        "以下能力首版不交付，也不提供安装入口。它们已按原名称逐条登记，后续版本可以按登记恢复；恢复需要重新确定范围，不能在首版通过低代码配置、插件或连接器变相实现。",
+        "以下十二项逐一对应权威登记的 12 个产品边界别名，不是可随意扩写的愿望清单。后续恢复必须引用对应登记项、重新裁定范围并取得证据，不能在首版通过低代码配置、插件或连接器变相实现。",
     )
     deferred_groups = [
-        ("制造与生产：", "MRP、APS、MES、PLM、QMS、LIMS，以及设备点检、维修工单、备件和预测维护。"),
-        ("企业运营与治理：", "人力资源、运输管理、EHS、GRC、IT 服务、法务、商旅费控、文档与知识库、内容管理、统一消息中心、联络中心和 GIS。"),
-        ("商业与渠道：", "电商、POS、会员、渠道佣金与返利，以及按量计费、独立账单和催收。"),
-        ("门户：", "客户门户、经销商门户和员工门户；首版对外门户只有供应商门户。"),
-        ("智能与检索：", "本地 AI、OCR、MCP、向量检索、知识图谱、流程挖掘、预测和仿真；首版检索能力只有全文检索。"),
-        ("现场与设备联网：", "边缘节点、断网独立运行、工业协议接入、物联网和数字孪生。"),
-        ("外部资金与税务：", "银企直连、自动对账、第三方支付渠道，以及数电发票平台与税控设备对接。"),
-        ("更深的业务能力：", "完整仓库作业（波次、拣货、盘点、质检、预留、调拨）、寄售在库管理与代销结算、完整财务与管理会计（多账簿、固定资产、预算、费用报销、合并报表、资金管理）、完整成本管理，以及线索、商机、销售预测、询比价和招投标。"),
+        ("线索与市场：", "市场活动、营销漏斗、渠道佣金和销售预测延期；CRM 当前只接收类型化客户与商机输入。"),
+        ("复杂报价：", "复杂产品配置器、复杂成本模型、返利和报价部分接受延期；基础报价版本属于当前范围。"),
+        ("复杂采购：", "正式招投标、VMI 和复杂供应商绩效模型延期；RFQ 与询比价属于当前范围。"),
+        ("特殊销售模式：", "寄售、订阅和租赁的完整销售闭环延期，只保留受治理 provider 接口且默认关闭。"),
+        ("制造：", "完整 MRP、MES 和 APS 延期；外部生产系统只能通过受治理接口形成标准采购需求。"),
+        ("高级仓储：", "高级 WMS 的波次、拣货、盘点、质检、销售分配库存预留、调拨和自动立库延期；基础库存及服务配件预留属于当前范围。"),
+        ("深度服务经营：", "周期计费引擎、预测维护和完整 EAM 延期；服务权益、成本、一次性收费提案和周期维保任务属于当前范围。"),
+        ("深度项目管理：", "完整 WBS、资源、预算变更和 EVM 延期；基础项目、风险、成本和收款节点属于当前范围。"),
+        ("法定财务：", "法定总账、税务、工资和法定年结延期，由专业系统通过受治理接口承接；内部经营分录属于当前范围。"),
+        ("企业专业套件：", "HR、GRC、法务、商旅、ECM、GIS、PLM、PIM 和 QMS 延期，不创建首版模块、菜单或接口。"),
+        ("其他门户：", "经销商门户和员工门户延期；客户门户与供应商门户按当前精确白名单交付。"),
+        ("本地智能能力：", "本地模型、OCR、RAG 和知识图谱实现延期；当前只交付 AI/provider 治理契约、受控 MCP 和权限过滤全文检索。"),
     ]
     for lead, rest in deferred_groups:
         add_bullet(doc, lead + rest, bullet_num_id, bold_lead=lead, compact=True)
 
     add_callout(
         doc,
-        "首版交付以合同为中心的销售、采购、财务与工单闭环；上面列为后续版本的能力不在首版交付范围内。",
+        "第一阶段交付以合同履约与回款为商业切口，但技术内核是可组合、可热插拔、可恢复的治理自动化平台。本地模型不在当前交付中；受控 MCP、AI/provider 契约和服务器控制中心在当前范围内。",
         label="范围提醒",
     )
 
@@ -820,70 +892,72 @@ def build_document():
         ("数据可定制：", "新增业务对象、字段、关系、编号、校验、视图和搜索。"),
         ("界面可定制：", "调整表单、列表、首页、菜单和看板（同一配置在移动端按重排规则呈现）。"),
         ("流程可定制：", "设置审批、会签、时限、提醒、升级、自动任务和跨部门动作。"),
-        ("权限可定制：", "按法人、部门、岗位、项目、客户、记录和字段控制访问。"),
+        ("权限可定制：", "按主体、能力、法人、对象、记录、字段、条件、期限、设备、金额、状态和委托动态控制；岗位和角色只作模板。"),
         ("报表可定制：", "建立企业自己的指标、报表、打印模板和管理驾驶舱。"),
-        ("品牌可定制：", "每个客户可使用自己的名称、图标、颜色和客户端包；面向外部人员的应用商店分发使用客户自有开发者账号与证书，审核受阻时按合同切换到 Web/PWA 或其他约定形态并记录能力差异。"),
-        ("扩展可安装：", "通过签名模块或受控插件，在首版已交付的能力范围内增加特殊能力；配置先验证审批，出现问题可回退。插件默认没有网络、文件、密钥和业务数据权限，需要哪些能力必须先声明，经审批后按最小权限授予。"),
+        ("品牌可定制：", "每个客户可使用自己的名称、图标、颜色和客户端包；面向外部人员的应用商店分发使用客户自有开发者账号与证书。公共商店审核连续两轮失败或超过合同约定 14 个自然日，并经客户批准后，才可切换到 Web/PWA 或其他约定形态并记录能力差异。"),
+        ("扩展可安装：", "通过签名模块或受控插件，在首版已交付的能力范围内增加特殊能力；配置先验证审批，出现问题可回退。插件默认没有网络、文件、密钥和业务数据权限，需要哪些能力必须先声明，经审批后按最小权限授予。扩展可运行于 WASM、受 Job Object 隔离的签名 Windows worker，或已通过 Hyper-V/容器/资源安全证据的受控 Windows 容器；当前 P340 32GB 默认不激活容器。"),
     ]
     for lead, rest in customization_items:
         add_bullet(doc, lead + rest, bullet_num_id, bold_lead=lead, compact=True)
 
-    add_heading(doc, "5. Excel、文档与外部连接", 1, page_break_before=True)
+    add_heading(doc, "5. Excel、文档与外部连接", 1)
 
     add_heading(doc, "Excel 与批量数据", 2)
-    add_bullet(doc, "首版提供 Excel 导入与导出，用于批量建档、批量录入和把查询结果带出系统，四端能力一致；批量导入导出的执行在电脑端或服务端完成，移动端只保留可恢复的断点任务，单次批量规模按设备策略受限。", bullet_num_id)
+    add_bullet(doc, "首版计划提供 Excel 导入与导出，用于批量建档、批量录入和把查询结果带出系统。四端的权限、校验、审计和服务器结果一致；电脑端只负责建立映射、预览并启动任务，文件解析、权威校验与执行只在服务器完成。移动端只能查看、审批、暂停或恢复服务端任务，单次批量规模按设备策略受限。", bullet_num_id)
     add_bullet(doc, "为了安全，不执行 VBA、任意宏或第三方 Excel 加载项。", bullet_num_id)
     add_bullet(doc, "首版不提供 Excel 或 WPS 加载项，也不提供在表格中实时查询与提交、复杂公式、数据透视和条件格式。", bullet_num_id)
 
     add_heading(doc, "合同、附件与档案", 2)
     add_bullet(doc, "合同与单据附件支持模板套用、批注、版本与版本比较；DOCX 提供下载与查看。", bullet_num_id)
-    add_bullet(doc, "PDF 支持查看、下载、批注、电子签章和归档校验；合同、发票、会计凭证和审计证据保存在经认证的不可篡改存储中。", bullet_num_id)
-    add_bullet(doc, "大文件支持分片上传、断点续传、类型识别、恶意内容检查和权限控制。", bullet_num_id)
-    add_bullet(doc, "移动端对模板套用、版本比较和 PDF 签章只提供查看与只读批注，写入操作在电脑端完成。", bullet_num_id)
+    add_bullet(doc, "PDF 支持查看、下载、批注、发起签署请求和归档校验；具体签章 provider 通过认证并启用后，才可执行电子签章。合同、发票、内部经营分录证据和审计证据采用只追加记录、摘要校验、签名审计和服务器外备份共同保护。首版不宣称使用经认证的 WORM（不可重写）存储，也不把内部经营记录称为法定会计凭证。", bullet_num_id)
+    add_bullet(doc, "大文件支持分片上传和断点续传；上传完成只表示文件已完整进入隔离区，仍须通过类型识别、恶意内容检查和权限校验并达到 PUBLISHED 状态后，才可成为可用附件。", bullet_num_id)
+    add_bullet(doc, "移动端不提供文档模板编辑、签章坐标设计或复杂版本合并；可查看 exact digest 和版本比较、提交批注、发起签署请求并执行获准审批。签章私钥与实际签署、写入效果始终在服务器或经认证 provider。", bullet_num_id)
     add_bullet(doc, "首版不提供文档在线编辑、修订与多人协作，也不提供 OCR、PDF/OFD 遮盖与格式转换、CAD 预览。", bullet_num_id)
 
     add_heading(doc, "接口与外部连接", 2)
     add_body(
         doc,
-        "首版随正式版交付的成品连接器只有电子签章一类：合同审批通过后发起签署，回传签署结果与带签章的合同文件，用印留痕并归入合同附件与审计。实际启用需完成签章机构准入，并按客户逐项联调。",
+        "第一阶段必须完成认证的核心 provider 目标是本地文件、Excel/CSV/Word/PDF、REST/Webhook/MCP、SMTP 和 AD/LDAP；当前均不得在缺少一致性与安全证据时宣称可用。电子签章、企业微信、钉钉、飞书、Microsoft 365、WPS、银行、税务、OIDC/SAML 等使用同一签名 provider 契约，只有具体厂商通过验收后才能启用；不是全部预装的现成连接器。",
     )
     add_bullet(doc, "银行与税务侧首版不做系统对接：到款、付款与发票开具都在系统内登记，可人工录入或批量导入，闭环不依赖银企直连与税务平台。", bullet_num_id)
-    add_bullet(doc, "平台提供查询类 REST 接口与 OpenAPI 说明、Webhook 与业务事件外发，以及 CSV、Excel、XML 文件导入导出，供企业按需自行对接；首版不开放外部业务系统直接写入平台数据，如需回写按项目制评估。", bullet_num_id)
-    add_bullet(doc, "对外调用失败时支持超时、退避重试、熔断、死信队列和人工修复，不让问题悄悄丢失。", bullet_num_id)
+    add_bullet(doc, "平台提供查询类 REST 接口与 OpenAPI 说明、Webhook 与业务事件外发，以及 CSV、Excel 文件导入导出。通用 XML/SOAP/XSD 不属于首版核心格式；只有声明具体格式与 schema、通过认证的签名 provider codec，才能把特定 XML 转为导入提案或类型化命令。需要双向读写时，只能使用已签名、已审批的 MCP/provider 清单和短期授权；系统每次重新检查人员、设备、法人、权限和字段范围。", bullet_num_id)
+    add_bullet(doc, "MCP 连接默认没有网络、文件、密钥或业务数据权限；每项能力须明确声明域名、端口、对象、字段、凭据引用、文件、资源、风险和审批。写工具只能调用类型化业务命令；通用 SQL、Shell、任意文件和任意网络代理永远不可开放。", bullet_num_id)
+    add_bullet(doc, "对外调用按风险和幂等契约使用超时、限次退避、熔断与死信；只有已证明未执行或具备强幂等、可安全重放的调用才能自动重试。外部效果未知时必须进入 RECONCILING 或 INCIDENT，先查询 provider；高风险效果只能由双人签名处置，禁止盲重试，业务责任持续保留直至对账或补偿闭合。", bullet_num_id)
 
-    add_heading(doc, "6. 四端使用、私有部署与安全", 1, page_break_before=True)
+    add_heading(doc, "6. 四端使用、私有部署与安全", 1)
 
     add_heading(doc, "Windows、macOS、iOS、Android", 2)
     add_body(
         doc,
-        "四个平台使用同一套数据、权限和业务规则：同一操作在任一端发起、审批或查询，产生的记录、校验、审计和结果相同；界面按屏幕和使用场景重排，不要求四端外观一致。电脑端适合批量操作、复杂报表和系统配置，手机等移动设备适合审批、查询、扫码和现场记录。",
+        "四个平台使用同一套数据、权限和业务规则：同一操作在任一端发起、审批或查询，产生的记录、校验、审计和结果相同；界面按屏幕和使用场景重排，不要求四端外观一致。电脑端适合批量操作和复杂报表，手机适合审批、查询、扫码、拍照和现场记录；权威配置只在服务器控制中心完成。",
     )
     mobile_scope_items = [
         ("移动端完整使用：", "库存台账与收发扫码、售后工单与设备台账、审批待办与站内通知。"),
         ("移动端简化使用：", "客户档案与客户 360 查询、合同条款与电子签章、销售订单与履约、采购与供应商协同、项目任务与交付节点、主数据维护与审批、全文检索；业务对象、权限和流程结果不变，交互形态与单次批量规模受限。"),
-        ("移动端只提供查看：", "财务过账与期末结账、到款与付款登记、发票申请与开具登记、报表与像素级打印、文档与附件协作、系统管理与配置发布；对应的写入操作在电脑端完成。"),
-        ("移动端不承载：", "扩展插件与动态下发的扩展代码；移动端的设备能力只有相机扫码，随应用版本发布。"),
+        ("移动端受设备策略限制：", "付款、退款、经营期间、敏感导出等高风险动作依当前设备、金额、状态、重新认证和职责分离策略决定；服务器配置与能力包发布不属于 Workbench。"),
+        ("移动端不承载：", "移动端不加载能力包、WASM、原生插件或动态下载的可执行扩展代码；只下发签名 UI schema、规则数据、模板和静态资源，相机、扫码、拍照、触控签字等设备能力随已签名应用版本发布。"),
     ]
     for lead, rest in mobile_scope_items:
         add_bullet(doc, lead + rest, bullet_num_id, bold_lead=lead, compact=True)
-    add_bullet(doc, "所有业务写入经中心校验后生效。网络中断期间客户端只能保存本地草稿，恢复连接后由中心重新校验并提交，不在本地产生正式业务记录。首版不提供断网独立运行。", bullet_num_id)
-    add_bullet(doc, "合同生效、付款、开票、财务过账、结账和敏感数据导出属高风险操作，必须重新认证后才能提交并进入审批，审批人不得与发起人为同一人，四端口径一致。", bullet_num_id)
+    add_bullet(doc, "所有业务写入经权威端校验后生效。最高安全档默认不启用业务投影离线读取；只有签名设备策略逐对象、逐字段显式开放时，才可在最长 24 小时的有界期限内读取最小、加密、可撤销的非权威投影。可保存表单与附件草稿、现场证据和待提交意图；恢复连接后服务器重验权限、配置代、记录版本和幂等。付款、最终审批、合同生效、库存权威、权限和配置不能离线生效。", bullet_num_id)
+    add_bullet(doc, "合同生效、付款与退款、开票与红冲、经营分录更正、经营期间锁定、迟到事实顺延例外和敏感数据导出属于高风险操作，必须按现行风险策略重新认证并进入相应审批，审批人不得与发起人为同一人，四端口径一致。", bullet_num_id)
 
     add_heading(doc, "企业自己选择部署位置", 2)
-    add_bullet(doc, "可部署在企业机房、私有云，或阿里云、腾讯云、华为云等企业自己的国内云环境。", bullet_num_id)
-    add_bullet(doc, "首版核心交易数据库只支持 PostgreSQL 16，可自建，也可部署在企业自有云环境中，版本须在认证版本范围内。", bullet_num_id)
+    add_bullet(doc, "首版只有一台 Windows Server 2022 单写权威，不依赖第二台应用服务器；它可位于企业自控的中国大陆机房或企业自控境内 IaaS。最高安全生产仍必须另配服务器外连续备份目标、至少两块轮换离线加密介质和洁净 Windows 恢复能力。IaaS 必须证明快照、缓存、日志、运维副本和灾备不跨境，并证明底层 HDD 介质与缓存边界；无法证明时保持 STORAGE_MEDIA_UNVERIFIED，不能承载 HDD_STRICT 正式生产。", bullet_num_id)
+    add_bullet(doc, "首版核心交易数据库只支持并只认证 PostgreSQL 16，由客户在同一台服务器上自主管理；不使用云托管数据库。", bullet_num_id)
     add_bullet(doc, "企业已有的 Oracle、SQL Server、MySQL 可作为外部数据源接入，不作为核心交易数据库。", bullet_num_id)
-    add_bullet(doc, "对象存储、密钥服务等配套组件既可自建，也可连接已有的合规服务。", bullet_num_id)
-    add_bullet(doc, "生产数据、备份、日志和索引限定在中国大陆境内。", bullet_num_id)
+    add_bullet(doc, "核心安装不依赖云托管数据库、消息、遥测、更新或厂商控制面；本地、自建、私有云或已有服务都必须实现同一受控 provider 契约，逐项认证后才可连接。", bullet_num_id)
+    add_bullet(doc, "SSD 只放 Windows、程序、静态资源和可重建依赖；数据库、WAL、附件、索引、日志、审计、导出、临时业务文件和所有衍生数据全部落到加密 HDD。", bullet_num_id)
+    add_bullet(doc, "真实客户数据和一切可关联客户的衍生数据只允许在中国大陆境内处理和持久化，覆盖数据库/WAL、附件、索引、日志、审计、导出、临时文件、备份与离线轮换、恢复材料元数据、监控、支持诊断、provider 输入输出和可关联遥测；地点未知、证据过期或存在跨境路径时，相应能力失败关闭。", bullet_num_id)
 
     add_heading(doc, "高保密设计", 2)
     security_items = [
-        ("权限细：", "可以控制到法人、部门、岗位、项目、客户、单条记录和单个字段；策略默认拒绝，不设置全能超级管理员。"),
+        ("权限细：", "由主体、能力、数据范围、条件、期限、设备、金额、状态和委托共同决定，可控制到法人、单条记录和单个字段；策略默认拒绝，没有绕权超级管理员。"),
         ("职责分开：", "系统、数据、安全、审计和密钥管理员相互制约；申请人不可自审，审批链不可越权跳过。"),
-        ("全程加密：", "传输、数据库、附件、备份和设备本地缓存均受加密与密钥管理保护，每个法人使用独立的密钥域；首版加密采用国际算法，含 TLS 1.3、AES、SHA-256 和 RSA 或 ECDSA，国密算法与商用密码应用安全性评估属后续版本。"),
-        ("控制外泄：", "敏感字段按经批准的清单脱敏；电脑端与移动端强制执行水印、导出审批、打印阻断、剪贴板拦截和分享控制，已下载文件失效在装有原生插件的电脑端和满足设备合规要求的移动端强制执行；浏览器门户端强制执行脱敏投影、水印、导出审批和操作审计，打印阻断、剪贴板拦截与已下载文件失效受浏览器能力限制，为尽力而为，不作承诺。"),
+        ("客户持钥：", "传输、数据库、附件、备份和设备缓存均受加密保护，每个法人使用独立密钥域；客户可选择部署在自身环境、由客户控制并以 TPM 包装且配有独立恢复材料的密钥服务，也可连接客户 HSM、KMS 或已认证的既有服务。厂商默认不能取得主密钥或解密生产数据。"),
+        ("控制外泄：", "敏感字段由服务器按批准清单裁剪，动态水印、导出审批和审计在三类端口强制执行。只有受支持、受管且合规的 Windows/macOS 与 iOS/Android 原生端，才按 OS/MDM 能力强制剪贴板、分享、打印、截图/录屏和受管文件失效；不合规或能力不足时降级为只读，并禁止高密级、离线或下载。浏览器门户只承诺脱敏、水印、导出审批和审计；打印、剪贴板与已下载文件失效仅尽力限制，也不宣称能够阻止外部相机。"),
         ("完整审计：", "关键查看、修改、审批、导出和系统调用留下防篡改证据，审计记录只追加、可逐条验证。"),
-        ("持续可用：", "正式生产采用单区域三故障域高可用部署，并配合境内异地不可变备份和定期恢复演练。"),
+        ("可恢复：", "第一阶段是单写权威，不宣称高可用。上线必须同时具备独立故障域内 HDD-only 的服务器外追加式自动增量目标（关闭或证明为空的 SSD 客户数据缓存）、至少两块交替且平时断开的加密离线轮换 HDD、UPS、分域恢复材料，以及在洁净 Windows 主机的容量达标加密 HDD 工作区完成的完整恢复演练。"),
     ]
     for lead, rest in security_items:
         add_bullet(doc, lead + rest, bullet_num_id, bold_lead=lead)
@@ -894,15 +968,22 @@ def build_document():
         label="重要区别",
     )
 
-    add_heading(doc, "7. 每个岗位能得到什么", 1, page_break_before=True)
+    add_heading(doc, "勒索软件与恢复边界", 2)
+    add_bullet(doc, "服务器外、独立故障域、HDD-only、加密且追加式的自动增量目标，与至少两块交替使用、平时物理断开的加密离线轮换 HDD 必须同时存在；连续目标的 SSD 缓存必须关闭或经取证始终不含客户字节，洁净恢复主机也必须使用容量足以容纳实际恢复集、校验空间和增长余量的加密 HDD 工作区。两层不是二选一，同服务器目录、同盘副本或仅有云盘快照不能冒充灾难副本。", bullet_num_id)
+    add_bullet(doc, "日常备份身份只能创建新副本和完成必要校验，不能删除、覆盖、改名、修改权限或改变保留策略；恢复身份和到期处置身份另行保管，关键处置由两人批准。", bullet_num_id)
+    add_bullet(doc, "保护条件缺失、检查结果不确定或完整恢复演练失败时，系统会保留不可忽略的风险提示并阻止发布。", bullet_num_id)
+    add_bullet(doc, "当前 P340 的单块 1TB HDD 只能是 SINGLE_DISK_DEGRADED_PRODUCTION 候选：UPS、两层备份、洁净恢复、20 人实机混合负载和同一候选版本连续 72 小时稳定运行证据未全部通过前不得录入真实客户数据；任何版本、硬件或关键配置变化都会使该稳定性证据失效并需重测。后续优先升级两块匹配企业 HDD 的经验证 RAID1 和 64GB 内存。", bullet_num_id)
+
+    add_heading(doc, "7. 常见人物模板能得到什么", 1)
+    add_body(doc, "下表只是方便理解的默认人物与工作台模板，不是固定岗位或权限边界。实际权限和任务分配始终由当前动态策略解析。")
     add_table(
         doc,
-        ["岗位", "不再困扰于", "直接得到"],
+        ["人物模板", "不再困扰于", "直接得到"],
         [
             ["销售", "客户资料分散、交期不清、回款难追", "客户全景、合同与订单进度、开票与到款状态、信用额度校验"],
             ["采购", "合同要买什么不清楚、付款进度靠问", "按合同下达的采购订单与分批订货、供应商档案、付款申请与进度"],
             ["仓库", "账实不符、批次不清、出入库靠纸", "实时库存台账、扫码收发、批次与序列号追溯"],
-            ["财务", "重复录入、收付款对不上、凭证来源不清", "应收应付台账、分次到款付款核销、按业务事件生成的凭证与账簿"],
+            ["财务", "重复录入、收付款对不上、内部经营记录来源不清", "应收应付台账、分次收付款核销、可追溯的内部经营分录、试算和子账对账"],
             ["售后", "找不到历史、工单没人跟", "关联订单、合同、产品、批次、设备和保修的工单，以及客户服务历史"],
             ["管理层", "报表滞后、口径不一、无法看到全局", "合同与发票申请的审批入口，收入、成本、交付、利润的经营看板"],
         ],
@@ -912,11 +993,11 @@ def build_document():
     add_heading(doc, "8. 最关键的产品定位", 1)
     add_body(
         doc,
-        "首版要解决的是一件具体的事：一笔业务从销售建单和合同审批开始，经采购订货、收货入库、发票申请与开具登记、到款与付款登记、交付确认和售后工单，一直走到管理层看到收入、成本、交付和利润，全过程在同一套系统内完成，不依赖外部系统或线下台账。",
+        "首版要解决的是一件具体的事：一笔业务从销售建单和合同审批开始，经采购订货、收货入库、发票申请与开具登记、到款与付款登记、交付确认和售后工单，一直走到管理层看到收入、成本、交付和利润。当前范围内的经营事实、责任、异常和证据在同一套系统闭环，不再依赖线下影子台账；法定财税等明确延期能力仍通过受控专业系统连接器承接。",
     )
     add_body(
         doc,
-        "首版不追求覆盖所有业务领域。制造、企业运营、电商与计费、客户与经销商门户、智能能力，以及银行和税务的系统对接属于后续版本，首版不交付。企业之间的差异通过配置、低代码、签名模块和受控插件实现，不为每个客户长期复制一套无法升级的代码。",
+        "第一阶段不追求替换所有专业系统。上文十二项已登记的后续边界继续保持关闭；客户门户、供应商门户、受控 MCP、AI/provider 契约和服务器控制中心纳入当前设计范围。企业差异通过签名配置代、行业能力包和受控插件实现，不为每个客户复制不可升级的内核分支。",
     )
     add_body(
         doc,
@@ -929,7 +1010,7 @@ def build_document():
         label="产品价值",
     )
 
-    add_heading(doc, "9. 版本与适用范围说明", 1, page_break_before=True)
+    add_heading(doc, "9. 版本与适用范围说明", 1)
     add_body(
         doc,
         "本节说明本文档的效力范围。产品处于分阶段研发过程中，文中所列功能不代表当前均已可用，实际交付内容以正式发布版本、合同和验收清单为准。",
@@ -937,26 +1018,29 @@ def build_document():
     scope_items = [
         ("阶段与版本：", "产品处于总体设计与分阶段研发阶段，不设置固定的发布日期；首版范围内的全部模块完成并通过验收后才对外发布首版。"),
         ("交付依据：", "每次交付的模块范围、版本和验收标准以双方签署的合同与验收清单为准，本文档不构成功能交付承诺。"),
-        ("首版范围：", "首版是以合同为中心的销售、采购、财务与工单闭环：合同（含续签与到期提醒）、订单与客户信用额度校验、采购与供应商、库存台账与存货计价、成本归集、售后工单与设备台账、应收应付与预收预付台账、简易总账、发票申请与开具登记、报表与经营看板，以及权限与定制能力；对外协同只有供应商门户，成品连接器只有电子签章。"),
-        ("后续版本：", "制造与生产、企业运营与治理、电商与计费、本地 AI 与 OCR、MCP、向量检索与知识图谱、边缘节点与断网运行、工业接入与物联网、客户门户与经销商门户与员工门户、银企直连与税务平台对接、国密算法与国密 TLS 通道与商用密码应用安全性评估档位，以及四种国产数据库的适配，首版均不交付；相关条目已逐条登记，后续版本可按登记恢复。"),
-        ("语言与币种：", "首版仅支持简体中文、人民币和中国标准时间，不支持多币种、外汇、进出口、报关、信用证和产品内容多语言。"),
-        ("联网要求：", "全部业务写入由中心完成，首版不提供断网独立运行；网络中断期间客户端只保存本地草稿，恢复连接后由中心校验通过才写入。"),
-        ("人工确认：", "合同生效、付款、开票、财务过账、结账和敏感数据导出属高风险操作，必须重新认证后才能提交并进入审批，审批链不可越权跳过，审批人不得与发起人为同一人。"),
-        ("数据库：", "首版核心交易数据库只支持并只认证 PostgreSQL 16；其他数据库产品只能作为外部数据源。"),
-        ("外部连接：", "首版成品连接器只有电子签章一类，启用需完成机构准入并按客户逐项联调；银行与税务侧首版不做系统对接，到款、付款与发票开具在系统内登记，可人工录入或批量导入。"),
-        ("性能与容量：", "响应时间、并发规模、恢复时间等指标以合同约定的基线环境和验收清单为准，本文档不单独作出量化承诺。"),
+        ("第一阶段范围：", "CRM 商机报价、合同、STANDARD/DROP_SHIP 销售、询比价采购、基础库存、项目交付、投诉售后、经营财务、客户与供应商门户、报表、耐久自动化、动态权限、平台定制、受控 MCP、AI/provider 契约、服务器控制中心及四端 Workbench。"),
+        ("后续版本：", "上文十二项已登记的产品边界，以及边界登记 DEF-006 的主主/双活/多写和 DEF-007 的 PostgreSQL 外权威数据库，均不在当前交付中；没有登记与证据不得新增宣称。"),
+        ("语言与币种：", "首版固定 zh-CN、CNY 和 Asia/Shanghai 业务显示；权威时间戳保存为 UTC，持续时间、租约与超时使用 monotonic clock。不支持多币种、外汇、进出口、报关、信用证和产品内容多语言。"),
+        ("联网要求：", "最高安全档默认不启用业务投影离线读取；经签名设备策略逐对象、逐字段显式开放时，只允许有界、加密、可撤销的最小非权威投影。草稿、附件、现场证据和待提交意图可暂存，所有权威写入由服务器重验后生效，高风险动作不得离线生效。"),
+        ("人工确认：", "合同生效、付款与退款、开票与红冲、经营分录更正、经营期间锁定、迟到事实顺延例外和敏感数据导出属于高风险操作，必须按现行风险策略重新认证并进入相应审批；审批链不可越权跳过，审批人不得与发起人为同一人。"),
+        ("数据库与部署：", "首版唯一权威数据库认证目标是同机自管 PostgreSQL 16；客户自控物理机或通过驻留和介质证据门禁的 IaaS VM 上，以一台 Windows Server 2022 作为单写权威，同时独立配置服务器外备份与洁净恢复能力。取得实际部署证书前不得称为已认证；权威节点全部客户及衍生持久数据必须落加密 HDD，核心运行不依赖 Linux、WSL、Kubernetes、共享 SaaS 或厂商云控制面。"),
+        ("外部连接：", "必须完成认证的核心 provider 目标为本地文件、Office 格式、REST/Webhook/MCP、SMTP 和 AD/LDAP；证据通过前保持关闭。其他身份、消息、签章、银行、税务和办公厂商按签名 provider 契约逐项取证后启用。"),
+        ("性能与容量：", "ThinkStation P340 i5-10500、32GB、256GB SSD、单 1TB HDD 以约 20 名活跃用户为实机认证目标，不是登录硬上限或已达成承诺；恢复时间按数据量和实测证书签发。"),
     ]
     for lead, rest in scope_items:
-        add_bullet(doc, lead + rest, bullet_num_id, bold_lead=lead, compact=True)
-
-    add_callout(
-        doc,
-        "本文所述功能以正式发布版本和验收清单为准；未在合同中列明的能力不构成交付承诺。",
-        label="范围说明",
-    )
+        add_bullet(
+            doc,
+            lead + rest,
+            bullet_num_id,
+            bold_lead=lead,
+            compact=True,
+            font_size=10,
+            line_spacing=1.1,
+        )
 
     OUTPUT.parent.mkdir(parents=True, exist_ok=True)
     doc.save(OUTPUT)
+    sanitize_docx_package(OUTPUT)
     print(OUTPUT)
 
 

@@ -1,3 +1,4 @@
+# F-57：HISTORICAL_LINUX_RESEARCH_ONLY；禁止用于当前 Windows Server 2022 生产部署或发布验收。
 # ep-ipc：进程间 Unix domain socket 目录 /run/ep/ipc，由技术基线第 2 节四个持有 IPC 的进程共享。
 # VolumeName= 固定卷名，不取 Quadlet 默认的 systemd- 前缀；Compose 一侧同名 volume 写 name: ep-ipc，
 # 两套据此落在同一个卷上，等价性核对脚本比对的就是这个名字。需 Podman 5.0 及以上。

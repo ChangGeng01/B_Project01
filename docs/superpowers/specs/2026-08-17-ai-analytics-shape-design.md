@@ -1,9 +1,11 @@
 # 数据分析 AI 的形态设计（裁定 F-09-4 的承接）
 
+> **F-57 现行状态：`HISTORICAL_NON_NORMATIVE`。** 本文仅保留 2026-08-17 的 AI 形态研究证据；F-50/F-55 等材料不再是可独立执行的现行入口。当前权威集合为 [F-57 总体设计](2026-08-23-f57-governed-automation-fabric-design.md)、[F-57 需求追踪矩阵](../reviews/2026-08-23-f57-requirements-traceability.md)、[F-57 权威替代登记](../reviews/2026-08-23-f57-authority-supersession-register.md)与 [F-57 实施计划](../plans/2026-08-23-f57-governed-automation-fabric-implementation.md)。F-57 是设计/计划权威，不是产品已实现声明；本地模型实现明确延期。
+
 **方法**：先盘硬约束（一人独立读卷），再四个角度**互不知情**各出一个方案，
 每案配一个专职**攻方**找权限旁路与泄漏通道，另出一份资源冲击报告，最后收口。全程只读。
 
-**本文是形态设计，不是裁定。** 第六节列出的须表态项未表态前，不得按任一读法落码。
+**本文是历史形态研究，不是裁定。** 第六节列出的旧选择题已经由 F-55 逐项关闭；不得直接按本文任一方案落码，也不得据本文旧“延期/待实测”句阻塞 F-55 范围开发。
 
 ---
 
@@ -323,7 +325,7 @@ KV cache 是并发的乘数（**卷宗外工程常识**）：7B 级模型在 8k 
 
 **改动三（新）：丢掉丁的三档分级，不为 AI 设任何档位。** 在「模型不见结果」这一档下，AI 产出的 QueryPlan 与拖拽产出的 QueryPlan 是同一个值对象（11:420 逐字「是 query_facade 与 SQL 构造器之间唯一的中间表示」），走同一条执行路径，下游闸门已经存在且不必改：屏幕结果受 11:643 逐字「| EP__REPORTING__ANALYTIC__MAX_RESULT_ROWS | u32 | 2000 |」封顶，取明细一律走既有那一个口子 POST /api/v1/reporting/render-tasks（11:582 逐字「X-Reauth-Token 必填，取值绑定 request_spec 的摘要」）。分档只有在「哪些结果可以进模型上下文」这个问题存在时才需要，而这一档我建议整条排除。丁唯一该保留的是它的原则而不是它的机制：**判定不看问题文本、只看引用集合**，依据 spec:1088 逐字「数据密级按规则判定，取值来自经产品负责人批准的敏感字段清单与对象级敏感标记，不做内容检测，也不做自动识别」——该原则在本形态落成确定性校验器，不落成档位。
 
-**改动四：ai-inferer 是第九个进程与第九个资源单位，不得放进 core-server。** 乙主张放进 core-server，这条必须驳。00b:252 逐字「| integration-gateway | 首版唯一的对外出网进程，只承载电子签章一类出口……| 资源单位 app-core |」，00b:263 逐字「其中「Rust 核心与集成网关」一行由 core-server 与 integration-gateway 共用一个资源单位」，同段逐字「触限行为随之不同，是分配失败返回错误，不是内核终止进程」。即：推理顶到内存硬上限，倒下的不只是 AI，是使用方裁定第 2 条那唯一的电子签章出口。代价照实记：撞 spec:263 八进程枚举、00b:772 逐字「任何阶段不得新增进程」、配额表加第十行、附录 A.4 整次重跑。**唯一的省是真的**：ai-inferer 不建任何事务数据库连接，常驻连接数为零，与 spec:789 逐字「portal-gateway 不建立事务数据库连接……常驻连接数为零；plugin-host……不直连事务数据库，常驻连接数为零」同档，所以 spec:789 的 42 与 52 两个数不变。
+**改动四：ai-inferer 是第九个进程与第九个资源单位，不得放进 core-server。** 乙主张放进 core-server，这条必须驳。00b:252 逐字「| integration-gateway | 首版唯一的对外出网进程，只承载电子签章一类出口……| 资源单位 app-core |」，00b:263 逐字「其中「Rust 核心与集成网关」一行由 core-server 与 integration-gateway 共用一个资源单位」，同段逐字「触限行为随之不同，是分配失败返回错误，不是内核终止进程」。即：推理顶到内存硬上限，倒下的不只是 AI，是使用方裁定第 2 条那唯一的电子签章出口。代价照实记：撞 spec:263 八进程枚举、00b:772 逐字「任何阶段不得新增进程」、配额表加第十行、附录 A.4 整次重跑。**唯一的省是真的**：ai-inferer 不建任何事务数据库连接，常驻连接数为零，因此不改变 ADR-0018 冻结的常驻 `37`、临时/迁移/恢复不超过 `10`、安全储备 `5` 与硬峰值 `52`。现行 `integration-gateway` 也不再作为连接池消费方，其 DB/KMS/platform-file/Outbox 均为零。
 
 另需照抄修的六处（攻方对甲查出、我核实成立）：两个端点必须各自绑权限码且按 00b:771 而不是 11:528 在路由注册处给元组；校验器补 is_filterable 与 is_groupable 两个开关并冻结过滤谓词为平铺合取；目录裁剪必须按能力维一并裁；承认 prompt 内含业务明文（问题原文）并据此纳入副本保护；删掉那个只对 AI 生效的最小分组基数闸；补并发与 token 上限。
 
@@ -387,7 +389,7 @@ KV cache 是并发的乘数（**卷宗外工程常识**）：7B 级模型在 8k 
 
 - **assert_ai_rejection_indistinguishable**｜判什么：字段码「不存在」与「存在但本人无权」两种真实情况下，AI 路径的响应体与响应时间不可区分，时间差的 P95 不超过 5 毫秒。怎么判：仿 04:678 逐字「响应体与响应时间在“记录不存在”与“记录存在但无权”两种真实情况下不可区分，时间差的 P95 不超过 5 毫秒」同族，二值加统计量。负样例：分别返回既有的 REPORTING.DATASET.NOT_REGISTERED 与 REPORTING.DATASET_FIELD.NOT_VISIBLE 两码（11:576 区已登记）即失格。**为什么这条在 AI 路径上是新的**：既有拖拽路径上这对错误码不构成预言机，用户从已裁剪的选择器里点字段，产不出没见过的字段码；AI 路径第一次让用户的自然语言成为字段码的来源，两码的区分度立刻变成可枚举的信道。该收敛只在 AI 入口成立，不改设计器路径（那里 11:526 逐字的 404/403 二分仍按既有口径）。
 
-- **assert_ai_inference_containment**｜判什么：三件事同时成立——ai-inferer crate 的源码里不出现任何数据库驱动、reqwest 与文件写入符号；该进程的常驻事务数据库连接数为零；送进推理宿主的 payload schema 只允许目录投影 JSON、问题原文、固定提示模板三项，出现任何第四项字段即失格。怎么判：前两件是 CI 静态检查加进程契约断言，二值；第三件是 payload schema 断言，二值。形状仿 02:619 逐字「由 CI 静态检查断言 `ep-app-*` 用例函数中不出现 reqwest 与文件写入符号」——**但明说这是新增不是复用，那条既有检查的对象是 `ep-app-*`，判不到 ai-inferer**。负样例三个：在探针 crate 里各引入一处 sqlx、reqwest、File::create；构造一个把结果集塞进 payload 的调用。连接数为零这一条同时是 spec:789 的 42 与 52 两个数不变的举证。
+- **assert_ai_inference_containment**｜判什么：三件事同时成立——ai-inferer crate 的源码里不出现任何数据库驱动、reqwest 与文件写入符号；该进程的常驻事务数据库连接数为零；送进推理宿主的 payload schema 只允许目录投影 JSON、问题原文、固定提示模板三项，出现任何第四项字段即失格。怎么判：前两件是 CI 静态检查加进程契约断言，二值；第三件是 payload schema 断言，二值。形状仿 02:619 逐字「由 CI 静态检查断言 `ep-app-*` 用例函数中不出现 reqwest 与文件写入符号」——**但明说这是新增不是复用，那条既有检查的对象是 `ep-app-*`，判不到 ai-inferer**。负样例三个：在探针 crate 里各引入一处 sqlx、reqwest、File::create；构造一个把结果集塞进 payload 的调用。连接数为零这一条同时举证：AI 形态不增加 ADR-0018 的四个 `PoolKind`，常驻 `37`、临时/迁移/恢复不超过 `10`、安全储备 `5`、硬峰值 `52` 均不变。
 
 - **assert_ai_cache_partitioning**｜判什么：推理宿主的 KV 与前缀缓存的键必须包含本轮目录投影的 sha256 与安全上下文的法人与用户标识；跨键一律不命中；同一批次内不混合不同键。怎么判：**被测对象是缓存键构造与批次组装，是确定性代码，二值可判**——这是把不可判定的「模型输出里不出现魔术值」换成可判定的进程契约，甲删掉这条断言是错的。为什么必须有：甲逐字宣称「不需要关 prefix cache 与批处理」，同时又逐字承认目录是「按调用人的 clearance_level 与字段级权限」裁出来的，两句并存即意味着高密级用户与低密级用户的 prompt 前缀共享同一缓存实例，而两者的差异恰好就是密级差异。负样例两个：两个不同 clearance 的上下文同批提交，断言批次被拆开；构造相同前缀但不同投影哈希的两次请求，断言第二次不命中。
 
@@ -481,16 +483,16 @@ KV cache 是并发的乘数（**卷宗外工程常识**）：7B 级模型在 8k 
 |---|---|---|---|
 | 法人隔离唯一实现＝PostgreSQL 原生行级策略 | docs/superpowers/specs/2026-07-19-enterprise-private-operations-platform-design.md:770（并见 :652、:756） | 不可动 | 因此 AI 分析取数不能自建第二条隔离机制（应用层加法人谓词、目录表标注、模型提示词里塞法人号一律不算）。任何 AI 取数路径必须落在一条会写 app.legal_entity_id 会话变量、由数据库策略判定的连接上；「模型侧自行过滤」在本卷没有承载物。 |
 | 安全上下文由服务端建立，不采信调用方声明的法人 | docs/superpowers/specs/2026-07-19-enterprise-private-operations-platform-design.md:756 | 不可动 | AI 推理进程若被当成一个「调用方」向核心声明目标法人，一律拒绝。主控判断甲（在调用人安全上下文里工作）在此有直接原文支撑：AI 只能复用已建立的上下文，不能自带一个。 |
-| SecurityContext 19 字段冻结、只有两个构造函数、无 with_ 变换 | docs/superpowers/plans/2026-08-10-first-release-dev-plan/00b-technical-baseline.md:193、:217 | 动它需规格级变更 | AI 若要「在调用人的安全上下文里工作」，只能整体传递现成的 SecurityContext，不能派生一个降权/提权副本，也不能加一个 is_ai 之类的标记位。想给 AI 调用打标记必须改这张冻结表，同批改 xtask archcheck 的 foundation-frozen-items 期望值。 |
+| SecurityContext 20 字段冻结、只有两个构造函数、无 with_ 变换 | docs/superpowers/plans/2026-08-10-first-release-dev-plan/00b-technical-baseline.md:193、:217 | 动它需规格级变更 | AI 若要「在调用人的安全上下文里工作」，只能整体传递现成的 SecurityContext，不能派生一个降权/提权副本，也不能加一个 is_ai 之类的标记位；第 20 字段 `system_purpose` 只区分普通系统任务与内部对账，明确不提供 AI 用途。想给 AI 调用打标记必须改这张冻结表，同批改 xtask archcheck 的冻结项与用途约束。 |
 | 模块、插件、低代码与报表不得直连事务库；高级只读 SQL 必须经统一前置查询服务与权限重写层 | docs/superpowers/specs/2026-07-19-enterprise-private-operations-platform-design.md:760（同义见 :825、PRD:4078） | 不可动 | AI 推理进程属于「新的取数消费方」，落在这条枚举之外。要么把它接进已有的前置查询服务（即 AI 只能提交 QueryPlan 或受守卫的 SQL），要么它就必须被单独登记为第五类主体——而登记本身就是规格级改动。给 AI 一个自己的数据库连接，直接撞本条。 |
 | 只读角色的连接不得下发给模块、插件与低代码；除前置查询服务外不存在第二条直连路径 | docs/superpowers/specs/2026-07-19-enterprise-private-operations-platform-design.md:825 | 不可动 | 这句是封闭式否定（"不存在其他"）。AI 若在 plugin-host 或任何沙箱内跑，拿 ep_analyst_ro 连接即违反；只能由 core-server 侧的前置查询服务代其取数并把结果喂给模型。 |
-| 连接池按用途分池：只读分析池 10 连接、常驻 42、峰值 52，且必须单配语句超时与单查询内存/临时空间上限 | docs/superpowers/specs/2026-07-19-enterprise-private-operations-platform-design.md:789（取值同步见 02-data-foundation.md:404、:502） | 动它需规格级变更 | AI 分析并发受 10 个只读连接封顶，且这 10 个是与常规报表、经营看板、健康自检共用的。AI 不能新开池："第 4.3 章 apps 清单中的八个进程按下列取值逐项枚举，清单之外不另设常驻池"（同行）。若 AI 是第九个进程，42/52 两个数与附录 A.4 的实测冻结一并作废。 |
+| 连接架构冻结为 `PoolKind { Rw, Ro, Worker, Ops }`；常驻 37、临时/迁移/恢复合计不超过 10、显式安全储备 5、硬峰值 52；`integration-gateway` 的 DB/KMS/platform-file/Outbox 均为 0 | docs/adr/ADR-0018-integration-gateway-zero-database.md | 已冻结 | AI 分析只能复用现行 `ro` 池的受治理查询路径，不能新增第五个常驻池；ai-inferer 自身必须保持数据库连接为零。只有这样，常驻 37 与 `37 + 10 + 5 = 52` 的预算才保持不变；给 AI 或 `integration-gateway` 增加池或任一数据库连接都必须重开 ADR 并重算预算。 |
 | ep_analyst_ro 的角色属性与超时取值 | docs/superpowers/plans/2026-08-10-first-release-dev-plan/02-data-foundation.md:77、:87、:619 | 可在计划层处置 | AI 生成的任何查询在 60 秒被硬切、64MB work_mem、2GB 临时空间封顶；「尽可能精细化」的跨模块 join 很容易在这三条上直接被终止。NOBYPASSRLS 是 AI 取数不越权的最后一道底。 |
 | 事务内禁止长时计算与外部调用（有 CI 静态检查承接） | docs/superpowers/plans/2026-08-10-first-release-dev-plan/02-data-foundation.md:619 | 可在计划层处置 | 模型推理是典型的「长时计算」，不得放在业务事务内。AI 分析必须是事务外的、先取数后推理的两段式；也意味着「在同一事务快照上推理」这种做法要么另设 snapshot_transact 路径，要么放弃快照一致性。 |
 | 行内敏感字段密文不得用于过滤、排序、聚合、全文检索、向量化或唯一约束 | docs/superpowers/specs/2026-07-19-enterprise-private-operations-platform-design.md:804 | 不可动 | 全卷唯一一处明写「向量化」的禁令。任何把敏感字段做 embedding 的形态被直接掐死；AI 若要按客户/账户/税号一类维度做细粒度分析，只能走盲索引或受控投影，不能取明文再向量化。 |
 | 派生存储首版只有内置搜索索引，不含向量库、知识图谱与独立分析仓库；派生存储不重新定义权限 | docs/superpowers/specs/2026-07-19-enterprise-private-operations-platform-design.md:820、:822、:835 | 不可动 | AI 若要建任何形式的索引/嵌入库/特征表，那就是新增一类派生存储，须同时补：来源对象 ID/版本/法人/密级/数据范围五个标签（:822）、删除与更正 15 分钟传播与处置清单（:829-830）、按法人失效重建（:831）、越权测试进发布门禁（:833），并重新建立派生存储后端认证清单（:835）。这是四五项连带，不是加一张表。 |
 | 不设全能超级管理员；ABAC 绕过只有两处已登记例外，新增同类绕过须两章同时登记 | docs/superpowers/specs/2026-07-19-enterprise-private-operations-platform-design.md:1066、:1067 | 不可动 | 给 AI 一个「全库只读、事后再裁剪」的上下文＝新增第三处 ABAC 绕过，必须在 7.7 与 12.2 两章同时登记才可启用，且要照两处已有例外的体例写全边界、遏制手段、越权测试项与残余风险。这是主控判断甲的规格级落点。 |
-| 内部对账系统安全上下文——全卷唯一一个「非人类、免裁剪」上下文的体例，可作 AI 上下文的对照样板 | docs/superpowers/specs/2026-07-19-enterprise-private-operations-platform-design.md:792、:793 | 不可动 | 卷宗里唯一被允许免字段级/密级裁剪的上下文，代价是语句集完全封闭、输出列白名单、不持字段级密钥、不可由界面/API/低代码/插件/高级只读 SQL 五个入口借用（:793）。AI 若走「预授权数据集」形态，其边界写法应照抄这一套七段（主体与生命周期、法人维度、裁剪范围、语句集封闭、输出边界、密钥边界、写入边界、路径归属、审计）；照不抄得下，就说明该形态越界。 |
+| 内部对账系统用途——全卷唯一一个「非人类、免裁剪」用途的体例，可作 AI 上下文的对照样板 | docs/superpowers/specs/2026-07-19-enterprise-private-operations-platform-design.md:792、:793 | 不可动 | 卷宗里唯一被允许免字段级/密级裁剪的是同一 `SecurityContext` 上的 `SystemPurpose::Reconciliation`，代价是构造点只限 ReconExecutor、编译期检查实现封闭、输出列白名单、不持字段级密钥、不可由界面/API/低代码/插件/高级只读 SQL 五个入口借用。AI 若走「预授权数据集」形态，其边界仍须逐项写全主体与生命周期、法人维度、裁剪范围、执行面封闭、输出边界、密钥边界、写入边界、路径归属、审计；不得复用 Reconciliation 用途。 |
 | 裁定 C-05：十个 RLS 断言函数名逐字冻结，测的是 SQL 层八类 | docs/superpowers/plans/2026-08-10-first-release-dev-plan/00c-gap-ruling.md:1214；判据见 04-identity-authz.md:674-678 | 不可动 | 八类的具体判据（04:678）是：跨法人 count/sum/分面计数在越权上下文返回 0 或不返回该分面；按无权字段排序返回 VALIDATION；「记录不存在」与「记录存在但无权」两种响应体与响应时间不可区分、时间差 P95 不超过 5 毫秒。全部落在 SQL 出口，无一条能观测模型输出。新增 AI 断言必须仿此形状逐字冻结函数名，且不得改这十个已冻结名（改名会把阶段 1 退出条件 22 变成恒真，见 00c:2923-2926）。 |
 | tests/rls_matrix 全绿是发布门禁与规格第 17.3 章强制不变量的判定方式 | docs/superpowers/plans/2026-08-10-first-release-dev-plan/14-ops-backup-release.md:543；04-identity-authz.md:700、:726 | 动它需规格级变更 | AI 泄漏通道的新断言若不并进这个门禁项，就没有阻断力；若并进去，则该门禁的判据（00b:373：登记表行数与承接入口用例数相等且全绿）要跟着改。这决定了新断言是加在 rls_matrix 里还是另立目标——四个方案必须表态。 |
 | 报表与仪表盘继承法人、记录与字段级权限，数据源为同一实例的独立只读角色 | docs/superpowers/specs/2026-07-19-enterprise-private-operations-platform-design.md:387 | 不可动 | AI 分析若定位为「报表的一种」，这条现成可用、无须新建；但同时继承了「只读副本已延期」这条，即不得为 AI 另起一台机器或一个副本。 |

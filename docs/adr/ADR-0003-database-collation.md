@@ -1,4 +1,4 @@
-# ADR-0003 数据库排序规则取字节序，ICU 只作按需提供者
+# ADR-0003 数据库默认排序固定为 libc/C 字节序
 
 - 状态：已接受
 - 出处：阶段 1 计划第 13 节新增决定二；技术基线第 3.1 节、第 3.2 节
@@ -12,11 +12,11 @@
 
 ## 决定
 
-建库参数固定为 `LOCALE_PROVIDER icu` 加 `ICU_LOCALE 'zh-Hans-CN'` 加 `LC_COLLATE 'C'` 与 `LC_CTYPE 'C'`，即默认排序取字节序，ICU 只作为按需显式指定 `COLLATE` 时的提供者。同时删除 public schema。
+建库参数固定为 `LOCALE_PROVIDER libc`、`LC_COLLATE 'C'` 与 `LC_CTYPE 'C'`，默认排序严格按 UTF-8 字节值；首版不要求 PostgreSQL 构建带 ICU，也不建立 ICU collation。同时删除 public schema。
 
-落地脚本按裁定 C-01 由阶段 2 交付，其 `db/bootstrap/00_database.sql` 写为 `CREATE DATABASE ep ENCODING 'UTF8' LOCALE_PROVIDER icu ICU_LOCALE 'zh-Hans-CN' LC_COLLATE 'C' LC_CTYPE 'C' TEMPLATE template0` 并执行 `DROP SCHEMA public`。阶段 1 只保留本决定本身，不另行取值，也不产出任何 `db/` 下的文件。
+落地脚本按裁定 C-01 由阶段 2 交付，其 `db/bootstrap/00_database.sql` 写为 `CREATE DATABASE ep ENCODING 'UTF8' LOCALE_PROVIDER libc LC_COLLATE 'C' LC_CTYPE 'C' TEMPLATE template0` 并执行 `DROP SCHEMA public`。阶段 1 只保留本决定本身，不另行取值，也不产出任何 `db/` 下的文件。
 
-**本段此前漏写 `LOCALE_PROVIDER icu` 与 `ICU_LOCALE 'zh-Hans-CN'` 两个子句，并写有「取值以该脚本为准」一句，两者合起来会使上一段的决定自动落空。**在 PostgreSQL 16.14 上实测：按漏写的脚本文本建库，`pg_database.datlocprovider` 为 `c` 即 libc、`daticulocale` 为空；补上两个子句后为 `i` 与 `zh-Hans-CN`。「取值以该脚本为准」一句一并删除——脚本是决定的落地物，不是决定的出处，两者冲突时以本节决定段为准。
+此前版本同时写“默认字节序”和 `LOCALE_PROVIDER icu + ICU_LOCALE 'zh-Hans-CN'`，两者不能同时作为数据库默认排序真值：数据库默认 collation 由数据库 locale provider 决定。现统一采用 libc/C；验收必须断言 `pg_database.datlocprovider='c'`、`datcollate='C'`、`datctype='C'`、`daticulocale IS NULL`。脚本是本决定的落地物，不得反向覆盖本决定。
 
 ## 理由
 
@@ -28,7 +28,7 @@ C 排序只按字节比较，不引用任何外部 collation 版本，因此操�
 
 正面：库排序为 C 时普通 B-tree 索引直接支持 `like` 前缀匹配走索引，各阶段不再另建 `text_pattern_ops` 操作符类索引，索引数量与迁移量都随之减少。
 
-负面：任何需要中文语言序的排序都必须显式写 `COLLATE "zh-Hans-CN"` 或携带显式排序键，写漏了不会报错，只会得到字节序结果。该风险由代码审查承担，本阶段不为它设机器判定。
+负面：任何需要中文阅读序的列表都必须携带由应用层生成并持久化的显式 `sort_key`；首版禁止在业务 SQL 中依赖操作系统或 ICU 的隐式中文 collation。遗漏 `sort_key` 时只会得到字节序，因此相关列表必须在契约测试中断言排序键。
 
 ## 影响范围
 

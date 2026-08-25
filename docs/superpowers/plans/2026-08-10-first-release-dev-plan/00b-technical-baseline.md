@@ -1,10 +1,12 @@
+> **F-57 状态：`SUPERSEDED_DO_NOT_EXECUTE`。** 本文件只供提取未冲突的旧技术细节；不得作为共享强制基线。唯一执行入口是 [F-57 实施计划](../2026-08-23-f57-governed-automation-fabric-implementation.md)。
+
 ## 0. 本基线的地位与使用方式
 
 本文件是 14 个阶段技术计划的共享前提。凡本文件已给出取值的事项，各阶段计划直接引用，不得重新决定、不得给出第二套取值、不得写“由实现方决定”。凡本文件未覆盖的事项，阶段计划可自行决定，但必须在计划中显式标注为本阶段新增决定，并在阶段结束时回写本基线。
 
-取值来源分三类，逐条已在正文标注：规格已定死的照抄，标注为“照抄规格”；规格给了机制没给数值的由本基线取值，标注为“本基线取值”，并给出理由；属于业务口径、必须由财务负责人或产品负责人拍板的，本基线不代拍，只给出技术侧的承载方式，标注为“留待业务决策”，并指向 PRD 附录乙编号。
+取值来源原分三类：规格照抄值、本基线技术值和历史上曾需业务拍板的值。后者已由 F-51 或更早裁定全部冻结；正文保留的编号只用于追溯，不表示仍待决定。开发者不得重新选值，必须采用现行正文及 F-50 至 F-56 的冻结口径。
 
-冲突时的优先级为：规格第 13.1、13.3、13.4、7.7 章的单机与备份口径最高，其次是规格其余各章，其次是 PRD，最后是本基线。本基线与规格冲突的部分一律作废。
+冲突时的优先级为：F-50 至 F-56 在各自明示范围内优先，且同范围内较晚裁定优先；其次是总体规格，再次是 PRD，最后是本基线。本基线与上位裁定冲突的部分一律作废。F-55 已把本文件的八进程、六值 ClientKind、三管道、72 格和仅物理机承载旧句更新为九进程、八值 ClientKind、四管道、90 格与两个等价 carrier；F-56 再把许可四态、声明式模块包和 F-55 entitlement 的重叠面更新为终态，不得按历史段落恢复旧计数或旧许可载体。
 
 ## 1. Rust workspace 布局与依赖方向
 
@@ -21,7 +23,7 @@
 /crates/domain/<module>/        ep-domain-<module>
 /crates/application/<module>/   ep-app-<module>
 /crates/adapter/<name>/         ep-adapter-<name>
-/apps/<process>/                八个二进制，crate 名即进程名
+/apps/<process>/                九个产品常驻二进制，crate 名即进程名
 /db/migrations/<schema>/        每 schema 一个迁移目录
 /testkit/                       ep-testkit，测试夹具与构造器
 /datagen/                       ep-datagen，基准数据集生成器
@@ -30,9 +32,9 @@
 /tools/<name>/                  工具 crate，tools/ep-migrate 随制品交付，tools/bench 与 tools/release-gate 按 B-11 排除出制品
 ```
 
-非 workspace 成员的仓库顶层目录固定如下：`/db/bootstrap/` 数据库引导脚本，`/db/checks/` SQL 断言脚本，`/scripts/` 运维与校验脚本，`/deploy/` 服务注册脚本与服务宿主层读取的静态限额文件，`/clients/desktop/` 与 `/clients/mobile/` 四端客户端源码。以上两段合起来即全部顶层目录，新增顶层目录必须先改本节。
+非 workspace 成员的仓库顶层目录固定如下：`/db/bootstrap/` 数据库引导脚本，`/db/checks/` SQL 断言脚本，`/scripts/` 运维与校验脚本，`/deploy/` 服务注册脚本与服务宿主层读取的静态限额文件，`/clients/desktop/` 与 `/clients/mobile/` 四端客户端源码，`/clients/server-admin/` 独立静态管理 SPA，`/clients/ui/` 共用设计组件，`/tests/` 跨 crate 端到端与安全收容测试。以上两段合起来即全部顶层目录，新增顶层目录必须先改本节。
 
-crate 命名前缀统一为 `ep-`，crate 目录名不带前缀，`Cargo.toml` 中的 `name` 带前缀。二进制 crate 不带前缀，名字与进程名、Windows 服务名一一对应；与资源单位不构成一一对应，八个二进制落在七个资源单位内，对应关系见第 2 节。edition 固定 2021。禁止 nightly，禁止在成员 crate 中写版本号，成员一律 `dep.workspace = true`。
+crate 命名前缀统一为 `ep-`，crate 目录名不带前缀，`Cargo.toml` 中的 `name` 带前缀。二进制 crate 不带前缀，名字与进程名、Windows 服务名一一对应；与资源单位不构成一一对应，九个二进制落在八个产品资源单位内，对应关系见第 2 节。edition 固定 2021。禁止 nightly，禁止在成员 crate 中写版本号，成员一律 `dep.workspace = true`。
 
 ### 1.2 crate 清单与职责
 
@@ -40,7 +42,7 @@ crate 命名前缀统一为 `ep-`，crate 目录名不带前缀，`Cargo.toml` �
 
 | crate | 一句话职责 |
 |---|---|
-| ep-foundation | 稳定通用类型：Id、Money、Quantity、UnitPrice、Rate、AccountingPeriodRef、SecurityContext、SecurityLevel、AppError、ErrorCode、DomainEvent 信封、Clock 与 IdGen 端口；另含 `port::tx` 的 Tx、SnapshotCtx、UnitOfWork、TxId、IsolationKind，`id::marker` 的 22 个跨模块引用标记类型，`principal` 的 SYSTEM_PRINCIPAL_ID 与 SYSTEM_DEVICE_ID，模块码枚举 ModuleCode，`capability` 的 CapabilityDomain 与 ActionClass，以及 `port::search`、`port::doc`、`port::db` 与 `port::kms` 四个端口模块。上述类型的签名与取值见第 1.4 节。 |
+| ep-foundation | 稳定通用类型：Id、Money、Quantity、UnitPrice、Rate、AccountingPeriodRef、SecurityContext、SecurityLevel、AppError、ErrorCode、DomainEvent 信封、Clock 与 IdGen 端口；另含 `port::tx` 的 Tx、SnapshotCtx、UnitOfWork、TxId、IsolationKind，`id::marker` 的 22 个跨模块引用标记类型，`principal` 的 SYSTEM_PRINCIPAL_ID 与 SYSTEM_DEVICE_ID，模块码枚举 ModuleCode，`capability` 的 CapabilityDomain 与 ActionClass，以及 `port::search`、`port::doc`、`port::db`、`port::kms` 与阶段 2 新增的 `port::secret` 五个端口模块。上述类型的签名与取值见第 1.4 节。 |
 | ep-platform-tenancy | 集团、法人、组织、部门、岗位，以及安全上下文的建立与法人授权集合校验。 |
 | ep-platform-identity | 本地账号目录、口令与 MFA、会话、设备登记、高风险操作的重新认证凭证。 |
 | ep-platform-authz | RBAC 与 ABAC 判定、字段级与密级过滤、职责分离、审批授权判定。 |
@@ -56,6 +58,7 @@ crate 命名前缀统一为 `ep-`，crate 目录名不带前缀，`Cargo.toml` �
 | ep-platform-recon | 内部对账与强制不变量校验的语句集、分批与快照口径、差异事项模型。 |
 | ep-platform-obs | 日志字段约定、指标注册表、追踪上下文、运维中心台账模型。 |
 | ep-platform-runtime | 进程生命周期状态机、分层配置加载、第 7.3 节的 `SelfCheckRegistry`、健康与就绪端点，以及以 trait 表达的服务器骨架。HTTP 服务端骨架直接构建在第三方库上，工作区内既无也不新增 HTTP 系 ep-adapter-*；IPC 的具体传输实现留在 ep-adapter-ipc。两者一律由 apps 在 `apps/<proc>/src/wiring/` 目录下注入，本 crate 不依赖任何 ep-adapter-*。 |
+| ep-platform-mcp | F-55 双向 MCP 的签名 manifest 校验、短期人类 grant、binding 解析、逐次授权、审计摘要与六方法闭集；不承载业务 command/query 实现。 |
 
 本表是平台底座 crate 的现状记录，不是冻结清单。archcheck 不再对 crate 清单逐项比对，阶段 1 退出条件第 2 条中的该项断言撤销；crate 的增删走普通提交，只受第 1.3 节依赖方向七条禁止项约束，该七条仍由 archcheck 逐条断言并配负样例。其中第六条的机检面为 foundation-no-business（依赖边一侧，即 foundation 不依赖工作区内任何 crate）、foundation-frozen-items、foundation-marker-shape、foundation-module-registry、foundation-no-single-owner 五条规则，各配负样例；其必要性一条按第 12 节通则第六条降为评审判据并已登记入第 12.1 节，不计入本句的逐条断言。
 
@@ -79,7 +82,7 @@ crate 命名前缀统一为 `ep-`，crate 目录名不带前缀，`Cargo.toml` �
 | portal | 供应商门户的受控能力用例与脱敏投影。 |
 | reporting | 报表定义、仪表盘、经营驾驶舱预置指标与数据集、像素级打印模板。 |
 
-各层职责：`ep-contract-<module>` 只放该模块对外公开的命令、查询、事件类型与 DTO，以及供其他模块调用的 trait；`ep-domain-<module>` 放聚合、值对象、领域服务、领域规则与业务端口 trait；`ep-app-<module>` 放用例、事务边界、授权调用、Outbox 与审计写入、跨模块协调。
+各层职责：`ep-contract-<module>` 只放该模块对外公开的命令、查询、事件类型与 DTO，以及供其他模块调用的 trait；`ep-domain-<module>` 放聚合、值对象、领域服务、领域规则与业务端口 trait；`ep-app-<module>` 放用例、事务边界、授权调用、Outbox 与审计写入、跨模块协调。F-55 新增的 `ep-contract-ai` 与 `ep-contract-mcp` 是两个非业务模块的 transport/port 契约例外，不新增 `ModuleCode`、domain crate 或业务 schema；前者由 `ep-app-reporting` 使用，后者由 `ep-platform-mcp` 与 transport adapter 使用。
 
 适配层。
 
@@ -87,13 +90,14 @@ crate 命名前缀统一为 `ep-`，crate 目录名不带前缀，`Cargo.toml` �
 |---|---|
 | ep-adapter-db-pg | 首版唯一交付并认证的 PostgreSQL 16 实现，含 RLS 会话变量注入与清除、流复制以外的全部 SQL。`PgTx`、`PgSnapshot`、`PgUnitOfWork`、`PgPoolFactory`、`PgMigrationWindowGuard` 与 `PgReadOnlyTx` 的声明与实现，`PoolKind`、`SessionContext`、`RetryPolicy`、`ConnectionBudget` 四个连接模型类型的定义与取值，`ScopePredicateRenderer`，以及公共能力基线到 PostgreSQL 类型与索引 DDL 的映射。 |
 | ep-adapter-file | 本机文件存储实现，只提供写入新对象与读取，不提供覆盖与原地删除接口。 |
-| ep-adapter-kms | 内置 KMS 与客户 HSM 两种载体的实现，含信封加密与字段级密钥；端口 trait `KmsBackend` 与其调用词汇定义在 `ep_foundation::port::kms`，不在本 crate。 |
+| ep-adapter-kms | 内置 KMS 与客户 HSM 两种载体的实现，含数据 KMS、字段级密钥与系统机密解封；`KmsBackend` 及其调用词汇定义在 `ep_foundation::port::kms`，`SecretUnsealer` 定义在独立的 `ep_foundation::port::secret`，均不在本 crate；只读 `SecretProvider/KmsSecretProvider` 落 `ep-platform-runtime`。数据 KMS common master 与六个 recipient 的 system-secret KEK 严格分离。 |
 | ep-adapter-queue | 内置轻量队列，构建在 Outbox 表之上，不引入外部消息中间件。 |
 | ep-adapter-search | 内置 Rust 全文检索索引的写入与查询，按法人分区。 |
 | ep-adapter-doc | Excel 导入导出、文档模板套用、PDF 渲染与批注、像素级打印排版。 |
 | ep-adapter-esign | 电子签章外部出口，首版唯一的外部系统适配。 |
 | ep-adapter-wasm | 受限 WASM 计算与服务端插件的宿主接口。 |
 | ep-adapter-ipc | 进程间接口的客户端与服务端，Windows 命名管道承载。 |
+| ep-adapter-local-ai | F-55 签名模型包复验、只读加载、受约束解码与本地推理；禁止 DB、HTTP、网络与文件写 API。 |
 
 ### 1.3 依赖方向与禁止项
 
@@ -133,9 +137,9 @@ ep-foundation 的顶层模块固定为下表七项。本表即 `xtask archcheck`
 | error | `crates/foundation/src/error.rs` | `AppError` 与 `ErrorCode`；`AppError` 的字段构成见第 10.2 节，错误码与分类取值见第 5.5 节。 |
 | id | `crates/foundation/src/id/` 下 `mod.rs` 与 `marker.rs` | `Id<T>`，以及冻结 22 项的跨模块引用标记类型。 |
 | module | `crates/foundation/src/module.rs` | `ModuleCode`，取值与第 1.2 节的 15 个模块码一一对应。 |
-| port | `crates/foundation/src/port/` 下 `tx.rs` 与 `db.rs`、`doc.rs`、`kms.rs`、`search.rs` | 事务与快照抽象，以及四个端口空模块及其补齐时点。 |
+| port | `crates/foundation/src/port/` 下 `tx.rs` 与 `db.rs`、`doc.rs`、`kms.rs`、`search.rs`、`secret.rs` | 事务与快照抽象；阶段 1 建四个空端口文件，阶段 2 在不增加 foundation 顶层模块的前提下新增独立 `secret.rs`，承载 `SecretUnsealer` 与强类型 secret/bootstrap ref。 |
 | principal | `crates/foundation/src/principal.rs` | `SYSTEM_PRINCIPAL_ID` 与 `SYSTEM_DEVICE_ID`。 |
-| security | `crates/foundation/src/security/` 下 `context.rs` 与 `level.rs` | `SecurityContext` 的 19 项字段、七个非通用字段类型与三个配套枚举，以及 `SecurityLevel`，其取值见第 4 节公共列 `security_level`。 |
+| security | `crates/foundation/src/security/` 下 `context.rs` 与 `level.rs` | `SecurityContext` 的 20 项字段、七个非通用字段类型与四个配套枚举，以及 `SecurityLevel`，其取值见第 4 节公共列 `security_level`。 |
 
 事务与快照抽象位于 `crates/foundation/src/port/tx.rs`。契约层的跨模块方法签名一律写 `&mut dyn Tx`。
 
@@ -185,12 +189,14 @@ pub trait UnitOfWork: Send + Sync + 'static {
 ```rust
 pub const SYSTEM_PRINCIPAL_ID: uuid::Uuid =
     uuid::uuid!("00000000-0000-7000-8000-000000000001");
+pub const SYSTEM_SESSION_ID: uuid::Uuid =
+    uuid::uuid!("00000000-0000-7000-8000-000000000002");
 pub const SYSTEM_DEVICE_ID: &str = "SYSTEM";
 ```
 
 取值选用全零前缀加版本位 7 与变体位 8 的保留形态，理由是它符合 UUIDv7 的版本与变体校验，同时不可能与 IdGen 生成的任何值碰撞。凡在种子迁移或系统上下文写 created_by 与 updated_by 的，一律引用该常量，不得另取字面量。
 
-安全上下文位于 `crates/foundation/src/security/context.rs`，字段顺序即下表顺序，共 19 项，不得增删改名。
+安全上下文位于 `crates/foundation/src/security/context.rs`，字段顺序即下表顺序，共 20 项，不得增删改名。
 
 | 序 | 字段 | 类型 |
 |---|---|---|
@@ -213,8 +219,13 @@ pub const SYSTEM_DEVICE_ID: &str = "SYSTEM";
 | 17 | is_breakglass | bool |
 | 18 | request_id | RequestId |
 | 19 | trace_id | TraceId |
+| 20 | system_purpose | Option\<SystemPurpose\> |
 
-配套枚举同在 ep-foundation 冻结：`AccountKind { Human, System, Portal }`；`ClientKind { Win, Mac, Ios, Android, Portal, Ops }`，序列化取值与第 5.6 节 X-Client 头的六个取值一一对应；`DepartmentScope { All, Subtree(Id<Department>), Explicit(Arc<[Id<Department>]>) }`。构造函数只有 `SecurityContext::human(..)` 与 `SecurityContext::system(legal_entity_id, request_id, trace_id)` 两个，后者用上面两个常量填 user_id 与 device_id，account_kind 取 System。不提供任何 with_ 前缀的变换方法。第 18 与第 19 两个字段的存在理由是第 3.8 节要求连接取用时写入 `app.request_id` 与 `app.trace_id` 两条会话变量，取数只能来自安全上下文。
+`SecurityContext::system(le, request, trace, purpose)` 的 20 字段映射不留默认分支：`user_id=SYSTEM_PRINCIPAL_ID`、`account_kind=System`、`session_id=SYSTEM_SESSION_ID`、`legal_entity_id=le`、`device_id=SYSTEM_DEVICE_ID`、`client=ClientKind::Ops`、`clearance_level=序列化数值 10 的最低 SecurityLevel`、`roles=[]`、`duty_classes=[]`、`department_scope=DepartmentScope::Explicit([])`、`position_ids=[]`、`project_scope=[]`、`customer_scope=[]`、`record_shares=[]`、`data_scope_tags=[]`、`snapshot_version=0`、`is_breakglass=false`、`request_id=request`、`trace_id=trace`、`system_purpose=Some(purpose)`。`SYSTEM_PRINCIPAL_ID` 对应阶段 4 种子的唯一 SYSTEM account 行；`SYSTEM_SESSION_ID` 只是非空上下文哨兵，`platform_core.sessions` 不建对应行，不得用于 reauth、续期或人类会话查询。人类 `AuthorizationService`/会话/重认证流水线遇 `AccountKind::System` 一律失败关闭；只有编译期封闭 executor/port 可按 `SystemPurpose` 接受，且仍受单法人 RLS。审计在 `account_kind=System` 时写 `audit_events.client='system'`；`system` 不是 ClientKind 变体。负例覆盖哨兵 session 查库/重认证、System 走人类授权、空范围被替换为 All、自填角色/密级/client 与跨法人调用，均返回 `PLATFORM.AUTHZ.OBJECT_FORBIDDEN` 且不取业务连接。
+
+配套枚举同在 ep-foundation 冻结：`AccountKind { Human, System, Portal }`；`ClientKind { Win, Mac, Ios, Android, Portal, Ops, ServerAdmin, Mcp }`，序列化值固定为 `win|mac|ios|android|portal|ops|server_admin|mcp`；`DepartmentScope { All, Subtree(Id<Department>), Explicit(Arc<[Id<Department>]>) }`；`SystemPurpose { General, Reconciliation }`。普通员工 `X-Client` 可取前七值；`mcp` 只能由 `/mcp` grant middleware 固定，外部自填无效，并复用 grant 来源设备，不新增 `user_devices.client=mcp`。构造函数只有 `SecurityContext::human(..)` 与 `SecurityContext::system(legal_entity_id, request_id, trace_id, purpose)` 两个：前者把 `system_purpose` 固定为 `None`；后者用上面两个常量填 user_id 与 device_id、account_kind 取 System，并把 `system_purpose` 固定为 `Some(purpose)`。`AccountKind` 非 System 与 `system_purpose.is_some()`、或 `AccountKind::System` 与 `system_purpose.is_none()` 均为构造失败；不提供任何 with_ 前缀的变换方法。第 18 与第 19 两个字段的存在理由是第 3.8 节要求连接取用时写入 `app.request_id` 与 `app.trace_id` 两条会话变量，取数只能来自安全上下文；第 20 个字段把普通系统任务与免裁剪的内部对账任务做成不可混淆的类型事实。
+
+`SystemPurpose::Reconciliation` 的构造面是静态封闭的：除枚举定义所在的 `crates/foundation/src/security/context.rs` 外，该变体只允许在 `crates/platform/recon/src/executor.rs` 出现，由 `xtask archcheck` 的 `reconciliation-context-confined` 规则扫描 `crates/`、`apps/`、`testkit/`、`datagen/`、`tools/` 并逐文件断言；测试必须经 `ReconExecutor` 驱动，不得在夹具中直造该变体。`ReconExecutor` 逐法人调用 `SecurityContext::system(..., SystemPurpose::Reconciliation)`，公开调用方只调用 `ReconExecutor::run`；每日对账与关账前校验的路由只装配在 `apps/job-worker/src/wiring/`，core-server、界面、API、报表、低代码与插件均无该入口。对账仓储在取连接前同时断言 `account_kind == AccountKind::System` 与 `system_purpose == Some(SystemPurpose::Reconciliation)`，不成立即返回 `PLATFORM.AUTHZ.OBJECT_FORBIDDEN`，不取连接、不写业务数据且不泄露对象存在性。普通系统任务一律传 `SystemPurpose::General`。不定义 `ReconContext`、不检查调用栈、不以 panic 充当授权判定。
 
 上表中的七个非通用字段类型同在 `crates/foundation/src/security/context.rs` 冻结，任何阶段不得改名、改形态或另立第二处定义。`DeviceId(Arc<str>)`，取值为长度 1 至 64 的 `[A-Za-z0-9_-]`，必须能由 `&'static str` 无损构造，`SecurityContext::system` 即以 `SYSTEM_DEVICE_ID` 填该字段。`RoleCode(Arc<str>)`，取值为长度 1 至 64 的 `[A-Z0-9_]`，与 `platform_authz.roles.code` 逐字一致。`DutyClass { System, Data, Security, Audit, Key, Config }`，序列化取值依次为 SYSTEM、DATA、SECURITY、AUDIT、KEY、CONFIG，与 `platform_authz.roles.duty_class` 的六个字符串逐字一致；该列为空的业务角色不产生任何项，`Arc<[DutyClass]>` 允许为空数组，不设 None 变体，职责分离的两两互斥关系是种子规则行的内容，不进本枚举。`RecordShare { object_type: Arc<str>, object_id: uuid::Uuid, grant: RecordShareGrant }` 与 `RecordShareGrant { Read, Write }`，`object_type` 与第 6.1 节事件信封的 `aggregate_type` 同形，即 `<module>.<table>` 的小写下划线形态；本结构体只表达一条具体记录被显式共享给当前主体这一事实，不含任何判定语义，记录范围的编译结果与谓词类型留在 ep-platform-authz，不前移进本 crate。`DataScopeTag(Arc<str>)`，形态为 `<kind>:<value>`，kind 取 `[a-z0-9_-]`，value 取 `[A-Za-z0-9_-]`，总长上限 128；其 `Display` 与 serde 输出即为第 4 节公共列 `data_scope_tags text[]` 的元素形态与第 6.1 节事件信封 `data_scope_tags` 的元素形态，两处不得各自编解码。`RequestId(Arc<str>)`，取值为长度 8 至 64 的 `[A-Za-z0-9_-]`，服务端按第 5.6 节自生成时取 UUIDv7 的无连字符小写十六进制。`TraceId(Arc<str>)`，取值为 32 位小写十六进制，与 W3C trace-context 的 trace-id 同形。
 
@@ -236,34 +247,56 @@ pub enum ActionClass { Read, Write, Submit, Approve, Export }
 
 `CapabilityDomain` 的序列化取值逐一为阶段 13 计划第 4.4 节表中的 18 个能力域码字符串，顺序与该表序号一致。`ActionClass` 的五项与该节判定算法的 ViewOnly 分支配套，ViewOnly 只放行 Read。各阶段为每个用例声明常量的纪律见第 12 节。
 
-四个端口模块的位置与补齐时点固定。`crates/foundation/src/port/db.rs` 由阶段 1 建空文件，阶段 2 按 C-07 与 B-03 补齐 `IdempotencyStore`、`IdempotencyScope`、`IdempotencyOutcome` 与 `MigrationWindowGuard`，并补齐规格第 7.4 章公共能力基线的字段类型与索引种类的能力描述，阶段 11 补齐只读事务端口 `ReadOnlyTx`；实现一律落在 ep-adapter-db-pg，本模块不声明任何 `Pg` 前缀的具体类型。`crates/foundation/src/port/search.rs` 由阶段 1 建空文件，阶段 3b 补齐 SearchDocument、SearchQuery、SearchHit 与 SearchIndexPort、SearchQueryPort，实现落在 ep-adapter-search，索引按法人分区，写入一律经 job-worker 消费 Outbox 事件触发，不在业务事务内调用。`crates/foundation/src/port/doc.rs` 由阶段 1 建空文件，阶段 5 补齐 SheetSpec、ColumnSpec、CellValue、PrintLayout 与 SpreadsheetPort、DocTemplatePort、PdfRenderPort，实现落在 ep-adapter-doc，其后各阶段只在这三个 trait 上增量，不新增渲染接口。`crates/foundation/src/port/kms.rs` 由阶段 1 建空文件，阶段 2 补齐 `KmsBackend` 的六个方法与八个调用词汇类型，端口面合计九项；实现一律落在 ep-adapter-kms，本模块不声明任何载体类型，也不声明任何 `Builtin` 或 `Hsm` 前缀的具体类型。`derive_blind_key` 的返回宽度不随本节冻结，只冻结其三个参数的形态，取值由阶段 2 与阶段 5、10 同批定，见阶段 2 计划第 4.4 节与第 11 节假设三。
+四个端口模块的位置与补齐时点固定。`crates/foundation/src/port/db.rs` 由阶段 1 建空文件，阶段 2 按 C-07 与 B-03 补齐 `IdempotencyStore`、`IdempotencyScope`、`IdempotencyOutcome` 与 `MigrationWindowGuard`，并补齐规格第 7.4 章公共能力基线的字段类型与索引种类的能力描述，阶段 11 补齐只读事务端口 `ReadOnlyTx`；实现一律落在 ep-adapter-db-pg，本模块不声明任何 `Pg` 前缀的具体类型。`crates/foundation/src/port/search.rs` 由阶段 1 建空文件，阶段 3b 补齐 SearchDocument、SearchQuery、SearchHit 与 SearchIndexPort、SearchQueryPort，实现落在 ep-adapter-search，索引按法人分区，写入一律经 job-worker 消费 Outbox 事件触发，不在业务事务内调用。`crates/foundation/src/port/doc.rs` 由阶段 1 建空文件，阶段 5 补齐 SheetSpec、ColumnSpec、CellValue、PrintLayout 与 SpreadsheetPort、DocTemplatePort、PdfRenderPort，实现落在 ep-adapter-doc，其后各阶段只在这三个 trait 上增量，不新增渲染接口。`crates/foundation/src/port/kms.rs` 由阶段 1 建空文件，阶段 2 一次补齐冻结六方法 `KmsBackend`、独立 `KmsSigningKeyIdentityResolver`、独立三方法 `KmsKeyMaterialProvisioner`、独立三方法 `KmsPinnedDataKeyBackend` 及阶段 2 第 4.1 节逐项冻结的全部 strong value/exact wire；F-56 后仍不得给 `KmsBackend` 增第七个方法。实现一律落在 ep-adapter-kms，本模块不声明任何载体类型，也不声明任何 `Builtin` 或 `Hsm` 前缀的具体类型。`derive_blind_key` 的三个参数与返回类型均冻结：返回 `BlindIndex([u8; 32])`，对应数据库盲索引列必须为 32 字节；宽度不是配置项，阶段 5、10 不得另设截断或例外路径。pinned 正文新写只用 `CurrentForWrite`，历史读与中断续传只用持久 `DataKeyRefV1` 的 `ExactRef`；见阶段 2 计划第 4.1、4.4 节与第 12 节假设三。
 
 ## 2. 进程清单
 
-八个进程，与规格第 4.3 章的 apps 清单一一对应。新增或合并进程须先修订本节并写明其信任边界或资源理由，不设不得新增也不得合并的封条。
+九个产品常驻进程，与规格第 4.3 章及 F-55 的 apps 清单一一对应。新增或合并进程须先修订本节并写明其信任边界或资源理由，不设不得新增也不得合并的封条。
 
-本节的八个进程是规格第 4.3 章 apps 清单的固定项。其中 plugin-host 承载规格第 9.3 章首版服务端唯一的扩展形态，即签名 WASM Component，并与第 9.1 章复杂计算调用受限 WASM 函数一项对应，规格第 5.7 章延期目录不含服务端 WASM 插件。任何阶段计划不得删除该进程及其系统账户 ep-plugin、其资源单位 app-plugin、其套接字 `\\.\pipe\ep-plugin` 与第 1.2 节的 ep-adapter-wasm crate；删除须先修订规格第 4.3、7.7、9.3、13.1 四章与附录 A.4 并经产品负责人批准，在此之前七进程是被禁止的第二套取值。
+本节的九个进程是规格第 4.3 章 apps 清单的固定项。其中 plugin-host 承载签名 WASM Component 和 F-55 的本地签名 MCP 子进程；ai-inferer 只承载本地分析 AI。任何阶段计划不得删除 plugin-host 或 ai-inferer 及其服务账户、资源单位、命名管道和 adapter；八进程或把 AI 合并进 core-server 都是被禁止的第二套取值。
 
 | 进程 | 职责 | 监听 | 数据库连接 | 服务虚拟账户 | 资源单位 |
 |---|---|---|---|---|---|
-| core-server | 全部领域命令与查询、事务、规则与工作流协调、四端 API、供应商门户的受控能力 API、交易路径上的附件正文读写、对写出进程上报内容的审计落库。 | 127.0.0.1:8080 HTTP，`\\.\pipe\ep-core` | 运行期读写池上限 20，只读分析池上限 10，合计不超过 30 | NT SERVICE\ep-core | 资源单位 app-core |
-| job-worker | Outbox 消费、站内通知与推送投递、报表与文档渲染、批处理、归档与派生存储传播、内部对账与不变量校验、死信重投。 | 127.0.0.1:8081 仅健康与指标 | 独立池上限 5，使用同一运行期读写账号 | NT SERVICE\ep-worker | 资源单位 app-worker |
-| portal-gateway | 承载公网供应商门户站点，做会话、限流、脱敏投影的呈现层，所有取数一律经 core-server 的受控能力 API。 | 127.0.0.1:8090 HTTP | 0，不建立事务数据库连接 | NT SERVICE\ep-portal | 资源单位 app-portal |
-| integration-gateway | 首版唯一的对外出网进程，只承载电子签章一类出口，含超时、退避、熔断与证据固化。 | 127.0.0.1:8082 仅本机 | 独立池上限 5，同一运行期读写账号 | NT SERVICE\ep-integ | 资源单位 app-core |
-| plugin-host | 服务端签名 WASM Component 的受控宿主，按声明的能力与资源限额执行。 | `\\.\pipe\ep-plugin` | 0 | NT SERVICE\ep-plugin | 资源单位 app-plugin |
+| core-server | 全部领域命令与查询、事务、规则与工作流协调、四端 API、供应商门户的受控能力 API、交易路径上的附件正文读写、对写出进程上报内容的审计落库。 | `127.0.0.1:8080` 只作第三方反向代理 upstream；产品进程业务 IPC 只走 `\\.\pipe\ep-core` | 运行期读写池上限 20，只读分析池上限 10，合计不超过 30 | NT SERVICE\ep-core | 资源单位 app-core |
+| job-worker | Outbox 消费、站内通知、移动推送编排与脱敏载荷组装、报表与文档渲染、批处理、归档与派生存储传播、内部对账与不变量校验、死信重投；不直接对外出网。 | 127.0.0.1:8081 仅健康与指标 | 独立池上限 5，使用同一运行期读写账号 | NT SERVICE\ep-worker | 资源单位 app-worker |
+| portal-gateway | 承载公网供应商门户站点，做会话、限流、脱敏投影的呈现层，五项能力全部经 `\\.\pipe\ep-core` 调 core-server，不持数据库或文件存储凭据。 | `127.0.0.1:8090` 只作第三方反向代理 upstream；业务 IPC 是 `ep-core` 客户端 | 0，不建立事务数据库连接 | NT SERVICE\ep-portal | 资源单位 app-portal |
+| integration-gateway | 唯一对外出网进程，承载电子签章、可选移动推送、客户同机 ICAP 与 F-55 远端无状态 Streamable HTTP MCP；逐次验签 manifest/origin/SPKI/schema，不消费 Outbox、不落业务效果。 | 无 TCP 监听；产品侧只监听 `\\.\pipe\ep-integ` | 0；不持数据库凭据、KMS 或业务文件目录权限 | NT SERVICE\ep-integ | 资源单位 app-core |
+| plugin-host | 服务端签名 WASM Component 与 F-55 本地签名 LPAC stdio/可选 Windows Hyper-V-isolated container MCP 的受控宿主；utility VM 仅承载单次插件调用，按声明能力与资源限额执行。 | `\\.\pipe\ep-plugin` | 0 | NT SERVICE\ep-plugin | 资源单位 app-plugin |
 | ops-agent | 运维中心的采集与暴露：指标端点、健康端点、降级与暴露窗口台账的读取。 | 127.0.0.1:9101 指标，127.0.0.1:9102 健康 | 专用只读角色池上限 2 | NT SERVICE\ep-ops | 资源单位 app-edge |
 | archive-writer | 事务日志连续归档、附件正文向服务器之外落点的增量写出、审计证据存储的写出，三项各自不超过 15 分钟周期。 | 无 | 1 个常驻流复制连接与 1 个复制槽，不建常规连接 | NT SERVICE\ep-archive | 资源单位 app-archive |
 | backup-writer | 每日全量备份、附件正文存量引导搬运与每日全量写出、备份自动校验、归档链断裂后的重建基线备份。 | 无 | 备份窗口内不超过 1 个流复制连接，窗口外为 0 | NT SERVICE\ep-backup | 资源单位 app-backup |
+| ai-inferer | F-55 本地签名模型包的只读加载与单数据集 QueryPlan 推理；不取数、不见结果、不写业务事实。 | `\\.\pipe\ep-ai` | 0；无数据库凭据、网络 token、KMS 或文件写权限 | NT SERVICE\ep-ai | 资源单位 app-ai |
 
 进程侧的固定约束，照抄规格。
 
-- 常驻常规连接合计不超过 42，迁移与应急临时连接另计不超过 10，并发连接峰值不超过 52，`max_wal_senders` 不低于 4，`max_replication_slots` 不低于 3。
-- core-server 与 integration-gateway 是两个进程，但同处资源单位 app-core，单位内不再细分配额；八个自研二进制因此落在七个资源单位内，加 PostgreSQL 一个共八个。
-- archive-writer 与 backup-writer 是两个独立进程与两个独立资源单位，其内存硬上限各自独立；CPU 侧是否构成预算隔离随规格第 13.1 章 CPU 一列的实测结论确定，磁盘 IO 一列在本平台无运行期承载，二者之间不构成磁盘 IO 预算隔离。两者不持有运行期应用账号，不读业务表。
-- 八个进程各注册一个 Windows 服务，由 Windows 服务控制管理器承载启停、依赖顺序与崩溃重启，八个二进制共用一层服务宿主；全部组件以同一份安装包（MSI 或压缩包）加服务注册脚本交付，同一制品覆盖 Windows Server 2019 至 2022 两个版本。资源单位为具名 Job Object，取值以 `deploy/` 下交付的静态限额文件承载规格第 13.1 章的配额表；承载物由服务宿主层落实，不由编排层落实。该落实分两类，不得混为一谈：八个自研二进制由服务宿主层在 `ServiceMain` 早期读取该文件后创建或打开具名 Job Object 并自我指派；PostgreSQL 16 与反向代理不链接该层，两者由 ops-agent（规格第 13.1 章所称运维代理）创建具名资源单位后指派，该条路径的可行性与其对数据库的后果均待实测，实测结论出具前这两行按待实测处置，不得写成已覆盖。具名 Job Object 的名字取值本基线不取，随静态限额文件在阶段 1 一并定，定后按第 0 节回写本节。八个资源单位与该表除「内置搜索索引」一行外的八行一一对应，其中「Rust 核心与集成网关」一行由 core-server 与 integration-gateway 共用一个资源单位，「反向代理与运维代理」一行含 ops-agent 与第三方反向代理，因此八个二进制落在七个资源单位内。取值随附录 A.4 认证报告记录的服务器规格一并冻结，客户不得在部署时单方调高单一组件的份额、保底值或突发上限；配额取值必须在本平台重新实测标定，不得沿用原为 cgroup 标定的数字。四类取值逐类判。第一类，八个自研二进制各自所属的资源单位各有一个内存硬上限，落 `JOB_OBJECT_LIMIT_JOB_MEMORY`；PostgreSQL 16 一行与反向代理按上文由 ops-agent 指派，其内存承载待实测，实测结论出具前不计入本类，按附录 D.2 的 BC-1 基线组合以同一算定式由该行内存百分数与可分配量算出绝对字节后写死，这是配额表唯一在本平台有运行期承载的一列。第二类，原与内存硬上限取同一数值的内存保底值删除，本平台没有内存压力下优先不回收的软保底，不得以工作集下限冒充；触限行为随之不同，是分配失败返回错误，不是内核终止进程。第三类，磁盘 IO 份额一列删除，本平台不提供按权重的磁盘 IO 比例分配，不得把绝对预留或绝对带宽上限写成份额。第四类，CPU 份额一列的运行期承载待实测，实测结论出具前只作硬件规格标定与认证实测的意图声明，不落运行期取值；全量备份写出的磁盘 IO 绝对突发上限保留但不进配额表，其落点是部署侧静态限额文件与部署记录，运行期承载同样待实测。核对由 `/scripts/` 下的部署校验脚本在部署与升级时各断言一次，不做配额生成算法，也不做每进程启动自检；该核对的被测对象是静态限额文件与经 DACL 授予 `JOB_OBJECT_QUERY` 后从具名 Job Object 读回的限额，读回能力待实测，磁盘 IO 一列已无被测对象、该维判据撤下，CPU 一列在实测出结论前不设判据。两处偏差如实披露。其一，配额表「内置搜索索引」一行在首版既无独立进程也无独立资源单位，其检索与索引写入分别落在 core-server 与 job-worker 之内，该行份额不落静态限额文件、不加和到任何一行、也不按比例拆分到多行，因此八行 CPU 份额之和为 90%，低于满值 100%。该缺口只影响硬件标定与认证意图声明，不得据以推出任何级间次序或资源侧结论——规格第 13.1 章三处逐字禁止此推论，且其所依据的按权重归一化分配在本平台没有承载物。本平台的内存承载是各自独立的绝对硬上限，不是按权重归一化的比例分配。内存列是硬上限不是权重，该行不落值只在可分配量中留下约一成未指派余量，不构成对其余八行的相对超配。其二，规格第 13.1 章其余各行的突发上限折算规则，即取份额三倍并以可分配量 40% 封顶，在本平台无被乘数、无承载，已随规格改写整条删除，不得复活折算。八级让路次序不构成运行期保证，规格第 7.5 章那句诚实披露保留，即单机同机部署下备份与报表在极端情况下仍可能影响交易时延、无隔离保证。
-- 八个进程各以自己的服务虚拟账户 `NT SERVICE\<服务名>` 运行，互不复用，各自带每服务 SID；不设共用本地组，进程之间的授权一律在对象的 NTFS ACL 与命名管道 DACL 上逐账户列 ACE。落点写出凭据只由 archive-writer 与 backup-writer 的虚拟账户持有。`tools/ep-migrate` 不注册为 Windows 服务，另有一个独立的普通本地账户 `ep-migrate`，与上述八个不复用，只在迁移窗口内使用。
+- 常驻常规连接精确上限为 37（core rw 20 + ro 10、job-worker 5、ops-agent 2；integration-gateway 为 0），迁移与应急临时连接另计不超过 10，并发连接硬峰值仍不超过 52；余下 5 条是不可分配给任何常驻池的连接安全余量，不得用来恢复 gateway 或新增池。`max_wal_senders` 不低于 4，`max_replication_slots` 不低于 3。
+- core-server 与 integration-gateway 是两个进程，但同处资源单位 app-core，单位内不再细分配额；九个自研二进制因此落在八个产品资源单位内，加 PostgreSQL 一个共九个。
+- archive-writer 与 backup-writer 是两个独立进程与两个独立资源单位，其内存硬上限各自独立；CPU 比例与磁盘 IO 份额首版固定不启用，不存在实测或静态文件出现取值后自动生效的分支，二者之间不构成 CPU 或磁盘 IO 预算隔离。未来启用必须另立产品版本与正式裁定。两者不持有运行期应用账号，不读业务表。
+- 九个进程各注册一个 Windows 服务，由 Windows 服务控制管理器承载启停、依赖顺序与崩溃重启，九个二进制共用一层服务宿主；全部组件以同一份安装包加服务注册脚本交付。资源单位为具名 Job Object，九个自研二进制由服务宿主层在 `ServiceMain` 早期自我指派；PostgreSQL 16 与反向代理由 ops-agent 指派。九个资源单位与规格第 13.1 章九行一一对应，只有 core-server 与 integration-gateway 共用 app-core、ops-agent 与第三方反向代理共用 app-edge；F-55 已把原无承载的搜索行唯一改为 app-ai，搜索按实际调用进程归因。AI 内存硬上限固定为 `floor(0.095 × CERTIFIED_HOST_RAM_BYTES)`，其余行仍按规格算定。CPU/磁盘份额只作认证意图，内存硬上限是唯一运行期配额列；八级让路次序不构成跨进程运行期保证。
+> **资源单位现行冻结。** 首版 CPU 比例与 CPU 突发上限仅作硬件标定/认证意图，不写入静态限额文件、不调用 Job Object CPU rate API；按权重磁盘 IO 份额同样固定不启用。内存硬上限是配额表唯一运行期列。未来启用 CPU 或磁盘份额必须另立产品版本、规格裁定、Windows 实测和发布证据门。Job Object 名称由 deployment_id 确定性推导，格式固定为 `Global\EP_<D>_<S>`：`D` 是部署 UUID 的 32 位十六进制，移除连字符并转大写；`S` 精确取 `APP_CORE|APP_WORKER|APP_PORTAL|APP_PLUGIN|APP_EDGE|APP_ARCHIVE|APP_BACKUP|APP_AI|APP_DB`。core-server 与 integration-gateway 共 `APP_CORE`，job-worker=`APP_WORKER`，portal-gateway=`APP_PORTAL`，plugin-host=`APP_PLUGIN`，ops-agent 与第三方反向代理共 `APP_EDGE`，archive-writer=`APP_ARCHIVE`，backup-writer=`APP_BACKUP`，ai-inferer=`APP_AI`，PostgreSQL 16=`APP_DB`。deployment_id 非规范 UUID、全零、推导名与 `deploy/resource-limits.toml` 不一致、同机另一安装已占用同 deployment_id 但安装根或制品摘要不同，均在服务启动前失败关闭；同部署同 suffix 的多个成员打开同一对象是唯一允许的复用。suffix 封闭且 deployment_id 安装时唯一，不提供可配置名称。
 
-进程间接口，本基线取值。承载方式为 Windows 命名管道（`tokio::net::windows::named_pipe`），帧格式为 4 字节大端长度前缀加 JSON 体不变，管道名 `\\.\pipe\ep-<name>`，访问控制由创建时显式构造的 DACL 表达，逐账户只授予需要连接的虚拟账户，不用默认安全描述符，也不设共用本地组；该表达力强于原先的 0660 加组，并消掉原实现里先绑定再设权限之间的竞态窗口。服务端一律取 `first_pipe_instance(true)`；客户端每次调用一条新连接的口径不变，但必须处理 `ERROR_PIPE_BUSY` 并重试，不得把「core-server 在但忙」误报成「core-server 不可用」而落 spool。不使用本机 TCP，理由是避免任何一个接口意外可从网络到达；该理由在本平台比原先更强，一并写实：命名管道的 `reject_remote_clients` 默认取真，本机可达性是内核层的，而回环 TCP 端口没有访问控制表，本机任何用户的任何进程都能连接，要恢复同等隔离须另加 mTLS 或共享口令，即新增一套机制与一套密钥管理，明确不取；本平台上的 AF_UNIX 同样不取，`tokio` 在 Windows 目标上不存在 `UnixStream` 符号，与操作系统是否支持 AF_UNIX 无关。一条本平台新增的残余风险如实写在这里：`\\.\pipe\` 是平坦名字空间，没有受支持的创建侧准入控制，非特权本地用户可在服务启动前占住管道名，上述 `first_pipe_instance(true)` 只使服务启动失败，是 fail-closed 不是防护，客户端连上后经 `GetNamedPipeServerProcessId` 核对服务端账户是先连后核、有时序窗口；其门槛低于规格第 21.18 章与第 7.7 章所称「持有该服务器操作系统权限者」，须与第 21.18 章并列登记为一条新增残余风险，不得并入，并写入交付说明。archive-writer 与 backup-writer 经该接口向 core-server 上报的内容固定为四类：写出结果、校验结论、失败事件、连接与复制槽与基础备份的起止；core-server 不可用期间在写出进程本地 `C:\EP\<proc>\spool\` 暂存并在恢复后补写，暂存不阻塞写出。
+- 九个进程各以自己的服务虚拟账户 `NT SERVICE\<服务名>` 运行，互不复用，各自带每服务 SID；不设共用本地组，进程之间的授权一律在对象的 NTFS ACL 与命名管道 DACL 上逐账户列 ACE。落点写出凭据只由 archive-writer 与 backup-writer 的虚拟账户持有；`ep-ai` 无网络 token、数据库/KMS/文件写权限。`tools/ep-migrate` 不注册为 Windows 服务，另有独立普通本地账户 `ep-migrate`，与上述九个不复用，只在迁移窗口内使用。
+
+进程间接口，本基线取值。产品业务命令、查询与正文传输只使用 Windows DACL 命名管道（`tokio::net::windows::named_pipe`），帧为 4 字节大端长度前缀加 JSON，不使用回环 TCP。每个 server generation 仅 bootstrap 首实例取 `first_pipe_instance(true)`，同进程后续/补位实例一律取 `false`；客户端处理 `ERROR_PIPE_BUSY` 并每次重连重新核验对端。唯一窄例外是 integration-gateway 作为客户端连接客户自管同机 ICAP，只允许 IP 字面量 `127.0.0.1|[::1]`，禁止 DNS、代理、重定向和非回环地址，不新增产品监听端口，明文不落盘。管道名可被本地进程抢占的残余风险以首实例 fail-closed、客户端发送前核验 server token 和交付披露处理。archive-writer/backup-writer 上报与 spool 只按下文的精确 operation、七类报文及 critical/reconstructible 规则实现，不保留「四类且满后丢最旧」的旧口径。
+
+> **产品内 IPC 现行封闭清单。** 上段通则中的任何旧 HTTP 示例均不得实现。产品进程之间的业务命令、查询与正文传输只走四条 DACL 命名管道；server 在读取应用字节前冒充客户端并以线程 token 的服务 SID/账户校验逐项 operation allowlist，PID 只作审计关联；客户端在发送前校验 server 进程 token。实现清单不得使用 `portal.*`、`virus_scan.*`、`esign_file.*` 或其他通配模式。
+>
+> - `\\.\pipe\ep-core` 的 server 是 `NT SERVICE\ep-core`。`ep-portal` 只可调用 `portal.session.sign_in.v1`、`portal.session.sign_out.v1`、`portal.identity.me.v1`、`portal.order_confirm.v1`、`portal.delivery_notice.v1`、`portal.invoice_upload.begin.v1`、`portal.invoice_upload.chunk.v1`、`portal.invoice_upload.end.v1`、`portal.invoice_upload.abort.v1`、`portal.settlement_query.v1`、`portal.profile_maintain.v1`；前三项是身份操作，后八个 operation 承载五项门户业务能力。`ep-archive` 只可调用 `ops.attachment_writeout_scope.query.v1`、`ops.writeout_result.report.v1`、`ops.failure_event.report.v1`、`ops.replication_lifecycle.report.v1`。`ep-backup` 只可调用 `ops.writeout_result.report.v1`、`ops.verification_conclusion.report.v1`、`ops.failure_event.report.v1`、`ops.replication_lifecycle.report.v1`、`ops.attachment_checksum_verdict.report.v1`、`ops.backup_slot.acquire.v1`、`ops.backup_slot.release.v1`。`ep-ops` 只可调用 `health.get.v1`、`metrics.snapshot.v1`、`ops.signed_artifact.install_receipt.v1`。
+> - `\\.\pipe\ep-integ` 的 server 是 `NT SERVICE\ep-integ`。`ep-worker` 只可调用 `push.dispatch.v1`、`esign.request.submit.v1`、`esign.status.get.v1`、`mcp.remote.exchange.v1`，并只在同一已关联的签章双工连接接收 `esign_file.begin.v1`、`esign_file.chunk.v1`、`esign_file.end.v1`、`esign_file.abort.v1` 反向流；`ep-core` 只可调用 `virus_scan.begin.v1`、`virus_scan.chunk.v1`、`virus_scan.end.v1`、`virus_scan.abort.v1`、`mcp.remote.exchange.v1`；`ep-ops` 只可调用 `health.get.v1`、`metrics.snapshot.v1`。
+> - `\\.\pipe\ep-plugin` 的 server 是 `NT SERVICE\ep-plugin`。`ep-core` 与 `ep-worker` 只可调用 `wasm.execute.v1`、`mcp.local.exchange.v1`；`ep-ops` 只可调用 `health.get.v1`、`metrics.snapshot.v1`。取消由 deadline 或断开当前调用表达，不另设 cancel operation。
+> - `\\.\pipe\ep-ai` 的 server 是 `NT SERVICE\ep-ai`。`ep-core` 只可调用 `ai.query_plan.compose.v1`、`ai.model.activate.v1`、`ai.model.deactivate.v1`；`ep-ops` 只可调用 `health.get.v1`、`metrics.snapshot.v1`。总实例 51：compose 数据面 45（运行 15、排队 30）、core 模型控制面 2、ops 2，余 2 只作 accept/补位；四组不可互借。其他账户没有 ACE。
+>
+> 未列账户或账户调用未列 operation 一律拒绝并审计。core-server:8080 与 portal-gateway:8090 只作第三方反向代理 upstream；job-worker:8081、ops-agent:9101/9102 只暴露无业务数据的健康/指标并由部署 ACL/防火墙限定；integration-gateway 不监听 TCP。唯一回环 TCP 窄例外仍只是 integration-gateway 作为客户端连接客户同机 ICAP。
+
+`ep-portal` 的服务账户认证只证明调用进程，不证明终端主体。门户管道请求固定为未受信 `PortalPipeRequest { opaque_session_token, requested_legal_entity_id, device_id, request_id }`，不存在可提交的 user/account/supplier/role/duty/data-scope/client 字段。core-server 从已核验的管道账户固定 `ClientKind::Portal`，重新验证 token、`account_kind=PORTAL`、设备、供应商绑定和授权法人集合后自行构造 `SecurityContext`；伪法人、内部 token、伪 device、多余主体字段或自填 client 必须拒绝并进入负例。
+
+四条管道的抗占满边界是编译期常量，不设配置分支。`ep-core` 总实例 32、账户活跃连接上限 portal=20/archive=4/backup=4/ops=2；`ep-integ` 总实例 16、worker=8/core=4/ops=2；`ep-plugin` 总实例 12、core=4/worker=4/ops=2；`ep-ai` 总实例 51，compose core=45、control core=2、ops=2，余 2 只用于 accept/补位。各账户/用途额度互不借用；账户达到上限时，服务端完成身份核验后、读取任何应用帧前返回 `PLATFORM.IPC.CONCURRENCY_LIMIT`，AI compose 改返回 `AI.INFERENCE.CONCURRENCY_LIMIT`，断开并写安全审计。普通连接身份握手/首长度前缀/空闲/单调用绝对上限固定为 5/10/30/120 秒，半帧、慢帧、超限或断连立即清缓冲关闭；阶段 3 大正文仍按 10/30/3600 秒且 3600 秒流会话上限不被普通调用 120 秒截断。
+
+每个 server generation 只在启动创建首实例时用 `first_pipe_instance(true)` 抢名并 fail-closed；同一持有首实例的服务进程创建后续或补位实例必须用 false。首实例句柄贯穿 listener 生命周期，断开后用同一句柄重新接受；异常丢失即整个服务退出交给 SCM 重启，不得靠 false 实例续命。客户端以 `SECURITY_SQOS_PRESENT|SECURITY_IDENTIFICATION` 打开管道。server 在读取任何应用字节前执行 `ImpersonateNamedPipeClient`、用 `OpenThreadToken` 核验允许的服务 SID/账户、并在所有分支 `RevertToSelf`；PID 只作审计关联。client 发送前用 server PID 与进程 token 核验预期服务账户，每次重连重新核验，发送失败不得转投未核验实例。
+
+普通帧继续取 4 字节大端长度前缀加 JSON、整帧不超过 1 MiB。大正文统一使用 `BoundedChunkStreamV1` 状态机：begin 声明 UUIDv7 request_id、对象 id、总长度与 SHA-256；chunk 的 seq 从 0 连续、解码后每块不超过 524288 字节、块带 SHA-256；end 重复 next_seq、总长度与总哈希；abort 终止并清零缓冲。每块 ACK 后才允许下一块，最多一块在途，块 ACK/空闲/会话绝对超时固定 10 秒/30 秒/3600 秒；乱序、重复、缺块、长度或哈希不符立即 abort，重试用新 request_id。病毒扫描和签章结果文件上限均为 5368709120 字节，四个 operation 分别为 `virus_scan.begin.v1|virus_scan.chunk.v1|virus_scan.end.v1|virus_scan.abort.v1` 与 `esign_file.begin.v1|esign_file.chunk.v1|esign_file.end.v1|esign_file.abort.v1`；门户发票附件上限 52428800 字节，四个 operation 为 `portal.invoice_upload.begin.v1|portal.invoice_upload.chunk.v1|portal.invoice_upload.end.v1|portal.invoice_upload.abort.v1`。三者采用完全相同 DTO、状态机、背压与超时，不得另造协议。integration-gateway 不持数据库、KMS 或平台文件目录凭据，不消费 Outbox；push/e-sign/virus 只返回清洗结果。签章文件反向流给 job-worker 后，整批逐件进入「临时加密对象→长度/哈希/TYPE_SNIFF/STRUCTURE→按 `NONE|CUSTOMER_ICAP` 扫描→签章验签→数据库确认/发布」完整附件流水线。仅整批全部 `PUBLISHED` 才建签章关联并允许合同转 `SIGNED`；失败对象保持 `QUARANTINED`，合同不得转 `SIGNED`。
+
+F-55 的两个 MCP exchange operation 另用 `McpExchangeChunkStreamV1`，只借用 1 MiB 普通 framing 与 512 KiB decoded chunk 上限，不复用上述大文件 DTO/3600 秒时限。它按 manifest/request/response 三段、逐块 ACK、连续序号和端到端 hash 承载 request 1 MiB、response 8 MiB，绝对时限固定 30 秒；不新增同义 operation 或落盘恢复。
 
 ## 3. 数据库约定
 
@@ -277,7 +310,7 @@ pub enum ActionClass { Read, Write, Submit, Approve, Export }
 
 | 角色 | 用途 | 权限边界 |
 |---|---|---|
-| ep_app_rw | 运行期读写，由 core-server、job-worker、integration-gateway 经统一数据访问层持有 | 全部 schema 的表数据读写，无 DDL、无角色管理、无策略管理，非 SUPERUSER、非 BYPASSRLS |
+| ep_app_rw | 运行期读写，只由 core-server、job-worker 经统一数据访问层持有 | 全部 schema 的表数据读写，无 DDL、无角色管理、无策略管理，非 SUPERUSER、非 BYPASSRLS；integration-gateway 明确不持有 |
 | ep_analyst_ro | 只读分析池、常规报表与经营看板、高级只读 SQL | 只读，受 RLS 约束，独立连接上限与语句超时 |
 | ep_ops_ro | ops-agent 专用 | 只读运维、健康与积压相关视图 |
 | ep_migrator | 迁移 DDL 与自定义对象在线 DDL | 仅迁移窗口临时启用，启用与回收记入审计 |
@@ -304,7 +337,10 @@ pub enum ActionClass { Read, Write, Submit, Approve, Export }
 - 主键列名一律 `id`，类型 `uuid`，取值为应用侧生成的 UUIDv7。理由是时间有序使 B-tree 插入局部性好，且可在事务开始前生成以构造聚合内引用，避免往返取号。数据库侧不设默认值，缺失即为应用缺陷。
 - 外键列名为被引用表单数加 `_id`，如 `customer_id`、`sales_order_line_id`。
 - 同一 schema 内的引用建真实外键约束，`ON DELETE RESTRICT`，不使用级联删除。
-- 跨 schema 即跨模块的引用凡目标单一的，一律建真实外键并 `ON DELETE RESTRICT`；外键做成复合形式 `(legal_entity_id, <ref>_id)` 指向被引用表的 `(legal_entity_id, id)` 唯一键，跨法人引用因此由数据库强制，不再只靠写入前校验。被引用对象的建表迁移版本号更晚而无法在建表语句中直接声明的少数引用，由一条版本号晚于两侧建表迁移的 `ALTER TABLE ADD CONSTRAINT` 补建，该迁移放在引用方所属 schema 的目录下。保留逻辑引用列的只有三类，逐类登记，此外一律外键：多态来源单据引用，即 `ledger.vouchers` 与 `costing.cost_entries` 的 `source_document_type` 加 `source_document_id`、`inventory` 九张表的 `source_doc_id` 加 `source_doc_line_id`；平台侧跨越型引用，即 `approval_ref` 与 `release_package_id`；阶段 13 扩展对象与自定义字段指向业务表的引用。模块隔离由本文件第 1.3 节末条的一个仓储只访问自己模块的 schema 保证，与外键无关；模块停用是应用层状态，不删数据，不与 `ON DELETE RESTRICT` 冲突。application 层的跨模块契约调用保留，定位由跨模块引用完整性的唯一保证降级为给出可读错误码与业务状态判定的前置校验，引用存在性由外键兜底；SQLSTATE 23503 在 ep-adapter-db-pg 一处统一映射为一个错误码并记录约束名，按应用缺陷处理并告警，不作为用户可恢复错误。
+- 跨 schema 即跨模块的引用凡目标单一的，一律建真实外键并 `ON DELETE RESTRICT`；默认外键做成复合形式 `(legal_entity_id, <ref>_id)` 指向被引用表的 `(legal_entity_id, id)` 唯一键，跨法人引用因此由数据库强制，不再只靠写入前校验。被引用对象的建表迁移版本号更晚而无法在建表语句中直接声明的少数引用，由一条版本号晚于两侧建表迁移的 `ALTER TABLE ADD CONSTRAINT` 补建，该迁移放在引用方所属 schema 的目录下。
+- 用户与身份证据有两种固定物理形状，不得自行变体。业务表的负责人、审核人、受理人、处理人、确认人、操作者等用户列，以 `(legal_entity_id, <user_ref>)` 真实复合外键指向 `platform_authz.user_legal_entity_grants(legal_entity_id, user_id)`；`SYSTEM_PRINCIPAL_ID` 必须在每个法人各有一条永不物理删除的授权行。`platform_core.user_accounts`、`user_devices`、`sessions`、`reauth_challenges` 是不带 `legal_entity_id` 的全局身份证据表：引用其中会话、设备登记行或重新认证挑战的列仍必须建指向其主键的真实单列外键并 `ON DELETE RESTRICT`，同时由写用例在持锁事务内验证该证据归属当前用户与法人；这是一项外键形状例外，不是允许无外键逻辑引用。业务用户列不得直接外键到 `user_accounts`。
+- 允许不建外键的引用是封闭白名单，只有四组。第一组是带判别列、可能指向两个及以上目标表的显式多态引用；当前仅包括各阶段逐表登记的业务对象、来源单据、品项、付款申请引用、资金来源/目标与影响面目标/结果组合，至少含 `ledger.vouchers`、`costing.cost_entries`、`inventory` 九张表的来源单据组合、阶段 7 的五组来源/引用组合、阶段 10 的品项与资金来源/目标组合，以及 F-54 的影响面 `target/result` 组合；不得仅因列名叫 `ref_id` 或 `source_id` 就自动归入本组。第二组是平台跨越型证明 `approval_ref` 与 `release_package_id`。第三组是阶段 13 `ext` 扩展对象与自定义字段指向业务表的元数据驱动引用。第四组只有 F-50 明确裁定的 `invoice.invoice_reversals.linked_purchase_return_id`。每个多态组合必须在所属阶段表定义中同时写出判别列、封闭目标集合、NULL-safe 形状 CHECK 与写入时同法人校验；缺任何一项即不在白名单。除此之外出现跨 schema 无外键引用即为违规。
+- 模块隔离由本文件第 1.3 节末条的一个仓储只访问自己模块的 schema 保证，与外键无关；模块停用是应用层状态，不删数据，不与 `ON DELETE RESTRICT` 冲突。application 层的跨模块契约调用保留，定位由跨模块引用完整性的唯一保证降级为给出可读错误码与业务状态判定的前置校验，引用存在性由外键兜底；SQLSTATE 23503 在 ep-adapter-db-pg 一处统一映射为一个错误码并记录约束名，按应用缺陷处理并告警，不作为用户可恢复错误。
 - 任何跨法人的引用一律禁止，写入前校验两侧 `legal_entity_id` 相等。
 - 业务编号列：单据类为 `doc_no text`，档案类为 `code text`，唯一约束一律带法人，即 `(legal_entity_id, doc_no)`。
 
@@ -318,7 +354,7 @@ pub enum ActionClass { Read, Write, Submit, Approve, Export }
 
 ### 3.5 金额、数量与精度
 
-本组取值同时约束库存侧与财务侧，是规格第 17.3 章守恒与勾稽校验能够成立的前提。留待业务决策的部分只有税率可选值集合与账龄分档，见 PRD 的 U-D-04 与 U-D-11，其余由本基线定死。
+本组取值同时约束库存侧与财务侧，是规格第 17.3 章守恒与勾稽校验能够成立的前提。税率可选值集合与账龄分档也已关闭：U-D-04 固定出厂六档税率并允许行级多税率，U-D-11 固定出厂六档账龄并在阶段 11 迁入按法人分套的权威表；本组不再留任何业务决策给实现方。
 
 | 语义 | 数据库类型 | Rust 类型 | 说明 |
 |---|---|---|---|
@@ -332,7 +368,7 @@ pub enum ActionClass { Read, Write, Submit, Approve, Export }
 尾差归属固定为三条，写入本基线即为全阶段口径。
 
 - 出库金额等于移动加权平均单价乘出库数量并 round 到 2 位，数量账与金额账同源写入同一 round 后取值，因此库存金额账余额恒等于按 2 位累加的结果，与总账存货科目余额天然相等。
-- 移动加权平均单价是派生值，取库存金额余额除以结存数量并 round 到 6 位，除不尽产生的尾差留在金额余额中，不做单独调整分录，结存数量为零时单价归零。
+- 移动加权平均单价是派生值，取库存金额余额除以结存数量并 round 到 6 位，除不尽产生的尾差在仍有结存时留在金额余额中，不做单独调整分录；任何出库使该仓库该物料结存数量归零时，本次库存账面出库金额直接取锁前库存金额余额全额，金额余额与单价同时归零。物料采购退货同样采用这套当前账面价值：部分退货按移动加权平均单价计量，全部退清按余额全额；原收货暂估金额只用于 GRNI 消费，二者差额以有符号主营业务成本腿承接，不得在零结存下留下金额孤儿。
 - 价差拆分中，尚有库存部分与已出库部分各自 round 到 2 位，两者之和与总差额的尾差一律计入已出库部分即当期主营业务成本，理由是该部分不再经过存货科目，尾差留在此处不会破坏存货金额账与数量账的一致性。
 
 ### 3.6 软删除口径
@@ -342,7 +378,7 @@ pub enum ActionClass { Read, Write, Submit, Approve, Export }
 - 业务单据的注销、作废、关闭一律走 `status` 状态机，不加 `deleted_at`。
 - 档案类的停用用 `is_active boolean not null default true` 加 `deactivated_at timestamptz null`，停用不影响历史引用。
 - 只有两类对象允许删除标记：`platform_file.attachment_objects` 的 `deleted_at`，以及低代码配置对象的 `retired_at`。物理删除只能由处置流程经专用路径与专用账号发起。
-- 任何 `DELETE` 语句在业务 schema 上被禁止，由 CI 的 SQL 静态检查拦截；仅允许在 `platform_msg` 的过期幂等键与 `platform_ops` 的过期指标快照上执行按期清理。
+- 任何 `DELETE` 语句在业务 schema 上被禁止，由 CI 的 SQL 静态检查拦截。按期物理清理的封闭白名单只有：`platform_msg.idempotency_keys` 的过期行、`platform_msg.outbox_events` 的 `DONE` 行、`platform_msg.inbox_consumptions`、超过保留期且已读的 `platform_msg.notifications` 及其 `platform_msg.notification_deliveries`、超过保留期且已结束的 `platform_flow.process_instances` 及其 `process_steps` 与 `process_timers`、终态 `platform_file.upload_sessions` 及其 `upload_parts`，以及 `platform_ops` 的过期指标快照。`inbox_consumptions` 的保留期必须严格长于对应 `DONE` Outbox 的保留期，父子表按外键逆序分批删除；`audit_events`、`audit_segments`、`audit_anchors`、`dead_letters`、`attachment_objects`、`attachment_versions`、`scan_results` 与 `process_compensations` 永不进入本白名单。新增清理对象必须先修订本条、数据字典与正反 SQL 静态检查，不得以“平台表”作为无限兜底类。
 
 ### 3.7 乐观锁
 
@@ -374,21 +410,21 @@ create policy rls_<table>_le on <schema>.<table>
 
 ### 3.9 迁移工具与迁移命名
 
-迁移工具固定为 refinery 0.8 系列，理由是它支持自定义 schema 与历史表名、支持非事务迁移路径，与规格“每个模块独立迁移目录、独立数据库角色”的要求不冲突。全库只有一个 Runner 与一张历史表 `platform_core.schema_history`，不再按模块建立独立 Runner，`ep-migrate status` 由输出 24 张历史表版本改为输出单一版本。`ep-migrate` 中显式固定 refinery 的 `abort_divergent` 与 `abort_missing` 取值，开发库允许乱序到达，发布制品禁止。
+迁移工具固定为仓内 `tools/ep-migrate` 自建 Runner，不依赖 refinery；原因是冻结的 14 位时间戳版本号超出 refinery 0.8 的 `INT4` 版本空间，详见 ADR-0013。全库只有一个 Runner 与一张 `platform_core.schema_history`，常规迁移逐文件单事务执行，`concurrent/` 目录逐文件自动提交执行；两条路径共用同一解析、校验和、缺失/分歧判定与历史写入实现。历史表 `version` 固定为 `BIGINT`；发布制品发现缺失或分歧立即失败，开发库只允许尚未施加的新版本按全局时间戳顺序到达，不允许改写已登记历史。 具体版本、文件名、归属目录与 EXISTING/PLANNED 状态只以[数据库迁移目录](../../../migration-catalog.md)为准。
 
 - 迁移文件路径 `db/migrations/<schema>/`，24 个目录保留，历史表只有 `platform_core.schema_history` 一张。
-- 文件命名 `V<YYYYMMDDHHMMSS>__<schema>_<slug>.sql`，版本号必须是真实时间且全局唯一、严格递增，由 `xtask sqlcheck` 断言；slug 为小写 snake_case 动词短语，如 `V20260903153000__sales_add_order_line_delivery_batch.sql`。伪时间戳当序号用不能提供插入免疫，既有的重复版本号与非法分位一律按本条重取。
+- 文件命名 `V<YYYYMMDDHHMMSS>__<schema>_<slug>.sql`，版本号必须是真实时间且全局唯一、严格递增，由 `xtask sqlcheck` 断言；slug 为小写 snake_case 动词短语，如 `V<YYYYMMDDHHMMSS>__sales_add_order_line_delivery_batch.sql`。伪时间戳当序号用不能提供插入免疫，既有的重复版本号与非法分位一律按本条重取。
 - 每个迁移文件头固定 `SET ROLE ep_mod_<schema>;`，使第 3.1 节的属主与默认权限在实际执行者为 `ep_migrator` 时仍然成立；第 3.1 节不使用 `SET ROLE` 做隔离一句只约束运行期连接，不约束迁移窗口。
 - 一个文件只做一件事，不得在同一文件里既建表又回填数据。数据回填单独成文件，命名 slug 以 `backfill_` 开头。
 - 迁移一律可离线执行，禁止在迁移中调用应用代码。
 - 执行顺序由单一全局 Runner 按文件版本号排序，`db/migrations/order.toml` 撤销。跨 schema 的迁移放在其主要创建对象所属的 schema 目录下，正确性由版本号必须晚于其全部被引用对象保证，并由空库全量执行在 CI 中验证；其后编号顺延这一整类连锁改动随之取消。
 - 每个迁移必须成对提供回退说明，写在文件头注释的 `-- rollback:` 段中；无法安全逆向的迁移必须注明只能用升级前备份或影子表回退，与规格第 18 章一致。
-- 在线变更边界照抄规格第 7.4 章：新增表、新增可空列、新增索引、放宽长度可在线执行，索引一律 `CREATE INDEX CONCURRENTLY`；改列类型、收紧非空、重建主键进停机窗口。单次在线变更锁持有上限 5 秒，迁移执行上限 30 分钟，迁移会话固定 `SET lock_timeout = '5s'` 与 `SET statement_timeout = '30min'`。
+- 在线变更边界照抄规格第 7.4 章：新增表、新增可空列、新增索引、放宽长度可在线执行；新建空表的主键、唯一约束与索引随建表事务使用普通 `CREATE INDEX`，只有向已经可能承载存量数据的表追加索引才必须拆成 `concurrent/` 下的独立非事务文件并使用 `CREATE INDEX CONCURRENTLY`，不得把 `CONCURRENTLY` 混入常规事务迁移。改列类型、收紧非空、重建主键进停机窗口。单次在线变更锁持有上限 5 秒，迁移执行上限 30 分钟，迁移会话固定 `SET lock_timeout = '5s'` 与 `SET statement_timeout = '30min'`。
 
 ### 3.10 索引命名与基线索引
 
 - 主键 `pk_<table>`，唯一 `ux_<table>_<col…>`，普通 `ix_<table>_<col…>`，外键 `fk_<table>_<ref_table>`，检查 `ck_<table>_<rule>`，策略 `rls_<table>_le`，序列 `sq_<table>_<col>`。
-- 每张业务表的基线索引固定三条：`pk_<table>`；`ix_<table>_legal_entity_id_created_at`，用于列表默认排序与法人内扫描；单据类另加 `ux_<table>_legal_entity_id_doc_no`。
+- 每张业务表的基线索引固定三条：`pk_<table>`；`ix_<table>_legal_entity_id_created_at`，用于列表默认排序与法人内扫描；单据类另加 `ux_<table>_legal_entity_id_doc_no`。唯一列名例外是 `platform_audit.audit_events`：该表按第 9.4 节没有 `created_at`，以 `ix_audit_events_le_occurred` 覆盖 `(legal_entity_id, occurred_at, id)`，不得为套模板新增第二个时间列。
 - 首版不使用函数索引、部分索引与 JSON 路径索引，照抄规格第 7.4 章的公共能力基线。
 - 全表扫描的容忍上限：任何进入附录 A.1 度量清单的查询在基准数据集上不得出现顺序扫描，阶段计划必须给出对应查询的 `EXPLAIN` 证据。
 
@@ -412,17 +448,17 @@ create policy rls_<table>_le on <schema>.<table>
 
 - 单据类表另加 `doc_no text not null` 与 `status text not null`，`status` 带 CHECK 约束枚举该单据状态机的全部取值。
 - 档案类表另加 `code text not null` 与 `is_active boolean not null default true`、`deactivated_at timestamptz null`。
-- 会计相关表另加 `posting_date date` 或 `business_date date` 与 `accounting_period_id uuid`，取值规则见第 3.4 节。
+- 只有凭证、子账权威条目及明确承担期间归属的会计事实表同时带 `business_date date` 与 `accounting_period_id uuid`；来源业务登记单只带其权威业务日期或 `posting_date date`，在正式入账事务内经 `AccountingPeriodResolver` 唯一解析期间，不为套公共列提前复制 `accounting_period_id`。逐表取值规则见第 3.4 节与所属阶段数据字典。
 - 仅追加表不带 `row_version`、`updated_at`、`updated_by`。是否带 `reverses_id uuid null` 由该表有无业务冲销或更正语义决定：有的必须带，并在表定义处写明它指向哪张表的哪条记录；没有的一律不得带，不得为满足列约定而保留一个恒为 NULL 的该列。每张仅追加表由所属阶段在其表定义处逐表写明取舍与理由，本节不再列举表名；新增仅追加表按第 12 节纪律先登记再实现。`platform_audit.audit_events` 的列集以第 9.4 节为准，本节不另给它加列。
-- 不设 `tenant_id` 或 `customer_id` 列。理由是规格第 7.1 章已规定每个客户一个独立事务数据库实例，客户隔离由部署承担，再加一列只会制造第二套隔离口径与两处越权测试面。
+- 不设承载部署客户隔离的 `tenant_id` 或 `deployment_customer_id` 列。规格第 7.1 章规定每个部署客户一个独立事务数据库实例，不能再造第二套部署隔离口径；同一法人内引用 CRM 业务客户的外键列 `customer_id` 合法，并须按复合外键规则同时带 `legal_entity_id`。
 - 附件引用不落在业务表列上，一律经 `<主表单数>_attachments` 关联表，列为 `owner_id`、`attachment_object_id`、`purpose`、`sort_no` 与公共列。
 
 ## 5. API 契约
 
 ### 5.1 传输与路径
 
-- 传输为 HTTP/1.1 与 HTTP/2，TLS 1.3 由反向代理终结，进程间为明文回环。载荷为 `application/json; charset=utf-8`，字符集 UTF-8。首版不提供 gRPC 与 GraphQL 对外接口。
-- 内部四端路径前缀 `/api/v1`，供应商门户对外路径前缀 `/portal/v1`，门户请求由 portal-gateway 转成 core-server 的 `/api/v1/portal/...` 受控能力 API。
+- 对外传输为 HTTP/1.1 与 HTTP/2，TLS 1.3 由反向代理终结；产品进程间业务 IPC 只走 DACL 命名管道，不走回环 HTTP/TCP。除附件正文外，对外载荷固定为 `application/json; charset=utf-8`，字符集 UTF-8；附件分片上传 `/api/v1/platform/attachments/uploads/{session_id}/parts/{part_no}` 与附件版本正文下载 `/api/v1/platform/attachments/{id}/versions/{version_no}/content` 两类路径固定使用 `application/octet-stream`，这是唯一对外二进制正文例外。首版不提供 gRPC 与 GraphQL 对外接口。
+- 员工四端路径前缀 `/api/v1`，供应商门户对外路径前缀 `/portal/v1`。portal-gateway 把门户路由映射到 `\\.\pipe\ep-core` 的具名 operation 并调用同一个 core 用例，不在产品进程之间重新发起 `/api/v1/portal/...` HTTP 请求。
 - 资源路径形如 `/api/v1/<module>/<resource-plural>` 与 `/api/v1/<module>/<resource-plural>/{id}`，路径段小写，多词用连字符，如 `/api/v1/sales/sales-orders/{id}/lines`。
 - 非 CRUD 的领域命令一律写为 `POST /api/v1/<module>/<resource-plural>/{id}/actions/<verb>`，verb 用连字符小写动词，如 `actions/submit-for-approval`、`actions/confirm-delivery`、`actions/void`。不使用动词化的资源名，也不使用查询参数表达动作。
 - 批量操作写为 `POST /api/v1/<module>/<resource-plural>/actions/<verb>-batch`，单次上限 200 条，超出返回 `VALIDATION`。
@@ -475,10 +511,13 @@ create policy rls_<table>_le on <schema>.<table>
 
 ### 5.4 幂等键
 
-- 全部 POST、PUT、PATCH、DELETE 请求必须带 `Idempotency-Key` 头，取值为客户端生成的 UUIDv7，缺失即返回 `VALIDATION` 与错误码 `PLATFORM.IDEMPOTENCY.KEY_REQUIRED`。
+- 除下述固定认证前矩阵与 F-55 一次性 secret 端点外，全部 POST、PUT、PATCH、DELETE 请求必须带 `Idempotency-Key` 头，取值为客户端生成的 UUIDv7，缺失即返回 `VALIDATION` 与错误码 `PLATFORM.IDEMPOTENCY.KEY_REQUIRED`。
 - 幂等作用域为四元组：法人、用户、端点、键值。存储表 `platform_msg.idempotency_keys`，列含 `key`、`legal_entity_id`、`user_id`、`endpoint`、`request_hash`、`response_status`、`response_body`、`created_at`、`expires_at`，保留 7 天，唯一约束在四元组上。
 - 重复请求且 `request_hash` 相同时返回首次结果，并带响应头 `Idempotent-Replay: true`。键相同而 `request_hash` 不同时返回 409 与 `PLATFORM.IDEMPOTENCY.PAYLOAD_MISMATCH`。
 - 幂等键的写入与业务写入在同一数据库事务内，不使用外部缓存。
+- 唯一落库豁免是附件分片 PUT `/api/v1/platform/attachments/uploads/{session_id}/parts/{part_no}`：它仍必须带合法 `Idempotency-Key`，但服务端以数据库唯一键 `(legal_entity_id, session_id, part_no)` 加 `part_hash` 作为自然幂等事实，不写 `platform_msg.idempotency_keys`；同一分片号同哈希回放首次结果，不同哈希返回 409 与 `PLATFORM.IDEMPOTENCY.PAYLOAD_MISMATCH`。除这一具名端点外，不得以“自然幂等”为由新增豁免。
+- 认证前写端点的唯一头豁免由不可配置的 `PRE_AUTH_ENDPOINTS` 逐头矩阵承载：`POST /api/v1/platform/sessions/actions/sign-in`、`POST /api/v1/platform/sessions/actions/complete-mfa` 与 `POST /api/v1/portal/sessions/actions/sign-in` 均豁免 `Authorization`、`X-Legal-Entity-Id`、`Idempotency-Key`。complete-mfa 以数据库中一次性挑战令牌的条件消费防重放，不把新会话令牌原文写入通用幂等响应缓存；成功响应丢失后重新开始登录。除这三个具名端点外不得新增**认证前**免幂等写端点。
+- 已认证的一次性 secret 响应闭集 `SENSITIVE_ONE_TIME_RESPONSE_ENDPOINTS` 首版恰一项：`POST /api/v1/platform/mcp-human-grants/actions/issue`。该端点禁止 `Idempotency-Key`、不写通用 response cache；携带该头以既有 `PLATFORM.REQUEST.INVALID_PAYLOAD` 和字段级原因拒绝，明文 token 只返回一次，响应丢失后撤销/过期再签发。它不是 `PRE_AUTH_ENDPOINTS`、不豁免 Authorization/法人/CSRF/权限，也不能类推到其他写 API。
 
 ### 5.5 错误码结构与分类
 
@@ -489,12 +528,14 @@ create policy rls_<table>_le on <schema>.<table>
 | VALIDATION | 输入校验错误，定位到字段 | 400 | false |
 | BUSINESS_CONFLICT | 业务冲突，含版本冲突、状态机非法迁移、守恒与勾稽不成立 | 409 | false |
 | PERMISSION_DENIED | 权限或策略拒绝 | 403，无权访问已存在记录时统一 404 | false |
-| EXTERNAL_SYSTEM | 外部系统故障，首版仅电子签章 | 502 | true |
+| EXTERNAL_SYSTEM | 外部依赖或受控远端 MCP 故障；首版外部业务主系统类别仍仅电子签章 | 502 | true |
 | INFRASTRUCTURE | 基础设施故障，含数据库不可用、磁盘写满、限流 | 503，限流 429 | true |
 
 错误码为三段点分大写，形如 `<MODULE>.<RESOURCE>.<REASON>`，模块段取第 1.2 节的模块码或 `PLATFORM`，资源段取表名的单数大写，原因段为动宾短语。全量错误码集中登记在 `docs/error-codes.md` 与 `ep-foundation` 的 `error::codes` 常量表，两处由 CI 校验一致，重复码即构建失败。
 
 存在性泄漏的统一处理：对当前安全上下文不可见的记录，读、写、删一律返回 404 与 `PLATFORM.AUTHZ.NOT_FOUND_OR_DENIED`，不区分不存在与无权，理由是规格第 15.1 章要求权限拒绝不泄露无权数据。只有当前用户对该对象类型完全无权时才返回 403 与 `PLATFORM.AUTHZ.OBJECT_FORBIDDEN`。
+
+F-56 的 `LicenseAdmissionGate` 是全部入口共享的前置判定，不由各业务 handler 自行计算日期或重复映射错误。HTTP 顺序固定为 route/header/body-size guard → session/device/法人/权限 → strict payload parse 或受控对象类型查找 → 许可证 effect 判定 → 幂等占位与业务事务；认证前身份入口在凭证验证成功后、签发会话前判定。scheduler/Outbox/审批执行器在领取或产生新外部副作用前调用同一判定。effect exact-set 是 F-56 的十值 `BusinessWrite|BusinessApproval|IntegrationOutbound|AutomationStart|ReadReportAuditBackupExport|IdentitySecurityDisposition|ComplianceDisposition|InFlightConvergence|LicenseGrantRecovery|ModuleDisableRecovery`：前四类在全局 `RESTRICTED`，或有效 LIST scope 未包含本次已鉴权目标法人时，以 `PLATFORM.LICENSE.RESTRICTED=BUSINESS_CONFLICT/409/false` 拒绝，后者不改变部署级全局状态；中间四类在两种情况下都允许；最后两类只承载 F-56 明列的 `LICENSE_GRANT` 全恢复链与 `MODULE_PACKAGE:DISABLE` 全链，仍经原权限、签名、审批与审计后允许。InFlightConvergence 不允许首次/重试外发、领取新任务或任何新受限副作用。不能用 HTTP method 猜 effect：全部外部 route 与 core/worker 的 job/event/approval-owner/outbound-operation 必须用 F-56 `Fixed|ConfigRelease|McpInbound` binding 显式登记，实际入口集合与 admission registry 缺/多/重复均由 xtask 和只读静态 Blocking 自检失败；该自检不读取 current license，故不与 Restricted 可启动冲突。该码属于所有适用 operation 继承的 shared admission error，不要求在每个 route-local OpenAPI `x-error-codes` 重复列出；局部列表仍只描述进入 handler 后的精确错误闭集，catalog 校验必须把 shared 与 local 两层合并后验证，且禁止局部用其他码改写受限运行。
 
 ### 5.6 鉴权头与版本化
 
@@ -505,7 +546,7 @@ create policy rls_<table>_le on <schema>.<table>
 | Authorization | 是 | `Bearer <opaque-session-token>`，不透明会话令牌，长度 43 的 base64url。不使用 JWT，理由是高风险操作要求即时撤销与设备绑定，自包含令牌无法在单机集中撤销点之外做到 |
 | X-Legal-Entity-Id | 是 | 调用方声明的目标法人，服务端必须对照该用户与设备的授权法人集合校验后才写入安全上下文，校验失败直接拒绝 |
 | X-Device-Id | 是 | 已登记设备标识，未登记设备拒绝访问业务数据 |
-| X-Client | 是 | 取值 `win`、`mac`、`ios`、`android`、`portal`、`ops` |
+| X-Client | 是 | 普通 HTTP 取值 `win`、`mac`、`ios`、`android`、`portal`、`ops`、`server_admin`；`mcp` 只由 `/mcp` grant middleware 固定，外部自填无效 |
 | X-Request-Id | 否 | 缺失时服务端生成，一律在响应头回显 |
 | Idempotency-Key | 写请求必填 | 见第 5.4 节 |
 | X-Reauth-Token | 高风险操作必填 | 重新认证凭证，单次有效，签发后 5 分钟过期，绑定待签内容摘要 |
@@ -513,13 +554,15 @@ create policy rls_<table>_le on <schema>.<table>
 
 响应头固定回带 `X-Request-Id`、`X-Trace-Id`，弃用接口另带 `Deprecation` 与 `Sunset`。
 
+上表必填规则的唯一认证头例外是前述 `PRE_AUTH_ENDPOINTS` 矩阵加 `GET /api/v1/platform/identity/me/legal-entities`：后者已经认证，只豁免 `X-Legal-Entity-Id`。矩阵按完整 method/path 精确匹配，不接受前缀、通配符或配置扩展；四项之外的端点缺任一必填头均直接拒绝。
+
 版本化策略：URL 承载主版本。向后兼容的变更即新增可选请求字段、新增响应字段、新增枚举取值的接收侧，不升版本；破坏性变更即删除或重命名字段、收紧校验、改变默认值语义、删除枚举取值，必须升主版本。同时在线的主版本不超过三个，与规格第 10.3 章的当前版本及前两个主版本一致。枚举取值扩展时，客户端必须容忍未知取值并按“未知”降级展示，不得报错。
 
 ## 6. 领域事件与 Outbox
 
 ### 6.1 事件命名与载荷
 
-事件类型为四段，形如 `<module>.<aggregate>.<past_participle>.v<major>`，全小写点分，如 `clm.contract.effective.v1`、`sales.delivery.confirmed.v1`、`inventory.receipt.posted.v1`、`ledger.voucher.posted.v1`、`finance.payment.registered.v1`。事件名一律用已完成时态，禁止用命令式动词。全量事件登记在 `docs/event-catalog.md`，新增事件必须先登记再实现。
+事件类型为四段，形如 `<module>.<aggregate>.<past_participle>.v<major>`，全小写点分，如 `clm.contract.effective.v1`、`sales.delivery.confirmed.v1`、`inventory.stock_movement.posted.v1`、`ledger.voucher.posted.v1`、`finance.payment.registered.v1`。事件名一律用已完成时态，禁止用命令式动词。全量事件登记在 `docs/event-catalog.md`，新增事件必须先登记再实现。
 
 载荷结构固定为信封加业务体，信封字段不得增删。
 
@@ -578,29 +621,33 @@ create policy rls_<table>_le on <schema>.<table>
 
 ### 7.2 敏感配置的载体
 
-- 数据库口令、备份加密密钥、审计签名私钥、TLS 私钥、电子签章凭据一律不出现在配置文件与环境变量中。配置里只写引用，形如 `secret://db/app_rw#3`，井号后为版本。
-- 引用解析到内置机密库，路径 `C:\EP\secrets\`，权限位换 NTFS ACL：该目录须断继承并显式设 DACL，只授予对应进程的虚拟账户，不保留 `BUILTIN\Users` 一类的继承 ACE，进程启动时须核对该目录的 DACL，不得只建不查（`%ProgramData%` 的默认继承 ACL 对本机 `BUILTIN\Users` 可读，不断继承即等于把机密库对全机可读），内容以内置 KMS 主密钥信封加密；客户使用自有硬件密码机时改由 HSM 载体解封，两种载体的接口相同，即 `ep_foundation::port::kms::KmsBackend`，其 `BuiltinKmsBackend` 与 `HsmKmsBackend` 两个载体实现在 `ep-adapter-kms`，照抄规格第 12.3 章。云 KMS 首版不支持。
-- 内存中一律用 `secrecy::SecretString` 包装，禁止实现 Debug 与 Display，禁止进入日志、错误消息与指标标签。
-- 机密轮换不需要重启：进程监听机密库的版本变更并在下次取用时使用新版本，旧版本保留一个轮换窗口。
+- 数据库口令、备份加密密钥、审计签名私钥与 TLS 私钥一律不出现在配置文件与环境变量中，配置只写严格版本引用 `secret://<domain>/<name>#<version>`。电子签章及 F-55 MCP connector 的零 KMS 进程凭据是唯一 `wincred://` 例外；KMS 自举前的 HSM PIN 只用 `bootstrap://`。三种 ref 是不同强类型，互不接受。
+- 生产 `secrets.provider` 闭集与默认值均只有 `kms`；Stage 1 `FileSecretProvider` 仅属历史与受控迁移输入，不进入常驻产品二进制。`SecretProvider` 只做 ref/recipient/版本/载体定位，`SecretUnsealer` 才返回明文；`KmsBackend` 继续负责原数据 KMS 与字段/附件密钥，不得把三者合成一个无边界接口。终态 ABI、`EPS1` 二进制信封、AAD、大小、轮换、迁移和 release gate 以 ADR-0007 为唯一出处。
+- builtin 数据 KMS 的 `C:\EP\kms\master.key` 只由 core-server 与 job-worker 使用，不得扩 ACL 给系统机密 recipient。系统机密库的六个 recipient `ep-core|ep-worker|ep-ops|ep-archive|ep-backup|ep-migrate` 各有一个独立 32-byte KEK，以 DPAPI machine scope 和绑定 deployment/recipient/key-version 的 additional entropy 封装在固定 bootstrap 路径；HSM 后端则每 recipient 使用独立 object。`secret://` 信封落在 `C:\EP\secrets\<recipient>\<sha256(ref)>.eps1`，目录与文件断继承且只授对应服务、SYSTEM、Administrators，进程启动时读回 owner/DACL/reparse/ADS/hardlink/regular-file 事实并失败关闭。云 KMS 首版不支持。
+- `ep-secretctl` 是唯一 writer 与唯一 legacy reader，顶层命令闭集固定为 ADR-0007 的八项并进入 SBOM；`put` 只用无回显本机 console 二次确认，拒绝重定向 stdin/argv/env/file，只有 `migrate` 可读受控 legacy 明文文件。运行时进程只读；legacy、quarantine 或 staging 任一残留都阻止生产发布。
+- 内存 secret 使用 `secrecy::SecretBytes` 或 `SecretString`，不得实现 Clone、Debug、Display 或 Serialize，禁止进入日志、错误、指标、审计或 receipt；所有临时 buffer 每条路径显式 zeroize。
+- 轮换必须显式改签配置引用，运行时不监听目录、不自动追随 `latest`：新版本先 put/verify，签名配置切到明确 `#version`，全 recipient ACK 后才 retire 旧版本，最短兼容窗口 24 小时。
 
 ### 7.3 启动自检
 
-进程启动时按序执行下列自检。每项带 severity，取值域只有 Blocking 与 Degrading 两个。Blocking 项失败即以退出码 78 退出，并把失败项写入 stderr 与 `platform_ops` 台账（数据库不可用时只写 stderr）；Degrading 项失败不阻止启动，改为经 `ep-platform-obs` 的 `DegradationLedger` 开一个降级窗口、按规格第 15.3 章持续告警、并在健康端点显式呈现该项未通过，每个 Degrading 项必须在下方各自写明运行期后果。判读运行期可变业务数据行的自检项一律取 Degrading，不得作为启动失败条件，理由是这台服务器没有备节点，用一次数据不一致换八个进程全部拒绝启动，是把可修复的账务偏差升级为整机停机。取 Blocking 的只有判读配置、二进制、迁移版本、密钥与目录一类装配正确性的项。`--check` 模式不适用本条降级，Blocking 与 Degrading 任一不通过均以非零码退出；部署与升级的闸门落在 `--check`，不落在进程启动。
+进程启动时按序执行下列自检。每项带 severity，取值域只有 Blocking 与 Degrading 两个。Blocking 项失败即以退出码 78 退出，并把失败项写入 stderr 与 `platform_ops` 台账（数据库不可用时只写 stderr）；Degrading 项失败不阻止启动，改为经 `ep-platform-obs` 的 `DegradationLedger` 开一个降级窗口、按规格第 15.3 章持续告警、并在健康端点显式呈现该项未通过，每个 Degrading 项必须在下方各自写明运行期后果。判读运行期可变业务数据行的自检项一律取 Degrading，不得作为启动失败条件，理由是这台服务器没有备节点，用一次数据不一致换九个产品进程全部拒绝启动，是把可修复的账务偏差升级为整机停机。取 Blocking 的只有判读配置、二进制、迁移版本、密钥与目录一类装配正确性的项。`--check` 模式不适用本条降级，Blocking 与 Degrading 任一不通过均以非零码退出；部署与升级的闸门落在 `--check`，不落在进程启动。
 
-自检项按注册名标识，不用序号称呼。注册表为 `SelfCheckRegistry`，位于 `crates/platform/runtime/src/selfcheck/registry.rs`，注册项为 `SelfCheckItem { name, title, severity, run }`，name 为 kebab-case，由阶段 1 交付。下列十项是基线项，注册顺序即执行顺序，报告按注册顺序输出，基线十项在前。不持有常规数据库连接的进程对全部 SQL 类自检项一律标 NotApplicable，不判成败，archive-writer、backup-writer、portal-gateway 与 plugin-host 属此类；全部进程共有这一说法撤销。
+自检项按注册名标识，不用序号称呼。注册表为 `SelfCheckRegistry`，位于 `crates/platform/runtime/src/selfcheck/registry.rs`，注册项为 `SelfCheckItem { name, title, severity, run }`，name 为 kebab-case，由阶段 1 交付。下列十项是基线项，注册顺序即执行顺序，报告按注册顺序输出，基线十项在前。不持有常规数据库连接的进程对全部 SQL 类自检项一律标 `NotApplicable`、不判成败，终态精确闭集为 `portal-gateway|integration-gateway|plugin-host|archive-writer|backup-writer|ai-inferer` 六个；其中 `ai-inferer` 由 F-55 Task 4 同批加入，非 SQL 的配置、机密、模型包、目录与资源自检仍照常执行。全部进程共有这一说法撤销。
 
 - `config-parsed`：配置解析成功且无未知键。
 - `database-reachable`：事务数据库可达，服务端版本为 PostgreSQL 16.x，`timezone` 为 UTC，`max_connections` 不低于第 2 节的峰值 52，`max_wal_senders` 不低于 4，`max_replication_slots` 不低于 3。
 - `migration-version-matched`：迁移历史版本与二进制期望版本一致，不一致即拒绝启动，任何进程都不得在启动时自动执行迁移。
 - `rls-enabled-and-forced`：全部带法人列的表均已 `ENABLE` 且 `FORCE` 行级安全，且运行期账号不具备 `BYPASSRLS` 与 `SUPERUSER`。
 - `runtime-role-privileges-bounded`：运行期账号不具备 DDL、角色管理与策略管理权限。
-- `secrets-resolvable`：机密全部可解引用，KMS 或 HSM 可用，每个法人的数据加密密钥域存在。
+- `secrets-resolvable`：只判当前进程适用的本地 ref、bootstrap、recipient 隔离、信封和 KMS/HSM 解封路径，取 Blocking；零数据库进程仍执行此项中适用的非 SQL 判定，不得因 SQL 自检 N/A 而跳过。
 - `audit-chain-verifiable`（Degrading）：审计链最近一段可读，最近一次段根签名可验证，最近锚定时间在约定间隔内。不通过时登记暴露窗口并持续告警后继续启动，理由是拒绝启动不能修复断链，而修复的唯一手段恰是人工介入。
 - `file-store-writable`：文件存储路径可写、不具备覆盖与原地删除权限、剩余空间不低于阈值。
 - `clock-skew-within-limit`：系统时钟与授时源偏差小于 1 秒。
 - `offsite-sink-requirements`（Degrading）：服务器之外落点的三项最低要求判定。不满足时不阻止启动，但以降级状态启动，并按规格第 15.3 章持续告警、记录暴露窗口、按依据枚举展示该部署当前的 RPO，暴露窗口经 `ep-platform-obs` 的 `DegradationLedger` 登记。
 
 各阶段追加的自检项同样为 kebab-case 注册名，注册顺序排在基线十项之后，追加项名与其 severity 在各阶段计划中登记，全量清单以总览第 4.3 节 C-25 行为唯一出处。任何阶段不得新增取 Blocking 且判读业务数据行的自检项；凡能表达为写入侧约束的，一律下沉到写入路径，不在每次启动复判。任何阶段不得再以序号称呼自检项。
+
+法人数据密钥域覆盖率不再混入 `secrets-resolvable`。阶段 2 交付独立 `legal-entity-key-domain-coverage` 的 Degrading 判读算法、trait provider 与结构化结论；它只报告缺失法人及运行期后果，只有目标法人完全没有 `key_domains` 行时返回 `PLATFORM.KEY_DOMAIN.NOT_PROVISIONED`，一旦存在 `PROVISIONING|ACTIVE` 行而 KMS/KEK/DEK/readback/16-key 矩阵或 activation audit 不可用/不一致则返回 `PLATFORM.KEY_DOMAIN.KEY_UNAVAILABLE`。由于不可改的 `V20260901104500` 与 Stage 2 Rust 枚举只有三个初始 kind，阶段 2 不注册该检查，也不调用 `DegradationLedger::open`，更不得临时复用 `PORT_NOT_IMPLEMENTED`。Stage 14a0 先把 Rust 接受域、mock 与 contract fixture 扩为终态 21 项但不向旧三值数据库写新 kind；只有 Stage 14 自有 28-file roster 与 Stage 6 后续两项组成的全局 pre-F55 30-file chain 全部具备、可按版本作为同一不可拆批次执行时，才执行其中 `V20261023092500` 把数据库 CHECK 扩为同序 21 项并部署匹配 Rust，随后注册本 provider 并真实开/关 `LEGAL_ENTITY_KEY_DOMAIN_UNAVAILABLE`；不得提前单独 apply 092500，Stage 14b 只形成真实证据/最终发布判定。该终态 kind 不可抑制。零 SQL 进程对该独立检查为 NotApplicable，但不影响上一项非 SQL 机密检查。
 
 `--check` 模式只执行已注册的全部自检项并按注册顺序输出结构化报告后退出，不监听任何端口，用于部署验收与升级前置校验。报告按注册名索引，不按序号索引。
 
@@ -654,7 +701,7 @@ create policy rls_<table>_le on <schema>.<table>
 ### 9.3 追踪
 
 - 采用 W3C traceparent，128 位 trace id。默认只把 trace_id 与 span_id 记入日志，不外发。客户已部署 OpenTelemetry 收集器时可开启 OTLP 导出，默认关闭。
-- 采样固定为：错误请求、六类高风险操作、关账与对账任务一律 100%，其余 10%。
+- 采样固定为：错误请求、`HighRiskOperation` 七个枚举值（六类业务高风险操作加 `DATA_MIGRATION`）、关账与对账任务一律 100%，其余 10%；trace sampler fixture 必须逐项断言这七个值均为 100%，不得只覆盖六类业务操作。
 - 门户请求在 portal-gateway 新建 trace，并把公网侧的关联标识放入 `X-Correlation-Id`，不接受外部传入的 traceparent，理由是公网可控性不足，外部注入的追踪上下文会污染内部链路。
 
 ### 9.4 审计事件与业务日志的区分
@@ -734,7 +781,7 @@ let result = uow.transact(ctx, |tx| async move {
 
 ## 11. 本基线一并定死的若干全局取值
 
-下列事项规格未定义，PRD 附录乙已登记为待决，但它们同时是数据库列定义与接口校验的前提，不能等到各阶段各自取值，因此在此定死技术侧取值。业务侧若后续另有决策，以决策为准并回写本节。
+下列事项曾因规格未定义而登记在 PRD 附录乙，现已全部冻结为本节取值。开发直接采用，不等待实施方选择；未来变更须走正式规格修订并同步数据、接口和验收，不能只改实现。
 
 ### 11.1 编号规则（对应 U-A-01、U-A-02）
 
@@ -762,8 +809,8 @@ let result = uow.transact(ctx, |tx| async move {
 ### 11.6 会话与并发（对应 U-L-01、U-L-02）
 
 - 会话令牌有效期 8 小时，滑动续期，空闲 30 分钟失效；单用户同时活跃会话上限 3 个，超出时最早的会话失效并写入审计。
-- 并发达到 20 时新会话进入等待队列，等待超过 10 秒返回 503 与 `PLATFORM.CAPACITY.CONCURRENCY_LIMIT`，界面明示当前并发已达上限，不静默降级、不拒绝已登录用户的在途请求。这是技术侧的承载方式，是否改为不限制只记录留待产品负责人决策。
-- 同步等待上限 8 秒，超过即转为后台任务并返回任务回执，任务完成由站内通知送达。关账、批量导入、报表导出一律按后台任务表达。
+- 最近 60 秒内有请求的不同用户数超过 20 人时，不拒绝登录、不排队、不拒绝写入；只记录指标、发出告警并把超限区间标记为性能 SLA 不适用，管理端每 5 秒刷新。单用户最多 3 个有效会话，第 4 个建立时撤销最早会话。该活跃用户规模口径与按瞬时 HTTP 请求数保护进程资源的并发闸门彼此独立，二者不得共用计数器或拒绝条件。
+- 普通业务同步等待上限 8 秒，超过即转为后台任务并返回任务回执，任务完成由站内通知送达。关账、批量导入、报表导出一律按后台任务表达。编译期具名例外只有 F-55 AI compose（Tower 122 秒/内部 120 秒、独立 45-slot）和 `POST /mcp`（Tower 32 秒/协议 30 秒、独立公平全局 16-slot→connector 4-slot）；两者不占普通 20-slot，普通业务 route 不得同步等待 MCP，也不得新增第三种例外。
 
 ## 12. 各阶段必须遵守的落地纪律
 
@@ -772,7 +819,7 @@ let result = uow.transact(ctx, |tx| async move {
 - 任何阶段不得新增进程、不得新增 schema、不得新增模块码、不得新增错误分类、不得新增依赖方向。
 - 任何阶段不得引入第二套命名风格、第二套封套、第二套分页参数、第二套幂等机制。
 - 凡阶段计划需要偏离本基线，必须在计划中单列一节写明偏离项、理由与影响范围，并同步提出本基线的修订，不得只在实现里偏离。
-- 规格与 PRD 的引用一律写章节号，不写“见规格”。本基线中标注为留待业务决策的条目，阶段计划必须写明该阶段是否被阻塞，被阻塞的要给出临时取值与切换代价。
+- 规格与 PRD 的引用一律写章节号，不写“见规格”。本基线现行正文不允许再标注“留待业务决策”；若后续正式变更引入新决策，必须先完成裁定与权威回写，未冻结前不得进入实现。
 
 本节另立通则一条，编号第六，供各阶段计划与各门禁工具引用。
 

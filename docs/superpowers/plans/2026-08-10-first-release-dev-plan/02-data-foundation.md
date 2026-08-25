@@ -1,12 +1,18 @@
+> **F-57 状态：`HISTORICAL_DO_NOT_EXECUTE`。** 旧迁移/隔离细节只作输入；F-57 HDD、dynamic authz、generation 和客户模型编译优先。
+
 ## 阶段 2：数据基座与隔离
+
+> **F-50 T0 修订。** 本阶段自身表数与职责不变；跨阶段最小数据生成必须把销项发票作为“头 + 至少一行 + 中央号码登记”不可拆组，并通过金额汇总和 owner 复合引用自检。旧“最小销项头/单行金额”描述已被替代，精确任务见 F-50 实施计划。
+
+> **F-55 后续扩展。** 本阶段的连接预算脚本先验收八个当时已存在的产品进程；F-55 本地 AI Task 4 必须在同一脚本中加入第九个 `ai-inferer`，其 `Rw/Ro/Worker/Ops/replication` 全为 0，并把缺行、额外行或非零值作为失败。本文其余“八进程连接枚举”只描述阶段 2 当时的切片；终态脚本验收九行，汇总仍固定为常驻 37、迁移/应急临时 10、安全余量 5、硬峰值 52。
 
 ### 0. 本阶段边界与前置
 
 本阶段交付全平台唯一的数据落点与隔离机制：一个 PostgreSQL 16 实例上的 24 个 schema、七个功能角色与二十四个属主角色、迁移框架、法人行级策略、密钥域与字段级信封加密、按用途分池的连接模型、时区与数值精度的两侧一致约定，以及可被机械判定的建表合规断言。本阶段另按 A-04 交付集团、组织、部门、岗位四类表与部门层级闭包表及其读取契约，按 A-26 交付 `platform_ops.degradation_windows` 最小台账与降级登记端口。本阶段不建任何业务模块的单据与档案表，不实现任何业务用例。
 
-三条边界先写死。一是本阶段拥有 `platform_core` 内的十三张表与 `platform_ops.degradation_windows` 一张表，以及 24 个 schema 的创建与授权；按 C-01，本阶段是 24 个 schema、七个功能角色与二十四个属主角色的唯一提供方，阶段 1 只交付目录约定与空壳，任何其他阶段不得再建 schema 或角色；业务 15 个 schema 在本阶段是空 schema，只有属主、授权与合规断言。二是本阶段拥有的是机制不是策略内容：行级策略模板由本阶段产出并强制，判据取值 `app.legal_entity_id` 由安全上下文写入，而 `SecurityContext` 的字段集合按 A-03 由阶段 1 冻结、其填充与用户授权法人集合的判定属阶段 4；审批、重新认证、职责分离同理，本阶段只提供失败即拒的端口位点。三是凡规格与 PRD 未定义而本阶段必须假设的，一律在第 12 节显式登记。
+三条边界先写死。一是本阶段拥有 `platform_core` 内的十三张表与 `platform_ops.degradation_windows` 一张表，以及 24 个 schema 的创建与授权；按 C-01，本阶段是 24 个 schema、七个功能角色与二十四个属主角色的唯一提供方，阶段 1 只交付目录约定与空壳，任何其他阶段不得再建 schema 或角色；业务 15 个 schema 在本阶段是空 schema，只有属主、授权与合规断言。二是本阶段拥有的是机制不是策略内容：行级策略模板由本阶段产出并强制，判据取值 `app.legal_entity_id` 由安全上下文写入，而 `SecurityContext` 的字段集合按 A-03 由阶段 1 冻结、其填充与用户授权法人集合的判定属阶段 4；审批、重新认证、职责分离同理，本阶段只提供失败即拒的端口位点。三是凡规格与 PRD 未定义而本阶段实现必须取值的，均在第 12 节登记为已批准技术取值，不留实现分支。
 
-前置：阶段 1 已冻结 `rust-toolchain.toml`、workspace 根 `Cargo.toml` 的 `[workspace.dependencies]`、CI 骨架与依赖方向自检脚本，并已交付 `ep-foundation` 的 `Id`、`Money`、`Quantity`、`UnitPrice`、`Rate`、`SecurityLevel`、`AppError`、`ErrorCode`、`Clock`、`IdGen`，以及按 A-01 冻结的 `port::tx` 三个 trait 与 `id::marker` 的 22 个标记类型、按 A-02 冻结的 `SYSTEM_PRINCIPAL_ID` 与 `SYSTEM_DEVICE_ID`、按 A-03 冻结的十九字段 `SecurityContext` 与其三个配套枚举、按 A-05 冻结的 `ModuleCode`、按 A-20 冻结的 `CapabilityDomain` 与 `ActionClass`。本阶段不重定义这些类型，只为其补 PostgreSQL 编解码。阶段 1 另已按裁定 F-01 建 `port::db` 空模块，本阶段在其中补齐 `IdempotencyStore` 与 `MigrationWindowGuard` 两个端口 trait 与公共能力基线的能力描述。
+前置：阶段 1 已冻结 `rust-toolchain.toml`、workspace 根 `Cargo.toml` 的 `[workspace.dependencies]`、CI 骨架与依赖方向自检脚本，并已交付 `ep-foundation` 的 `Id`、`Money`、`Quantity`、`UnitPrice`、`Rate`、`SecurityLevel`、`AppError`、`ErrorCode`、`Clock`、`IdGen`，以及按 A-01 冻结的 `port::tx` 三个 trait 与 `id::marker` 的 22 个标记类型、按 A-02 冻结的 `SYSTEM_PRINCIPAL_ID` 与 `SYSTEM_DEVICE_ID`、按 A-03 冻结的二十字段 `SecurityContext` 与其四个配套枚举、按 A-05 冻结的 `ModuleCode`、按 A-20 冻结的 `CapabilityDomain` 与 `ActionClass`。本阶段不重定义这些类型，只为其补 PostgreSQL 编解码。阶段 1 另已按裁定 F-01 建 `port::db` 空模块，本阶段在其中补齐 `IdempotencyStore` 与 `MigrationWindowGuard` 两个端口 trait 与公共能力基线的能力描述。
 
 阶段 1 另按 C-01 与 C-02 向本阶段移交三项：`db/bootstrap/` 五个脚本的内容、单一全局迁移 Runner 与其版本号断言、`tools/ep-migrate` 五个子命令的实现。阶段 1 保留的是目录约定、CLI 骨架与退出码约定。
 
@@ -22,40 +28,43 @@
 
 | 编号 | 交付物 | 形态 | 可运行判据 |
 |---|---|---|---|
-| D-01 | `tools/ep-migrate` 迁移执行器 | 独立 CLI 二进制，非运行期进程 | `ep-migrate apply` 在空库上建成 24 个 schema 与本阶段全部对象；`ep-migrate status` 输出 `platform_core.schema_history` 的单一版本；重复执行退出码 0 且无变更 |
+| D-01 | `tools/ep-migrate` 迁移执行器 | 独立 CLI 二进制，非运行期进程；F-56 只扩既有 apply 的三参数 fresh-production governance bootstrap，不加子命令 | `ep-migrate apply` 在空库上建成 24 个 schema 与本阶段全部对象；`ep-migrate status --format=manifest` 从唯一 `platform_core.schema_history` 输出完整有序清单与摘要；重复执行退出码 0 且无变更；最终生产首装三参数与签名 receipt 按 F-56 验收 |
 | D-02 | `db/bootstrap/` 集群引导脚本集 | 五个文件加一个 shell 包装，需超级用户执行一次 | 在裸 PostgreSQL 16 上建成数据库 `ep`、七个功能角色与二十四个属主角色、集群参数与 `pg_hba` 片段，可重复执行 |
 | D-03 | `db/migrations/` 39 个迁移文件 | SQL | 按文件版本号全序执行成功，每文件含 `-- rollback:` 段；不交付任何顺序声明文件，正确性由空库全量执行验证 |
 | D-04 | `db/checks/` 合规断言集 | 13 个编号断言脚本加 `append_only_consistency.sql` | 每脚本返回 0 行，非 0 行即列出违规对象；编号脚本由 `ep-migrate check` 执行，`append_only_consistency.sql` 按 B-02 由 `xtask sqlcheck` 执行 |
 | D-05 | `ep-foundation` 的 `port::db` | 库模块 | `IdempotencyStore` 与 `MigrationWindowGuard` 两个端口 trait 与公共能力基线能力描述编译通过，不含任何 PostgreSQL 专有语法 |
-| D-06 | `ep-adapter-db-pg` | 库 crate | 五池连接管理、会话变量注入与清除、工作单元、重试、编解码全部实现并被集成测试覆盖 |
-| D-07 | `ep-adapter-kms` | 库 crate | 按裁定 F-04，`ep_foundation::port::kms` 的 `KmsBackend` 与八个词汇类型编译通过；本 crate 的 `BuiltinKmsBackend` 实现该 trait 六个方法并通过全部用例；`HsmKmsBackend` 在 `hsm` feature 下编译通过；端口 trait 与其调用词汇不在本 crate |
+| D-06 | `ep-adapter-db-pg` | 库 crate | 四池连接管理、会话变量注入与清除、工作单元、重试、编解码全部实现并被集成测试覆盖；integration-gateway 不链接本 crate |
+| D-07 | `ep-adapter-kms` | 库 crate | 按裁定 F-04，`ep_foundation::port::kms` 的六方法 `KmsBackend`、只读 `KmsSigningKeyIdentityResolver` 与九个词汇/值类型编译通过；本 crate 的 `BuiltinKmsBackend` 与 `HsmKmsBackend` 均实现前两项端口，后者在 `hsm` feature 下编译通过；签名身份只能由 immutable `KeyRef` 所指 exact DER SubjectPublicKeyInfo 的 SHA-256 派生，不返回私钥；另实现 `ep_foundation::port::secret::SecretUnsealer` 的 builtin/HSM 两个 recipient-bound 载体，且不扩张数据 KMS common master 的 ACL |
 | D-08 | `ep-testkit` 数据库夹具 | 库 crate 增量 | `PgTestDb::new()` 按 `ep_test_<nanoid>` 独占建库，用例结束即删库 |
 | D-09 | `ep-datagen` 骨架 | 二进制 crate | 接受 `--seed` 与 `--scale`，`--scale t0` 产出 T0 最小样本的平台部分，即 1 个法人及其组织架构最小行，`--scale small` 产出 2 个法人；公共列填充器就位，业务维度的最小样本由各模块在生成器注册点上追加 |
 | D-10 | `tests/rls_matrix` 的本阶段那一段 | 独立集成测试目标的增量 | 16 组法人越权用例、5 项复制角色用例、5 个系统上下文入口用例全绿；按 C-05 本阶段追加 `assert_replication_role_containment` 与 `assert_recon_context_borrow` 两个函数 |
-| D-11 | `scripts/verify-connection-budget.sh` | shell | 输出八进程连接枚举并与规格第 7.7 章逐项比对，不一致即非 0 退出 |
+| D-11 | `scripts/verify-connection-budget.ps1` | PowerShell | 输出八进程连接枚举并与规格第 7.7 章逐项比对，不一致即非 0 退出；由 Windows 原生部署与 `cargo xtask ci` 调用 |
 | D-12 | `tools/ep-explain-check` | CLI | 对给定 SQL 采集 `EXPLAIN (ANALYZE, BUFFERS)` 并在出现 Seq Scan 时报错，供后续阶段提交附录 A.1 证据 |
 | D-13 | 文档增量 | Markdown | `docs/data-dictionary.md` 十四张表条目、`docs/error-codes.md` 20 个新错误码、`docs/event-catalog.md` 3 个事件、`docs/metrics-catalog.md` 四个指标条目、`docs/adr/` 五篇 ADR |
 | D-14 | `ep-platform-tenancy` | 库 crate 加五个迁移 | 集团、组织、部门、岗位与部门层级闭包五张表建成；`LegalEntityDirectory` 与 `DepartmentClosureQuery` 两个 trait 及其 pg 实现编译通过并被集成测试覆盖 |
 | D-15 | `ep-platform-obs` 降级台账最小实现 | 库 crate 加一个迁移 | `platform_ops.degradation_windows` 建成并带两条约束；`DegradationLedger` 三个方法可用；`ep_degradation_windows_open` 指标已注册并填充 |
+| D-16 | `KmsSecretProvider` 与 `tools/ep-secretctl` | 只读运行时 provider + 签名一次性 CLI | ADR-0007 的 recipient/bootstrap/EPS1/rotation/migration 全部正反例通过；生产只接受 `secrets.provider=kms`，发布制品无 legacy reader，工具八命令闭集进入 SBOM；另交付未注册的 `legal-entity-key-domain-coverage` Degrading provider 与结构化结论供 Stage 14 接线 |
 
-五篇 ADR 分别是：为什么用 refinery 加自建非事务执行器承载 `CREATE INDEX CONCURRENTLY`；为什么密文自带信封头并以行标识入 AAD；为什么盲索引截断 16 字节且不建唯一约束；为什么法人注册表不建策略并登记在未受行级策略表登记表中；为什么运行期账号在业务 schema 上不授予 DELETE。
+五篇 ADR 分别是：为什么弃用 refinery 并以仓内 Runner 同时承载事务迁移与 `CREATE INDEX CONCURRENTLY`；为什么密文自带信封头并以行标识入 AAD；为什么盲索引固定使用完整 32 字节且唯一性由业务约束决定；为什么法人注册表不建策略并登记在未受行级策略表登记表中；为什么运行期账号在业务 schema 上不授予 DELETE。
 
 ---
 
 ### 2. crate 与进程归属
 
-新增 crate 四个，改动 crate 四个。`tools/ep-migrate` 的骨架与退出码约定按 C-02 由阶段 1 交付，本阶段补齐五个子命令的实现，因此计入改动而非新增。
+新增 crate 四个，改动既有 crate 与工具。`tools/ep-migrate` 的骨架与退出码约定按 C-02 由阶段 1 交付，本阶段补齐五个子命令的实现；`tools/ep-secretctl` 同样按 Stage 1 登记的 workspace 位点在本阶段补齐，因此两者均计入改动而非新增。
 
 | crate | 归属层 | 装配进程 | 本阶段职责 |
 |---|---|---|---|
-| `ep-adapter-db-pg` | adapter | 同上 | 唯一 PostgreSQL 16 实现：五池构建、`after_connect` 与 `after_release` 钩子、RLS 会话变量、编解码、迁移历史读取、SQLSTATE 23503 的统一错误映射；`PgTx` 与 `PgUnitOfWork` 的声明与实现、`UnitOfWork` 两个方法的唯一实现、重试执行体、四个连接模型类型的定义与取值、公共能力基线到 PostgreSQL 类型与索引的映射 |
-| `ep-adapter-kms` | adapter | core-server、job-worker | 内置 KMS 与 HSM 两种载体的实现，即 `ep_foundation::port::kms::KmsBackend` 的两个实现类型 `BuiltinKmsBackend` 与 `HsmKmsBackend`，后者在 `hsm` feature 下；含信封加密、字段级密钥与盲索引密钥的派生与缓存、密钥材料与密钥域状态。端口 trait 与其调用词汇按裁定 F-04 不在本 crate，在 `ep_foundation::port::kms` |
+| `ep-adapter-db-pg` | adapter | 同上 | 唯一 PostgreSQL 16 实现：四池构建、`after_connect` 与 `after_release` 钩子、RLS 会话变量、编解码、迁移历史读取、SQLSTATE 23503 的统一错误映射；`PgTx` 与 `PgUnitOfWork` 的声明与实现、`UnitOfWork` 两个方法的唯一实现、重试执行体、四个连接模型类型的定义与取值、公共能力基线到 PostgreSQL 类型与索引的映射 |
+| `ep-adapter-kms` | adapter | core-server、job-worker；系统机密解封按 recipient 注入其他具名消费者 | 内置 KMS 与 HSM 两种数据载体实现，即 `ep_foundation::port::kms` 的 `KmsBackend` 与 `KmsSigningKeyIdentityResolver` 的 `BuiltinKmsBackend|HsmKmsBackend`；另实现 `ep_foundation::port::secret::SecretUnsealer` 的 builtin/HSM recipient-bound 载体。数据 KMS common master 不用于系统机密库；builtin 每 recipient 独立 DPAPI KEK，HSM 每 recipient 独立 nonextractable object |
 | `tools/ep-migrate` | 工具二进制 | 不属八进程，只在迁移窗口内以 `ep_migrator` 运行 | 按 C-02 补齐 `apply`、`status`、`check`、`gen-rls`、`open-window` 五个子命令的实现与六个退出码 |
-| `ep-foundation` | 底座 | 全部 | 只在阶段 1 已建的 `port::kms` 空文件内补齐端口面九项：`KmsBackend` trait 与 `CipherText`、`KeyDomainId`、`BlindIndex`、`Aad`、`KeyRef`、`Signature`、`CipherEnvelope`、`KeyPurpose` 八个词汇类型；三个密码学值类型经 `lib.rs` 按既有 `pub use` 惯例再导出。不新增顶层模块，`crypto::` 一套命名按裁定 F-04 作废，理由是顶层模块已被 archcheck 规则 `foundation-module-registry` 冻结为七项。不新增业务概念。必要性按基线第 12 节通则第六条在提交说明中逐项举证使用位 |
+| `tools/ep-secretctl` | 工具二进制 | 不属运行期进程；受控本机维护 | 补齐 `bootstrap|put|verify|migrate|finalize-migration|retire|inventory|wincred` 八命令闭集；前七项实现系统机密库，`wincred` 只走配置参考第 5 节的目标服务 current-token 管道协议 |
+| `ep-foundation` | 底座 | 全部 | 在阶段 1 已建的 `port::kms` 补齐六方法 `KmsBackend`、只读 `KmsSigningKeyIdentityResolver` 与九个词汇/值类型；在 `port::secret` 定义 `SecretUnsealer`、`SecretRef`、`BootstrapRef`、`SecretBytes` 与 recipient 枚举。`SecretBytes` 不实现 Clone/Debug/Display/Serialize。均不新增 foundation 顶层模块或业务概念 |
+| `ep-platform-runtime` | platform | 使用系统机密的进程 | 定义同步只读 `SecretProvider` 与 `KmsSecretProvider`；构造时固化 deployment_id 与 recipient，调用方不能传入或切换 recipient；不提供写入、latest、监听或 fallback |
 | `ep-testkit` | 测试 | 无 | 独占库夹具、法人夹具、安全上下文夹具、越权矩阵驱动器 |
 | `ep-datagen` | 工具 | 无 | 规模参数框架与公共列填充器 |
 | `ep-platform-tenancy` | platform | core-server、job-worker | 按 A-04 交付组织架构五张表的迁移，以及 `LegalEntityDirectory` 与 `DepartmentClosureQuery` 两个 trait 及其 pg 实现 |
-| `ep-platform-obs` | platform | 全部 | 按 A-26 交付 `DegradationLedger` trait 与其 pg 实现、`DegradationKind` 的三个初始取值，以及第 7.2 节四个指标中 `ep_db_tx_retries_total` 与 `ep_degradation_windows_open` 两项的注册，与四个指标全部的填充 |
+| `ep-platform-obs` | platform | 全部 | 按不可改的 `V20260901104500` 交付 `DegradationLedger` 与初始三值 `DegradationKind`：`OFFSITE_SINK_NOT_CONFIGURED|WRITER_NOT_IN_SERVICE|PORT_NOT_IMPLEMENTED`。Stage 14 的 `V20261023092500` 才扩 Rust 接受域与 DB CHECK 到终态 21 项；另承担第 7.2 节既有指标分工 |
 
 进程侧结论：portal-gateway 与 plugin-host 不链接 `ep-adapter-db-pg`，由 CI 的 `cargo metadata` 断言强制，这是规格第 7.7 章两进程常驻连接数为零的编译期保证，不依赖运行期配置。archive-writer 与 backup-writer 同样不链接该 crate，其复制角色凭据只由各自系统账户持有，本阶段只交付其数据库侧的角色、权限与 `pg_hba` 约束，进程实现属备份阶段；两个写出进程是否投入运行按规格第 7.7 章的部署期与运行期两分判定，部署期三项遏制手段缺一即不得启用该角色、两个写出进程随之不得投入运行，仅该章第三项在角色已启用之后的运行期例外保留。
 
@@ -67,13 +76,13 @@
 
 角色与集群参数是簇级对象，`ep_migrator` 不具备角色管理权限，因此单独成路径。按 C-01，`db/bootstrap/` 下的五个文件名是集群引导的唯一出处，阶段 1 曾列出的 `B001__cluster_roles.sql`、`B002__database.sql`、`B003__postgres_conf.sql` 三个文件名作废。
 
-`db/bootstrap/00_database.sql`：`CREATE DATABASE ep ENCODING 'UTF8' LOCALE_PROVIDER icu ICU_LOCALE 'zh-Hans-CN' LC_COLLATE 'C' LC_CTYPE 'C' TEMPLATE template0`；`ALTER DATABASE ep SET timezone = 'UTC'`；`ALTER DATABASE ep SET default_transaction_isolation = 'read committed'`；`REVOKE ALL ON DATABASE ep FROM PUBLIC`；`REVOKE ALL ON SCHEMA public FROM PUBLIC`；`DROP SCHEMA public`。建库语句的排序规则提供者取 ICU 且 locale 取 `zh-Hans-CN`，这是阶段 1 新增决定二的落地，本阶段只执行不改其取值。PostgreSQL 16 在 `LOCALE_PROVIDER icu` 下仍要求给出 `LC_COLLATE` 与 `LC_CTYPE` 且必须以 `template0` 为模板，两者取 `C` 只作语法兜底，字符串比较与排序一律由 ICU 提供者承担；`LC_CTYPE 'C'` 的代价是 `upper()` 与 `lower()` 对非 ASCII 不做大小写映射，本系统的中文场景不依赖该映射，后续阶段不得据此把建库语句改回不带 ICU 提供者的写法。
+`db/bootstrap/00_database.sql`：`CREATE DATABASE ep ENCODING 'UTF8' LOCALE_PROVIDER libc LC_COLLATE 'C' LC_CTYPE 'C' TEMPLATE template0`；`ALTER DATABASE ep SET timezone = 'UTC'`；`ALTER DATABASE ep SET default_transaction_isolation = 'read committed'`；`REVOKE ALL ON DATABASE ep FROM PUBLIC`；`REVOKE ALL ON SCHEMA public FROM PUBLIC`；`DROP SCHEMA public`。建库语句的数据库默认排序固定为 libc/C 字节序，不依赖目标 Windows PostgreSQL 构建是否带 ICU。中文阅读序由业务表显式 `sort_key` 承载；业务 SQL 不得用未登记的 OS/ICU collation 形成第二套排序。裸实例验收断言 `pg_database.datlocprovider='c'`、`datcollate='C'`、`datctype='C'`、`daticulocale IS NULL`。
 
 `db/bootstrap/01_roles.sql`：建七个功能角色与二十四个属主角色，逐项属性如下。
 
 | 角色 | 属性 | 权限边界 |
 |---|---|---|
-| `ep_app_rw` | LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION NOBYPASSRLS NOINHERIT | 全部 schema 的 SELECT、INSERT、UPDATE；DELETE 只在 `platform_msg.idempotency_keys` 与 `platform_ops` 的过期快照表上授予；无 DDL、无角色管理、无策略管理 |
+| `ep_app_rw` | LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION NOBYPASSRLS NOINHERIT | 全部 schema 的 SELECT、INSERT、UPDATE；默认权限不含 DELETE，DELETE 仅对技术基线第 3.6 节封闭清理白名单逐表授权，禁止 schema 级 DELETE；无 DDL、无角色管理、无策略管理 |
 | `ep_analyst_ro` | LOGIN NOSUPERUSER NOBYPASSRLS | 全部 schema 的 SELECT；不授予 `pg_read_all_stats`，复制会话与复制槽的观察落在 `ep_ops_ro` 与阶段 14 的保留量采样 |
 | `ep_ops_ro` | LOGIN NOSUPERUSER NOBYPASSRLS | 只对 `platform_ops` 的视图授 SELECT，加 `pg_read_all_stats` |
 | `ep_migrator` | LOGIN NOSUPERUSER NOCREATEROLE | `CREATE ON DATABASE ep`，并被授予全部 `ep_mod_*` 角色成员资格；只在迁移窗口内启用 |
@@ -82,7 +91,7 @@
 | `ep_backuper` | LOGIN REPLICATION NOSUPERUSER NOBYPASSRLS | 同上 |
 | `ep_mod_<module>` × 24 | NOLOGIN | 各 schema 与其对象的属主，仅归属与 DDL 边界 |
 
-`db/bootstrap/02_cluster_params.sql`：`max_connections = 64`（下限假设 52，留 12 为超级用户预留与波动，`superuser_reserved_connections = 3`）；`max_wal_senders = 4`；`max_replication_slots = 3`；`wal_level = replica`；`max_slot_wal_keep_size = '350GB'`（等于附录 A.3 连续归档本机保留子项，不得高于）；`wal_keep_size = 0`；`shared_preload_libraries = 'pg_stat_statements'`；`lock_timeout = 0` 全局默认由各池覆盖；`wal_sync_method` 必须在本文件显式取值，不得留用本平台的默认值 `open_datasync`——按裁定 F-08 第三节现存缺陷第 4 条，官方文档明确该默认值配合磁盘写缓存不安全，而第 13.3 章 RPO 不超过 15 分钟在本平台已按该裁定做不到一失去机制侧保证，再叠一个不安全的落盘默认值不可接受。本阶段的可判部分是：该文件中对 `wal_sync_method` 存在**显式登记行**——或是一个已定取值，或是一行写明「本项待实测，实测前不得留用平台默认值」的登记；两者都算可判。**不要求本阶段就写死一个非默认取值**：本平台可选值只有 `open_datasync`、`fsync`、`fsync_writethrough` 三支，要求现在就选一个又同时禁止「先写死再回改」，会构成一条只能恒假的判据。具体取哪一支及其代价按该裁定第十二节实测清单第 14 项（并入附录庚五）待实测，并按第三节第 4 条在附录 A.4 实测其代价，实测结论出具前不得以默认值充数、也不得先写死一个值再回改。同批按该裁定第 4.5 节第 7 条：`effective_io_concurrency` 依赖 `posix_fadvise`，在本平台是被忽略还是设非零即报错未确证，本阶段不取该参数，实测一条 `SET` 即可判定；`huge_pages` 若取用须先授予服务账户「锁定内存中的页」用户权限，属部署步骤新增，本阶段不取。
+`db/bootstrap/02_cluster_params.sql` 的首版唯一值如下：`max_connections = 64`（常驻与峰值连接预算上限为 52，另留 12 个管理与波动余量，`superuser_reserved_connections = 3`）；`max_wal_senders = 4`；`max_replication_slots = 3`；`wal_level = replica`；`max_slot_wal_keep_size = '350GB'`（等于附录 A.3 连续归档本机保留子项，不得高于）；`wal_keep_size = 0`；`shared_preload_libraries = 'pg_stat_statements'`；`lock_timeout = 0`，由各池覆盖；`wal_sync_method = 'fsync_writethrough'`；`effective_io_concurrency = 0`；`huge_pages = off`。PostgreSQL 16 官方可靠性说明明确 Windows 默认 `open_datasync` 在启用磁盘写缓存时不安全，而 `fsync_writethrough` 会强制穿透磁盘写缓存；本项目选择最高安全档，不允许启动脚本按机器自动改回 `open_datasync`、`fsync` 或 `fdatasync`。`effective_io_concurrency` 首版固定为 0，避免把依赖 `posix_fadvise` 的平台差异带入生产；`huge_pages` 首版关闭，避免引入“锁定内存中的页”额外权限。认证期仍须在目标 Windows Server 2022 上运行 `pg_test_fsync`、断电恢复演练与附录 A.4 性能测试并记录代价；该测试只形成发布证据，结果不再改变首版配置。若 `fsync_writethrough` 不可用或性能无法满足已冻结通过线，认证判失败并停止发布，必须通过新的书面裁定修改承诺与配置，开发者不得现场选择替代值。
 
 `db/bootstrap/03_role_defaults.sql`：按角色固化超时。`ALTER ROLE ep_app_rw SET statement_timeout='10s'`、`lock_timeout='3s'`、`idle_in_transaction_session_timeout='15s'`；`ep_analyst_ro` 取 `statement_timeout='60s'`、`work_mem='64MB'`、`temp_file_limit='2GB'`；`ep_ops_ro` 取 `5s`；`ep_migrator` 取 `statement_timeout='30min'`、`lock_timeout='5s'`。角色级取值是兜底，池级 `after_connect` 再设一次，两处一致由集成测试断言。
 
@@ -94,18 +103,18 @@
 
 #### 3.3 迁移框架
 
-工具为 refinery 0.8 系列，全库只有一个 Runner 与一张历史表 `platform_core.schema_history`。执行顺序由该 Runner 按文件版本号全序排定，不存在任何顺序声明文件，二十四个目录只表达归属不表达先后。迁移文件放在其主要创建对象所属 schema 的目录下，不以写入方所属模块为准；文件命名 `V<YYYYMMDDHHMMSS>__<schema>_<slug>.sql`，版本号取真实时间、全局唯一且严格递增，由 `xtask sqlcheck` 断言。正确性由每个文件的版本号必须晚于其全部被引用对象保证，空库上按文件版本号全序执行成功是各阶段退出条件的判据，任何阶段不得为迁就顺序而作废并改号既有迁移。
+工具为仓内 `tools/ep-migrate` 自建 Runner，不依赖 refinery；全库只有一个 Runner 与一张历史表 `platform_core.schema_history`。执行顺序由该 Runner 按文件版本号全序排定，不存在任何顺序声明文件，二十四个目录只表达归属不表达先后。迁移文件放在其主要创建对象所属 schema 的目录下，不以写入方所属模块为准；文件命名 `V<YYYYMMDDHHMMSS>__<schema>_<slug>.sql`，版本号取真实时间、全局唯一且严格递增，由 `xtask sqlcheck` 断言。正确性由每个文件的版本号必须晚于其全部被引用对象保证，空库上按文件版本号全序执行成功是各阶段退出条件的判据，任何阶段不得为迁就顺序而作废并改号既有迁移。弃用外部 Runner 的原因、`BIGINT` 历史版本和校验和兼容边界见 ADR-0013。
 
-非事务迁移的处理：`CREATE INDEX CONCURRENTLY` 不能在事务块内执行，而 refinery 默认每个迁移一个事务。解法是把此类文件放在 `db/migrations/<schema>/concurrent/` 子目录，由 `ep-migrate` 的自建执行器以自动提交模式逐条执行，成功后按 refinery 历史表的同一结构手工插入一行（version、name、applied_on、checksum）。两条路径共用同一张历史表与同一套版本号空间，`ep-migrate status` 不区分来源。该执行器约 200 行，只做读文件、算校验和、执行、写历史四件事，风险点在于中途失败会留下失效索引，因此执行前先 `DROP INDEX IF EXISTS` 同名对象，执行后校验 `pg_index.indisvalid`，无效即报错并要求人工清理。
+非事务迁移的处理：`CREATE INDEX CONCURRENTLY` 不能在事务块内执行。此类文件放在 `db/migrations/<schema>/concurrent/` 子目录，由同一个 `ep-migrate` Runner 以自动提交模式逐条执行；普通目录仍逐文件单事务。两条路径共用同一解析器、`migration_checksum`、历史表和缺失/分歧判定，成功后写同一四列历史行（version、name、applied_on、checksum），`ep-migrate status` 不区分来源。非事务路径中途失败可能留下失效索引，因此执行前先 `DROP INDEX IF EXISTS` 同名对象，执行后校验 `pg_index.indisvalid`，无效即报错并要求在迁移窗口内按错误输出的确切索引名清理后重试。
 
 迁移会话固定 `SET lock_timeout = '5s'` 与 `SET statement_timeout = '30min'`。迁移窗口未打开时 `ep-migrate apply` 直接拒绝并返回 `PLATFORM.DB.MIGRATION_WINDOW_CLOSED`，该错误码按 C-24 由阶段 1 登记，本阶段首次实现。任何进程启动时不执行迁移，只校验版本一致。
 
-按 C-02，`tools/ep-migrate` 的子命令固定为五个，阶段 1 的 `migrate` 并入 `apply`、`verify` 并入 `check`、`manifest` 并入 `status`。
+按 C-02，`tools/ep-migrate` 的子命令固定为五个，阶段 1 的 `migrate` 并入 `apply`、`verify` 并入 `check`、`manifest` 并入 `status`。F-56 的 `apply --initial-governance-bootstrap=<bootstrap.jcs> --initial-license-package=<license.epcfg> --receipt-out=<directory>` 是三个必须成组出现的既有子命令参数，不改变五命令/六退出码：只在全量迁移后、九进程 public readiness 前、零 grant/config package/active legal entity/自然用户的 production fresh database 执行一次，复用唯一 key-domain/approval-chain/身份/审计实现；exact input、双签、两个 MFA 管理员、初始角色、receipt 与同 digest 崩溃补写只取 F-56。常规 apply、升级 apply、开发/测试空库均不得暗中执行该事务，也不存在 force 或已有数据覆盖。
 
 | 子命令 | 用途 |
 |---|---|
 | `apply` | 按文件版本号全序执行迁移，含 `concurrent/` 子目录的非事务路径 |
-| `status` | 输出 `platform_core.schema_history` 的单一版本，`--format=manifest` 输出制品清单 |
+| `status` | 读取唯一 `platform_core.schema_history`；默认输出已施加数量、首末版本与摘要，`--format=manifest` 输出完整有序三元组清单 |
 | `check` | 执行 `db/checks/` 的十三项编号合规断言，含第 12 项排序规则一致性与第 13 项未受行级策略表登记一致性 |
 | `gen-rls` | 按第 3.6 节模板生成策略语句 |
 | `open-window` | 开启迁移窗口，判据与第 5 节 A-09 端点一致 |
@@ -118,29 +127,29 @@
 
 | 序 | 文件名 | 内容 |
 |---|---|---|
-| 1 | `V202609010900__platform_core_create_schema.sql` | 建 schema、设属主、授 USAGE 与默认权限 |
-| 2 | `V202609010905__platform_core_conventions.sql` | 六个约定函数与三个触发器函数 |
-| 3 | `V202609010910__platform_core_legal_entities.sql` | 法人注册表 |
-| 4 | `V202609010915__platform_core_key_domains.sql` | 密钥域表 |
-| 5 | `V202609010920__platform_core_data_keys.sql` | 数据密钥表 |
-| 6 | `V202609010925__platform_core_sensitive_field_registry.sql` | 敏感字段清单 |
-| 7 | `V202609010930__platform_core_append_only_registry.sql` | 仅追加表登记 |
-| 8 | `V202609010935__platform_core_migration_windows.sql` | 迁移窗口与单例锁表 |
-| 9 | `V202609010940__platform_core_enterprise_groups.sql` | 集团表，并为 `legal_entities.group_id` 追加同 schema 真实外键 |
-| 10 | `V202609010945__platform_core_organizations.sql` | 组织表 |
-| 11 | `V202609010950__platform_core_departments.sql` | 部门表 |
-| 12 | `V202609010955__platform_core_positions.sql` | 岗位表 |
-| 13 | `V202609011000__platform_core_department_closures.sql` | 部门层级闭包表 |
-| 14 | `V202609011002__platform_core_unpoliced_table_registry.sql` | 未受行级策略表登记，并在同一文件内写入本阶段八行登记 |
-| 15 | `V202609011005__platform_core_grants.sql` | 本 schema 全部对象的显式授权收口 |
-| 16 至 22 | `V2026090110{10,15,20,25,30,35,40}__platform_{authz,meta,flow,audit,msg,file,ops}_create_schema.sql` | 七个平台 schema 的建 schema 与授权 |
-| 23 | `V202609011045__platform_ops_create_degradation_windows.sql` | 降级窗口台账，按 A-26 排在 `platform_ops` 建 schema 之后 |
-| 24 | `V202609011050__ext_create_schema.sql` | 低代码扩展 schema |
-| 25 至 39 | `V2026090111{00,05,10,15,20,25,30,35,40,45,50,55}__…` 与 `V2026090112{00,05,10}__…` | 15 个业务 schema 的建 schema 与授权，文件名 slug 为 `<schema>_create_schema` |
+| 1 | `V20260901090000__platform_core_create_schema.sql` | 建 schema、设属主、授 USAGE 与默认权限 |
+| 2 | `V20260901090500__platform_core_conventions.sql` | 六个约定函数与三个触发器函数 |
+| 3 | `V20260901091000__platform_core_legal_entities.sql` | 法人注册表 |
+| 4 | `V20260901091500__platform_core_key_domains.sql` | 密钥域表 |
+| 5 | `V20260901092000__platform_core_data_keys.sql` | 数据密钥表 |
+| 6 | `V20260901092500__platform_core_sensitive_field_registry.sql` | 敏感字段清单 |
+| 7 | `V20260901093000__platform_core_append_only_registry.sql` | 仅追加表登记 |
+| 8 | `V20260901093500__platform_core_migration_windows.sql` | 迁移窗口与单例锁表 |
+| 9 | `V20260901094000__platform_core_enterprise_groups.sql` | 集团表，并为 `legal_entities.group_id` 追加同 schema 真实外键 |
+| 10 | `V20260901094500__platform_core_organizations.sql` | 组织表 |
+| 11 | `V20260901095000__platform_core_departments.sql` | 部门表 |
+| 12 | `V20260901095500__platform_core_positions.sql` | 岗位表 |
+| 13 | `V20260901100000__platform_core_department_closures.sql` | 部门层级闭包表 |
+| 14 | `V20260901100200__platform_core_unpoliced_table_registry.sql` | 未受行级策略表登记，并在同一文件内写入本阶段八行登记 |
+| 15 | `V20260901100500__platform_core_grants.sql` | 本 schema 全部对象的显式授权收口 |
+| 16 至 22 | `docs/migration-catalog.md` 中七个 `platform_*_create_schema` EXISTING 路径 | 七个平台 schema 的建 schema 与授权 |
+| 23 | `V20260901104500__platform_ops_create_degradation_windows.sql` | 降级窗口台账，按 A-26 排在 `platform_ops` 建 schema 之后 |
+| 24 | `V20260901105000__ext_create_schema.sql` | 低代码扩展 schema |
+| 25 至 39 | `docs/migration-catalog.md` 中十五个业务 schema 的 `*_create_schema` EXISTING 路径 | 15 个业务 schema 的建 schema 与授权，文件名 slug 为 `<schema>_create_schema` |
 
 本阶段号段整体早于全部业务模块号段。理由是 15 个业务 schema 由本阶段第 25 至 39 号迁移建立，任一业务模块的建表迁移都引用其所属 schema，其版本号必须晚于本阶段对应的建 schema 迁移；本阶段自身不引用任何由后续阶段建立的对象，因此本阶段号段内部只需保持严格递增。各业务阶段的号段据此整体排在本阶段号段之后，且不得与本阶段号段重号，由 `xtask sqlcheck` 的版本号全局唯一且严格递增断言拦截。
 
-合计 39 个迁移文件。本阶段不向 `platform_core.sensitive_field_registry` 预置任何行，阶段 5 按 A-28 以 `db/migrations/mdm/` 下的 backfill 迁移插入 `mdm.customer_invoice_profiles` 与 `mdm.supplier_payment_profiles` 两表的 `bank_name` 与 `bank_account_no` 共四行，其中 `bank_account_no` 两行的 `is_field_encrypted` 取真；`platform_core.append_only_registry` 的登记行按 B-02 合计十四行，由阶段 3b、阶段 7、阶段 8、阶段 9a 与阶段 10 各自在本模块迁移中插入，本阶段只建登记表与一致性检查脚本。`platform_core.unpoliced_table_registry` 的登记行由建表阶段随建表迁移插入，本阶段插入本阶段八张未受策略表的八行，其余由阶段 3b、阶段 4、阶段 9a、阶段 11、阶段 13 与阶段 14 各自补齐，缺行即 `db/checks/13` 返回非零行而迁移不通过。
+合计 39 个迁移文件。本阶段不向 `platform_core.sensitive_field_registry` 预置任何行，阶段 5 按 A-28 以 `db/migrations/mdm/` 下的 backfill 迁移插入 `mdm.customer_invoice_profiles` 与 `mdm.supplier_payment_profiles` 两表的 `bank_name` 与 `bank_account_no` 共四行，其中 `bank_account_no` 两行的 `is_field_encrypted` 取真；`platform_core.append_only_registry` 的登记行按 B-02/F-50 终态合计十六行（十四行 APPEND_ONLY、两行 IMMUTABLE_COLUMNS），由阶段 3b、阶段 7、阶段 8、阶段 9a 与阶段 10 各自在本模块迁移中插入，本阶段只建登记表与一致性检查脚本。`platform_core.unpoliced_table_registry` 的登记行由建表阶段随建表迁移插入，本阶段插入本阶段八张未受策略表的八行，其余由阶段 3b、阶段 4、阶段 9a、阶段 11、阶段 13 与阶段 14 各自补齐，缺行即 `db/checks/13` 返回非零行而迁移不通过。
 
 #### 3.5 本阶段自有表逐表定义
 
@@ -169,18 +178,20 @@
 | 列 | 类型 | 约束 |
 |---|---|---|
 | `id` | uuid | `pk_key_domains` |
-| `legal_entity_id` | uuid not null | RLS 判据 |
+| `legal_entity_id` | uuid not null | RLS 判据；`fk_key_domains_legal_entities` 指向 `legal_entities(id)`，`ON DELETE RESTRICT` |
 | `domain_kind` | text not null | `ck_key_domains_kind` 首版只放行 `LEGAL_ENTITY`，`GROUP_SHARED` 为后续预留且当前不放行 |
 | `state` | text not null | `ck_key_domains_state` 取 `PROVISIONING`、`ACTIVE`、`DESTROY_PLANNED`、`DESTROYED` |
-| `kek_ref` | text not null | 形如 `kms://builtin/le/<uuid>` 或 `kms://hsm/slot0/le/<uuid>` |
-| `kek_version` | int not null default 1 | `ck_key_domains_kek_version_pos` 大于 0 |
+| `kek_ref` | text not null | provider-independent logical locator；首版唯一格式为 `kms://ep/v1/deploy/<lowercase-deployment-uuid>/domain/<lowercase-key-domain-uuid>/kek/1` |
+| `kek_version` | int not null default 1 | `ck_key_domains_kek_version_range` 强制 `1..2147483647`；首版新域固定为 1，Rust `u32` 进入持久边界前必须拒绝更大值而非 cast |
 | `provisioned_at` | timestamptz null | |
 | `destroy_planned_at` | timestamptz null | |
 | `destroyed_at` | timestamptz null | |
 | `destroy_evidence_ref` | text null | 销毁证明的审计引用 |
 | 公共列 | | `security_level` 默认 40，`data_scope_tags`、`row_version` 与四个审计列 |
 
-索引：`pk_key_domains`、`ux_key_domains_legal_entity_id_domain_kind`、`ix_key_domains_legal_entity_id_created_at`。策略 `rls_key_domains_le`。
+索引：`pk_key_domains`、`ux_key_domains_legal_entity_id_domain_kind`、供复合法人引用的 `ux_key_domains_legal_entity_id_id(legal_entity_id,id)`、`ix_key_domains_legal_entity_id_created_at`。策略 `rls_key_domains_le`。
+
+`kek_ref` 是期望创建/解析的不可变逻辑定位符，不是“KEK 已存在”的证明，因此 `PROVISIONING` 行可以在完全不调用 KMS 的 PostgreSQL 事务内先写入该非空值；builtin/HSM adapter 各自把同一 logical locator 映射到本载体对象，业务表不得保存 provider 私有 object handle。普通 PostgreSQL CHECK 无可引用的 signed deployment singleton，因此 `ck_key_domains_projection_shape` 只强制 locator 的 canonical grammar、其中 domain UUID 逐字等于本行 `id`、末段版本逐字等于 `kek_version`，不能伪称数据库独自证明 embedded deployment UUID；该 UUID 与当前签名 deployment manifest 的相等性由 `KeyDomainProvisioner` 每次 ensure/readback、F-56 bootstrap 和 Stage 14 证据共同强制。其余四态形状冻结为：`PROVISIONING` 要求 `provisioned_at/destroy_planned_at/destroyed_at/destroy_evidence_ref` 全 NULL；`ACTIVE` 要求 `provisioned_at` 非 NULL、其余三项 NULL；`DESTROY_PLANNED` 要求 `provisioned_at/destroy_planned_at` 非 NULL且销毁两项 NULL；`DESTROYED` 要求 `provisioned_at/destroy_planned_at/destroyed_at/destroy_evidence_ref` 全非 NULL。状态变化不得改 `kek_ref` 或把 `kek_version` 回退。
 
 表三 `platform_core.data_keys`
 
@@ -188,19 +199,19 @@
 |---|---|---|
 | `id` | uuid | `pk_data_keys` |
 | `legal_entity_id` | uuid not null | RLS 判据 |
-| `key_domain_id` | uuid not null | `fk_data_keys_key_domains`，同 schema 真实外键，`ON DELETE RESTRICT` |
+| `key_domain_id` | uuid not null | 与本行 `legal_entity_id` 组成 `fk_data_keys_key_domains(legal_entity_id,key_domain_id)`，指向 `key_domains(legal_entity_id,id)`，`ON DELETE RESTRICT`；不得保留会放行跨法人的单列替代 FK |
 | `purpose` | text not null | `ck_data_keys_purpose` 取 `FIELD`、`BLIND_INDEX`、`ATTACHMENT`、`ARCHIVE` |
 | `security_level_scope` | smallint not null | `ck_data_keys_level` 取 10、20、30、40 |
-| `version` | int not null | 大于 0 |
-| `algorithm` | text not null | `ck_data_keys_alg` 取 `AES_256_GCM` 或 `HMAC_SHA256` |
-| `wrapped_key` | bytea not null | KEK 信封后的 DEK |
-| `wrap_kek_version` | int not null | |
+| `version` | int not null | `ck_data_keys_version` 强制 `1..65535`，与 EPC1 两字节版本和 `DataKeyRefV1` 的非零 `u16` 同域 |
+| `algorithm` | text not null | `ck_data_keys_alg` 取 `AES_256_GCM` 或 `HMAC_SHA256`；`ck_data_keys_purpose_algorithm` 强制 `BLIND_INDEX` 当且仅当 `HMAC_SHA256`，其余三用途当且仅当 `AES_256_GCM` |
+| `wrapped_key` | bytea not null | KEK 信封后的 DEK；`octet_length(wrapped_key)>0` |
+| `wrap_kek_version` | int not null | `1..2147483647`；Rust `u32` 进入持久边界前必须拒绝更大值而非 cast |
 | `state` | text not null | `ck_data_keys_state` 取 `ACTIVE`、`RETIRING`、`RETIRED`、`DESTROYED` |
 | `activated_at` | timestamptz not null | |
 | `retiring_at`、`retired_at`、`destroyed_at` | timestamptz null | |
 | 公共列 | | `security_level` 默认 40 |
 
-索引：`pk_data_keys`、`ux_data_keys_domain_purpose_scope_version`（对应列 `key_domain_id, purpose, security_level_scope, version`，因 PostgreSQL 标识符 63 字节上限按列序缩写，全称登记在 `docs/data-dictionary.md`）、`ix_data_keys_legal_entity_id_created_at`。策略 `rls_data_keys_le`。首版不使用部分索引，取当前有效密钥的写法是按 `ux` 前缀定位后 `order by version desc limit 1`。
+索引：`pk_data_keys`、`ux_data_keys_domain_purpose_scope_version`（对应列 `key_domain_id, purpose, security_level_scope, version`，因 PostgreSQL 标识符 63 字节上限按列序缩写，全称登记在 `docs/data-dictionary.md`）、`ix_data_keys_legal_entity_id_created_at`。策略 `rls_data_keys_le`。`ck_data_keys_state_shape` 把时间列形状冻结为：`ACTIVE` 时 `retiring_at/retired_at/destroyed_at` 全空；`RETIRING` 时只有 `retiring_at` 非空；`RETIRED` 时 `retiring_at/retired_at` 非空且 `destroyed_at` 为空；`DESTROYED` 时三列全非空。所有存在的时点还必须满足 `activated_at<=retiring_at<=retired_at<=destroyed_at`（只比较已存在的相邻列）；另由 CHECK 强制 `wrap_kek_version between 1 and 2147483647` 与 `octet_length(wrapped_key)>0`。首版不使用部分索引，取当前有效密钥的写法是按 `ux` 前缀定位后 `order by version desc limit 1`。另以 `DEFERRABLE INITIALLY DEFERRED` constraint trigger 在 COMMIT 强制每个 `(key_domain_id,purpose,security_level_scope)` 至多一行 `ACTIVE`；父域为 `ACTIVE` 时还强制四用途×四 scope 的当前 ACTIVE 投影恰为 16 行且组合无缺失/多余、算法映射正确。这样轮换事务内可短暂双 ACTIVE，但提交态不可能分叉；`PROVISIONING` 可按缺失组合逐步收敛。
 
 表四 `platform_core.sensitive_field_registry`（不带 `legal_entity_id`，不建策略，按表十三登记）
 
@@ -211,7 +222,7 @@
 | `category` | text not null | `ck_..._category` 取 `IDENTITY`、`CONTACT`、`ACCOUNT`、`TAX_ID`、`PAYMENT_TOKEN`、`LEGAL`、`HEALTH`，对应规格第 7.8 章至少覆盖的六类加法律与健康 |
 | `security_level` | smallint not null | 10、20、30、40；未赋值时按所属对象取值的规则由 `platform_core.effective_level()` 承载 |
 | `blind_index` | text not null default 'NONE' | `ck_..._bidx` 首版只放行 `NONE` 与 `EXACT`，`PREFIX` 登记为预留且当前不放行 |
-| `is_field_encrypted` | boolean not null default false | 该列在物理表上是否为信封密文；取 true 时物理列集按 A-28 为 `<column_name>_enc bytea` 与 `<column_name>_key_ref text`，需要保留掩码尾数的再加 `<column_name>_tail text`，需要查重的再加 `<column_name>_bidx bytea`，且不保留同名明文列，由 `db/checks/11` 断言 |
+| `is_field_encrypted` | boolean not null default false | 该列在物理表上是否为信封密文；取 true 时物理列集按 A-28 为 `<column_name>_enc bytea` 与 `<column_name>_key_ref text`，需要保留掩码尾数的再加 `<column_name>_tail text`，需要查重再加 `<column_name>_bidx bytea`；`blind_index = 'EXACT'` 时该列必须有 `octet_length = 32` 的 CHECK，且不保留同名明文列，均由 `db/checks/11` 断言 |
 | `blind_index_column` | text null | 盲索引列名；`blind_index` 取 `NONE` 时为空，取 `EXACT` 时形如 `bank_account_no_bidx` |
 | `mask_style` | text not null default 'NONE' | 掩码样式；取值语义由阶段 4 的字段级授权解释，本阶段只承载登记 |
 | `normalization` | text not null default 'TRIM_NFKC' | 取 `NONE`、`TRIM_NFKC`、`TRIM_NFKC_LOWER`、`DIGITS_ONLY` |
@@ -314,7 +325,7 @@
 
 表十二 `platform_ops.degradation_windows`（降级窗口台账，不带 `legal_entity_id`，不建策略，按表十三登记）
 
-按 A-26，本表的列定义与阶段 14 计划的同表列清单一致，本阶段不复述也不改写，只建表并交付两条约束 `ux_degradation_windows_kind_scope_closed` 与 `ck_degradation_windows_open_order`，其余两条 CHECK 与全部索引由阶段 14 追加。本表带 `scope_legal_entity_id` 与 `scope_accounting_period_id` 两个可空标注列，两者只作标注不作策略判据。本阶段另建 `subject text` 可空列，承载开窗对象的完整类型名，即端口名或平台能力名，使同一 `kind` 下的多个对象可同时开窗，阶段 14 的列清单必须含该列。`ux_degradation_windows_kind_scope_closed` 因此建在 `kind`、`subject`、`scope_legal_entity_id`、`scope_accounting_period_id` 与开窗状态五者上，约束名不变。写入端口落在 `ep-platform-obs`。
+按 A-26，本表的列定义与阶段 14 计划的同表列清单一致，本阶段不复述也不改写，只建表并交付两条约束 `ux_degradation_windows_kind_scope_closed` 与 `ck_degradation_windows_open_order`，其余两条 CHECK 与全部索引由阶段 14 追加。本表带 `scope_legal_entity_id` 与 `scope_accounting_period_id` 两个可空标注列，两者只作标注不作策略判据。本阶段另建 `subject text` 可空列，承载开窗对象的完整类型名，即端口名或平台能力名，使同一 `kind` 下的多个对象可同时开窗，阶段 14 的列清单必须含该列。`ux_degradation_windows_kind_scope_closed` 固定用 PostgreSQL 16 的 `UNIQUE NULLS NOT DISTINCT (kind, subject, scope_legal_entity_id, scope_accounting_period_id, closed_at)`，约束名不变；不得使用默认的 NULL 可区分语义，否则部署级空作用域可重复开窗。写入端口落在 `ep-platform-obs`。
 
 ```rust
 #[async_trait::async_trait]
@@ -327,7 +338,9 @@ pub trait DegradationLedger: Send + Sync {
 }
 ```
 
-`DegradationKind` 由本阶段定义，初始取值三个：`OFFSITE_SINK_NOT_CONFIGURED`、`WRITER_NOT_IN_SERVICE` 与 `PORT_NOT_IMPLEMENTED`。`WRITER_NOT_IN_SERVICE` 的触发条件是客观事实，即两个写出进程中任一未运行或连续若干周期无上报，不以遏制手段的配置是否齐备为判据；遏制手段缺项致角色未启用时，写出进程随之未投入运行，该客观条件同样成立。该取值不可抑制；本阶段曾用的 `WRITER_ROLE_CONTAINMENT_MISSING` 一名作废，`ck_degradation_windows_not_suppressible` 的不可抑制取值由一项扩为两项，即 `OFFSITE_SINK_NOT_CONFIGURED` 与 `WRITER_NOT_IN_SERVICE`。后一项按整个 kind 取不可抑制是一次有意的超集口径：规格在降级与暴露窗口台账一章只点名「第 7.7 章两个专用角色未启用致两个写出进程未投入运行」这一成因不可由管理员关闭，而按 `basis` 列区分同一 kind 内各成因的可抑制性是一套新机制，代价高于收益，故本阶段一律取不可抑制。代价是写出进程因日常维护停机时运维也无法静音该告警；窗口仍在触发条件消除时自动闭合，不形成永久噪声。`PORT_NOT_IMPLEMENTED` 是跨模块与平台能力缺位的唯一登记形态，按第 0 节只供 `WasmComputePort`、`RuleEvaluator` 与 `DisposalPort` 三项末期平台能力在其交付阶段之前开窗使用，开窗时由 `subject` 列记下该端口的完整类型名，交付阶段注入实现后关窗，其窗口必须可关闭。本阶段是 `DegradationKind` 的唯一定义方，终态取值清单的唯一出处是阶段 14 计划，且必须是本阶段这三项的超集，任何阶段新增取值都须同批写入阶段 14 的取值表。`DegradationScope` 承载上述两个可空标注列与 `subject` 的组合。阶段 4、阶段 9、阶段 11、阶段 13 凡登记降级窗口的路径一律调用本端口，不自建第二套台账。
+不可改的 `V20260901104500__platform_ops_create_degradation_windows.sql` 与本阶段 Rust `DegradationKind` 初始域都只有三项：`OFFSITE_SINK_NOT_CONFIGURED|WRITER_NOT_IN_SERVICE|PORT_NOT_IMPLEMENTED`。不得改该历史迁移、校验和或另加更低版本补丁。本阶段只允许真实开关这三类窗口。Stage 14a/14b 由更高版本 `V20261023092500` 扩展数据库 CHECK，并同步扩 Rust 接受域到终态 21 项；在那之前，后续种类只可返回结构化判定或保持其能力关闭，不能写入本表，也不能复用 `PORT_NOT_IMPLEMENTED` 冒充。终态清单与分阶段接线的唯一出处仍是 Stage 14。
+
+`WRITER_NOT_IN_SERVICE` 的触发条件是两个写出进程中任一未运行或连续两个写出周期无上报，不以遏制配置是否齐备为判据；它与 `OFFSITE_SINK_NOT_CONFIGURED` 在本阶段均按不可抑制处理，`PORT_NOT_IMPLEMENTED` 可在实现到位后关闭。本阶段曾用的 `WRITER_ROLE_CONTAINMENT_MISSING` 作废。Stage 14 的 `ck_degradation_windows_not_suppressible` 终态扩为五项：`OFFSITE_SINK_NOT_CONFIGURED|OFFSITE_COPY_PROTECTION_MISSING|WRITER_NOT_IN_SERVICE|VIRUS_SCANNER_NOT_AVAILABLE|LEGAL_ENTITY_KEY_DOMAIN_UNAVAILABLE`。`PORT_NOT_IMPLEMENTED` 仍只供 `WasmComputePort|RuleEvaluator|DisposalPort` 三个已登记末期端口，不得用来承载密钥域、病毒扫描或其他状态。`DegradationScope` 承载两个可空标注列与 `subject`；凡数据库已接受的 kind 都经本端口开关，不自建第二套台账。
 
 表十三 `platform_core.unpoliced_table_registry`（未受行级策略表登记，不带 `legal_entity_id`，不建策略，登记本表自身）
 
@@ -339,7 +352,7 @@ pub trait DegradationLedger: Send + Sync {
 | `isolation_entry` | text not null | 该表的法人可见性所落的应用层入口，长度 1 至 200 |
 | `matrix_case_id` | text not null | 该入口在 `tests/rls_matrix` 中的用例标识 |
 
-索引：`pk_unpoliced_table_registry`、`ux_unpoliced_table_registry_schema_table`、`ix_unpoliced_table_registry_created_at`。该表不建 `ix_<table>_legal_entity_id_created_at`，因为无该列。本表取代基线第 3.8 节不带 `legal_entity_id` 的表只有四类这条封闭枚举，该枚举与其中的全局配置字典一类一并删除。正向规则是：凡带 `legal_entity_id` 的表一律按第 3.6 节模板建策略；不带该列的表必须逐表登记本表一行，且 `admission_basis` 必须成立，即该表的行要么在本部署内对全部法人取值相同，要么是隔离机制自身或部署自身的元数据。该判据可机械核对，取代原先主观的不承载任何业务数据。本阶段登记八行：`platform_core` 的 `legal_entities`、`enterprise_groups`、`sensitive_field_registry`、`append_only_registry`、`migration_windows`、`migration_window_lock`、`unpoliced_table_registry`，以及 `platform_ops.degradation_windows`，八行的 `admission_basis` 均取 `ISOLATION_OR_DEPLOYMENT_METADATA`。refinery 自建的历史表不由本项目建表，不在本登记与 `db/checks/13` 的范围内。
+索引：`pk_unpoliced_table_registry`、`ux_unpoliced_table_registry_schema_table`、`ix_unpoliced_table_registry_created_at`。该表不建 `ix_<table>_legal_entity_id_created_at`，因为无该列。本表取代基线第 3.8 节不带 `legal_entity_id` 的表只有四类这条封闭枚举，该枚举与其中的全局配置字典一类一并删除。正向规则是：凡带 `legal_entity_id` 的表一律按第 3.6 节模板建策略；不带该列的表必须逐表登记本表一行，且 `admission_basis` 必须成立，即该表的行要么在本部署内对全部法人取值相同，要么是隔离机制自身或部署自身的元数据。该判据可机械核对，取代原先主观的不承载任何业务数据。本阶段登记八行：`platform_core` 的 `legal_entities`、`enterprise_groups`、`sensitive_field_registry`、`append_only_registry`、`migration_windows`、`migration_window_lock`、`unpoliced_table_registry`，以及 `platform_ops.degradation_windows`，八行的 `admission_basis` 均取 `ISOLATION_OR_DEPLOYMENT_METADATA`。`ep-migrate` 自建的历史表不由项目迁移创建，不在本登记与 `db/checks/13` 的范围内。
 
 #### 3.6 RLS 策略模板与其强制方式
 
@@ -375,7 +388,7 @@ end $$;
 | `platform_core.assert_immutable_columns()` | BEFORE UPDATE 触发器函数，比对 `append_only_registry.mutable_columns` 之外的列有变化即 raise |
 | `platform_core.attach_table_guards(p_schema text, p_table text)` | 由各阶段迁移调用，按登记表自动挂接上述触发器并调用 `apply_le_rls` |
 
-`assert_append_only` 用于裁定 B-02 终表中 `mode` 取 `APPEND_ONLY` 的十二张表，逐表清单以 B-02 为唯一出处，本阶段不复述；`assert_immutable_columns` 用于 Outbox 与死信，Outbox 的可变列白名单为 `status`、`attempts`、`available_at`、`locked_by`、`locked_until`、`last_error`，死信的可变列白名单按 B-02 取 `state`、`repaired_by`、`repaired_at`、`approval_ref`、`discard_reason` 五列，少登记一列即在上线后拒绝修复完成与丢弃两条路径的写入。这些表的定义与其登记行属阶段 3b、7、8、9a 与 10，本阶段只交付机制与登记表，并在集成测试中用合成表验证。
+`assert_append_only` 用于裁定 B-02/F-50 终表中 `mode` 取 `APPEND_ONLY` 的十四张表，逐表清单以 B-02 为唯一出处，本阶段不复述；`assert_immutable_columns` 用于 Outbox 与死信，Outbox 的可变列白名单为 `status`、`attempts`、`available_at`、`locked_by`、`locked_until`、`last_error`，死信的可变列白名单按 B-02 取 `state`、`repaired_by`、`repaired_at`、`approval_ref`、`discard_reason` 五列，少登记一列即在上线后拒绝修复完成与丢弃两条路径的写入。这些表的定义与其登记行属阶段 3b、7、8、9a 与 10，本阶段只交付机制与登记表，并在集成测试中用合成表验证。
 
 触发器成本在 20 并发下可忽略，其收益是把基线第 3.7 节的乐观锁写法与第 3.6 节的仅追加口径从代码纪律变成数据库约束，代码路径遗漏时立即失败而不是静默写坏。
 
@@ -385,13 +398,15 @@ end $$;
 
 金额、数量、单价、比率四类列的类型正确性无法从语义推断，因此本阶段固定列名后缀：金额列以 `_amount` 结尾且必须 `numeric(18,2)`；数量列以 `_qty` 结尾且必须 `numeric(18,6)`；单价列以 `_unit_price` 结尾且必须 `numeric(18,6)`；比率与税率列以 `_rate` 结尾且必须 `numeric(9,6)`。由 `db/checks/05_numeric_precision.sql` 断言。这是本阶段新增决定，见第 12 节。
 
-跨 schema 引用的处置在本节一并写死，基线第 3.3 节禁止跨 schema 外键这条禁令删除。凡目标单一的跨 schema 引用一律建真实外键并 `ON DELETE RESTRICT`，取复合形式 `(legal_entity_id, <ref>_id)` 指向被引用表的 `(legal_entity_id, id)` 唯一键；被跨 schema 引用的表因此另建一条唯一键 `ux_<table>_legal_entity_id_id`，名称超过 63 字节时按本节缩写规则处理并在数据字典登记全称。这条同时把基线第 3.3 节任何跨法人引用一律禁止从写入前的应用层校验升级为数据库强制，各阶段写入前校验两侧 `legal_entity_id` 相等的散落实现随之删除。保留逻辑引用列的只有三类：`ledger.vouchers`、`costing.cost_entries` 与 `inventory` 九张表的多态来源单据引用；`approval_ref` 与 `release_package_id` 两个平台侧跨越型引用；`ext` 下扩展对象与自定义字段指向业务表的元数据驱动引用。三类之外出现的跨 schema 逻辑引用列即为违规。被引用对象的建表迁移版本号更晚而无法在建表语句中直接声明的少数引用，由一条版本号晚于两侧建表迁移的 `ALTER TABLE ADD CONSTRAINT` 补建，该迁移放在引用方所属 schema 的目录下。外键违例的 SQLSTATE 23503 在 `ep-adapter-db-pg` 一处统一映射为 `PLATFORM.DB.REFERENCED_ROW_MISSING`，`details` 定位到该外键列并记录约束名，同时按应用缺陷告警，理由是写入前的契约调用本应先行拒绝；跨模块契约调用因此降级定位为给出可读错误码与业务状态判定的前置校验，引用存在性由数据库兜底。
+跨 schema 引用的处置在本节一并写死，基线第 3.3 节禁止跨 schema 外键这条禁令删除。凡目标单一的跨 schema 引用一律建真实外键并 `ON DELETE RESTRICT`，默认取复合形式 `(legal_entity_id, <ref>_id)` 指向被引用表的 `(legal_entity_id, id)` 唯一键；被跨 schema 引用的表因此另建一条唯一键 `ux_<table>_legal_entity_id_id`，名称超过 63 字节时按本节缩写规则处理并在数据字典登记全称。这条同时把基线第 3.3 节任何跨法人引用一律禁止从写入前的应用层校验升级为数据库强制，各阶段写入前校验两侧 `legal_entity_id` 相等的散落实现随之删除。业务用户列固定以 `(legal_entity_id,<user_ref>)` 指向 `platform_authz.user_legal_entity_grants(legal_entity_id,user_id)`，不得指向无法人列的 `platform_core.user_accounts`；`SYSTEM_PRINCIPAL_ID` 每法人必须有授权行。会话、设备登记行与重新认证挑战三类全局身份证据引用固定使用指向无法人目标主键的真实单列外键并 `ON DELETE RESTRICT`，写用例另在持锁事务内校验证据归属当前用户与法人；这是 `db/checks/09` 的具名外键形状例外，不是无外键逻辑引用。
+
+允许无外键的列只有封闭四组：一是所属阶段逐表登记、带判别列和 NULL-safe 形状 CHECK 的显式多态组合，含 `ledger.vouchers`、`costing.cost_entries`、`inventory` 九张表的来源组合、阶段 7 的来源/付款/门户引用组合、阶段 10 的品项与资金来源/目标组合及 F-54 影响面 `target/result` 组合；列名相似不自动准入。二是 `approval_ref` 与 `release_package_id`。三是 `ext` 下扩展对象与自定义字段的元数据驱动引用。四是 F-50 唯一明确例外 `invoice.invoice_reversals.linked_purchase_return_id`。多态组合未同时写出判别列、封闭目标集合、NULL-safe CHECK 与同法人写入校验即为违规；四组之外出现跨 schema 无外键引用同样违规。被引用对象的建表迁移版本号更晚而无法在建表语句中直接声明的少数引用，由一条版本号晚于两侧建表迁移的 `ALTER TABLE ADD CONSTRAINT` 补建，该迁移放在引用方所属 schema 的目录下。外键违例的 SQLSTATE 23503 在 `ep-adapter-db-pg` 一处统一映射为 `PLATFORM.DB.REFERENCED_ROW_MISSING`，`details` 定位到该外键列并记录约束名，同时按应用缺陷告警，理由是写入前的契约调用本应先行拒绝；跨模块契约调用因此降级定位为给出可读错误码与业务状态判定的前置校验，引用存在性由数据库兜底。
 
 #### 3.9 合规断言清单
 
-`db/checks/` 十三项编号断言，全部返回 0 行为通过：01 公共列齐备；02 RLS 已启用且强制；03 策略文本与模板全等；04 时间列类型（`_at` 为 timestamptz、`_date` 与 `_on` 为 date）；05 数值精度后缀；06 命名前缀；07 标识符长度；08 无 PostgreSQL enum 类型、无函数索引、无部分索引、无 JSON 路径索引；09 无 `current_date`、无 `ON DELETE CASCADE`，且全部外键为 `ON DELETE RESTRICT`、跨 schema 外键均取第 3.8 节的复合形式；10 基线索引齐备；11 按 `platform_core.sensitive_field_registry` 的 `is_field_encrypted` 分支断言，取真的登记项断言物理表上存在 `<column_name>_enc` 列且类型为 `bytea` 且不存在同名明文列 `<column_name>`，取假的登记项只断言 `<schema_name>.<table_name>.<column_name>` 三元组在 `information_schema.columns` 中命中实际列，不施加 `bytea` 与 `_enc` 后缀断言；12 排序规则一致性，脚本名 `db/checks/12_collation_conformance.sql`，断言 `pg_database` 中本库的 `datlocprovider` 为 `i`、`daticulocale` 为 `zh-Hans-CN`、且 `datcollversion` 与 `pg_database_collation_actual_version(oid)` 相等，任一项不符即返回该库一行，该项即阶段 1 计划第 447 行 IT-31 要求在 `check` 子命令中就位的判定位，其负样例夹具由阶段 1 提供，本阶段不重复交付；13 未受行级策略表登记一致性，脚本名 `db/checks/13_unpoliced_registry.sql`，断言本项目 24 个 schema 下全部未启用行级安全的表与 `platform_core.unpoliced_table_registry` 的登记行逐行一致，多一张或少一张即返回该表一行，refinery 自建的历史表除外。
+`db/checks/` 十三项编号断言，全部返回 0 行为通过：01 公共列齐备；02 RLS 已启用且强制；03 策略文本与模板全等；04 时间列类型（`_at` 为 timestamptz、`_date` 与 `_on` 为 date）；05 数值精度后缀；06 命名前缀；07 标识符长度；08 无 PostgreSQL enum 类型、无函数索引、无部分索引、无 JSON 路径索引；09 无 `current_date`、无 `ON DELETE CASCADE`，且全部外键为 `ON DELETE RESTRICT`、跨 schema 单目标外键均取第 3.8 节的复合形式，只有本节具名的全局身份证据目标可取单列外键；10 基线索引齐备；11 按 `platform_core.sensitive_field_registry` 断言物理形态：`is_field_encrypted = true` 时存在 `<column_name>_enc bytea` 且不存在同名明文列，取假时三元组命中实际明文列；`blind_index = 'EXACT'` 时另断言 `blind_index_column` 命中 `bytea` 列，并存在固定命名且等价于 `<bidx> IS NULL OR octet_length(<bidx>) = 32` 的 CHECK，`NONE` 时不得登记盲索引列；12 排序规则一致性，脚本名 `db/checks/12_collation_conformance.sql`，断言 `pg_database` 中本库的 `datlocprovider='c'`、`datcollate='C'`、`datctype='C'` 且 `daticulocale IS NULL`，任一项不符即返回该库一行；本项目不建立 ICU collation，也不以 `datcollversion` 作为首版门禁。该项即阶段 1 计划 IT-31 要求在 `check` 子命令中就位的判定位，其负样例夹具由阶段 1 提供，本阶段不重复交付；13 未受行级策略表登记一致性，脚本名 `db/checks/13_unpoliced_registry.sql`，断言本项目 24 个 schema 下全部未启用行级安全的表与 `platform_core.unpoliced_table_registry` 的登记行逐行一致，多一张或少一张即返回该表一行，`ep-migrate` 自建的历史表除外。
 
-另有一个不编号的脚本 `db/checks/append_only_consistency.sql`，按 B-02 断言 `platform_core.append_only_registry` 的登记与物理表上实际挂接的触发器逐项一致，由 `xtask sqlcheck` 执行，不计入 `ep-migrate check` 的十三项。阶段 3b、阶段 7、阶段 8、阶段 9a 与阶段 10 追加合计十四行登记后由该脚本兜底。
+另有一个不编号的脚本 `db/checks/append_only_consistency.sql`，按 B-02/F-50 断言 `platform_core.append_only_registry` 的登记与物理表上实际挂接的触发器逐项一致，由 `xtask sqlcheck` 执行，不计入 `ep-migrate check` 的十三项。阶段 3b、阶段 7、阶段 8、阶段 9a 与阶段 10 追加合计十六行登记后由该脚本兜底。
 
 ---
 
@@ -401,15 +416,15 @@ end $$;
 
 #### 4.1 核心类型
 
-`ep-adapter-db-pg` 中的四个类型 `PoolKind`、`SessionContext`、`RetryPolicy`、`ConnectionBudget` 按 C-04 由阶段 1 定义且一律留在 `ep-adapter-db-pg`，不进 `ep-foundation`，本阶段只固定其取值：`PoolKind { Rw, Ro, Worker, Integ, Ops }`；`SessionContext { legal_entity_id, user_id, request_id, trace_id }`；`RetryPolicy` 取 `max_attempts` 为 3、`backoff_ms` 为 `[50, 150, 450]`、`retryable_sqlstates` 为 `["40001", "40P01"]`；`ConnectionBudget` 取 `resident_max` 为 42、`burst_max` 为 52，`per_pool` 五项取 Rw 20、Ro 10、Worker 5、Integ 5、Ops 2。预算校验脚本 `scripts/verify-connection-budget.sh` 由本阶段交付。
+`ep-adapter-db-pg` 中的四个类型 `PoolKind`、`SessionContext`、`RetryPolicy`、`ConnectionBudget` 按 C-04 由阶段 1 定义且一律留在 `ep-adapter-db-pg`，不进 `ep-foundation`，本阶段只固定其取值：`PoolKind { Rw, Ro, Worker, Ops }`；`SessionContext { legal_entity_id, user_id, request_id, trace_id }`；`RetryPolicy` 取 `max_attempts` 为 3、`backoff_ms` 为 `[50, 150, 450]`、`retryable_sqlstates` 为 `["40001", "40P01"]`；`ConnectionBudget` 取 `resident_max=37`、`temporary_max=10`、`safety_headroom=5`、`peak_max=52`，`per_pool` 四项取 Rw 20、Ro 10、Worker 5、Ops 2，且必须机械断言 `37+10+5=52`。integration-gateway 没有 `PoolKind`、数据库配置、连接池或凭据，预算校验脚本 `scripts/verify-connection-budget.ps1` 由本阶段交付。
 
 事务句柄与工作单元按 A-01 冻结在 `ep-foundation` 的 `port::tx`，本阶段不重定义：`Tx`、`SnapshotCtx` 与 `UnitOfWork` 三个 trait 的签名取自该模块，契约层的跨模块方法一律写 `&mut dyn Tx`；`UnitOfWork` 的两个方法按 C-03 为 `transact` 与 `snapshot_transact`，`transact_repeatable_read` 一名作废。本阶段在 `ep-adapter-db-pg` 声明并实现 `PgUnitOfWork` 与 `PgTx` 两个类型。跨 crate 取具体句柄的唯一写法是 `tx.as_any_mut().downcast_mut::<PgTx>()`，只允许出现在 `crates/adapter/db-pg/` 内，由 `xtask archcheck` 断言其他目录不出现 `downcast_mut::<PgTx>`。一个 `UnitOfWork` 实例在装配时绑定一个池，application crate 对其取泛型参数 `U: UnitOfWork` 而不是 trait 对象。
 
 按 C-07，本阶段在 `ep_foundation::port::db` 中定义幂等存储端口，签名见第 6 节，其表与重放实现属阶段 3a，请求头校验属阶段 1。
 
-按裁定 F-04，KMS 能力的端口 trait 与其调用词汇落 `ep_foundation::port::kms`，不落 `ep-adapter-kms`。该模块承载端口面九项：`KmsBackend` trait 与 `CipherText`、`KeyDomainId`、`BlindIndex`、`Aad`、`KeyRef`、`Signature`、`CipherEnvelope`、`KeyPurpose` 八个词汇类型，空文件由阶段 1 建，内容由本阶段补齐。`ep-adapter-kms` 中只留 `KeyDomain`（含 `domain_kind` 与第 4.2 节四态）、`DataKey`、`BlindIndexKey` 三个密钥材料与密钥域状态类型，以及 `BuiltinKmsBackend` 与 `HsmKmsBackend` 两个载体实现类型，两个实现类型的声明位与实现位同在本 crate。全卷不再出现密钥经 `ep-adapter-kms` 取用这一说法，私钥与数据密钥材料一律不出载体。
+按裁定 F-04，KMS 能力的端口 trait 与其调用词汇落 `ep_foundation::port::kms`，不落 `ep-adapter-kms`。该模块承载冻结的六方法 `KmsBackend`、只读 `KmsSigningKeyIdentityResolver`、独立三方法 `KmsKeyMaterialProvisioner`、独立三方法 `KmsPinnedDataKeyBackend`，以及它们使用的值类型；空文件由阶段 1 建，内容由本阶段补齐。`ep-adapter-kms` 中只留 `KeyDomain`（含 `domain_kind` 与第 4.2 节四态）、`DataKey`、`BlindIndexKey` 三个密钥材料与密钥域状态类型，以及 `BuiltinKmsBackend` 与 `HsmKmsBackend` 两个载体实现类型，两个实现类型的声明位与实现位同在本 crate，并同时实现上述四个 KMS 端口。全卷不再出现密钥经 `ep-adapter-kms` 取用这一说法，私钥与明文数据密钥材料一律不出载体。
 
-`KmsBackend` 的方法由四个增为六个，补 `sign` 与 `verify`；签名算法在全卷已固定为 ECDSA P-256，端口不带算法参数。该 trait 无泛型方法，对象安全，装配时以 `Arc<dyn KmsBackend>` 注入，注入点为 `apps/core-server/src/wiring/` 与 `apps/job-worker/src/wiring/` 两个目录。六个方法的形态如下。
+`KmsBackend` 的方法由四个增为六个，补 `sign` 与 `verify`；签名算法在全卷已固定为 ECDSA P-256，端口不带算法参数。该 trait 无泛型方法，对象安全，装配时以 `Arc<dyn KmsBackend>` 注入，注入点为 `apps/core-server/src/wiring/` 与 `apps/job-worker/src/wiring/` 两个目录。六个方法的形态如下；F-56 不能再给这个冻结 trait 增第七个方法。
 
 ```rust
 // crates/foundation/src/port/kms.rs
@@ -419,7 +434,7 @@ pub trait KmsBackend: Send + Sync + 'static {
         -> Result<CipherEnvelope, AppError>;
     async fn unwrap(&self, domain: KeyDomainId, aad: &Aad, envelope: &CipherEnvelope)
         -> Result<Vec<u8>, AppError>;
-    // derive_blind_key 只冻结三参数形态，返回宽度是待决项，见下段
+    // 三参数形态与 BlindIndex([u8; 32]) 返回类型同时冻结
     async fn derive_blind_key(&self, legal_entity_id: Id<LegalEntity>, column_fqn: &str,
                               plaintext: &[u8]) -> Result<BlindIndex, AppError>;
     async fn sign(&self, key: &KeyRef, payload: &[u8]) -> Result<Signature, AppError>;
@@ -427,11 +442,133 @@ pub trait KmsBackend: Send + Sync + 'static {
         -> Result<bool, AppError>;
     async fn health(&self) -> Result<(), AppError>;
 }
+
+#[derive(Clone, PartialEq, Eq)]
+pub struct SigningKeyIdentityV1 {
+    pub key_ref: KeyRef,
+    pub spki_sha256: [u8; 32],
+}
+
+impl SigningKeyIdentityV1 {
+    // 唯一文本身份："spki-sha256:" + 64 位 ASCII lowerhex
+    pub fn signer_subject(&self) -> String;
+}
+
+#[async_trait::async_trait]
+pub trait KmsSigningKeyIdentityResolver: Send + Sync + 'static {
+    async fn resolve_signing_key_identity(&self, key: &KeyRef)
+        -> Result<SigningKeyIdentityV1, AppError>;
+}
+
+// KeyPurpose 同时携带数据库 purpose 与密级子域；四个 variant 的
+// security_level_scope 只接受 SecurityLevel 的 10/20/30/40。
+pub enum KeyPurpose {
+    Field(SecurityLevel),
+    BlindIndex(SecurityLevel),
+    Attachment(SecurityLevel),
+    Archive(SecurityLevel),
+}
+
+pub enum DataKeyAlgorithm { Aes256Gcm, HmacSha256 }
+
+pub struct KekReadbackV1 {
+    pub key_ref: KeyRef,
+    pub kek_version: u32, // 持久化时必须在 1..=i32::MAX，禁止 cast 截断
+    pub provider_fingerprint_sha256: [u8; 32],
+}
+
+pub struct WrappedDataKeyV1 {
+    pub data_key_id: uuid::Uuid,
+    pub purpose: KeyPurpose,
+    pub version: u16, // 1..=65535，与 EPC1 header/DB CHECK 同域
+    pub algorithm: DataKeyAlgorithm, // DB exact: AES_256_GCM | HMAC_SHA256
+    pub wrapped_key: Vec<u8>,
+    pub wrap_kek_version: u32, // 持久化时必须在 1..=i32::MAX
+    pub wrapped_key_sha256: [u8; 32],
+}
+
+pub struct WrappedDataKeyReadbackV1 {
+    pub purpose: KeyPurpose,
+    pub version: u16,
+    pub algorithm: DataKeyAlgorithm,
+    pub wrap_kek_version: u32, // 持久化时必须在 1..=i32::MAX
+    pub wrapped_key_sha256: [u8; 32],
+    pub plaintext_key_octets: u16, // success 时必须恰为 32；不返回 plaintext
+}
+
+#[async_trait::async_trait]
+pub trait KmsKeyMaterialProvisioner: Send + Sync + 'static {
+    async fn ensure_kek(&self, deployment_id: uuid::Uuid, domain: KeyDomainId,
+                        legal_entity_id: Id<LegalEntity>,
+                        expected_ref: &KeyRef, expected_version: u32 /* 1..=i32::MAX */)
+        -> Result<KekReadbackV1, AppError>;
+    async fn generate_detached_data_key(&self, deployment_id: uuid::Uuid,
+                        domain: KeyDomainId, legal_entity_id: Id<LegalEntity>,
+                        data_key_id: uuid::Uuid, kek: &KekReadbackV1,
+                        purpose: KeyPurpose, version: u16)
+        -> Result<WrappedDataKeyV1, AppError>;
+    async fn readback_wrapped_data_key(&self, deployment_id: uuid::Uuid,
+                        domain: KeyDomainId, legal_entity_id: Id<LegalEntity>,
+                        kek: &KekReadbackV1,
+                        wrapped: &WrappedDataKeyV1)
+        -> Result<WrappedDataKeyReadbackV1, AppError>;
+}
+
+// 私有字段、不可 Serialize/Deserialize/Clone；只能由 adapter resolve 返回。
+pub struct DataKeyHandleV1 {
+    deployment_id: uuid::Uuid,
+    legal_entity_id: Id<LegalEntity>,
+    domain: KeyDomainId,
+    purpose: KeyPurpose,
+    data_key_id: uuid::Uuid,
+    version: u16,
+    algorithm: DataKeyAlgorithm,
+}
+
+#[derive(Clone, Eq, PartialEq)]
+pub struct DataKeyRefV1 {
+    data_key_id: uuid::Uuid,
+    version: u16,
+}
+
+pub enum DataKeySelectorV1 {
+    CurrentForWrite,
+    ExactRef(DataKeyRefV1),
+}
+
+impl DataKeyHandleV1 {
+    pub fn canonical_ref(&self) -> DataKeyRefV1;
+}
+
+impl DataKeyRefV1 {
+    pub fn parse_exact(input: &str) -> Result<Self, AppError>;
+    pub fn as_str(&self) -> String;
+}
+
+#[async_trait::async_trait]
+pub trait KmsPinnedDataKeyBackend: Send + Sync + 'static {
+    async fn resolve_data_key(&self, deployment_id: uuid::Uuid,
+                        legal_entity_id: Id<LegalEntity>, domain: KeyDomainId,
+                        purpose: KeyPurpose, selector: DataKeySelectorV1)
+        -> Result<DataKeyHandleV1, AppError>;
+    async fn wrap_with_data_key(&self, key: &DataKeyHandleV1, aad: &Aad,
+                        plaintext: &[u8]) -> Result<CipherEnvelope, AppError>;
+    async fn unwrap_with_data_key(&self, key: &DataKeyHandleV1, aad: &Aad,
+                        envelope: &CipherEnvelope) -> Result<Vec<u8>, AppError>;
+}
 ```
 
-本代码块的冻结范围逐项写死，不得整块读成已冻结。`wrap`、`unwrap`、`sign`、`verify`、`health` 五个方法的参数与返回类型冻结，任何阶段不得改写；`verify` 取 `Result<bool, AppError>` 而不是 `Result<(), AppError>`，`false` 表示验签不通过，由调用方映射到其已登记的错误码，本阶段不因此新增错误码。`derive_blind_key` 只冻结 `legal_entity_id`、`column_fqn`、`plaintext` 三参数形态，该形态取自第 4.4 节与阶段 5、阶段 10 的既有逐字原文；其返回宽度不随本批冻结，理由是第 4.4 节与第 11 节假设三要求 `finance.cash_accounts` 走确需唯一路径时取完整 32 字节，第 4.1 节下一段的 `BlindIndex` 现取 `[u8; 16]`，第 7 节 `EP__CRYPTO__BLIND_INDEX__BYTES` 又允许取 16 或 32，三处不能同时为真。该返回类型因此是待决项，落码前由本阶段与阶段 5、阶段 10 同批定，定前任何阶段不得据本代码块把 16 字节当作已冻结结论。
+本代码块的冻结范围逐项写死，不得整块读成已冻结。`wrap`、`unwrap`、`sign`、`verify`、`health` 五个方法的参数与返回类型冻结，任何阶段不得改写；`verify` 取 `Result<bool, AppError>` 而不是 `Result<(), AppError>`，`false` 表示验签不通过，由调用方映射到其已登记的错误码，本阶段不因此新增错误码。`KeyPurpose` 不是无 payload 的四值枚举，而是上块所示携带 `SecurityLevel` 的 strong value；`wrap` 必须用它选择 `(purpose,scope)`，并要求 scope 与 `Aad` 私有元数据逐字相等。`unwrap` 必须由 envelope 的 `data_keys.id` 反查同法人 purpose/scope/version，并要求 scope 与 `Aad` 相等，不能任选同 purpose 的四把 key。`derive_blind_key` 的 `legal_entity_id`、`column_fqn`、`plaintext` 三参数形态与 `Result<BlindIndex, AppError>` 返回类型同时冻结；此处参数名因 ABI 保留，但合法值不是裸 FQN，而是第 4.4 节的 scoped selector。`BlindIndex` 的内部宽度固定为 32 字节。调用方不得传宽度、不得截断返回值，配置层也不得改变该宽度。
 
-`ep-foundation` 的 `port::kms` 增：`CipherText(Vec<u8>)`、`KeyDomainId(Uuid)` 与 `BlindIndex`，三者由 `crates/foundation/src/lib.rs` 按既有 `pub use` 惯例再导出，使第 4.4 节与阶段 5、阶段 10 逐字写的 `foundation::BlindIndex` 继续成立。三者均不实现 `Debug` 与 `Display` 的明文形态，`CipherText` 的 `Debug` 输出固定为 `CipherText(len=N)`。`BlindIndex` 现取 `[u8; 16]`，该宽度按上段是待决项，不随本批冻结。
+`KmsSigningKeyIdentityResolver` 是独立只读端口，不改变六方法 ABI。传入的 `KeyRef` 必须指向不可变且带版本的同一签名 key object；返回值的 `key_ref` 必须与输入 canonical bytes 相等，`spki_sha256` 必须由该 object 的 exact DER SubjectPublicKeyInfo 计算，`signer_subject()` 只允许输出 `spki-sha256:<64 lowerhex>`。builtin 从受保护 key object 的公开部分派生，HSM 从同一 object 的公开属性或公开证书派生；两者都不得导出私钥或信任调用方提供的 token。普通配置包签名唯一顺序为：将 `release.signing_key_ref` 只解析一次为 immutable `KeyRef`，resolve-before，以同一引用 `sign`，以同一引用 `verify=true`，resolve-after 并要求两个 identity 逐字相等，然后才在同一数据库事务持久化 canonical `signature_key_ref`、signature、token 与 `signed_at`；任一步失败或轮换造成身份变化都必须零状态推进。轮换只影响后续签名，不回填历史包。F-56 imported special 的外层是发行方 detached CMS，绝不调用这个 resolver 或部署 KMS `sign`。
+
+`KmsKeyMaterialProvisioner` 同样是独立端口，不给 `KmsBackend` 增第七个方法；A-03、A-04 与 F-56 core readiness resume 只能共用 application 层唯一 `KeyDomainProvisioner` use case 调它。KEK 的唯一 logical locator 是表二格式，provider-side 幂等 label 固定为 `EP-KEK-V1:<lowercase-deployment-uuid>:<lowercase-key-domain-uuid>:1`；同 label 已存在且算法、usage、版本或 fingerprint 不同，adapter 必须隔离冲突对象并返回 `PLATFORM.KEY_DOMAIN.KEY_UNAVAILABLE`，不得覆盖、删除、另选对象或回落另一 provider。DEK operation label 固定为 `EP-DEK-V1:<lowercase-deployment-uuid>:<lowercase-key-domain-uuid>:<FIELD|BLIND_INDEX|ATTACHMENT|ARCHIVE>:<10|20|30|40>:<version>`。`BLIND_INDEX` 唯一算法为 `HMAC_SHA256`，其余三类唯一算法为 `AES_256_GCM`；明文密钥统一 32 bytes。
+
+DEK 的持久真相只在 PostgreSQL `data_keys.wrapped_key`：`generate_detached_data_key` 在 adapter/HSM 边界内生成明文、用 exact KEK 包裹、立即 zeroize 或销毁 transient object，只返回绑定 caller 预生成 `data_key_id` 的 `WrappedDataKeyV1`，不得建立可按 label 回读的第二份持久 DEK object。数据库提交前崩溃时该候选无持久外部副作用，可安全重生；若数据库行已存在则绝不重生，必须从该行重构 `WrappedDataKeyV1` 并调用 `readback_wrapped_data_key`。readback 在 adapter 内实际解封并核对 deployment/domain/legal-entity/data-key identity、算法、scope、版本、KEK 版本、32-byte 长度和摘要，返回的证据不含明文，并以验证后的 `(legal_entity_id,domain,purpose,scope,data_key_id,version)` 刷新同进程 KMS registry；任何不等都保持域为 `PROVISIONING` 或保持旧版本继续服务。core-server/job-worker 启动时由 application loader 从 DB 读取全部非 `DESTROYED` 行并逐把调用同一 readback，adapter 不依赖 `ep-adapter-db-pg`，registry 丢失可由 DB 重建。
+
+`KmsPinnedDataKeyBackend` 专用于附件等必须流式处理且一次对象处理期间不能随轮换漂移的正文，不改变六方法 ABI。`DataKeyRefV1` 的唯一持久 wire 为 `data-key://<lowercase-canonical-data-key-uuid>#<u16非零、无前导零十进制version>`；该版本与 DB `data_keys.version`、`WrappedDataKeyV1`、handle 及 EPC1 偏移 21 的两字节大端值共用 exact `1..65535` 域，禁止任一层接受更大值再截断。拒绝大写 UUID、缺失/多余分隔符、零/超 65535 版本、前导零、空白、percent encoding、query/fragment 变体或尾随 bytes。`canonical_ref()` 只返回该非秘密强引用，不能取得 handle 私有归属字段或密钥材料。新对象只能用 `CurrentForWrite`，从已 readback registry 取该 `(domain,purpose,scope)` 唯一 ACTIVE key；历史读取与中断续传只能用对象行保存的 `ExactRef`，不得重新解析为 current。adapter 对 `ExactRef` 必须核对 ref 对应的 registry 项与调用方 deployment/legal/domain/purpose/scope 逐字一致；`ACTIVE|RETIRING|RETIRED` 可用于解密既有对象，`DESTROYED`、缺失、摘要/readback 不等或任何损坏一律 `PLATFORM.KEY_DOMAIN.KEY_UNAVAILABLE`，且 ExactRef 绝不用于新对象写入。后续每块都必须以同一不可伪造 handle 调 `wrap_with_data_key`/`unwrap_with_data_key`，因此轮换只影响新对象，不会令同一对象混用版本或令旧对象错取新 key。两项 wrap/unwrap 在 adapter 内校验 handle 仍属于同 deployment/legal/domain、purpose/scope 与 `Aad` 私有元数据相等、envelope data-key id/version 等于 handle；它们只收发单块业务明文/密文，永不返回 DEK。application 层 `DataKeyRegistryLoader` 在 readiness 前从 DB 对全部非 `DESTROYED` 行调用同一 readback 恢复 registry，并在 exact-ref cache miss 时只读加载该行、readback 后恰重试一次；adapter 不依赖数据库，任何不存在、多行、归属不符或 readback 不等都失败关闭。附件块上限、wire container 与 Range 映射由阶段 3 冻结；`ARCHIVE` 后续调用复用同一 pinned 机制，不得在 adapter 外自行 AES。
+
+`ep-foundation` 的 `port::kms` 增：`CipherText(Vec<u8>)`、`KeyDomainId(Uuid)`、`BlindIndex([u8; 32])` 与上述强类型，由 `crates/foundation/src/lib.rs` 按既有 `pub use` 惯例再导出，使第 4.4 节与阶段 5、阶段 10 逐字写的 `foundation::BlindIndex` 继续成立。`CipherText`、`WrappedDataKeyV1` 不得在 `Debug/Display` 输出 bytes；`BlindIndex` 不提供可变长度构造器，反序列化非 32 字节输入必须失败。`SigningKeyIdentityV1` 的 `Debug` 不得输出非 canonical 身份或任何 key material。`KmsBackend::wrap/unwrap` 输入与输出是业务明文/业务密文，不是 DEK：选钥、解封、缓存与 AES/HMAC 运算都在 adapter 内完成，私钥与明文 DEK 永不出 provider/adapter 边界；业务敏感明文仍按字段投影规则最短驻留、禁日志与序列化。
 
 #### 4.2 密钥域状态机
 
@@ -440,15 +577,17 @@ pub trait KmsBackend: Send + Sync + 'static {
 | 起点 | 终点 | 守卫条件 |
 |---|---|---|
 | 无 | `PROVISIONING` | 法人存在且 `is_active`；同法人同 `domain_kind` 不存在既有域 |
-| `PROVISIONING` | `ACTIVE` | KEK 已在 KMS 中生成且 `kek_ref` 可解引用；四个 `purpose` 各已生成一把 `version = 1` 的 `ACTIVE` DEK |
-| `ACTIVE` | `ACTIVE` | 轮换：新 DEK 版本置 `ACTIVE`，旧版本置 `RETIRING`。同一域同一 `purpose` 的轮换互斥，由事务级建议锁保证 |
+| `PROVISIONING` | `ACTIVE` | KEK 已按 exact locator ensure/readback；四个 `purpose` × 四个 `security_level_scope` 的 16 个组合各恰有一把 `version = 1` 的 `ACTIVE` DEK，算法映射、wrapped-key readback 与摘要全通过，缺、多、重复或错算法均拒绝 |
+| `ACTIVE` | `ACTIVE` | 轮换：指定 purpose 的四个 scope 以同一非零 u16 新版本全部置 `ACTIVE`，对应四把旧版本全部置 `RETIRING`，不得产生一半新一半旧；任一当前版本为 65535 时固定拒绝 `PLATFORM.KEY_DOMAIN.TRANSITION_INVALID`，不得溢出、回绕或另选较小号；同一域同一 `purpose` 的轮换互斥，由事务级建议锁保证 |
 | `ACTIVE` | `DESTROY_PLANNED` | 销毁前核验通过（见 4.6）且已完成双人审批与重新认证，两者由授权阶段的端口判定，端口未装配时一律拒绝 |
 | `DESTROY_PLANNED` | `ACTIVE` | 核验结论被撤销或审批被驳回，允许回退，回退写审计 |
 | `DESTROY_PLANNED` | `DESTROYED` | 全部 DEK 已置 `DESTROYED`，销毁证明三项齐备并已写入审计证据 |
 
 非法迁移一律返回 `BUSINESS_CONFLICT`。`DESTROYED` 是终态，不可逆。
 
-DEK 状态机：`ACTIVE` → `RETIRING`（有新版本，旧密文仍可解，新写入不再用它）→ `RETIRED`（重加密完成，无存量密文引用）→ `DESTROYED`（随密钥域销毁）。`RETIRING` 到 `RETIRED` 的判定依据是重加密任务上报的残留计数为零，任务本身属后续阶段，本阶段只提供状态与端口。
+每次首次 `PROVISIONING→ACTIVE` 必须与状态更新在同一 PostgreSQL 事务通过既有 `AuditWriter` 追加审计终结事件 `platform.key_domain.activated.v1`；完整 envelope 还固定 `event_id` 为本事务 terminal batch 前预分配的新 UUIDv7，`legal_entity_id=key_domains.legal_entity_id`，`actor_user_id=SYSTEM_PRINCIPAL_ID` 且命中该法人的 ACTIVE SYSTEM 法人授权，`actor_device_id=null`，`object_type='platform.key_domains'`，`object_id=key_domain_id`，`object_version=ACTIVE row_version`，`before=null`，`after=上述 payload`，`reason/approval_ref/reauth_ref=null`，`client='system'`，`occurred_at=activated_at`；`event_day/seq/prev_hash/hash` 只由 AuditWriter 既有分段链算法派生；没有该事件不得提交 ACTIVE。payload 是 unknown/missing key 均失败的 strict-JCS 闭集：`{schema_version:1,deployment_id,key_domain_id,legal_entity_id,activation_source,bootstrap_id,kek_ref,kek_version,kek_provider_fingerprint_sha256,data_keys,activated_at}`。UUID 固定小写 canonical，digest 为 64 lowerhex，时间为 UTC whole-second；`activation_source` 只取 `STANDARD|INITIAL_GOVERNANCE`，前者要求 `bootstrap_id=null`，后者要求非空并逐字等于 F-56 signed bootstrap id。`data_keys` 恰 16 项，每项闭集为 `{data_key_id,purpose,security_level_scope,version,algorithm,wrap_kek_version,wrapped_key_sha256}`，按 purpose 固定 `FIELD,BLIND_INDEX,ATTACHMENT,ARCHIVE`、每个 purpose 内 scope `10,20,30,40` 排序；首次激活 version 均为 1，算法和摘要逐字等于同事务锁内的 16 行及 KMS readback，`activated_at` 逐字等于域 `provisioned_at` 与 16 行首次 `activated_at`。Stage 14 必须重算审计 hash chain、该 payload、域/16-row projection、signed deployment 与 KEK fingerprint；审计缺失、重复或任一字段不等都不能形成 readiness/release 正向证据。
+
+DEK 状态机：`ACTIVE` → `RETIRING`（同一状态迁移写入 `retiring_at`；有新版本，旧密文仍可解，新写入不再用它）→ `RETIRED`（写入 `retired_at`；重加密完成，无存量密文引用）→ `DESTROYED`（写入 `destroyed_at`；随密钥域销毁）。每条边都必须保持 `ck_data_keys_state_shape` 与时间单调；不得跳态、清空既有时点或以未来状态的时点预填当前行。`RETIRING` 到 `RETIRED` 的判定依据是重加密任务上报的残留计数为零，任务本身属后续阶段，本阶段只提供状态与端口。
 
 #### 4.3 信封加密算法
 
@@ -463,21 +602,33 @@ DEK 状态机：`ACTIVE` → `RETIRING`（有新版本，旧密文仍可解，�
 | 23 | 12 | 随机 nonce |
 | 35 | n | 密文加 16 字节认证标签 |
 
-AAD 固定为三段拼接：16 字节 `legal_entity_id` 大端、UTF-8 的 `schema.table.column`、16 字节所属行的 `id`。加密步骤：一、按 `(legal_entity_id, purpose = FIELD, effective_level)` 取当前 `ACTIVE` DEK，命中进程内缓存则直接用，否则读 `data_keys` 并经 `ep_foundation::port::kms::KmsBackend` 的 `unwrap` 解封，载体实现在 `ep-adapter-kms`；二、生成 12 字节随机 nonce，用 `Rng` 端口取随机数，禁止直接用 `rand`；三、AES-256-GCM 加密，AAD 如上；四、拼装信封。
+`Aad` 是私有字段 strong value，内部固定为 `{purpose,security_level_scope,authenticated_bytes}`，不允许从任意 bytes 构造；scope 只接受 10/20/30/40，purpose/scope 是 adapter 的选钥与反查元数据。构造器闭集如下：`for_field(legal_entity_id,column_fqn,row_id,effective_level)` 的认证 bytes 继续是 16-byte 法人 UUID、UTF-8 `schema.table.column`、16-byte row id 三段拼接；`for_attachment_chunk(legal_entity_id,level,attachment_object_id,attachment_version_id,total_plaintext_len,chunk_no)` 的 bytes 为 `ASCII("EP-ATTACHMENT-CHUNK-AAD-V1\0") || legal[16] || u16be(level) || object[16] || version[16] || u64be(total_plaintext_len) || u32be(chunk_no)`；`for_archive_chunk(legal_entity_id,level,archive_object_id,total_plaintext_len,chunk_no)` 同理取 `ASCII("EP-ARCHIVE-CHUNK-AAD-V1\0") || legal[16] || u16be(level) || archive_object[16] || u64be(total_plaintext_len) || u32be(chunk_no)`。三者分别固定 metadata purpose=`FIELD|ATTACHMENT|ARCHIVE`，不得互换或新增 caller-chosen purpose；盲索引不用 `Aad`。
 
-解密步骤：校验魔数与长度，按 `dek_id` 与版本取 DEK，DEK 为 `DESTROYED` 即返回 `PLATFORM.CRYPTO.DECRYPT_FAILED` 并带 `incident_no`；AAD 由调用方按当前行重新构造，标签校验失败返回 `PLATFORM.CRYPTO.AAD_MISMATCH`。
+字段加密步骤唯一为：调用方求出 current effective level，构造 `KeyPurpose::Field(level)` 与 `Aad::for_field(...)`，把业务明文直接交 `KmsBackend::wrap`；adapter 要求两者 purpose/scope 相等，从已由 DB readback 恢复的 registry 选择 `(domain,FIELD,scope)` 当前唯一 ACTIVE DEK，在 adapter 内解封/缓存 DEK、生成 12-byte CSPRNG nonce、执行 AES-256-GCM 并填入 `data_keys.id/version`，调用方只收到 `CipherEnvelope` 后编码为上表 `EPC1`。调用方不得读取 `data_keys.wrapped_key`、自行解封 DEK或在 adapter 外执行 AES。
+
+解密步骤唯一为：调用方 strict parse `EPC1` 为 `CipherEnvelope`，按当前行重新构造同一 `Aad::for_field(...)` 后调用 `KmsBackend::unwrap`；adapter 以 envelope 的 `data_keys.id/version` 从 registry 定位同法人 DEK，要求其 scope 等于 `Aad` 私有 scope，再在内部解封/缓存并返回业务明文。DEK 为 `DESTROYED` 返回 `PLATFORM.CRYPTO.DECRYPT_FAILED` 并带 `incident_no`；法人、scope、AAD bytes 或标签任一不等返回 `PLATFORM.CRYPTO.AAD_MISMATCH`。scope 虽不增加 EPC1/AAD wire bytes，但由 authenticated envelope 中的 DEK identity 与当前 strong `Aad` 双向核对，因此修改记录密级不能把旧 scope 密文降级解密。
 
 边界条件：明文为空串时仍加密并产生非零长度密文，避免以长度区分空与非空；明文超过 1 MB 时拒绝并要求走附件通道；nonce 复用不可能发生，因为每次加密独立随机且同一 DEK 的写入量远低于 GCM 的安全上界，该上界与实际写入量的对照写入 ADR。
 
 行标识入 AAD 的代价是密文不能在行之间搬运，因此更正记录必须重新加密而不是复制密文；收益是数据库层的整列复制或跨行拼接无法产生可解密的结果，这与规格第 7.8 章密文不得直接用于过滤排序聚合是同一方向的约束。
 
+#### 4.3a 系统机密库与 `KmsSecretProvider`
+
+本节只管数据库连接等系统机密，不改上一节数据字段 `EPC1`。生产配置闭集和默认值均为 `secrets.provider=kms`；`file` 是配置错误并以 78 拒绝启动，常驻产品二进制不得链接 legacy-file reader。`SecretProvider` 是同步只读接口 `resolve(&SecretRef) -> Result<SecretBytes, SecretError>`，`KmsSecretProvider` 构造时固定签名部署配置中的非零 `deployment_id` 与一个 recipient；`SecretUnsealer` 承担实际解封。`SecretRecipient|SecretUnsealRequest|SecretErrorKind|SecretError` 以及两个 trait 的字段/方法签名逐字采用 ADR-0007 的 ABI 代码块，不得另造 async/provider-write 接口或给 `KmsBackend` 增方法。首版 recipient 恰为 `ep-core|ep-worker|ep-ops|ep-archive|ep-backup|ep-migrate`，调用方无参数可改 recipient。`ep-integ|ep-plugin` 的持久集成凭据用 WinCred，`ep-portal|ep-ai` 无 KMS 机密。`SecretBytes|SecretString` 使用 zeroizing 内存且不实现 Clone、Debug、Display、Serialize。
+
+builtin 不共享数据 KMS 的 `C:\EP\kms\master.key`：该 common master 仍只供 core/worker 的原数据 KMS，ACL 不扩张。`ep-secretctl bootstrap` 为每个 recipient 生成独立 32-byte CSPRNG KEK，用 DPAPI machine scope 写 `C:\EP\kms\bootstrap\<recipient>\secret-store-kek-<key-version>.dpapi`；DACL 只含该 recipient、SYSTEM、Administrators，additional entropy 精确为 `SHA-256("EP-BUILTIN-SECRET-STORE-KEK-V1\0" || deployment_id[16] || u16be(recipient_len) || recipient || u32be(key_version))`。HSM 为每 recipient 使用独立 nonextractable AES-256 object，`CKA_SENSITIVE=true,CKA_EXTRACTABLE=false` 且只许 AES-GCM。HSM PIN 固定引用 `bootstrap://windows-dpapi/hsm-pin#1`，按 recipient 落 `C:\EP\kms\bootstrap\<recipient>\<sha256(canonical-bootstrap-ref)>.dpapi`，entropy 为 `SHA-256("EP-HSM-PIN-BOOTSTRAP-V1\0" || deployment_id[16] || u16be(recipient_len) || recipient || u16be(ref_len) || canonical_bootstrap_ref)`；解出值须为 1..255 UTF-8 bytes且无 NUL/CR/LF。任一 module/slot/PIN/object 不可用即 78，不回落 builtin。启动序固定为签名配置/deployment_id→当前 recipient DPAPI KEK 或 DPAPI PIN+HSM object→provider→数据库 secret→首次连接；secret 失败时数据库连接调用次数必须为零。
+
+`SecretRef` 规范为 `secret://<segment>/<segment>[/...]#<version>`：2..8 段，每段 `[a-z0-9][a-z0-9._-]{0,63}`，总长≤512 UTF-8 bytes；version 为无前导零的 `[1-9][0-9]{0,9}` 且≤2147483647。`BootstrapRef` 只接受 `bootstrap://windows-dpapi/hsm-pin#<version>`；`SecretStoreKeyRef` 只接受下述 builtin/HSM 两形态，deployment UUID 为小写 canonical text、recipient 命中枚举、slot 为无前导零 u32 十进制（0 合法）、key version 与信封一致；三者都是私有字段 strong type，只由 strict parser 构造。路径由规范 ref 的 SHA-256 导出为 `C:\EP\secrets\<recipient>\<lowerhex>.eps1`；空段、`.`、`..`、反斜线、冒号、百分号、query、多 `#`、UNC、绝对路径和 ADS 全拒绝。EPS1 精确布局为：`EPS1[4],schema=1[u8],algorithm=1[u8],flags=0[u16be],deployment[16],key_version[u32be],recipient_len[u16be 1..32],secret_ref_len[u16be 1..512],key_ref_len[u16be 1..512],plaintext_len[u32be 1..65536],nonce[12],recipient,secret_ref,key_ref,ciphertext[plaintext_len],tag[16]`；最大文件 66658 bytes，无尾随字节。AAD 为 `"EP-SECRET-ENVELOPE-V1\0" || envelope[0..50] || recipient || canonical_secret_ref || canonical_key_ref`。builtin key ref 固定 `kms://builtin/secret-store/<deployment-uuid>/<recipient>#<key-version>`；HSM 固定 `kms://hsm/slot/<slot>/secret-store/<deployment-uuid>/<recipient>#<key-version>`，信封内各身份必须与当前请求/部署逐字一致。
+
+版本不可变且永不覆盖。轮换先为所有声明 recipient 以 CREATE_NEW staging 写 `#N+1`，FlushFileBuffers、关闭重开、strict parse、解密逐字节比对后同卷原子发布；所有 recipient 成功才改签配置到明确 `#N+1`。没有 `latest`、目录监听或隐式 fallback；旧版本至少 24 小时且所有消费者由 `secrets-resolvable` ACK 新版本后才 retire。`ep-secretctl` 顶层闭集恰为 `bootstrap|put|verify|migrate|finalize-migration|retire|inventory|wincred` 八项并进入 SBOM。`put` 与 HSM `bootstrap` 的 PIN 只用关闭 echo 的本机 `ReadConsoleW` 二次确认，builtin `bootstrap` 只从 CSPRNG 生成 KEK；均拒绝重定向 stdin/argv/env/file。只有 `migrate` 可读取验证 DACL/regular/no-reparse/ADS/hardlink 的 1..65536-byte Stage 1 legacy 明文并精确执行旧 resolver 的 UTF-8 `str::trim()`；trim 后为空即失败且不生成信封。迁移后逐字节 reopen 验证才把旧树移入 `C:\EP\secrets-legacy-quarantine\<run-id>`；`verify|inventory|retire|finalize-migration` 不读取明文。legacy、quarantine、staging 任一残留、任一 EPS1/recipient/DACL/依赖图失败、常驻制品携带 legacy reader、命令闭集不是八项，均使生产发布失败。
+
 #### 4.4 盲索引算法
 
-需要检索的敏感属性另建 `<col>_bidx bytea null` 列。取值为 `HMAC-SHA256(blind_key, normalize(value))` 的前 16 字节，`blind_key` 由 `(legal_entity_id, purpose = BLIND_INDEX, schema.table.column)` 派生，派生方式为 `HKDF-SHA256(dek, info = schema.table.column)`。归一化四种取值：`NONE` 原样；`TRIM_NFKC` 去首尾空白加 NFKC；`TRIM_NFKC_LOWER` 再转小写，用于电子邮箱；`DIGITS_ONLY` 只保留数字，用于电话与银行账号。
+需要检索的敏感属性另建 `<col>_bidx bytea null` 列。取值为完整的 `HMAC-SHA256(blind_key, normalize(value))` 32 字节输出，`blind_key` 由 `(legal_entity_id, purpose = BLIND_INDEX, effective_level, schema.table.column)` 派生，派生方式为 `HKDF-SHA256(scoped_dek, info = schema.table.column)`。冻结的 `derive_blind_key(legal_entity_id,column_fqn,plaintext)` 不改 ABI：第二参数的唯一合法 grammar 实为 scoped selector `<lowercase-schema>.<lowercase-table>.<lowercase-column>@<10|20|30|40>`，总长 5..196 ASCII bytes；调用方必须先以同一 `effective_level()` 求值构造，adapter 解析末尾 scope、以 `@` 前 base FQN 作为 HKDF info 并从 registry 选择同法人 `BLIND_INDEX` scoped DEK，裸 FQN、未知列、scope 与敏感字段登记/current effective level 不一致均拒绝。归一化四种取值：`NONE` 原样；`TRIM_NFKC` 去首尾空白加 NFKC；`TRIM_NFKC_LOWER` 再转小写，用于电子邮箱；`DIGITS_ONLY` 只保留数字，用于电话与银行账号。每个物理盲索引列都必须带 `CHECK (<col>_bidx IS NULL OR octet_length(<col>_bidx) = 32)`，迁移与 `db/checks/11` 同时核验，不接受 16 字节存量或其他长度。
 
-索引为普通 btree `ix_<table>_legal_entity_id_<col>_bidx`，不建唯一约束。理由是截断到 16 字节后碰撞概率虽极低但非零，唯一约束会把碰撞变成用户不可理解的写入失败；确需唯一时改用完整 32 字节并在数据字典标注。查询语义是先按盲索引取候选集，再在应用层解密逐条精确比对，因此碰撞只影响候选集大小，不影响正确性。
+索引默认是普通 btree `ix_<table>_legal_entity_id_<col>_bidx`；是否建立唯一约束只由对应业务字段的唯一性规则决定，与盲索引宽度无关。无唯一语义的等值查询先按盲索引取候选集，再在应用层解密逐条精确比对。完整 32 字节仍不消除等值与频次泄漏，逐列登记和最小权限要求保持不变。
 
-按 B-04，盲索引取值的唯一计算入口是 `KmsBackend::derive_blind_key(legal_entity_id, 'schema.table.column', plaintext)` 与 `foundation::BlindIndex`，阶段 5 与阶段 10 的银行账号查重一律经该入口，不得自建哈希加盐路径。银行账号盲索引列在 mdm 的客户与供应商、finance 的资金账户上列名相同且取值入口相同，列名统一为 `bank_account_no_bidx`，但唯一性与截断长度按各自表的要求分别取值，不是同构。`finance.cash_accounts` 建唯一约束 `ux_cash_accounts_legal_entity_id_bank_account_no_bidx`，按本节的确需唯一路径取完整 32 字节并在数据字典登记全称。`mdm.customer_invoice_profiles` 与 `mdm.supplier_payment_profiles` 两表的该列取本节默认的 16 字节截断，只建本节通式的普通 btree `ix_<table>_legal_entity_id_bank_account_no_bidx`，索引名超过 63 字节时按第 3.8 节缩写并在数据字典登记全称，一律不建唯一约束，依据是 PRD 第 6.2.2 节只对资金账户要求银行账号在同一法人内不重复，客户开票要素与供应商收付款信息无该要求。
+按 B-04，盲索引取值的唯一计算入口是 `KmsBackend::derive_blind_key(legal_entity_id, 'schema.table.column@scope', plaintext)` 与 `foundation::BlindIndex([u8; 32])`，写入与等值查询必须从同一 sensitive-field/effective-level resolver 得到同一 scope；首版四个实际 EXACT 字段都登记为 30，故 literal 分别固定为 `platform_msg.push_registrations.token@30`、`mdm.customer_invoice_profiles.bank_account_no@30`、`mdm.supplier_payment_profiles.bank_account_no@30`、`finance.cash_accounts.bank_account_no@30`。阶段 3、5、10 一律经该入口，不得自建哈希加盐路径。银行账号盲索引列在 mdm 的客户与供应商、finance 的资金账户上列名相同，均存完整 32 字节并带长度 CHECK。`finance.cash_accounts` 因 PRD 第 6.2.2 节要求同一法人内银行账号不重复而建立 `ux_cash_accounts_legal_entity_id_bank_account_no_bidx`；`mdm.customer_invoice_profiles` 与 `mdm.supplier_payment_profiles` 没有该业务唯一性要求，只建普通 btree，允许不同客户或供应商登记相同账号。此差异只表达业务唯一性，不是宽度例外。
 
 盲索引只支持等值。前缀与范围检索首版不支持，`blind_index = 'PREFIX'` 在 CHECK 中不放行。
 
@@ -485,23 +636,23 @@ AAD 固定为三段拼接：16 字节 `legal_entity_id` 大端、UTF-8 的 `sche
 
 `after_connect` 钩子执行三件事：设置本池的 `statement_timeout`、`lock_timeout`、`idle_in_transaction_session_timeout`、`work_mem`、`temp_file_limit`；设置 `application_name` 为 `<process>/<pool>`；把四条会话变量设为空串。`after_release` 钩子把四条会话变量逐项设回空串并断言当前无未结束事务。业务代码不得直接调用 `set_config`，由 CI 静态检查断言 `ep-app-*` 与 `ep-domain-*` 中不出现该符号。
 
-八进程连接枚举与五池的对应如下，与规格第 7.7 章逐项一致。
+八进程连接枚举与四池的对应如下，与规格第 7.7 章逐项一致。
 
-| 进程 | Rw | Ro | Worker | Integ | Ops | 复制 | 合计常驻 |
-|---|---|---|---|---|---|---|---|
-| core-server | 20 | 10 | 0 | 0 | 0 | 0 | 30 |
-| job-worker | 0 | 0 | 5 | 0 | 0 | 0 | 5 |
-| integration-gateway | 0 | 0 | 0 | 5 | 0 | 0 | 5 |
-| portal-gateway | 0 | 0 | 0 | 0 | 0 | 0 | 0 |
-| plugin-host | 0 | 0 | 0 | 0 | 0 | 0 | 0 |
-| ops-agent | 0 | 0 | 0 | 0 | 2 | 0 | 2 |
-| archive-writer | 0 | 0 | 0 | 0 | 0 | 1 常驻加 1 复制槽 | 0 |
-| backup-writer | 0 | 0 | 0 | 0 | 0 | 备份窗口内 1 | 0 |
-| 合计 | | | | | | | 42 |
+| 进程 | Rw | Ro | Worker | Ops | 复制 | 合计常驻 SQL |
+|---|---|---|---|---|---|---|
+| core-server | 20 | 10 | 0 | 0 | 0 | 30 |
+| job-worker | 0 | 0 | 5 | 0 | 0 | 5 |
+| integration-gateway | 0 | 0 | 0 | 0 | 0；不持任何数据库凭据 | 0 |
+| portal-gateway | 0 | 0 | 0 | 0 | 0 | 0 |
+| plugin-host | 0 | 0 | 0 | 0 | 0 | 0 |
+| ops-agent | 0 | 0 | 0 | 2 | 0 | 2 |
+| archive-writer | 0 | 0 | 0 | 0 | 1 常驻加 1 复制槽 | 0 |
+| backup-writer | 0 | 0 | 0 | 0 | 备份窗口内 1 | 0 |
+| 合计 | | | | | | 37 |
 
-只读分析池的 10 个连接全部为交互式，不再从中划出任何独占连接。复制交叉核对子系统连同其独占连接、专用语句超时、配置键与指标一并删除，理由是它对唯一现实主体无效，持有本机操作系统权限者复制数据文件不会在两张统计视图中留下任何痕迹，而它试图覆盖的复制槽堆积风险已由阶段 14 周期读取 `pg_replication_slots` 的保留量判定覆盖。规格第 7.7 章第三项遏制手段的检出能力折叠进该次采样：在同一次采样中断言不出现白名单之外的复制槽，以及不出现不属于两个写出进程的复制会话，出现即按规格第 15.3 章告警并按第 12.5 章记入审计，不新增连接、配置键、表与指标。该折叠只覆盖持续存在的未知槽与会话，不表述为完整的检测手段，其局限写入交付说明。
+只读分析池的 10 个连接全部为交互式，不再从中划出任何独占连接。专用复制交叉核对子系统连同独占连接、专用语句超时、专属配置键、表、端点与指标一并删除；F-52 只在阶段 14 既有 30 秒 WAL 保留量采样中恢复 `MATCHED/MISMATCHED/NO_RESULT` 三态，把最近结论与连续无结果计数写入既有 `archive_channel`，连续第二个 `NO_RESULT` 开 `REPLICATION_CROSSCHECK_NO_RESULT`。同次采样比较 `pg_replication_slots`、`pg_stat_replication` 与最新有效复制上报，不新增连接、配置键、表或指标。采样只能覆盖跨过采样时点持续存在的未知槽与会话，局限写入交付说明。
 
-`ConnectionBudget` 在进程启动时按配置求和，常驻超过 42 或峰值超过 52 即以退出码 78 拒绝启动。
+`ConnectionBudget` 在进程启动时按配置求和：四池常驻必须不高于 37，迁移/应急临时连接必须不高于 10，二者与固定 5 个显式安全余量之和必须不高于硬峰值 52；任一不成立即以退出码 78 拒绝启动。integration-gateway 出现任一 `db.*` 配置段、数据库凭据或 `ep-adapter-db-pg` 依赖也必须失败。
 
 #### 4.6 销毁前核验与销毁证明算法
 
@@ -563,9 +714,9 @@ A-01。请求：分页 `page`、`page_size`，排序白名单 `created_at`、`do
 
 A-02。路径参数 `id`。响应增 `keys` 数组，元素含 `purpose`、`security_level_scope`、`version`、`state`、`activated_at`，不返回 `wrapped_key`，该字段在任何响应中都不出现。当前安全上下文不可见时返回 404 与 `PLATFORM.AUTHZ.NOT_FOUND_OR_DENIED`。
 
-A-03。请求体 `{"domain_kind": "LEGAL_ENTITY"}`。幂等语义为业务幂等加键幂等双重：同法人同 `domain_kind` 已存在 `ACTIVE` 域时直接返回该域并置 `Idempotent-Replay: true`。响应 201 或 200。错误：`PLATFORM.KEY_DOMAIN.NOT_PROVISIONED` 用于 KMS 不可用，分类 `INFRASTRUCTURE`，503，可重试。权限：安全管理员。不需重新认证，理由是建立密钥域不改变既有数据的可读性。
+A-03。请求体 `{"domain_kind": "LEGAL_ENTITY"}`。幂等语义为业务幂等加键幂等双重：同法人同 `domain_kind` 已存在 `ACTIVE` 域时直接返回该域并置 `Idempotent-Replay: true`。响应 201 或 200。错误语义固定为：查询后该法人连 `key_domains` 行都不存在时，依赖密钥域的其他操作返回 `PLATFORM.KEY_DOMAIN.NOT_PROVISIONED`；A-03 一旦成功提交 `PROVISIONING` 行，本次或以后任何 KEK/DEK/KMS、readback、16-row matrix 或 activation-audit 失败都统一返回 `PLATFORM.KEY_DOMAIN.KEY_UNAVAILABLE` 并保留可续做的 PROVISIONING，不得再退回 NOT_PROVISIONED。两者均为 `INFRASTRUCTURE/503/可重试`。权限：安全管理员。不需重新认证，理由是建立密钥域不改变既有数据的可读性。
 
-A-04。请求体 `{"purpose": "FIELD"}`。同一域同一 purpose 并发轮换由事务级建议锁串行，第二个请求返回 409 与 `PLATFORM.KEY_DOMAIN.ROTATION_IN_PROGRESS`。响应返回新版本号与旧版本的 `RETIRING` 状态。权限：安全管理员，需重新认证，`X-Reauth-Token` 必填，绑定的待签内容摘要为 `域 ID 加 purpose 加当前版本号`。
+A-04。请求体 `{"purpose": "FIELD"}`，不接受单独 scope；一次调用把该 purpose 的 10/20/30/40 四个 scope 轮换到同一个新版本。四个 wrapped candidate 全部生成且 readback 后，单一数据库事务才插入四个新 `ACTIVE` 行并把对应四个旧行置 `RETIRING`，任一失败则数据库零推进。新版本必须是四个 scope 当前同版本的 checked `u16 + 1`；当前不是同版本或已为 65535 时返回 `PLATFORM.KEY_DOMAIN.TRANSITION_INVALID`，不得整数 cast、溢出、回绕或从较小空洞复用版本。同一域同一 purpose 并发轮换由事务级建议锁串行，第二个请求返回 409 与 `PLATFORM.KEY_DOMAIN.ROTATION_IN_PROGRESS`。响应返回新版本号、四个 scope 与旧版本的 `RETIRING` 状态。权限：安全管理员，需重新认证，`X-Reauth-Token` 必填，绑定的待签内容摘要为 `域 ID 加 purpose 加四个当前版本号的升序 JCS 数组`。
 
 A-05。请求体含 `remediation` 数组，每元素 `{schema_name, table_name, action}`，`action` 取 `PHYSICAL_DELETE`、`ANONYMIZE`、`RETAIN`。响应返回完整核验报告三段。错误：`PLATFORM.KEY_DOMAIN.DESTROY_PRECHECK_FAILED`，409，`details` 逐项给出缺失的表。权限：安全管理员发起，需重新认证并需双人审批，审批判定经端口调用阶段 4，端口未装配时一律 403 与 `PLATFORM.AUTHZ.OBJECT_FORBIDDEN`。本端点不执行销毁，销毁的实际执行按 A-22 经 `DisposalPort` 由阶段 14 的 `OpsDisposalService` 承担，本阶段不实现。
 
@@ -638,7 +789,7 @@ pub trait IdempotencyStore: Send + Sync {
 
 请求头存在性与 UUIDv7 合法性由阶段 1 的 `IdempotencyKeyHeaderGuard` 校验；`platform_msg.idempotency_keys` 建表与 `IdempotencyOutcome` 的 `FirstCall`、`Replay`、`PayloadMismatch` 三种判定由阶段 3a 实现。本阶段在 `ep-testkit` 提供内存实现供集成测试使用，CI 断言该实现不得出现在 `apps/*` 的依赖图中。
 
-失败重试与补偿：数据库层只做序列化失败与死锁的有限重试，不做业务补偿。密钥域 provision 与 rotate 的中途失败以状态机重入解决：provision 失败时域停在 `PROVISIONING`，再次调用从缺失的 DEK 处续做；rotate 失败时新版本行若已写入则处于 `ACTIVE` 而旧版本尚未置 `RETIRING`，再次调用按版本号收敛。两者都不产生外部副作用，因此可无限次重入。
+失败重试与补偿：数据库层只做序列化失败与死锁的有限重试，不做业务补偿。密钥域 provision 与 rotate 的 KMS 调用一律在数据库事务外执行，只有 exact readback 全通过后才进入短事务。provision 失败时域停在 `PROVISIONING`：先按 logical locator 幂等 ensure/readback KEK，再按 purpose、scope、version 顺序读取既有 DB 行；缺行才生成 transient DEK candidate 并在短事务重检后插入，已有行只 readback，最后一笔事务锁域并逐字重核 16 行后，在同一事务写 `platform.key_domain.activated.v1` 审计终结并置 `ACTIVE`；任一审计或状态写失败全部回滚，仍为 PROVISIONING。rotate 先在锁保护下确定该 purpose 的共同 next version，事务外生成/readback 四个 scope 的 candidate，再在单一短事务重取同一 advisory lock、重核旧版本未变，四行同批插入并将旧四行同批置 `RETIRING`；竞争或失败时丢弃仅在内存中的 wrapped candidate，数据库零推进。KEK ensure 是幂等外部副作用；detached DEK 在 DB 接受前没有持久外部 object，故不需要删除 orphan，也不得声称 KMS 与 PostgreSQL 原子回滚。
 
 必测并发场景在本阶段的可测部分有三组：同一行的乐观锁冲突；同一密钥域同一 purpose 的并发轮换；关账前强制校验所用快照与在途写事务的交叠，本阶段用合成表验证快照语义，业务语义留给阶段 9a 的对账与总账。其余三组涉及库存、发票与信用额度，按裁定通则第四条的阶段顺序分属阶段 8、阶段 10 与阶段 6。
 
@@ -650,54 +801,64 @@ pub trait IdempotencyStore: Send + Sync {
 
 | 键 | 类型 | 默认值 | 生效方式 |
 |---|---|---|---|
-| `EP__DB__DSN` | string | 无，必填 | 只写机密引用，形如 `secret://db/app_rw#1`；重启生效 |
+| `EP__DB__HOST` | string | `127.0.0.1` | 重启生效；首版只连本机 PostgreSQL |
+| `EP__DB__PORT` | u16 | 5432 | 重启生效 |
+| `EP__DB__DATABASE` | string | `ep` | 重启生效 |
+| `EP__DB__USER` | string | `ep_app_rw` | 重启生效；各进程可由部署模板覆盖为其固定角色 |
+| `EP__DB__PASSWORD_REF` | string | `secret://db/app_rw#1` | 只写机密引用；下次取用解引用，连接池重建后使用新版本 |
 | `EP__DB__POOL__RW_MAX` | u32 | 20 | 重启生效 |
 | `EP__DB__POOL__RO_MAX` | u32 | 10 | 重启生效 |
 | `EP__DB__POOL__WORKER_MAX` | u32 | 5 | 重启生效 |
-| `EP__DB__POOL__INTEG_MAX` | u32 | 5 | 重启生效 |
 | `EP__DB__POOL__OPS_MAX` | u32 | 2 | 重启生效 |
 | `EP__DB__POOL__ACQUIRE_TIMEOUT_MS` | u32 | 8000 | 重启生效，与基线第 11.6 节同步等待上限 8 秒对齐 |
-| `EP__DB__BUDGET__RESIDENT_MAX` | u32 | 42 | 重启生效，启动自检据此判定 |
+| `EP__DB__BUDGET__RESIDENT_MAX` | u32 | 37 | 重启生效，启动自检据此判定 |
+| `EP__DB__BUDGET__TEMPORARY_MAX` | u32 | 10 | 重启生效；迁移与应急临时连接总上限 |
 | `EP__DB__BUDGET__PEAK_MAX` | u32 | 52 | 重启生效 |
-| `EP__DB__TIMEOUT__RW_STATEMENT_MS` | u32 | 10000 | 重启生效 |
-| `EP__DB__TIMEOUT__RW_LOCK_MS` | u32 | 3000 | 重启生效 |
-| `EP__DB__TIMEOUT__RW_IDLE_IN_TX_MS` | u32 | 15000 | 重启生效 |
-| `EP__DB__TIMEOUT__RO_STATEMENT_MS` | u32 | 60000 | 重启生效 |
-| `EP__DB__TIMEOUT__WORKER_STATEMENT_MS` | u32 | 300000 | 重启生效 |
-| `EP__DB__TIMEOUT__OPS_STATEMENT_MS` | u32 | 5000 | 重启生效 |
-| `EP__DB__RO__WORK_MEM` | string | `64MB` | 重启生效 |
-| `EP__DB__RO__TEMP_FILE_LIMIT` | string | `2GB` | 重启生效 |
-| `EP__DB__RETRY__MAX_ATTEMPTS` | u32 | 3 | 热生效 |
-| `EP__DB__RETRY__BACKOFF_MS` | 数组 | `[50,150,450]` | 热生效 |
-| `EP__DB__MIGRATION__EXPECTED_VERSIONS_PATH` | string | `C:\EP\config\migration-versions.toml` | 重启生效，二进制期望版本清单 |
+| `EP__DB__TIMEOUT__RW__STATEMENT_MS` | u32 | 10000 | 重启生效 |
+| `EP__DB__TIMEOUT__RW__LOCK_MS` | u32 | 3000 | 重启生效 |
+| `EP__DB__TIMEOUT__RW__IDLE_IN_TX_MS` | u32 | 15000 | 重启生效 |
+| `EP__DB__TIMEOUT__RO__STATEMENT_MS` | u32 | 60000 | 重启生效 |
+| `EP__DB__TIMEOUT__WORKER__STATEMENT_MS` | u32 | 300000 | 重启生效 |
+| `EP__DB__TIMEOUT__OPS__STATEMENT_MS` | u32 | 5000 | 重启生效 |
+| `EP__DB__RO__WORK_MEM_KB` | u32 | 65536 | 重启生效 |
+| `EP__DB__RO__TEMP_FILE_LIMIT_KB` | u32 | 2097152 | 重启生效；由引导侧角色默认值承接，不在应用会话执行 `SET` |
+| `EP__DB__RETRY__MAX_ATTEMPTS` | u32 | 3 | 重启生效 |
+| `EP__DB__RETRY__BACKOFF_MS` | 数组 | `[50,150,450]` | 重启生效 |
 | `EP__KMS__BACKEND` | 枚举 | `builtin` | 取 `builtin` 或 `hsm`；重启生效 |
 | `EP__KMS__BUILTIN__MASTER_KEY_PATH` | string | `C:\EP\kms\master.key` | 重启生效；权限位换 NTFS ACL，判据由「三位八进制等于 0400 且属主为本进程账户」改为「该文件已断继承，且除 core-server 与 job-worker 两个服务虚拟账户、SYSTEM 与 Administrators 外不存在其他授权 ACE（该文件由这两个进程共同读取，判据写成「本进程的账户」会使两者互相判否、双双拒绝启动）」，不合规即拒绝启动。这是判据锐利度下降不是防护下降 |
 | `EP__KMS__HSM__PKCS11_MODULE` | string | 空 | `hsm` 时必填 |
 | `EP__KMS__HSM__SLOT` | u32 | 0 | |
-| `EP__KMS__HSM__PIN_REF` | string | `secret://kms/hsm_pin#1` | 只写引用 |
-| `EP__KMS__DEK_CACHE__MAX_ENTRIES` | u32 | 512 | 热生效 |
-| `EP__KMS__DEK_CACHE__TTL_S` | u32 | 300 | 热生效 |
-| `EP__CRYPTO__BLIND_INDEX__BYTES` | u32 | 16 | 重启生效，取值 16 或 32，是全库默认截断长度；按第 4.4 节走确需唯一例外路径的列在 `derive_blind_key` 调用点显式取完整 32 字节而不受该键影响，首版该例外只有 `finance.cash_accounts.bank_account_no` 一列 |
-| `EP__MIGRATION__WINDOW_TTL_MAX_MIN` | u32 | 240 | 热生效 |
+| `EP__KMS__HSM__PIN_REF` | BootstrapRef | `bootstrap://windows-dpapi/hsm-pin#1` | KMS 前自举；绝不可改为会形成循环的 `secret://` |
+| `EP__KMS__DEK_CACHE__MAX_ENTRIES` | u32 | 512 | 重启生效 |
+| `EP__KMS__DEK_CACHE__TTL_S` | u32 | 300 | 重启生效 |
+| `EP__MIGRATION__WINDOW_TTL_MAX_MIN` | u32 | 240 | 重启生效 |
 
-机密不进配置：数据库口令、KMS 主密钥、HSM PIN 一律写引用，解析到 `C:\EP\secrets\`，即工程基线阶段 1 配置键 `secrets.dir` 的同一取值，内存中用 `secrecy::SecretString` 包装。机密轮换不需重启，进程在下次取用时使用新版本，旧版本保留一个轮换窗口。
+机密不进配置：数据库口令等系统机密使用严格版本 `SecretRef` 并解析 `EPS1`；HSM PIN 使用上述 `BootstrapRef`，不经过数据库或系统机密库。builtin 数据 KMS 的 common master 只承载原数据 KMS，不给六个 system-secret recipient 共享读取；每 recipient 独立 DPAPI KEK/HSM object、路径、AAD、轮换和迁移全部按第 4.3a 节。轮换必须先 prepare/probe，再改签配置到明确版本；无监听、`latest` 或隐式 fallback。
 
 #### 7.1 启动自检项
 
-按 C-25，自检项一律以注册名标识，不用序号。自检项另分两档严重度，`SelfCheckItem` 的 `severity` 取 `Blocking` 与 `Degrading` 两值：`Blocking` 判读的一律是二进制、环境与目录，失败即以退出码 78 退出；`Degrading` 判读的是运行期可变的业务数据行，失败不阻断启动，改为经 `DegradationLedger::open` 登记窗口、持续告警，并按本节写明的运行期后果就地收窄该项相关的功能。`--check` 模式两档均以非零退出，闸门落在部署与升级前置，不落在进程启动。本阶段承担五项：`database-reachable` 判定数据库可达且版本为 16.x、`timezone` 为 UTC、`max_connections` 不低于 52、`max_wal_senders` 不低于 4、`max_replication_slots` 不低于 3，取 `Blocking`；`migration-version-matched` 判定迁移历史版本与二进制期望版本逐 schema 一致，取 `Blocking`；`rls-enabled-and-forced` 判定全部带法人列的表已 ENABLE 且 FORCE 行级安全且运行期账号不具备 BYPASSRLS 与 SUPERUSER，只读 `pg_class` 与 `pg_roles`，取 `Blocking`；`runtime-role-privileges-bounded` 判定运行期账号不具备 DDL、角色管理与策略管理权限，取 `Blocking`；`secrets-resolvable` 拆为两段，机密可解引用且 KMS 或 HSM 可用一段取 `Blocking`，每个法人的数据加密密钥域存在一段取 `Degrading`，后者失败时登记降级窗口并告警，该法人的字段级加密写入在取不到 `ACTIVE` DEK 时返回 `PLATFORM.KEY_DOMAIN.NOT_PROVISIONED`，其余法人与其余功能不受影响。后一段必须取 `Degrading`：建立密钥域的唯一入口是第 5 节 A-03 端点，由 core-server 承载，若缺域即拒绝启动则该端点永远不可达，形成自锁，而这台服务器没有备节点。上述五项在 portal-gateway、plugin-host、archive-writer 与 backup-writer 四个进程上一律返回 `NOT_APPLICABLE`，理由是前两者不链接 `ep-adapter-db-pg`，后两者只持复制连接、不执行任何 SQL，与基线第 7.3 节列出的四个进程逐项一致。自检 runner 与 `SelfCheckRegistry` 属阶段 1，本阶段以 `DataFoundationCheck` trait 提供这五项的实现并返回结构化结论，不追加任何新的自检项名。
+按 C-25，自检项一律以注册名标识，不用序号。`SelfCheckItem.severity` 只取 Blocking/Degrading；`--check` 两档不通过均非零。本阶段实现五个已注册基线项：`database-reachable`、`migration-version-matched`、`rls-enabled-and-forced`、`runtime-role-privileges-bounded` 与 `secrets-resolvable` 均取 Blocking。前四项算法沿基线；`secrets-resolvable` 只判第 4.3a 节当前进程适用的 ref、bootstrap、recipient/DACL、EPS1 与 KMS/HSM 解封链，不能查询法人业务行，也不能把域覆盖率混回此名。零数据库进程对前四项为 NotApplicable，但仍执行适用的非 SQL `secrets-resolvable`。
 
-另按 A-26，本阶段补上阶段 1 在 `offsite-sink-requirements` 一项中预留的 `// TODO(stage-2): write degradation ledger` 一行：该项失败时经 `DegradationLedger::open` 登记 `OFFSITE_SINK_NOT_CONFIGURED` 窗口，该窗口不可抑制。规格第 7.7 章要求两个复制角色各自具备的三项遏制手段，由阶段 14 实现为 `offsite-sink-requirements` 的第八个子判定：按该章「三项缺一不得启用该角色，两个写出进程随之不得投入运行」，该子判定不通过即意味着角色不得启用。本阶段不承担该子判定的实现，也不在本节五项之外新增任何自检项名，只交付其失败时可调用的 `DegradationLedger` 端口。阶段 14 计划把该子判定的 severity 记为 `Blocking`；该取值与自检注册表按项设一个 severity 的模型之间的张力已按本轮登记为待决条目，本阶段不预判。`WRITER_NOT_IN_SERVICE` 的登记方仍是阶段 14，其触发条件仍是客观事实，即写出进程实际未运行或连续若干周期无上报；遏制手段缺项致角色未启用时，两个写出进程随之未投入运行，该客观条件自然成立，无须另设以配置是否齐备为判据的触发路径。
+本阶段另交付独立 `LegalEntityKeyDomainCoverageCheck` trait/provider，注册名预留为 `legal-entity-key-domain-coverage`、severity 固定 Degrading。算法在同一 repeatable-read snapshot 枚举 ACTIVE 法人，逐法人要求恰有一个 `LEGAL_ENTITY` 域处于 ACTIVE，且 4 purpose × 4 scope 的 version=1 基线矩阵恰为 16 个组合、每个组合有且仅有一个当前 `ACTIVE` 版本、算法映射正确并逐把 readback；输出 strict 结构化结论 `{checked_active_entities,missing_entity_ids,unavailable_entity_ids}`，数组按 UUID bytes 排序去重，报告只显示计数，明细仅入受控运维证据。缺域使该法人字段级加密写入返回 `PLATFORM.KEY_DOMAIN.NOT_PROVISIONED`；域已存在但 KEK/DEK/KMS 无法解封、矩阵缺失/多余或算法错误返回 `PLATFORM.KEY_DOMAIN.KEY_UNAVAILABLE`；其他法人及无字段加密依赖的功能继续。本检查不能取 Blocking，否则 A-03 会自锁。
+
+但本阶段**只交付 provider 与结构化结论测试，不注册、不真实开窗**：不可改的 `V20260901104500` 及本阶段 Rust 枚举只有三个 kind，尚不接受终态 `LEGAL_ENTITY_KEY_DOMAIN_UNAVAILABLE`。Stage 14a/14b 必须先以 `V20261023092500` 扩数据库 CHECK 与 Rust 接受域到终态 21 项，再将 provider 注册进 `SelfCheckRegistry`，并只在该接线后调用 `DegradationLedger.open/close(LEGAL_ENTITY_KEY_DOMAIN_UNAVAILABLE,...)`；该 kind 不可抑制。不得改历史迁移、加低版本迁移或临时复用 `PORT_NOT_IMPLEMENTED`。零 SQL 进程对这一独立检查为 NotApplicable。
+
+另按 A-26，本阶段把阶段 1 在 `offsite-sink-requirements` 中预留的降级台账接缝替换为真实调用，不保留任何 TODO 注释：该项整体保持 Degrading，只承载阶段 14 冻结的七项落点要求；失败时经 `DegradationLedger::open` 登记 `OFFSITE_SINK_NOT_CONFIGURED`，该窗口不可抑制。规格第 7.7 章两个复制角色的三项遏制手段不再作为其第八个子判定，而由阶段 14 新增独立的 `writer-role-containment` Blocking 自检项，只在 archive-writer 与 backup-writer 建立复制连接前执行，其他进程 NotApplicable。本阶段不实现该项，只交付它可调用的 `DegradationLedger`；遏制手段缺项导致进程以 78 退出后，core-server 以写出进程未投入运行这一客观事实登记 `WRITER_NOT_IN_SERVICE`。
 
 #### 7.2 指标登记与填充分工
+
+> **数据库零能力现行修正。** portal-gateway、integration-gateway、plugin-host、archive-writer、backup-writer 五个进程对四个已注册 SQL 基线项返回 `NOT_APPLICABLE`；Stage 2 的运行期 registry 根本没有 `legal-entity-key-domain-coverage`，只在其 provider contract 测试中证明这些零 SQL recipient 求值为 `NOT_APPLICABLE`，不得伪造一条运行期报告。适用的非 SQL `secrets-resolvable` 仍必须运行。前三者不链接 `ep-adapter-db-pg`，后两者只持复制连接、不执行 SQL。integration-gateway 还必须通过依赖图与配置负例证明不链接数据库、Outbox、KMS 或平台业务文件 adapter。
+
+> **F-55 终态追加。** `ai-inferer` 是第六个零数据库进程；F-55 本地 AI Task 4 必须把它加入相同的 SQL 自检 `NOT_APPLICABLE` 精确闭集并配正反夹具。它仍执行所有适用的非 SQL 配置、机密、模型包、目录和资源自检，不得把“零数据库”扩成“跳过全部自检”。
 
 | 指标 | 类型 | 标签 | 注册方 | 填充方 |
 |---|---|---|---|---|
 | `ep_db_pool_connections` | gauge | `pool` | 阶段 1，位于 `crates/platform/obs/src/metrics/registry.rs` | 本阶段 |
 | `ep_db_statement_duration_seconds` | histogram | `pool`、`statement_kind` | 阶段 1，同上 | 本阶段 |
-| `ep_db_tx_retries_total` | counter | `pool` 取 rw、ro、worker、integ、ops；`sqlstate` 取 40001、40P01 | 本阶段 | 本阶段 |
+| `ep_db_tx_retries_total` | counter | `pool` 取 rw、ro、worker、ops；`sqlstate` 取 40001、40P01 | 本阶段 | 本阶段 |
 | `ep_degradation_windows_open` | gauge | 无 | 本阶段 | 本阶段 |
 
-按 C-21，阶段 1 的 `ep_db_retries_total` 与阶段 3a 的 `ep_tx_retry_total` 两个登记已撤销，本阶段不得再用这两个名字。复制交叉核对指标随该子系统一并删除，`ep_replication_crosscheck_age_seconds` 与本阶段曾用的 `ep_db_replication_crosscheck_age_seconds` 两个名字都不再注册也不填充，C-22 的裁定随之失效。按 C-23，两个连接池指标由阶段 1 一次性注册，本阶段只填充。`docs/metrics-catalog.md` 的唯一性校验由阶段 1 的 `xtask` 实现，本阶段的登记行必须通过该校验。
+按 C-21，阶段 1 的 `ep_db_retries_total` 与阶段 3a 的 `ep_tx_retry_total` 两个登记已撤销，本阶段不得再用这两个名字。两个复制交叉核对指标仍随专用子系统删除，`ep_replication_crosscheck_age_seconds` 与 `ep_db_replication_crosscheck_age_seconds` 都不注册也不填充；F-52 恢复的是共享采样器上的三态与台账 kind，不恢复指标。按 C-23，两个连接池指标由阶段 1 一次性注册，本阶段只填充。`docs/metrics-catalog.md` 的唯一性校验由阶段 1 的 `xtask` 实现，本阶段的登记行必须通过该校验。
 
 ---
 
@@ -705,29 +866,32 @@ pub trait IdempotencyStore: Send + Sync {
 
 #### 8.1 单元测试
 
-边界是不触库、不触网、不触文件系统、不取真实时间。15 组，逐组列出被覆盖的分支。
+边界是不触库、不触网、不触文件系统、不取真实时间。16 组，逐组列出被覆盖的分支。
 
 U-01 信封编解码：魔数错、长度不足、未知算法标识、nonce 截断、标签截断五类均返回 `CIPHERTEXT_FORMAT_INVALID`。
 U-02 AAD 构造：法人不同、列名不同、行标识不同三类各自触发 `AAD_MISMATCH`。
 U-03 归一化四种取值的等价类：空串、纯空白、前后空白、全角数字、大小写混合、含分隔符的电话与账号。
-U-04 盲索引确定性：同输入恒等；不同归一化取值产生不同结果；截断长度按配置取 16 或 32。
+U-04 盲索引确定性与宽度：同法人、同列、同归一化输入恒等；跨法人或跨列域分离；返回值恒为 `BlindIndex([u8; 32])`，非 32 字节反序列化失败，调用路径不存在宽度参数或截断分支。
 U-05 `Money` 编解码往返：18 位整数部分上下界、负数、零、恰好 2 位小数。
 U-06 舍入：`±0.005`、`±0.015`、`±2.675` 三组中值远离零；断言 `round(round(x,6),2)` 与 `round(x,2)` 在特定输入上不等，用于固化禁止二次舍入的结论。
 U-07 `Quantity` 与 `UnitPrice` 的 6 位小数往返，`Rate` 的 `13%` 存为 `0.130000`。
 U-08 会话变量拼装与清除序列的顺序与内容。
-U-09 连接预算求和：常驻 42 边界、峰值 52 边界、单池越界三类。
+U-09 连接预算求和：四池常驻 37 边界、临时 10 边界、固定安全余量 5、硬峰值 52 与单池越界；另断言 integration-gateway 出现数据库段、凭据、连接或 adapter 依赖即失败。
 U-10 重试判定：40001 与 40P01 重试；23505、23503、42501 不重试；副作用标志置位后不重试。
 U-11 密钥域状态机 6 条合法迁移与 12 条非法迁移。
 U-12 DEK 状态机 3 条合法与 6 条非法。
 U-13 迁移窗口状态机含到期自动关闭与 `ttl_minutes` 上限。
-U-14 迁移文件名解析：合法名、缺 schema 段、版本号非 12 位、slug 含大写四类；排序稳定性。
+U-14 迁移文件名解析：合法名、缺 schema 段、版本号非 14 位、slug 含大写四类；排序稳定性。版本段只接受 14 位十进制数，并与 `xtask sqlcheck` 的 SQL-010 使用同一解析函数。
 U-15 标识符长度检查与缩写规则。
+U-16 签名 key identity：builtin/HSM fake adapter 都证明 `SigningKeyIdentityV1.spki_sha256=SHA-256(exact DER SPKI)` 且 canonical token 命中实际验签 key；错 KeyRef、调用方伪造 token、`verify=false`、resolve 前后身份变化四类均失败，私钥字节在返回值、Debug、日志和审计中均不可见。
+
+D-16 另有独立系统机密安全矩阵，不改变上述数据算法 16 组编号：S-01 穷举 SecretRef/BootstrapRef/SecretStoreKeyRef 的字符、长度、版本、canonical round-trip 与所有路径逃逸；S-02 覆盖 EPS1 最短/66658 最大/多一字节、截断/尾随/未知 flag/算法、deployment/recipient/ref/key-ref/version/AAD 任一错均在返回明文前失败；S-03 证明六个 recipient 的 DPAPI blob/entropy/DACL 与 HSM object 横向不可互换，且任何路径都不读取 data-KMS common master；S-04 证明数据库为空/不可达时仍能解出 DB secret，而 secret/bootstrap/HSM 缺失时数据库 connect 次数为零且 hsm 不回落 builtin；S-05 覆盖 CREATE_NEW、Flush/reopen、部分 recipient 失败不切 config、24 小时+全 ACK、无 latest/监听/fallback；S-06 覆盖 legacy DACL/reparse/ADS/hardlink/UTF-8 trim、trim 后空值、逐字节 reopen、quarantine/finalize 与 SSD 不宣称安全擦除；S-07 枚举 `ep-secretctl` 八命令、拒绝第九命令及 `put|hsm-bootstrap` 的 stdin 重定向/argv/env/file，证明 builtin bootstrap 不读取明文且仅 migrate 可读 legacy file；S-08 在制品上证明生产配置 file 或非固定 secrets.dir 以 78 失败、常驻二进制无 legacy reader、SBOM 含签名工具且 legacy/quarantine/staging 任一残留令 release gate 非零。
 
 #### 8.2 领域属性测试
 
 P-01 加解密往返恒等：任意 0 至 65536 字节明文、任意合法 AAD。
 P-02 `Money` 编解码往返恒等：`numeric(18,2)` 值域内任意 Decimal。
-P-03 盲索引对同一归一化输入恒等，且对 10 万个随机输入在 16 字节截断下无碰撞（固定 seed，作为回归基线而非概率证明）。
+P-03 盲索引对同一归一化输入恒等，每个结果长度恒为 32 字节，且对 10 万个随机输入无碰撞（固定 seed，作为回归基线而非概率证明）。
 P-04 舍入幂等：`round(round(x,2),2) == round(x,2)` 恒成立。
 P-05 会话变量任意写入序列后，清除操作使四条变量全为空串。
 
@@ -745,11 +909,11 @@ RLS：IT-16 策略文本与模板全等；IT-17 会话变量缺失时读为 0 �
 
 约束与合规：IT-22 `row_version` 未加一的 UPDATE 被触发器拒；IT-23 `APPEND_ONLY` 表的 UPDATE 与 DELETE 被拒；IT-24 `IMMUTABLE_COLUMNS` 表只放行白名单列；IT-25 全部外键为 `ON DELETE RESTRICT` 且无 `ON DELETE CASCADE`，合成表上的跨 schema 复合外键在引用不存在的行时返回 `PLATFORM.DB.REFERENCED_ROW_MISSING`，在两侧 `legal_entity_id` 不等时被数据库直接拒绝；IT-26 十三项合规断言全部返回 0 行，含未登记的未受策略表被第 13 项检出；IT-27 `numeric(18,2)` 收到 3 位小数时 Rust 侧先行拦截并返回 `WRITE_SCALE_VIOLATION`，而非交由数据库静默舍入。
 
-时区与精度：IT-28 数据库 `timezone` 为 UTC，且 `pg_database` 中本库的 `datlocprovider` 为 `i`、`daticulocale` 为 `zh-Hans-CN`、`datcollversion` 与 `pg_database_collation_actual_version(oid)` 相等；IT-29 `business_day()` 在 UTC 15:59:59 与 16:00:00 两个时刻分别返回相邻的两个自然日；IT-30 `timestamptz` 与 `chrono::DateTime<Utc>`、`date` 与 `NaiveDate` 的往返。
+时区与精度：IT-28 数据库 `timezone` 为 UTC，且 `pg_database` 中本库的 `datlocprovider='c'`、`datcollate='C'`、`datctype='C'`、`daticulocale IS NULL`；IT-29 `business_day()` 在 UTC 15:59:59 与 16:00:00 两个时刻分别返回相邻的两个自然日；IT-30 `timestamptz` 与 `chrono::DateTime<Utc>`、`date` 与 `NaiveDate` 的往返。
 
-密钥域与加密：IT-31 provision 幂等；IT-32 轮换后新版本 `ACTIVE`、旧版本 `RETIRING`、旧密文仍可解；IT-33 DEK 置 `DESTROYED` 后旧密文解密返回 `DECRYPT_FAILED` 且带 `incident_no`；IT-34 法人 A 的会话无法读取法人 B 的 `data_keys` 行，且即便持有密文也因 AAD 不匹配而无法解密；IT-35 敏感字段未登记即加密写入被拒；IT-36 销毁前核验报告三项齐备，缺 `remediation` 即失败。
+密钥域与加密：IT-31 provision 幂等；IT-32 轮换后新版本 `ACTIVE`、旧版本 `RETIRING`、旧密文仍可解；IT-33 DEK 置 `DESTROYED` 后旧密文解密返回 `DECRYPT_FAILED` 且带 `incident_no`；IT-34 法人 A 的会话无法读取法人 B 的 `data_keys` 行，且即便持有密文也因 AAD 不匹配而无法解密；IT-35 敏感字段未登记即加密写入被拒，`EXACT` 登记缺 32 字节 CHECK 时 `db/checks/11` 返回违规行，向合规列写入非空且非 32 字节值被数据库拒绝；IT-36 销毁前核验报告三项齐备，缺 `remediation` 即失败。
 
-连接与事务：IT-37 五池各自的 `statement_timeout`、`work_mem`、`temp_file_limit` 实际生效（用 `pg_sleep` 与大排序验证）；IT-38 序列化失败重试 3 次后返回 `SERIALIZATION_RETRY_EXHAUSTED` 且重试计数进指标；另在同一项内验证 `REPEATABLE READ` 快照跨批一致读与两事务同行更新的 409。
+连接与事务：IT-37 四池各自的 `statement_timeout`、`work_mem`、`temp_file_limit` 实际生效（用 `pg_sleep` 与大排序验证），并以依赖图、配置反序列化和启动负例证明 integration-gateway 不可能取得数据库能力；IT-38 序列化失败重试 3 次后返回 `SERIALIZATION_RETRY_EXHAUSTED` 且重试计数进指标；另在同一项内验证 `REPEATABLE READ` 快照跨批一致读与两事务同行更新的 409。
 组织架构与降级台账：IT-39 五张组织架构表建成、四张带法人列的表策略齐备，部门改父后闭包表全量重写该子树且 `ux_department_closures_pair` 无重复行，`departments.level_no` 与闭包 `depth` 一致；IT-40 `DepartmentClosureQuery::descendant_ids` 在 `max_depth` 取 0、取 1、取超过实际深度三种取值下的返回集与闭包表一致，且 `EXPLAIN` 不出现顺序扫描；IT-41 `DegradationLedger` 的 `open` 与 `close` 幂等，同一 kind、subject 与 scope 的第二个未关闭窗口被 `ux_degradation_windows_kind_scope_closed` 拒绝，同一 kind 下 subject 不同的两个窗口可同时打开，`open_count` 与 `ep_degradation_windows_open` 取值一致。
 
 #### 8.4 越权矩阵（发布门禁项）
@@ -758,13 +922,13 @@ RLS：IT-16 策略文本与模板全等；IT-17 会话变量缺失时读为 0 �
 
 第一块，八类 × 2 法人共 16 组：读取、写入、更新、删除、聚合、排序、报表投影、错误信息泄漏。错误信息泄漏一项的判据是对不可见记录的读、写、删一律返回 404 与 `PLATFORM.AUTHZ.NOT_FOUND_OR_DENIED`，响应体中不出现对方法人的任何标识、计数或时间戳。
 
-第二块，两个复制角色 5 项：无法读取任何业务表、无法执行任何 DDL、无法从该服务器之外建立连接、无法经界面借用、无法经 API 借用。后两项以 core-server 的路由表与依赖图断言实现，即不存在任何路径可构造出以这两个角色为身份的连接。该块由本阶段追加的 `assert_replication_role_containment` 承载，五项全部保留，因为它们是保留下来的角色权限、`pg_hba` 本机限制与凭据隔离三项控制的唯一验证方；遏制手段是否齐备由阶段 14 实现为 `offsite-sink-requirements` 的第八个子判定，其 severity 为 Blocking，部署期缺一即两个写出进程不投入运行并登记 `WRITER_NOT_IN_SERVICE` 降级窗口。
+第二块，两个复制角色 5 项：无法读取任何业务表、无法执行任何 DDL、无法从该服务器之外建立连接、无法经界面借用、无法经 API 借用。后两项以 core-server 的路由表与依赖图断言实现，即不存在任何路径可构造出以这两个角色为身份的连接。该块由本阶段追加的 `assert_replication_role_containment` 承载，五项全部保留，因为它们是角色权限、`pg_hba` 本机限制与凭据隔离三项控制的验证方；遏制手段是否齐备由阶段 14 的独立 `writer-role-containment` Blocking 自检项判定，部署期缺一即对应写出进程在连接前以 78 退出，core-server 据进程未投入运行登记 `WRITER_NOT_IN_SERVICE`。
 
-第三块，内部对账系统安全上下文 5 个入口：界面、API、低代码、插件与规格第 9.1 章的高级只读 SQL 均无法建立或借用。本阶段的实现方式是把该上下文的构造器设为 crate 内可见并只对 job-worker 装配路径开放，另加一条运行期断言：该上下文建立时校验调用栈来源标记，来源非内置对账任务即 panic 前先写审计再中止当前任务。该块由本阶段追加的 `assert_recon_context_borrow` 承载。本阶段不留签名语句集与其校验位点：封闭性改为静态判据，即该上下文不存在运行期 SQL 入口，执行器只按注册表分发已注册的 `ReconCheck` 实现、不接受语句文本入参，由 `xtask archcheck` 断言 `ep-platform-recon` 与各 `ReconCheck` 实现体内不出现字符串拼接 SQL 与动态语句执行入口；`ReconCheck` 实现本身按 A-06 由阶段 9a 提供。审计侧原先要记的语句集版本与签名摘要改记制品版本号与制品签名摘要，取自阶段 1 的制品元数据。
+第三块，内部对账系统安全上下文 5 个入口：界面、API、低代码、插件与规格第 9.1 章的高级只读 SQL 均无法建立或借用。确切类型仍是唯一的 `SecurityContext`，不定义 `ReconContext`：阶段 1 在其第 20 字段冻结 `system_purpose: Option<SystemPurpose>` 与 `SystemPurpose { General, Reconciliation }`；`SecurityContext::system` 要求显式 purpose，`Reconciliation` 除枚举定义处外只允许在 `crates/platform/recon/src/executor.rs` 出现，阶段 1 的 `xtask archcheck` 以 `reconciliation-context-confined` 逐文件断言。job-worker 装配只调用 `ReconExecutor::run`，不取得构造器；对账仓储在取连接前校验 `AccountKind::System + Some(Reconciliation)`，失败返回 `PLATFORM.AUTHZ.OBJECT_FORBIDDEN`。本阶段的 `assert_recon_context_borrow` 交付断言骨架与五个禁止入口的静态夹具；实际 ReconExecutor 被测对象在 9a 交付时纳入该测试。禁止检查调用栈、禁止以 panic 充当授权、禁止测试直造 Reconciliation。语句封闭性同样是静态判据：执行器只按注册表分发已注册的 `ReconCheck` 实现、不接受语句文本入参，由 `xtask archcheck` 断言 `ep-platform-recon` 与各 `ReconCheck` 实现体内不出现字符串拼接 SQL 与动态语句执行入口；`ReconCheck` 实现按 A-06 由阶段 9a 提供。审计记制品版本号与制品签名摘要，取自阶段 1 的制品元数据。
 
 #### 8.5 部署级验收用例
 
-本阶段无 UI，端到端改为部署级脚本化验收 6 项：DA-01 裸实例执行引导；DA-02 `ep-migrate apply` 全量迁移；DA-03 `ep-datagen --scale small` 装载 2 个法人，另以 `--scale t0` 装载 T0 最小样本的平台部分；DA-04 `ep-migrate check` 十三项断言全通过；DA-05 `rls_matrix` 全绿；DA-06 复制角色以 `pg_receivewal` 建立一次连接并创建复制槽，随后 `verify-connection-budget.sh` 输出与规格第 7.7 章的八进程枚举逐项一致。
+本阶段无 UI，端到端改为部署级脚本化验收 6 项：DA-01 裸实例执行引导；DA-02 `ep-migrate apply` 全量迁移；DA-03 `ep-datagen --scale small` 装载 2 个法人，另以 `--scale t0` 装载 T0 最小样本的平台部分；DA-04 `ep-migrate check` 十三项断言全通过；DA-05 `rls_matrix` 全绿；DA-06 复制角色以 `pg_receivewal` 建立一次连接并创建复制槽，随后 `scripts/verify-connection-budget.ps1` 输出与规格第 7.7 章的八进程枚举逐项一致。
 
 #### 8.6 性能相关项
 
@@ -782,26 +946,29 @@ RLS：IT-16 策略文本与模板全等；IT-17 会话变量缺失时读为 0 �
 
 全部可客观判定，逐条给出判定命令或产物。
 
-E-01 `cargo build --workspace` 与 `cargo clippy --workspace --all-targets -- -D warnings` 通过；依赖方向自检脚本通过，含 portal-gateway 与 plugin-host 不依赖 `ep-adapter-db-pg` 这两条断言。
+E-01 `cargo build --workspace` 与 `cargo clippy --workspace --all-targets -- -D warnings` 通过；依赖方向自检脚本通过，含 portal-gateway、integration-gateway 与 plugin-host 不依赖 `ep-adapter-db-pg` 三条断言，gateway 同时不链接 Outbox/KMS/平台文件 adapter。
 E-02 `db/bootstrap` 在裸实例上执行成功并可重复执行，第二次执行退出码 0 且无变更。
-E-03 `ep-migrate apply` 在空库上成功，`ep-migrate status` 输出 `platform_core.schema_history` 的单一版本且与 `migration-versions.toml` 记录的期望版本一致。
+E-03 `ep-migrate apply` 在空库上成功；`ep-migrate status --format=manifest` 输出唯一历史表的完整有序清单与摘要，并与当前 PE 二进制内嵌的期望清单逐项一致。仓库与制品均不存在可被运行期配置改写的 `migration-versions.toml` 真值。
 E-04 `ep-migrate apply` 重复执行退出码 0 且无变更。
 E-05 `ep-migrate check` 的 13 项编号合规断言全部返回 0 行，其中第 13 项以本阶段八张未受行级策略表的登记行为准，去掉任一行或另建一张未登记的未受策略表即返回非零行；`xtask sqlcheck` 执行的 `db/checks/append_only_consistency.sql` 同样返回 0 行。
 E-06 `tests/rls_matrix` 三块共 26 组用例全绿，其中 `assert_replication_role_containment` 与 `assert_recon_context_borrow` 两个函数由本阶段实现，八类断言函数复用阶段 1 的骨架，本阶段不出现同名重复实现。
 E-07 40 项集成测试全通过，测试结束后 `select datname from pg_database where datname like 'ep\_test\_%'` 返回 0 行。
 E-08 覆盖率报告显示平台内核路径行覆盖不低于 85%，新增与修改代码不低于 80%。
-E-09 2 个法人各自 provision 成功，每个域下 4 个 purpose 各有一把 `ACTIVE` DEK；对其中一个域执行一次轮换与一次销毁前核验，核验报告三项齐备。
-E-10 `verify-connection-budget.sh` 输出与规格第 7.7 章的八进程枚举逐项一致，退出码 0。
-E-11 第 7.1 节所列五项数据基座启动自检在 `--check` 模式下按注册名返回通过，其中四项标 `Blocking`、`secrets-resolvable` 的密钥域一段标 `Degrading` 并在缺域时以登记降级窗口而非退出码 78 收场；基线十项中的其余五项不由本阶段实现，其中已由阶段 1 交付的 `config-parsed` 与 `clock-skew-within-limit` 返回通过，`audit-chain-verifiable`、`file-store-writable` 与 `offsite-sink-requirements` 三项在其承担阶段交付前返回 `NOT_APPLICABLE` 并在报告中标注承担阶段；这五项在 portal-gateway、plugin-host、archive-writer 与 backup-writer 四个进程上同样返回 `NOT_APPLICABLE`；报告中不出现任何序号称呼。
+E-09 2 个法人各自 provision 成功，每个域下 4 purpose × 4 scope 的 16 把 version=1 `ACTIVE` DEK 及算法映射逐项正确；对其中一个域的一个 purpose 执行一次四 scope 同版本原子轮换与一次销毁前核验，核验报告三项齐备。
+E-10 `scripts/verify-connection-budget.ps1` 输出与规格第 7.7 章的八进程枚举逐项一致，退出码 0。
+E-11 第 7.1 节五个已注册数据基座自检在 `--check` 按注册名返回通过且均为 Blocking；`secrets-resolvable` 只覆盖非 SQL 系统机密链。另以 provider 单元/集成夹具验证 `legal-entity-key-domain-coverage` 的全覆盖、缺域、已有域但载体不可用三种结构化结论与两错误语义；Stage 2 报告注册表不出现该名字，degradation ledger 对该检查零调用。基线其他 Pending 项按承担阶段标注，不出现序号称呼。
+E-11a SQL N/A 精确覆盖 portal-gateway、integration-gateway、plugin-host、archive-writer、backup-writer 五个进程；少任一进程即失败。各进程的非 SQL `secrets-resolvable` 只按自身 recipient/能力适用性判读，不得随 SQL 项整组跳过。
+E-11b F-55 Task 4 完成后，终态精确闭集再加入 `ai-inferer` 成六个；SQL 自检对它返回 `NOT_APPLICABLE`，非 SQL 自检仍按各自判据运行，少项、多项或把任一非 SQL 自检误标 N/A 均失败。
 E-12 `docs/data-dictionary.md` 含十四张表全部列条目与两处缩写标识符的全称，`docs/error-codes.md` 含本阶段新增的 20 个错误码且与 `ep-foundation::error::codes` 一致（CI 校验），`docs/event-catalog.md` 含 3 个事件，`docs/metrics-catalog.md` 含第 7.2 节四个指标条目，五篇 ADR 已提交。
 E-13 第 12 节的偏离与新增决定已回写共享技术基线，评审记录存档。
 E-14 代码审查与安全审查由独立角色完成，严重与高危发现全部关闭，符合规格第 17.1 章不得由同一执行角色自行批准的要求。
 E-15 组织架构五张表建成并挂接策略与触发器，`LegalEntityDirectory` 与 `DepartmentClosureQuery` 两个 trait 已交付并可被阶段 3、阶段 4 与阶段 5 在 `apps/core-server/src/wiring/` 与 `apps/job-worker/src/wiring/` 两个目录中注入；IT-39 与 IT-40 通过。
-E-16 `platform_ops.degradation_windows` 建成并带 `subject` 可空列与 `ux_degradation_windows_kind_scope_closed`、`ck_degradation_windows_open_order` 两条约束，其中前一条建在 `kind`、`subject`、`scope_legal_entity_id`、`scope_accounting_period_id` 与开窗状态五者上，`DegradationLedger` 的 `open`、`close`、`open_count` 三个方法可用，`DegradationKind` 的三个初始取值 `OFFSITE_SINK_NOT_CONFIGURED`、`WRITER_NOT_IN_SERVICE` 与 `PORT_NOT_IMPLEMENTED` 已定义且制品中不出现 `WRITER_ROLE_CONTAINMENT_MISSING` 一名，阶段 1 预留的 `// TODO(stage-2): write degradation ledger` 一行已补上。
+E-16 `platform_ops.degradation_windows` 建成并带 `subject`、`ux_degradation_windows_kind_scope_closed` 与 `ck_degradation_windows_open_order`；`DegradationLedger` 三方法可用；不可改的 `V20260901104500`、其 checksum 与 Stage 2 Rust 枚举逐字只有 `OFFSITE_SINK_NOT_CONFIGURED|WRITER_NOT_IN_SERVICE|PORT_NOT_IMPLEMENTED` 三项。本阶段不接受或持久化第 4 项至第 21 项，不出现 `WRITER_ROLE_CONTAINMENT_MISSING`，也不以 `PORT_NOT_IMPLEMENTED` 冒充密钥域窗口。测试同时证明 `legal-entity-key-domain-coverage` provider 只返回结构化结论且 ledger 零调用；Stage 14 的 `V20261023092500` 是扩到终态 21 项并接线的唯一更高版本迁移。
 E-17 `ep_foundation::port::db::MigrationWindowGuard` 端口与 `PgMigrationWindowGuard` 实现均已交付，`apps/core-server/src/wiring/` 与 `apps/job-worker/src/wiring/` 两个目录已注入，窗口关闭时 `assert_open` 返回 `PLATFORM.DB.MIGRATION_WINDOW_CLOSED`；`tools/ep-migrate` 的五个子命令与六个退出码与第 3.3 节逐项一致，阶段 1 的 `migrate`、`verify`、`manifest` 三个名字在本阶段制品中不存在。
 E-18 `docs/metrics-catalog.md` 的唯一性校验通过，第 7.2 节四个指标的注册方与填充方与该文件一致，制品中不出现 `ep_db_retries_total`、`ep_tx_retry_total`、`ep_db_replication_crosscheck_age_seconds` 与 `ep_replication_crosscheck_age_seconds` 四个已作废的名字。
 E-19 `ep_foundation::port::db::IdempotencyStore` 已按 C-07 定义并被内存实现覆盖，`platform_msg.idempotency_keys` 建表与重放判定不在本阶段交付物中，CI 断言本阶段无第二套判等实现。
 E-20 本阶段全部路由的能力域码与动作类别常量已声明，常量位于 `crates/platform/tenancy/src/capability.rs`，`xtask configdoc` 通过。
+E-21 D-16 的 S-01 至 S-08 全绿；builtin 与 HSM 两条启动链均有正例，跨 recipient、循环 bootstrap、EPS1 66659 bytes、错 AAD、部分轮换、legacy 残留、file provider、隐藏第九命令和 secret 输入泄漏均有负例。发布证据逐字列出 `secrets.provider=kms`、六 recipient 独立 key identity、工具/常驻 PE digest、SBOM、legacy/quarantine/staging 零残留与 `secrets-resolvable` ACK；缺一即不得退出 Stage 2 或进入生产发布。
 
 ---
 
@@ -839,14 +1006,14 @@ PRD 条目逐条。
 | 11.9 降级状态的用户可见性 | 数据基座自检失败项的结构化结论输出，供运维中心台账取用 |
 | 附录乙 U-A-03 | 文本长度上限以 `text` 加 CHECK 表达，取值按基线第 11.2 节；本阶段被该项的业务侧决策阻塞程度为零，因为改 CHECK 属在线变更范围 |
 | 附录乙 U-A-04 | 数量、单价、金额、税率的小数位数与舍入规则的两侧一致实现；业务侧若另有决策，改动范围限于列类型与 `Money` 的 scale 常量，切换代价为一次停机窗口内的列类型变更 |
-| 附录乙 U-A-12 与 6.16 的 F-17 | 开户银行是否纳入敏感字段清单尚待决策，银行账号按规格第 7.8 章强制纳入并做字段级加密；本阶段以 `sensitive_field_registry` 承载该决策，不预置任何行；被阻塞程度为零，因为登记是数据行变更而非代码变更。按 A-28，阶段 5 以 `db/migrations/mdm/` 下的 backfill 迁移插入 `mdm.customer_invoice_profiles` 与 `mdm.supplier_payment_profiles` 两表的 `bank_name` 与 `bank_account_no` 共四行，`bank_account_no` 两行的 `is_field_encrypted` 取真、`bank_name` 两行取假，后者与四行的 `security_level` 与 `mask_style` 同为该事项决策前的临时取值；按 A-27，本阶段不接入配置发布通道 |
+| 附录乙 U-A-12 与 6.16 的 F-17 | 已由 F-51 冻结：`bank_name` 与 `bank_account_no` 均为密级 30 且字段级加密，本阶段只提供 `sensitive_field_registry` 与密文列形态，登记行由所属业务阶段 backfill。阶段 5 向 `mdm.customer_invoice_profiles` 与 `mdm.supplier_payment_profiles` 各登记两行，共四行且 `is_field_encrypted=true`；阶段 10 向 `finance.cash_accounts` 登记同样两行。银行名不建盲索引，账号用完整 32 字节 EXACT 盲索引；展示、完整查看、重新认证、审批与审计按 F-51 U-A-12。按 A-27，本阶段不接入配置发布通道 |
 | 附录乙 U-B-05 | 权限求值顺序中显式拒绝优先的结论，本阶段只落实第一步法人授权，其余四步属授权阶段 |
 
 ---
 
 ### 11. 风险与预留
 
-R-01 refinery 0.8 对非事务迁移的支持不确定。若其无法按文件粒度关闭事务，则 `CREATE INDEX CONCURRENTLY` 必须走自建执行器。缓解是自建执行器已列入 D-01 的必交付范围而不是备选，两条路径共用同一历史表结构；残余风险是两套执行器的校验和算法必须严格一致，由 IT-06 断言。
+R-01 事务迁移与 `concurrent/` 非事务迁移若各自实现解析或校验和，会让同一历史表出现不可比较的记录。两条路径因此都属于同一个仓内 Runner，并强制调用同一 `migration_checksum` 与历史写入函数；IT-06 以同一文件分别通过两条夹具路径计算并断言结果严格一致。不存在恢复 refinery 的运行时分支。
 
 R-02 `numeric(18,2)` 在插入更高精度时静默舍入。PostgreSQL 的舍入方向恰与本平台的中值远离零一致，因此不会产生方向性错误，但会掩盖代码路径上遗漏 round 的缺陷。缓解是 Rust 侧写前断言并返回 `WRITE_SCALE_VIOLATION`，由 IT-27 覆盖。残余风险是绕过统一数据访问层的直写路径，该路径本身已由角色权限与 CI 断言封堵。
 
@@ -862,11 +1029,11 @@ R-07 复制槽的 `max_slot_wal_keep_size` 取值依赖附录 A.4 实测的事�
 
 R-08 幂等键的三段职责按 C-07 已经拆定，本阶段只定义端口，请求头校验属阶段 1，表与重放判定属阶段 3a，因此本阶段不再登记为被阻塞。残余风险是判等口径必须只在阶段 3a 一处实现，本阶段与阶段 1 都不得自行判等，由第 6 节的端口签名与 CI 依赖图断言约束；阶段 3a 交付后重跑本阶段四个写端点的用例。
 
-为后续阶段预留的扩展点，逐项给出位置。一是 `attach_table_guards` 与 `assert_baseline_indexes` 两个函数，各业务阶段建表时调用一次即自动获得策略、触发器与索引断言，无需重复实现。二是 `sensitive_field_registry`、`append_only_registry` 与 `unpoliced_table_registry` 三张登记表，新增受保护列、仅追加表或不带法人列的表只是插入一行，不改代码；按 A-27 本阶段不接入配置发布通道，登记经迁移或端点直接写入，发布通道接入由阶段 3b 反向补齐，登记行分别由阶段 5（A-28）与阶段 3b、7、8、9a、10（B-02）插入，未受策略表的登记行由建表阶段随建表迁移插入。三是 `KmsBackend` trait 的 `hsm` 实现位点，客户提供硬件密码机时只切换配置；`derive_blind_key` 是盲索引取值的唯一计算入口，阶段 5 与阶段 10 按 B-04 直接取用。四是 `UnitOfWork::snapshot_transact`，供阶段 9a 的 `ep-platform-recon` 直接承接。五是 `db/migrations/<schema>/concurrent/` 目录，供后续阶段在有数据的表上加索引，其在线 DDL 执行段按 B-03 须先调用 `MigrationWindowGuard::assert_open`。六是 `ep-datagen` 的模块生成器注册点，T0 最小样本的业务部分由阶段 5 至阶段 11 在此追加。七是 `CipherEnvelope` 的算法标识字段预留 `0x02` 起的取值，供后续版本恢复商用密码档位时扩展，本阶段不实现也不验收。八是 `key_domains.domain_kind` 的 `GROUP_SHARED` 取值已在类型中存在但 CHECK 不放行，供后续版本恢复跨法人能力时放开。九是 `LegalEntityDirectory` 与 `DepartmentClosureQuery` 两个 trait 与 `DegradationLedger` 端口，阶段 3 至阶段 14 直接注入取用，不自建同义接口，其中 `DegradationKind` 的 `PORT_NOT_IMPLEMENTED` 是跨模块与平台能力缺位的唯一登记形态，开窗时由 `subject` 列记下该端口或平台能力的完整类型名。
+为后续阶段预留的扩展点，逐项给出位置。一是 `attach_table_guards` 与 `assert_baseline_indexes` 两个函数，各业务阶段建表时调用一次即自动获得策略、触发器与索引断言，无需重复实现。二是 `sensitive_field_registry`、`append_only_registry` 与 `unpoliced_table_registry` 三张登记表，新增受保护列、仅追加表或不带法人列的表只是插入一行，不改代码；按 A-27 本阶段不接入配置发布通道，登记经迁移或端点直接写入，发布通道接入由阶段 3b 反向补齐，登记行分别由阶段 5（A-28）与阶段 3b、7、8、9a、10（B-02）插入，未受策略表的登记行由建表阶段随建表迁移插入。三是 `KmsBackend` trait 的 `hsm` 实现位点，客户提供硬件密码机时只切换配置；`derive_blind_key` 是盲索引取值的唯一计算入口，阶段 5 与阶段 10 按 B-04 直接取用。四是 `UnitOfWork::snapshot_transact`，供阶段 9a 的 `ep-platform-recon` 直接承接。五是 `db/migrations/<schema>/concurrent/` 目录，供后续阶段在有数据的表上加索引，其在线 DDL 执行段按 B-03 须先调用 `MigrationWindowGuard::assert_open`。六是 `ep-datagen` 的模块生成器注册点，T0 最小样本的业务部分由阶段 5 至阶段 11 在此追加。七是 `CipherEnvelope` 的算法标识字段预留 `0x02` 起的取值，供后续版本恢复商用密码档位时扩展，本阶段不实现也不验收。八是 `key_domains.domain_kind` 的 `GROUP_SHARED` 取值已在类型中存在但 CHECK 不放行，供后续版本恢复跨法人能力时放开。九是 `LegalEntityDirectory`、`DepartmentClosureQuery`、`LegalEntityKeyDomainCoverageCheck` 三个 trait/provider 与 `DegradationLedger` 端口，阶段 3 至阶段 14 按各自接线时点直接注入取用，不自建同义接口。`PORT_NOT_IMPLEMENTED` 只允许以 `subject` 分别承载尚未交付的 `WasmComputePort|RuleEvaluator|DisposalPort` 三个已登记末期端口；密钥域、病毒扫描或其他平台状态不得借用它。Stage 2 的密钥域 provider 只返回结构化结论，必须等 Stage 14 的 21-kind Rust/DB 接受域形成后才注册并使用专属 `LEGAL_ENTITY_KEY_DOMAIN_UNAVAILABLE`。
 
 ---
 
-### 12. 偏离基线、本阶段新增决定与显式假设
+### 12. 偏离基线、本阶段新增决定与已批准技术取值
 
 按基线第 0 节与第 12 节的纪律，逐条单列。
 
@@ -886,19 +1053,19 @@ R-08 幂等键的三段职责按 C-07 已经拆定，本阶段只定义端口，
 
 四、密文自带信封头且以 `legal_entity_id`、`schema.table.column`、行标识三段作为 AAD，理由是把密文与其所在行绑定，使数据库层的整列复制无法产生可解密结果。回写基线第 7.2 节。
 
-五、`ep_app_rw` 在业务 schema 上不授予 DELETE，只在 `platform_msg.idempotency_keys` 与 `platform_ops` 过期快照上授予，理由是把基线第 3.6 节的禁止从 CI 静态检查提升为数据库权限。该决定按 C-01 由阶段 1 第 13 节移交本阶段，本阶段是其唯一登记方，阶段 1 计划不再重复登记。回写基线第 3.1 节的角色权限边界列。
+五、`ep_app_rw` 的默认权限与 schema 级权限一律不含 DELETE；仅对技术基线第 3.6 节逐表具名的封闭清理白名单授予表级 DELETE：`platform_msg.idempotency_keys`、`platform_msg.outbox_events`、`platform_msg.inbox_consumptions`、`platform_msg.notifications`、`platform_msg.notification_deliveries`、`platform_flow.process_instances`、`platform_flow.process_steps`、`platform_flow.process_timers`、`platform_file.upload_sessions`、`platform_file.upload_parts`，以及 `platform_ops` 数据字典中逐表标记为过期指标快照的表。阶段 2 固定默认权限；各表的创建阶段在同一建表迁移中追加 `GRANT DELETE ON TABLE <exact_table> TO ep_app_rw`，不得用 `ALL TABLES IN SCHEMA` 或未来默认授权。理由是把基线第 3.6 节的禁止从 CI 静态检查提升为数据库权限，同时不让已冻结的保留期任务失去执行权限；新增表必须先修订基线、数据字典、正反 SQL 静态检查与本清单。该决定按 C-01 由阶段 1 移交，本阶段是默认权限唯一登记方。
 
 六、`platform_core` 承载密钥域、数据密钥、敏感字段清单、仅追加登记、未受行级策略表登记与迁移窗口六类平台元数据表，以及按 A-04 归入的集团、组织、部门、岗位与部门层级闭包五张组织架构表，理由是基线的八个平台 schema 中没有为密钥管理与租户组织单列 schema，而新增 schema 被基线第 12 节禁止。回写基线第 3.1 节的 schema 用途说明。
 
-显式假设四条，规格与 PRD 均未定义。
+已批准技术取值四条。规格与 PRD 未定义这些细节，F-51 的“所有问题均选推荐”授权已将下列值冻结为唯一开发输入，不再作为假设或待决事项。
 
-假设一，内置 KMS 主密钥以 32 字节随机内容存放于 `C:\EP\kms\master.key`，该文件的 NTFS ACL 断继承并只授使用它的两个进程（core-server 与 job-worker）的服务虚拟账户与 SYSTEM 与 Administrators，不保留 `BUILTIN\Users` 一类的继承 ACE，其自身不再二次加密，保护依赖操作系统层访问控制。理由是单机形态下不存在第二个可托管该密钥的可信部件，规格第 12.3 章的两种载体中内置 KMS 本身即是最终信任根。该假设写入交付说明。
+取值一，内置 KMS 主密钥以 32 字节随机内容存放于 `C:\EP\kms\master.key`，该文件的 NTFS ACL 断继承并只授使用它的两个进程（core-server 与 job-worker）的服务虚拟账户与 SYSTEM 与 Administrators，不保留 `BUILTIN\Users` 一类的继承 ACE，其自身不再二次加密，保护依赖操作系统层访问控制。理由是单机形态下不存在第二个可托管该密钥的可信部件，规格第 12.3 章的两种载体中内置 KMS 本身即是最终信任根。该取值写入交付说明。
 
-假设二，DEK 按 `(密钥域, 用途, 密级子域)` 三元组划分，四个用途取 `FIELD`、`BLIND_INDEX`、`ATTACHMENT`、`ARCHIVE`。规格第 7.8 章只说密级、附件与归档可在法人密钥域内使用子密钥，未给划分维度。理由是这四类的轮换与销毁节奏不同，合并会使任一类的轮换牵动全部。
+取值二，DEK 按 `(密钥域, 用途, 密级子域)` 三元组划分，四个用途取 `FIELD`、`BLIND_INDEX`、`ATTACHMENT`、`ARCHIVE`。规格第 7.8 章只说密级、附件与归档可在法人密钥域内使用子密钥，未给划分维度。理由是这四类的轮换与销毁节奏不同，合并会使任一类的轮换牵动全部。
 
-假设三，盲索引截断为 16 字节且默认不建唯一约束。规格第 7.8 章只要求受治理的盲索引，未给长度与唯一性口径。理由见第 4.4 节。按 B-04，`finance.cash_accounts` 的银行账号盲索引列 `bank_account_no_bidx` 需要唯一约束，走本假设已给出的例外路径，即取完整 32 字节并在数据字典登记；`mdm.customer_invoice_profiles` 与 `mdm.supplier_payment_profiles` 两表的同名列不建唯一约束，按本假设默认取 16 字节截断，依据是 PRD 第 6.2.2 节只对资金账户要求银行账号在同一法人内不重复，客户开票要素与供应商收付款信息无该要求。两处都不构成对本假设的推翻。
+取值三，盲索引固定使用 HMAC-SHA256 的完整 32 字节输出，`BlindIndex` 固定为 `[u8; 32]`，数据库每个 `_bidx` 列以 `octet_length = 32` 的 CHECK 强制同一宽度；该宽度不是配置项，也不存在按列截断例外。规格第 7.8 章只要求受治理的盲索引，未给长度与唯一性口径；选择完整输出是为了消除 16/32 双路径、降低碰撞面并让类型、数据库与调用方只有一套契约。唯一约束与宽度正交：`finance.cash_accounts.bank_account_no_bidx` 因银行账号在同一法人内不重复而建唯一约束，`mdm.customer_invoice_profiles` 与 `mdm.supplier_payment_profiles` 两表因没有该业务要求而只建普通索引，但三列都固定存 32 字节。
 
-假设四，迁移窗口的默认存活时长为 60 分钟、上限 240 分钟。规格第 7.7 章只说迁移账号在迁移窗口内启用，未给窗口时长。取值依据是基线第 3.9 节的迁移执行上限 30 分钟加一倍余量，上限对齐规格第 12.1 章应急账号 8 小时的一半以示更严。
+取值四，迁移窗口的默认存活时长为 60 分钟、上限 240 分钟。规格第 7.7 章只说迁移账号在迁移窗口内启用，未给窗口时长。取值依据是基线第 3.9 节的迁移执行上限 30 分钟加一倍余量，上限对齐规格第 12.1 章应急账号 8 小时的一半以示更严。
 
 实施期偏离登记（任务 #11、#13、#14）十三条。与上文「偏离项两条」不同，两条是计划层面对基线的修改并已回写；本十三条是实施阶段落码时与本计划自身口径的偏差，逐条如实记录，不改基线。
 
@@ -906,31 +1073,31 @@ R-08 幂等键的三段职责按 C-07 已经拆定，本阶段只定义端口，
 
 二、迁移文件的校验和由 build.rs 在编译期计算并与已落库台账对齐（任务 #11），而非计划第 5 节设想的运行期现算后仅告警。
 
-三、自检裁定枚举新增 `Verdict::Degraded`（任务 #13）。计划只设 Pass 与 Fail 两态，实施中发现数据库不可达时应使进程以降级态继续服务而非退出，该态的语义与降级窗口台账联动。
+三、自检结果支持 `DEGRADED`（任务 #13），但只由 severity 为 Degrading 的项目产生；severity 为 Blocking 的 `database-reachable` 不通过时仍以退出码 78 拒绝启动，不得把数据库不可达降为继续服务。结果取值与阶段 1 冻结的 `PASSED / FAILED / DEGRADED / PENDING / NOT_APPLICABLE` 报告契约逐项一致。
 
-四、模块缺域时自检登记暂用 `PORT_NOT_IMPLEMENTED`（任务 #14），与计划第 10 节预留扩展点九的口径一致；正式的分型拆分留待承接方阶段。
+四、历史上曾把模块密钥域缺失暂记为 `PORT_NOT_IMPLEMENTED`，该临时复用撤销。密钥域尚未建立走 `PLATFORM.KEY_DOMAIN.NOT_PROVISIONED`；已有域但 KMS/KEK/DEK 缺失或无法解封走 `PLATFORM.KEY_DOMAIN.KEY_UNAVAILABLE`。两者由独立 Degrading `legal-entity-key-domain-coverage` provider 判读；Stage 2 只交付结论，Stage 14 在 21-kind Rust/DB 接受域形成后注册并接 `LEGAL_ENTITY_KEY_DOMAIN_UNAVAILABLE` 窗口。Blocking `secrets-resolvable` 只判系统机密链；`PORT_NOT_IMPLEMENTED` 只用于三个已登记末期平台端口。
 
 五、九个端点的上下文头推导是阶段 2 权宜（任务 #14）：`X-Legal-Entity-Id` 等四头只校存在性与格式，真实校验属阶段 4，与 ADR-0007 同一类临时状态。
 
 六、配置模型补齐 `KmsCfg` 与 `MigrationCfg` 两段（任务 #12、#13），计划第 8 节只列到段落名未给字段级口径，实施时以 configdoc 登记为准。
 
-七、`sensitive_field_registry` 疑似存在重复列（任务 #12），尚未验证；若确认为迁移笔误，由阶段 3a 的一次在线迁移修正并补登记。
+七、`sensitive_field_registry` 的列集已复核并由 C-06 唯一冻结为十一项业务列，`approved_by` 与 `approved_at` 不存在，批准留痕只用 `release_ref`；不存在“疑似重复列”或阶段 3a 待确认迁移。
 
 八、A-01 法人目录的分页与排序在装配层实现（任务 #14），而非计划第 6 节设想的仓储层入参，理由是首版只有 2 个法人，分页属接口形态兼容而非性能需求。
 
-九、A-09 开窗的 `approval_ref` 只做非空存在校验（任务 #14），审批单实体与其核验属阶段 3b，此前不得被读成「已接审批流」。
+九、A-09 开窗必须验证 `approval_ref` 指向同法人、已批准、未消费且动作与迁移窗口一致的审批决定；该写入端点与阶段 3b 的真实审批查询同批启用。阶段 3b 接线前只允许第 3.3 节空库首装自举生成内部 `INITIAL_INSTALL` 一次性窗口，不注册可供用户调用的弱校验开窗路径，也不接受仅非空的引用。
 
 十、`kms.provider` 取 `hsm` 时不回落内置实现（任务 #12），配置指向不存在的硬件后端即以配置错误退出码失败，理由是静默回落会使密文信封头里的算法与密钥标识与实际解封路径不一致。
 
-十一、A-03 开通密钥域只对 ACTIVE 态做幂等重放（任务 #14），PROVISIONING 残留的重入恢复未实现；进程在开通半途崩溃后该域行需人工介入清理，清理口径留待阶段 3b 的 Outbox 与重试一并设计。
+十一、A-03 对 `ACTIVE` 做幂等重放，对 `PROVISIONING` 按 4 purpose × 4 scope 的 exact version=1 矩阵续做并收敛到 `ACTIVE`；`kek_ref` 是可在 KMS 前落库的 logical locator。每一步按第 6 节在 KMS 调用前后分别使用短事务锁域及现有版本行，已存在的 `(key_domain_id, purpose, security_level_scope, version)` 只 readback、不重复生成或写入。该口径与第 4.2、6 节状态机重入规则一致，崩溃后不要求人工删行，也不把恢复方案留给阶段 3b 再设计。
 
-十二、进程重启后 KMS 内存注册表断档（任务 #14）：内置 KMS 的已激活域状态不持久化，重启后 A-04 轮换以数据库为基准经 `generate_detached_data_key` 重建，A-06 快照只在注册表存在时同步；不得被读成「KMS 具备高可用」。
+十二、进程重启后 KMS 内存注册表断档（任务 #14）：内置 KMS 的已激活域状态不持久化，数据库 wrapped DEK 是唯一持久真相；core-server/job-worker 在相关 readiness 前必须加载全部非 DESTROYED 行并逐把 `readback_wrapped_data_key` 重建注册表，A-03/A-04 只经 `KmsKeyMaterialProvisioner` 恢复或轮换。A-06 与任何读取都不得因注册表缺项跳过；exact-ref cache miss 只允许从 DB 读取该行、readback 后重试一次，仍失败即 `PLATFORM.KEY_DOMAIN.KEY_UNAVAILABLE`。detached DEK 不成为 HSM/builtin 第二持久 object，不得被读成「KMS 具备高可用」；现行完整裁定见 ADR-0009。
 
 十三、workspace 依赖表的 axum 条目新增 `query` feature（任务 #14），供九个端点的查询串提取器取用，属依赖能力面扩充而非新增依赖。
 
 活库补验提请裁定登记（任务 #26）五条。任务 #25 的活库补验在本机 PostgreSQL 16 上跑通 bootstrap 幂等、69 迁移空库全量、13 断言与 819 测试，留下两项口径冲突，本节正式登记其裁定；补验中的三个设计级修复一并登记，其余纯缺陷修复不列。
 
-十四、空库首装自举口径（鸡生蛋收口）。冲突原文位置：`platform_core.migration_windows` 与 `migration_window_lock` 由迁移 V20260901093500 创建（本计划 §3.5 表六），而 `ep-migrate apply` 的窗口闸（本计划 §3.3）要求两表先存在且调用方出示窗口，空库首装互为前提。补验曾以「ep_migrator 预施 090000/090500/093500 三个文件」的临时口径绕过。裁定取值：`ep-migrate apply` 探测目标库无 `platform_core.schema_history`（既有 to_regclass 口径）且未出示 `--window-id` 时自动进入首装自举——同一连接以 ep_migrator 身份在单一事务内建出历史表与窗口两表的最小 DDL（形态与 V20260901090000/V20260901093500 的最终形态逐字一致：列集、约束、属主归位 ep_mod_platform_core，一致性由 ep-migrate 单测逐字断言），并插入一条一次性安装窗口行（approval_ref 取 `INITIAL_INSTALL`，reason 写明首装自举，opened_by 取系统主体，ttl 取假设四默认 60 分钟），随后按正常 apply 流程执行全部迁移；全部迁移成功后窗口不显式关闭，到期自动关闭由既有窗口生命周期机制承担。自举后重复 apply 走正常比对路径退出码 0，不再自举；出示 `--window-id` 的调用永不走自举，退出码纪律（0/2/3/4/5/78）与三态语义不变。不回改的理由：迁移文件形态不可动（预施口径使 Runner 校验和台账与迁移语义错位，且预施本身绕过窗口闸）；窗口两表不能提前建或豁免窗口闸（使 A-09 开窗口径落空）；自举把临时口径收敛为仅空库触发的一次性路径，非空库判据不变。临时预施口径自本条登记起作废，空库首装的命令行用法自此固定为 `ep-migrate apply --db-url=<连接串>`，不需预施、不需 `--window-id`。
+十四、空库首装自举口径（鸡生蛋收口）。冲突原文位置：`platform_core.migration_windows` 与 `migration_window_lock` 由迁移 V20260901093500 创建（本计划 §3.5 表六），而 `ep-migrate apply` 的窗口闸（本计划 §3.3）要求两表先存在且调用方出示窗口，空库首装互为前提。补验曾以「ep_migrator 预施 090000/090500/093500 三个文件」的临时口径绕过。裁定取值：`ep-migrate apply` 探测目标库无 `platform_core.schema_history`（既有 to_regclass 口径）且未出示 `--window-id` 时自动进入首装自举——同一连接以 ep_migrator 身份在单一事务内建出历史表与窗口两表的最小 DDL（形态与 V20260901090000/V20260901093500 的最终形态逐字一致：列集、约束、属主归位 ep_mod_platform_core，一致性由 ep-migrate 单测逐字断言），并插入一条一次性安装窗口行（approval_ref 取 `INITIAL_INSTALL`，reason 写明首装自举，opened_by 取系统主体，ttl 取本节取值四的默认 60 分钟），随后按正常 apply 流程执行全部迁移；全部迁移成功后窗口不显式关闭，到期自动关闭由既有窗口生命周期机制承担。自举后重复 apply 走正常比对路径退出码 0，不再自举；出示 `--window-id` 的调用永不走自举，退出码纪律（0/2/3/4/5/78）与三态语义不变。不回改的理由：迁移文件形态不可动（预施口径使 Runner 校验和台账与迁移语义错位，且预施本身绕过窗口闸）；窗口两表不能提前建或豁免窗口闸（使 A-09 开窗口径落空）；自举把临时口径收敛为仅空库触发的一次性路径，非空库判据不变。临时预施口径自本条登记起作废，空库首装的命令行用法自此固定为 `ep-migrate apply --db-url=<连接串>`，不需预施、不需 `--window-id`。
 
 十五、`platform_msg.idempotency_keys` 的公共列与基线索引豁免口径。冲突原文位置：03 计划表 12 逐字冻结该表列集、§3.3.2 明示纯技术表不带 `security_level` 与 `data_scope_tags`，与本计划 §3.9 check 01（db/checks/01）的公共列位序要求（九件公共列按序占据第 1 至第 9 列）直接矛盾，也与基线 §3.10 的 `ix_<table>_legal_entity_id_created_at` 索引要求矛盾（该表索引清单按 03 计划表 12 冻结为 pk + ux_idempotency_keys_le_user_id_endpoint_key + ix_idempotency_keys_expires_at 三件）。裁定取值：维持 03 计划表 12 的冻结列集与索引清单，db/checks/01 与 db/checks/10 对该表具名豁免（豁免注释引用本条），检查判定逻辑不作任何改动。不回改的理由：03 计划表 12 是后位计划对该表的逐字冻结，属后位计划对公共列适用口径的逐表修订；幂等键是纯技术表，不承载密级过滤与派生存储语义，强补公共列与法人前缀覆盖索引只会制造无人维护的常量列与重复索引；基线不回改，豁免只在该表一处生效，不扩散。
 
@@ -940,4 +1107,4 @@ R-08 幂等键的三段职责按 C-07 已经拆定，本阶段只定义端口，
 
 十八、pgcrypto 扩展建在 `platform_core` schema（补验修复三）。取值：`create extension if not exists pgcrypto schema platform_core`，扩展对象显式落位 platform_core。理由：引导后 public schema 已删除，ep_migrator 的默认 search_path 里没有可建 schema，不指定落位会报 no schema has been selected to create in；ep_migrator 是 ep_mod_platform_core 成员，可在该 schema 建扩展，且与平台元数据承载口径（本节新增决定六）一致。
 
-被业务决策阻塞的判定：本阶段无被阻塞项。U-A-03、U-A-04、U-A-12 与 F-17 四项虽与本阶段相关，但其载体分别是 CHECK 约束、列类型与登记表，三者的变更都在在线变更或登记行变更范围内，切换代价分别为一次在线迁移、一次停机窗口内的列类型变更与一次登记行变更；U-A-12 若决策为开户银行也做字段级加密，按 A-28 另需在同一次变更内改物理列并删去同名明文列，该代价落在阶段 5 而不落在本阶段。四项均不构成本阶段的开工前提。幂等键一项按 C-07 是三段分工而非阻塞，见第 6 节与 R-08。
+被业务决策阻塞的判定：本阶段无被阻塞项。U-A-03、U-A-04、U-A-12 与 F-17 均已由 F-51 或更早裁定关闭；现行列类型、CHECK、敏感字段登记、银行名与银行账号的加密/掩码/导出口径均按对应正文直接实现，不保留切换分支。幂等键一项按 C-07 是三段分工而非阻塞，见第 6 节与 R-08。

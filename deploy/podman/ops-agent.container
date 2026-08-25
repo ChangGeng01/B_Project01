@@ -1,3 +1,4 @@
+# F-57：HISTORICAL_LINUX_RESEARCH_ONLY；禁止用于当前 Windows Server 2022 生产部署或发布验收。
 # ops-agent：运维中心的采集与暴露，指标与健康端点。
 # 与反向代理同处 app-edge.slice；反向代理本身在本仓库无镜像来源，见 ORCHESTRATION.md 的缺口二。
 [Unit]

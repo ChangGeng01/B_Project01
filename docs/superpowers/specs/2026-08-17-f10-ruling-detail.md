@@ -1,5 +1,12 @@
 # 裁定 F-10 的详本：剩余八条待裁的一次性处置
 
+> `status: SUPERSEDED_FOR_IMPLEMENTATION`
+> `replaced_by: F-50`
+> `normative: false`
+> 本文中的 27/22/12 与 24/13 是历史批次和统计口径差异，不构成当前未决；F-49 九项与 F-10 财务冲突均继续由 F-50 关闭。
+
+> **历史详本状态（2026-08-21）。** B-2 的三类凭证来源已由 F-48 改为四类；B-3 至 B-8 中关于资金冲正必然逐行取反、`origin=REFUND`、`min` 释放公式、按 `reverses_id` 判方向、当前余额/历史期间、单头税率和单次红冲的旧句，均由 F-50 替代。本文只保存裁定演进证据；当前开发依据是 F-50 设计与实施计划。
+
 **方法**：四簇并行起草（影响面驱动机制、财务补偿、配置与权限、运维与验收），
 每簇配一个默认判其不成立的**反方**证伪，最后收口。反方共报 81 条（必改 39、应改 38、登记即可 4），**凡标必改的一条不留原样**。
 
@@ -172,7 +179,7 @@
 三、**按反方必改，撤销 SHA-256 冻结机制**。原文照抄能力矩阵的「内置快照为运行期权威，不一致即拒绝一切写入并持续告警」，但那张 client_capability_values 是零可配面的全冻结表，而本条第五点同时声明客户可以收紧——客户第一次合法发布收紧包，表哈希立刻偏离基线，系统随即进入拒绝一切写入状态，收紧永远不生效且此后任何配置包都写不进这张表，原 criteria 二与四在同一台机器上不可能同时为真。改为：编译期常量 COMPENSATION_BASELINE 只作为出厂值与收紧判据的比较基准，不作为运行期权威；表是运行期权威；每次发布对每一行以基线同键行为基准跑 assert_narrowing；baseline_row_hash 列只记该行所依据的基线行哈希，用于识别基线随版本升级后需重新判定的行，不参与任何「拒绝写入」判定。
 四、出厂基线 13 行（封闭）：SALES_INVOICE_ISSUED×INVOICE_VOID、SALES_INVOICE_ISSUED×INVOICE_CREDIT_NOTE、PURCHASE_INVOICE_REGISTERED×INVOICE_VOID、PURCHASE_INVOICE_REGISTERED×INVOICE_CREDIT_NOTE 四行 is_allowed=true、requires_reauth=true；DELIVERY_CONFIRMED×SALES_RETURN 与 GOODS_RECEIPT_POSTED×PURCHASE_RETURN 两行 is_allowed=true、requires_reauth=false；RECEIPT_REGISTERED×CASH_DOC_REVERSAL、PAYMENT_REGISTERED×CASH_DOC_REVERSAL、REFUND_REGISTERED×CASH_DOC_REVERSAL 三行 is_allowed=true、requires_reauth=true；OVERBILLING_WRITTEN_OFF×OVERBILLING_REVERSE_WRITE_OFF 一行 is_allowed=true、requires_reauth=true；VOUCHER_UPDATE_OR_DELETE、PERIOD_REOPEN 两行 is_allowed=false（前者因计划09:212 已在库权限层 REVOKE，后者因规格:366 逐字「首版不做反结账」）；VOUCHER_POSTED×CORRECTION_VOUCHER 一行按 B-1 改为 is_allowed=true、requires_reauth=true（原基线取 false 的依据是计划09:935「不提供入口」，该格已被 B-1 作废）。
 五、可配面只有减法与加码，没有放宽面：客户只能把 is_allowed 由 true 改 false、把 approval_chain_code 换成节点更多的链、把三个 requires_* 由 false 改 true；基线 false 的行永远配不出 true，requires_reauth 永远配不成 false。
-六、防止把账务硬约束配没了，三道：其一无承载物——表上不给事件到分录映射、是否生成凭证、是否写台账、会计期间、唯一约束是否生效、任何 allow_skip 一类列，照抄计划04:163 对审批链的同一手法（「越权跳过不是被校验拒绝的配置，而是根本没有承载它的字段」）；其二单调收紧——纯函数 assert_narrowing(baseline_row, candidate_row)，违反返回 PLATFORM.COMPENSATION_POLICY.WIDENING_FORBIDDEN；其三**按反方应改，不新增第 9 个 suite**——计划13:263 逐字「suite 取值封闭为 8 项」，计划13:444 逐字「SKIPPED 仅允许出现在该包不含对应 item_kind 时」，而本条挂在 AUTHZ_POLICY 上，任何只改审批链的包都含该 item_kind、不许 SKIPPED、只能空判 PASSED，该门禁在最常见的包上恒真。改为 assert_narrowing 在配置保存时执行一次、在运行期提交时再执行一次，形状逐字照抄计划04 第 4.5 节开篇「四类规则，全部在配置保存时执行一次、在运行期提交时再执行一次」（原文写成「保存期与发布期」是误引，因此丢掉了运行期那一道）；发布链路第三道由 AuthzPolicyApplier::apply 的前置校验承担，不动 suite 清单。
+六、防止把账务硬约束配没了，三道：其一无承载物——表上不给事件到分录映射、是否生成凭证、是否写台账、会计期间、唯一约束是否生效、任何 allow_skip 一类列，照抄计划04:163 对审批链的同一手法（「越权跳过不是被校验拒绝的配置，而是根本没有承载它的字段」）；其二单调收紧——纯函数 assert_narrowing(baseline_row, candidate_row)，违反返回 PLATFORM.COMPENSATION_POLICY.WIDENING_FORBIDDEN；其三**按反方应改，不新增 `COMPENSATION_POLICY` suite**——本裁定作成时计划13的 suite 清单为八项；F-21/F-52 后现行清单为九项，但新增的唯一第九项是 `RULE_SEMANTICS`，不得把 `COMPENSATION_POLICY` 复活为第十项。本条挂在 AUTHZ_POLICY 上，任何只改审批链的包都含该 item_kind，若用套件承载就会在最常见的包上产生空判 PASSED。改为 assert_narrowing 在配置保存时执行一次、在运行期提交时再执行一次，形状逐字照抄计划04 第 4.5 节开篇「四类规则，全部在配置保存时执行一次、在运行期提交时再执行一次」（原文写成「保存期与发布期」是误引，因此丢掉了运行期那一道）；发布链路第三道由 AuthzPolicyApplier::apply 的前置校验承担。现行九套 suite 清单与适用映射以 F-52 为准。
 七、执行层位：策略求值一律在 ep-app-<m> 用例头部，领域层不读任何配置表（基线第 1.3 节只允许 ep-app-<m> 依赖 ep-platform-*）；领域侧的借贷平衡、核销守恒等硬不变量与其属性测试一字不动。ep-platform-authz 交付 CompensationPolicyQuery 一个端口，ep-app-invoice、sales、procure、finance、ledger 五个在各自补偿用例头部各调一次。
 八、明确不设发布后账务回归门禁。
 
@@ -299,7 +306,7 @@ effective_open 非负不是新加约束而是累计上限的推论，写成属�
 
 #### B-8 销项发票的订单行与数量明细模型（部分红冲要真解决 PRD:373 的前提）
 
-**裁定**：与部分红冲同批新增 invoice.sales_invoice_lines（sales_invoice_id 同 schema 外键、line_no、sales_order_id 与 sales_order_line_id 逻辑引用、quantity numeric(18,6) > 0、net_amount、tax_amount、gross_amount、reversed_quantity 默认 0、reversed_net_amount 默认 0，加公共列；CHECK reversed_quantity <= quantity、reversed_net_amount <= net_amount），并在 invoice.invoice_reversals 之下新增 invoice.invoice_reversal_lines（invoice_reversal_id、sales_invoice_line_id、red_quantity、red_net_amount、red_tax_amount、red_gross_amount）。头表金额恒等于行表合计，由领域守卫加属性测试保证。
+**现行覆盖（F-50/F-51）**：`invoice.sales_invoice_lines` 的 `sales_invoice_id` 建同法人复合外键；`sales_order_id` 建 `(legal_entity_id,sales_order_id)` 真实复合外键；`sales_order_line_id` 再以 `(legal_entity_id,sales_order_id,sales_order_line_id)` 指向销售订单行的同头归属候选键。行只保存原始 `quantity/net_amount/tax_amount/gross_amount`，红冲累计由仅追加的 `invoice_reversal_lines` 按效果序聚合，不保留 `reversed_quantity/reversed_net_amount` 可变缓存。完整列集、CHECK 与延迟约束以阶段 10 §3.1.3a、§3.1.5 和 F-50 实施计划为准。
 **按反方必改重写 is_fully_credit_noted 的判定式**。原式「sum(quantity) - sum(reversed_quantity)，若剩余已开票数量小于入参 quantity 则返回已全额红冲」代入它自己的用例即阻断（5 台开票、红冲 1 台、退 1 台：4 < 1 不成立 → 返回未冲销清单 → 阻断），声称要打通的 PRD:373 在它自己的公式下仍走不通。改为按可退数量判定，签名一字不改：
 可退数量 R_avail = (该订单行 delivered_quantity − returned_quantity) − (该订单行已开票数量 − 已红冲数量)，其中已开票数量与已红冲数量对该订单行的全部发票行求和。入参 quantity <= R_avail 时返回通过；否则返回未冲销的发票清单。
 代入验证：5 台已交付已开票、红冲 1 台、已退 0 → R_avail = 5 − 0 − (5 − 1) = 1 ≥ 1 → 通过；再退第二台 → R_avail = 5 − 1 − 4 = 0 < 1 → 阻断。完全未开票时 R_avail = delivered − returned，与现行不需红冲的语义一致。该式只用 delivered_quantity 与 returned_quantity 两个既有列加行表两个累计列，不引入新概念。
@@ -311,11 +318,11 @@ effective_open 非负不是新加约束而是累计上限的推论，写成属�
 
 #### C-3 第 9 条 U-A-08：默认审批链与无链即拒
 
-**裁定**：一、承载物：审批链一律落 platform_authz.approval_chains 与 approval_chain_nodes，clm.contract_types 的四个 approval_chain_*_code 由「逻辑引用 platform_flow 的流程定义键」改为「逻辑引用 platform_authz.approval_chains.code」，解析口径为该法人下 is_active 为真的最大 version_no（计划04:161 的唯一键含 version_no，只给裸 code 解析不到唯一行，此点必须写明）。
+**现行覆盖（F-51）**：审批运行链仍由 `platform_authz.approval_chains` 与 `approval_chain_nodes` 承载；`clm.contract_types` 不再保存无法唯一定位版本的 `approval_chain_*_code`。四列固定为 `approval_terms_definition_id`、`approval_discount_definition_id`、`approval_payment_definition_id`、`approval_attachment_definition_id`，并以 `(legal_entity_id,<definition_id>)` 真实复合外键指向 `platform_flow.process_definitions(legal_entity_id,id) ON DELETE RESTRICT`；运行时按冻结的 `ApprovalScenarioCode` 解析法人内唯一活动审批链。
 二、**「无链即拒」的作用面按反方必改收窄**：只作用于本裁定给出默认链的那些 scenario，不扩到规格:1041 的六类高风险操作全集。原文把范围写成六类而只给了其中一部分默认链，落地后出厂默认数据集上合同生效与开票没有链、敏感导出全线不可用，T0 贯通线（计划04:8 逐字点名四条单节点审批链，scenario 依次为合同生效、发票申请单、销项发票开具与资金账户建档）在建单与开票两步各断一次。
 三、**到款登记从清单剔除**：计划10:68 逐字「到款登记不需重新认证也不需审批」，且该项是否需审批由配置项 EP__FINANCE__RECEIPT__REQUIRES_APPROVAL（默认 false）承载，属 F-13 与 U-D-14 的可配面，本条不动它，也不把它迁进 C-1 的表（见 dropped）。
 四、**角色码按反方必改改为大写形态**：00b:219 逐字「RoleCode(Arc<str>)，取值为长度 1 至 64 的 [A-Z0-9_]，与 platform_authz.roles.code 逐字一致」，01:157 同款且由 archcheck 的 foundation-frozen-items 守。原文给的 finance.accountant 一类小写带点形态一律 RoleCode::parse 失败、写不进种子配置包。改为 FINANCE_ACCOUNTANT、FINANCE_MANAGER、SALES_MANAGER、PROCURE_MANAGER、OPS_DATA_OWNER 五个。同时登记一处卷内既存冲突：计划04:282 写的「字符集为小写字母、数字、下划线与点」与 00b:219 及 01:157 相反，按权威顺序以技术基线为准，计划04:282 须同批更正。
-五、**不设 fail-open**：原文要求无链时 fail-open 并挂 DegradationLedger 开窗，但 DegradationKind 的唯一定义方按 00-overview:75 定死为阶段 2、终态清单唯一出处定死为阶段 14 的 18 项，现有取值没有一项对得上「审批链缺失」，误用 PORT_NOT_IMPLEMENTED 不成立；新增一个 kind 要同批改阶段 2 建表 CHECK 与阶段 14 的 18 项终态清单，与本条不成比例。且 ux_degradation_windows_kind_scope_closed 使同一 scenario 第二次 fail-open 插不进第二行，原判据只在第一次成立。统一为 fail-closed：无链或链节点展开为空一律拒绝提交。
+五、**不设 fail-open**：原文要求无链时 fail-open 并挂 DegradationLedger 开窗，但 DegradationKind 的可实施顺序已由 F-55 终态裁定固定为阶段 2 三项、阶段 14 的 `V20261023092500` 再扩为 21 项；终态 21 项仍没有一项对得上「审批链缺失」，误用 PORT_NOT_IMPLEMENTED 不成立。再新增一个 kind 会把终态改成第二十二项并须同批改阶段 14 的 3→21 扩容迁移、终态 Rust 枚举和数据字典；不得倒灌改写阶段 2 首次建表的三项 CHECK。且 ux_degradation_windows_kind_scope_closed 使同一 scenario 第二次 fail-open 插不进第二行，原判据只在第一次成立。统一为 fail-closed：无链或链节点展开为空一律拒绝提交。
 六、默认链行须给全 code 与 name 两列，且其集合必须覆盖三处：计划04:8 点名的四条 T0 链、计划06:193 的 chain_kind 六值加 A-6a 新增的 TERMINATION 共七值、本裁定点名的财务类 scenario（发票作废与红冲、付款登记、退款登记、期间关账与年结、更正凭证、资金单据冲正）。具体 code 取值由阶段 4 与阶段 6 同批补齐，本裁定不代拟，但覆盖面由下列判据强制。
 
 **验收判据**：一、机检（覆盖面，本条的核心判据，可判且非恒真）：ep-datagen 生成默认 scale 数据集后，对上述三处的每一个 scenario 逐个断言能解析到唯一 is_active 链且节点展开后用户集合非空；任一 scenario 解析不到或展开为空即失败。
@@ -323,7 +330,7 @@ effective_open 非负不是新加约束而是累计上限的推论，写成属�
 三、机检（角色码形态）：五个角色码经 RoleCode::parse 全部成功，且与 platform_authz.roles.code 的种子行逐字一致；构造一个小写带点的角色码负样例，断言 parse 失败。
 四、机检（不扩面的反向断言）：规格:1041 六类中未被本裁定给出默认链的 scenario，其提交路径上不存在「无链即拒」分支——用以证明作用面确实被收窄，没有把 T0 贯通线掐断。
 
-**动到**：阶段 4（12 行默认链的 code、name、节点、quorum、timeout_hours、is_active；计划04:282 的字符集表述更正；ep-datagen 生成默认数据集，计划04:29 与退出条件 04:743 同批改）；阶段 6（计划06:140 的四个 approval_chain_*_code 改指与其解析口径、chain_kind 七值与链集合的对应）；阶段 9、10（财务类 scenario 的链取值，与 B-1、B-3 对齐）；PRD 附录乙 U-A-08 改已裁定。连带：本条给出的取值是 B-1 更正凭证、B-3 资金单据冲正、A-6a 终止三处审批链取值的唯一出处，三处不得各给一套；不新增 DegradationKind，阶段 2 与阶段 14 一字不动。
+**动到**：阶段 4（12 行默认链的 code、name、节点、quorum、timeout_hours、is_active；计划04:282 的字符集表述更正；ep-datagen 生成默认数据集，计划04:29 与退出条件 04:743 同批改）；阶段 6（计划06:140 的四个 approval_chain_*_code 改指与其解析口径、chain_kind 七值与链集合的对应）；阶段 9、10（财务类 scenario 的链取值，与 B-1、B-3 对齐）；PRD 附录乙 U-A-08 改已裁定。连带：本条给出的取值是 B-1 更正凭证、B-3 资金单据冲正、A-6a 终止三处审批链取值的唯一出处，三处不得各给一套；本条不新增 DegradationKind，也不因审批链改动阶段 2 或阶段 14。后续 F-55 独立要求阶段 2 保持三项，并由阶段 14 的 `V20261023092500` 扩为终态 21 项；这不是本条的改动，亦不得被“一字不动”旧句阻断。
 
 #### D-1 备份保留期 D 与其治理（原 D-12-1／D-12-3／D-12-5 三条合并后的裁定）
 
@@ -331,7 +338,7 @@ effective_open 非负不是新加约束而是累计上限的推论，写成属�
 二、**区间守卫按反方必改重写**：原文一边写「上调超过 14 天允许」，一边给 CHECK (retention_days between 7 and 14)，数据库层直接拒收大于 14 的取值，上调路径不可达；且判据前后半句互斥。改为 CHECK (retention_days >= 7)，上限不进 CHECK，改由「不得超过该部署已完成演练所证明的取值」承载：retention_days 大于 14 时该部署必须有非空 drill_report_ref。
 三、治理：保留期为单一取值，不按对象类型、模块、单据类型分列；变更须双人审批加重新认证，留 approval_ref、approver_id、second_approver_id、reauth_ref 四项证据；effective_from 与 superseded_at 表达版本，历史行不覆盖。
 四、**例行回收的触发方按反方应改**：仍由 ops-agent 以 ops 专用账号按日发起，不由 job-worker 触发。计划14:331 逐字「触发面。只由 ops 专用路径与 ops 专用账号触发，不在 /api/v1/platform 前缀下对外暴露」，job-worker 自动构造 DisposalRequest 与该句正面冲突。落点在 DisposalRequest 的 BackupSets 范围内不变。落点长时间不可写时（规格:1209 归档通道暂停）例行回收持续被拒，该噪声按每日一条汇总告警处理，不逐次写审计。
-五、**容量不足改为可记录、可告警，不设硬 CHECK**（见 dropped 的 ck_offsite_sinks_capacity）：offsite_sinks 增列 capacity_floor_bytes，容量不足时不拒收该行，改由 v_retention_status 输出 shortfall 并每日告警，同时按第 15.3 章开一条降级窗口，kind 取本轮新增的 BACKUP_RETENTION_WINDOW_SHORT、basis 取 CAPACITY_SHORT（见 D-2 的 basis 集合）。
+五、**容量不足改为可记录、可告警，不设硬 CHECK**（历史提案）：原拟由 `v_retention_status` 输出 shortfall 并以 `BACKUP_RETENTION_WINDOW_SHORT` 开窗；因 D-12-4 未进入最终 27 条，这一 kind 与开窗分支均已撤销，不得施工。F-52 的十九项与 F-53 的二十项只记录当时演进，已被 F-55 的“阶段 2 三项、阶段 14 扩为含 `LEGAL_ENTITY_KEY_DOMAIN_UNAVAILABLE` 的终态 21 项”取代；`BACKUP_RETENTION_WINDOW_SHORT` 不在终态枚举内。容量字段与告警若未来恢复，须另立不占用现行 kind 的完整裁定。
 六、W_day（事务日志生成速率）不另设第二套口径：规格:1841 逐字「按稳定段实测时长折算的事务日志生成速率……该速率是 A.3 连续归档本机保留子项取值依据的唯一来源」，本条直接引用该实测项，不在 A.4 新增同名必判必记项。
 七、capacity_floor_bytes 的比对基准改为该部署实施方案登记的客户实际数据量，不绑 A.4 认证报告实测值。规格:1824 逐字「部署前由实施方按客户实际数据量完成容量核算，实际数据量超出本节取值时按同一构成重算容量下限并写入实施方案」，用 A.4 认证报告值逐字节比对每个部署等于要求所有部署容量下限相同，凡客户数据量不等于 A.3 基准的部署必判不通过。
 八、代价照实说：D 由 7 天升到 14 天，客户落点要多约 2.6 TB，不是 2.1 TB——2.1 TB 只数了 7 代全量（7 × 300 GB），丢掉了多出来的 7 天事务日志归档、配置包与 1.15 余量；按公式代入 D=14 约 6877 GB、D=7 约 4285 GB，差 2592 GB。这个价签原样交给使用方。
@@ -344,19 +351,21 @@ effective_open 非负不是新加约束而是累计上限的推论，写成属�
 
 **动到**：规格第 13.3 章新增一句（保留期取值与其治理）、第 13.4 章新增一条、第 22 章第 13 条追加半句；阶段 14（新增一张表与一个视图、offsite_sinks 增列、DisposalRequest 的日回收发起方、退出条件第 17 项补两句）。**按反方必改补全阶段 14 的四处计数与登记**：计划14:554 逐字「第 3 节的 17 张表……5 个视图与 21 个迁移文件全部落库」三个计数各加（18 张表、6 个视图、22 个迁移）；计划14:574 逐字「本阶段新建的 16 张 platform_ops 表在 platform_core.unpoliced_table_registry 中各有一行登记」计数加一并补该行的五列取值；计划14:178 逐字「platform_ops.v_ops_health……聚合上述四个视图的关键取值」改为五个；00b:603 逐字「追加项名与其 severity 在各阶段计划中登记，全量清单以总览第 4.3 节 C-25 行为唯一出处」，新增自检项须登记入总览 C-25 行。
 
-#### D-2 备份保留窗口的自检项与降级窗口（原 D-12-4 修正后的存留部分）
+#### D-2 备份保留窗口的自检项与降级窗口（历史候选；已撤下）
 
-**裁定**：一、新增自检项 backup-retention-window。**severity 按反方必改不得取会使 --check 非零退出的档**：计划14:452 逐字「任一项为 FAILED 或 DEGRADED 均以非零码退出，用于部署验收与升级前置校验」，计划14:553 逐字要求三个进程「报告中无 FAILED 也无 DEGRADED；并在生产配置下连续运行不少于 7 个自然日」。D 取 14 时任何新部署头 14 天必然 DEGRADED，交付日的部署验收 --check 必然非零码退出，阶段 14 退出条件第 1 项（只跑 7 天）永远不可满足。据此：该自检项的 severity 取 Informational（若卷内无此档，则该项不进 --check，改由 v_retention_status 视图加每日巡检告警承载），部署验收退出码不受其影响。
-二、新增 DegradationKind 取值 BACKUP_RETENTION_WINDOW_SHORT，十八改十九。basis 集合取五项并**按反方应改给出优先级**（原四项定义互相包含，「四态互斥」按定义无法满足）：BOOTSTRAP（部署运行未满 D 天）> ARCHIVE_GAP（归档段序列有空洞）> ANCHOR_MISSING（不存在 verified_at ≤ now − D 的有效全量）> GENERATIONS_SHORT（有效全量代数低于 3）> CAPACITY_SHORT（落点容量低于下限，见 D-1 第五条）。同一时点只取优先级最高的一项。
-三、**十八改十九的同批清单按反方更正**：补 00c:1899 逐字「逐个核过十八个取值：落点未配置、写出进程未投入运行、……」与计划14:572 逐字「platform_ops.degradation_windows 的 kind 取值已由阶段 2 的 3 个扩展至 18 个」两处；把原清单所称 00c:3084 改为 00c:3115、所称 00c:3165 改为 00c:3196；删去所称「13-clients-lowcode.md:1065」一处，该文件该行是 create index concurrently 的风险表行，原引句在该文件不成立。一份用来防计数失配的清单本身失配，必须先修好再用。
+> **现行替代（F-55 终态裁定）。** `00f-f10-writeback-order.md` 已明确 D-12-4 不在 F-10 最终 27 条内；本节以下 `BACKUP_RETENTION_WINDOW_SHORT` 与「十八改十九」只保留反方审计历史，不得实现。F-52 的 `REPLICATION_CROSSCHECK_NO_RESULT` 是历史第十九项，F-53 的 `VIRUS_SCANNER_NOT_AVAILABLE` 是历史第二十项；实际实现必须由阶段 2 首次建表的三项 Rust 枚举/数据库 CHECK 起步，再由阶段 14 的 `V20261023092500` 扩为含第二十一项 `LEGAL_ENTITY_KEY_DOMAIN_UNAVAILABLE` 的终态 21 项。`BACKUP_RETENTION_WINDOW_SHORT` 不在枚举中，也不得作为第二十二项恢复。旧的“阶段 2 一次性落完整 20/21 项”不可实施。
+
+**历史候选（整节不得施工）**：一、曾拟新增自检项 `backup-retention-window` 并尝试使用 Informational 语义；卷内没有该档的冻结定义，且 D-12-4 最终撤下，因此该自检项不注册、不进入 `--check`。
+二、**历史候选、现已作废**：曾拟新增 DegradationKind 取值 `BACKUP_RETENTION_WINDOW_SHORT`，把当时十八项扩成十九项，并为五种 basis 定优先级。本项未进入最终 27 条；F-52 使用历史第十九项承载周期核对连续无结论，F-53 使用历史第二十项承载病毒扫描器不可用，F-55 再以 `LEGAL_ENTITY_KEY_DOMAIN_UNAVAILABLE` 固定终态第二十一项；不得把本候选复活为第二十二项。
+三、**历史计数审计、不得执行**：候选稿曾列一份“十八改十九”同步清单，并发现该清单自身漏项与行号漂移。F-52 曾按十九项冻结，F-53 后现行计数为 20；旧清单不再是施工输入。
 四、**A.6 演练那一支撤下**（见 dropped）：追加「恢复到最早全量之后 15 分钟」的一次演练撞规格:1864 逐字的 RPO 不超过 15 分钟，而原文枚举「一字不放宽」的项时恰好漏掉 RPO；规格:1867 逐字「两次均达标才判定通过」、规格:1853 逐字「演练结果是 A.5 唯一的可用性类发布判据」，该改动会把第 22 章第 7 条变成必不通过。
 
-**验收判据**：一、部署验收（机检，本条修正的存在证明）：一个刚部署完成第 1 天的环境执行 ops-agent --check，退出码为 0；断言 backup-retention-window 项在报告中出现且其结论为 BOOTSTRAP，但不计入 FAILED 与 DEGRADED 两类。
+**历史验收草案（随本项撤销）**：一、原拟让新部署第 1 天的 `ops-agent --check` 报告 `backup-retention-window=BOOTSTRAP` 但仍退出 0；该未冻结的第三档语义不进入现行自检模型。
 二、basis 优先级（机检）：分别构造五种成因同时成立与两两同时成立的输入，断言产出的 basis 恰为优先级最高的那一项，不产生两条并存的窗口。
 三、窗口生命周期（机检）：满 D 天且锚点齐备后该窗口自动关闭，v_retention_status 转 PASSED。
-四、十八改十九（机检）：degradation_windows 的 kind CHECK 取值集合恰为 19 项且含 BACKUP_RETENTION_WINDOW_SHORT；上述四处文档计数与代码常量表逐字比对通过。
+四、历史候选的“清单含 `BACKUP_RETENTION_WINDOW_SHORT`”机检随本项一并撤销。现行机检必须分阶段断言：阶段 2 首次建表的 kind CHECK 恰为 `OFFSITE_SINK_NOT_CONFIGURED|WRITER_NOT_IN_SERVICE|PORT_NOT_IMPLEMENTED` 三项；阶段 14 的 `V20261023092500` 扩容后恰为 21 项，含 `REPLICATION_CROSSCHECK_NO_RESULT`、`VIRUS_SCANNER_NOT_AVAILABLE`、`LEGAL_ENTITY_KEY_DOMAIN_UNAVAILABLE`，不含 `BACKUP_RETENTION_WINDOW_SHORT`。
 
-**动到**：阶段 2（degradation_windows 的 kind CHECK 建表迁移，A-26 冻结项，须与阶段 14 同批）；阶段 14（十八项终态清单改十九、自检项注册与其 severity 登记、v_retention_status 视图、basis 优先级实现与用例）；总览第 4.3 节 C-25 行（自检项全量清单唯一出处）；00c:1899 与其余三处计数文本。连带：本条动阶段 2 与阶段 14 两个已由 A-26 冻结的落点，档位按此计，不因「只加一个取值」而降档。
+**现行处置**：本历史候选自身不触及阶段 2、阶段 14、总览 C-25 或任何迁移；DegradationKind 的现行施工顺序只按 F-55 的阶段 2 三项与阶段 14 终态 21 项执行。备份保留窗口如未来要独立建模，须另立决策并按新增第二十二项的完整代价重新评估，不得复用本段旧工单。
 
 ### 实现级补充（4 条）
 
@@ -436,13 +445,13 @@ effective_open 非负不是新加约束而是累计上限的推论，写成属�
 
 - C-1 把 EP__FINANCE__RECEIPT__REQUIRES_APPROVAL 与 EP__FINANCE__CASH_ACCOUNT__REQUIRES_APPROVAL 迁入 compensation_policies——撤下。迁入目标不存在（九列里没有任何表达「本动作是否需要审批」的布尔列，13 行基线里也没有 RECEIPT_REGISTER 与 CASH_ACCOUNT_MAINTAIN 两行，且资金账户档案维护不是补偿动作）；且会无声推翻计划10:68 的 F-13——该配置项默认 true，迁进一张只有减法面的表后客户再也关不掉它，F-13 给出的可配面被删而未在任何一处说明。
 
-- C-1 新增第 9 个自动测试 suite COMPENSATION_POLICY——撤下。计划13:263 逐字「suite 取值封闭为 8 项」，计划13:444 逐字「SKIPPED 仅允许出现在该包不含对应 item_kind 时」；本条挂在 AUTHZ_POLICY 上，任何只改审批链或访问策略的包都含该 item_kind、不许 SKIPPED、只能空判 PASSED，该门禁在最常见的包上恒真。判定改落配置保存期与运行期两道。
+- C-1 新增自动测试 suite `COMPENSATION_POLICY`——撤下且不得恢复。历史八套清单后来由 F-21/F-52 以 `RULE_SEMANTICS` 扩为现行九套；`COMPENSATION_POLICY` 不因此成为第十套。本条挂在 AUTHZ_POLICY 上，任何只改审批链或访问策略的包都含该 item_kind，用套件承载会在最常见的包上空判 PASSED。判定继续落配置保存期与运行期两道。
 
 - C-2 新增 xtask archcheck 规则 configurable-transition-disjoint——撤下。可配声明与 posting_trigger_event_types 都是运行期数据库内容，而 00b:120-122 逐字把 archcheck 的判定面限在 cargo metadata 与源码树（逐字「凡在 cargo metadata 之外另需调用图分析的断言，本基线不认其为已可判定」），构建期读不到数据库也读不到尚未存在的客户配置包，这条规则按现有工具形态判不出真假，其负样例也无从构造。
 
 - C-2 把「开票 7 天内允许作废」作为可配的状态迁移——改判为阈值参数可配、迁移本身冻结。按 C-2 自己的判据，发票作废走 invoice.sales_invoice.reversed.v1，该事件在 A-21 冻结的十三行内，落在不可配面；原 criteria 一会把原 criteria 四那条验收用例直接判死。使用方要的效果由 EP__INVOICE__VOID__MAX_DAYS_AFTER_ISSUE 一个阈值参数拿到，迁移集合一格不动。
 
-- C-3 的 fail-open 挂 DegradationLedger——撤下，统一为 fail-closed。现有 DegradationKind 没有一项对得上「审批链缺失」，PORT_NOT_IMPLEMENTED 按 00-overview:75 是「跨模块与平台能力缺位的唯一登记形态」属误用；新增 kind 要同批改阶段 2 建表 CHECK 与阶段 14 的 18 项终态清单，与本条不成比例；且 ux_degradation_windows_kind_scope_closed 使同一 scenario 第二次 fail-open 插不进第二行，原判据只在第一次成立。
+- C-3 的 fail-open 挂 DegradationLedger——撤下，统一为 fail-closed。F-55 终态 21 个 DegradationKind 仍没有一项对得上「审批链缺失」，PORT_NOT_IMPLEMENTED 按 00-overview:75 是「跨模块与平台能力缺位的唯一登记形态」属误用；新增 kind 会把终态改成第二十二项并须同批改阶段 14 的 3→21 扩容迁移、终态 Rust 枚举和数据字典，且不得倒灌改写阶段 2 首次建表的三项 CHECK；与本条不成比例。另因 ux_degradation_windows_kind_scope_closed，同一 scenario 第二次 fail-open 插不进第二行，原判据只在第一次成立。
 
 - C-4 把 /api/v1/platform/high-risk-requests* 整段路由列入能力闸豁免清单——撤下。规格:577 逐字把审批列在移动端「转桌面端完成」之列，而计划04:512 的服务端判定只作用于 reauth-challenges 的签发，管不到该路由上的 approve、withdraw、confirm_execution 等写动作，整段豁免等于在移动端审批面上开一个口子，移动端可直接审批一张付款高风险单。
 
@@ -506,7 +515,7 @@ effective_open 非负不是新加约束而是累计上限的推论，写成属�
 
 第四股（C 簇，C-3 是多处的前置）：C-3 默认审批链先落（A-6a 的 TERMINATION 链、B-1 更正凭证的链、B-3 冲正的链三处取值的唯一出处，不先落这一条，三处会各给一套）→ C-1 补偿策略表（其 approval_chain_code 指向 C-3 的链，且其基线中 VOUCHER_POSTED×CORRECTION_VOUCHER 一行的取值随 B-1 确定）→ C-2 可配阈值参数（其载体形态卡在 00b:577 那条未决矛盾上，须先解）→ C-4 能力闸次序落阶段 13。
 
-第五股（D 簇，与前四股无依赖，可全程并行）：D-1 保留期与其治理 → D-2 自检项与十八改十九（D-2 的降级窗口承载 D-1 第五条的容量不足记录，故 D-1 的列先落）→ D-3 表述权限与诚实披露**必须最后**：它新增的三条披露内容直接取自 A-3/A-12、B-1/B-2、D-1 三处裁定，那三处定稿之前 D-3 无法定稿。
+第五股（D 簇，历史次序）：原拟 D-1 → D-2 → D-3；D-12-4/D-2 最终撤下，故其中自检项、降级 kind 与“十八改十九”链路不进入现行施工。F-52 十九项与 F-53 二十项是历史演进，不是施工顺序；现行只按 F-55 的阶段 2 三项、阶段 14 `V20261023092500` 扩为终态 21 项实现。
 
 跨股的两条硬约束：一、A-7 第 5 条的采购需求处置与 A-9 第五条同批执行——改计划07:487 守卫措辞时必须连触发方一起改为由 ImpactRule::dispose 驱动，只加「或来源合同终止」六个字会把双写原样留在计划里。二、A-11 的逐阶段注册数期望表（3 / 4 / 6 / 7）必须与四个阶段的退出条件同批写入，晚一个阶段写，那个阶段的门禁就是空的。
 
@@ -518,7 +527,7 @@ effective_open 非负不是新加约束而是累计上限的推论，写成属�
 
 **第一档 规格级变更（动规格加 PRD 加二到四个阶段，以月计），共 12 条。** A-1 影响面处置台账（规格第 5.2 章 CLM 条目与第 8 章、PRD 新增 3.5.5 节、阶段 3/6/7/10/12 五个阶段）、A-2 静态声明（新增第五份登记文件，00-overview R6 段「四份」改「五份」并波及各阶段退出条件）、A-3 三条驱动杠杆、A-5 TERMINATING 态与四条边、A-7 七条影响面规则、B-1 更正凭证入口（规格第 5.2 章加句、阶段 9 五处计数与登记同批改、C-26 全量类型码表新增 CORR）、B-2 手工凭证明写排除（PRD:4579 逐字要求回写规格）、B-3 资金单据冲正（规格第 5.2 章新增一段禁用场景）、B-4 部分红冲（规格:311 的「只允许冲回一次」必须改，PRD 第 6.4.7 节状态机与 6.5、6.6 三节）、B-6 红冲释放核销转预收（规格:311 的借方与贷方两栏各新增一项，PRD 三节，规格:310 一条分支改写，PRD 三处必填改条件必填）、C-1 补偿策略可配面与 C-2 前置条件阈值可配（两条都动规格第 9.1 章的低代码能力清单本身，这是盘点第 59 行已判明的档位）、D-3 表述权限与诚实披露（规格第 21 章新增 21.22 节、第 21.4 章签字对象扩面、PRD 第 11.11 节新增三小节、阶段 13 与 14）。这一档的真实工期不是各条相加：B-4 与 B-8 必须同批、B-3 与 B-6 必须同批、B-1 与 B-2 必须同批，三组各自构成一个不可拆的交付批次，任何一组拆开都会在规格上留下自相矛盾的半句。
 
-**第二档 计划级新增（规格不动或只补条，动一到两个阶段，以周计），共 9 条。** A-8 收款计划期次加两列（由原「实现级补充」上调：改建表 DDL、改一个被 C-20 定为唯一跨模块出处的 trait 的返回 DTO、改阶段 10 取数口径、改一个承载规格:288 提醒要求的视图）、A-9 事件与登记、A-10 四条用例、A-11 跨阶段接线次序（四份计划的退出条件各加一至二条）、B-5 台账改追加式、B-7 勾稽视图改按期间累计、B-8 发票行明细（计划10:57 自评「多行明细为中」，本裁定不压低这个估计）、C-3 默认审批链（含 ep-datagen 默认数据集与阶段 4 退出条件同批改）、D-1 保留期与其治理（含阶段 14 四处计数）、D-2 自检项与 DegradationKind 十八改十九（动阶段 2 建表 CHECK 与阶段 14 十八项终态清单两个已由 A-26 冻结的落点，不因「只加一个取值」而降档）。
+**第二档 计划级新增（历史估算）。** 本段原把 D-2 的“DegradationKind 十八改十九”计入，但 `00f-f10-writeback-order.md` 已确认 D-12-4 不在最终 27 条内，故该项及其阶段 2/14 代价从现行施工范围删除。其余历史估算只供追溯；现行财务开发范围以 F-50 为准，降级清单只按 F-55 的阶段 2 三项与阶段 14 终态 21 项施工。
 
 **第三档 实现级补充（一句话到一条用例，以天计），共 4 条。** A-4 词义（PRD 加一段说明、阶段 6 与 13 的文案、00b delegated 段加一行）、A-6a 新增 chain_kind 取值（规格与 PRD 一字不动，这是降级后的全部代价面）、A-12 前置阻断谓词扩面（PRD 两处逐字加一段例外清单）、C-4 能力闸次序与豁免边界。
 
@@ -590,13 +599,13 @@ effective_open 非负不是新加约束而是累计上限的推论，写成属�
 | 应改 | U-D-09 第 (5) 条比例回滚公式对 VOID 的取值 | 判据不可判 | decision 逐字「本次回增 = round(issued_ratio * red_net_amount / net_amount, 6)」，而 red_net_amount 按计划10 第 3.1.4 节逐字是「RED_LETTER 时必填」，作废（VOID）行该列为空，公式在 VOID 上无定义、除法取空。第 (6) 条却又断言「VOIDED 与 RED_REVERSED 因 rolled_back_ratio 等于 issued_ratio 自然贡献零」——VOID 路径上 rolled_back_ratio 由哪条式子推到 issued_ratio，裁定没写。累计开票比例校验是 PRD:2430 与规格第 8 章第 7 步的判据落点，这个洞会直接反映成重开时的比例算错。 |
 | 应改 | U-H-07 守卫二中的 source_ref_kind = OPENING_BALANCE_LINE 这条来源 | 判据不可判 | 七条集成测试判据没有一条测这条来源（正向 A 测直接费用重分类、正向 B 测顺延，负向 C 到 G 全是拒绝路径），即该分支在本裁定下无判据。语义也未定义：计划09:518 逐字「四个通道的写入一律不生成凭证，期初对应的总账侧由本节的期初余额批次承担」，期初余额落在 ledger.account_period_balances 的 opening_balance_amount 上而不是凭证行；计划09:480 逐字「期初固化：期间关闭的同一事务内……固化一次即不再被推翻」。更正凭证产生的是当期发生额，改不动期初，「引用一条已确认期初余额批次行」到底更正了什么、守卫三的「该行金额」取哪一列，一律未写。要么给判据，要么按本卷通则第六条撤下这条来源。 |
 | 应改 | 甲档 决策二 与 决策六其三 | 内部自相矛盾 | 决策二逐字「整条配置包链路（Git 差异审查、自动测试、审批、ECDSA 签名、发布、回退）一字不改」，决策六其三随即把 platform_meta.config_autotest_runs 的 suite「由封闭 8 项扩为 9 项，新增 COMPENSATION_POLICY」，touches 也承认要改 13-clients-lowcode.md:263 的 ck_config_autotest_runs_suite、第 444 行与第 996 行。自动测试正是决策二列举的六段链路之一，「一字不改」当场不成立。这句话是本裁定用来论证代价可控的关键句，留着会让下游按「链路无改动」排期。 |
-| 应改 | 甲档 决策六其三（第 9 个 suite COMPENSATION_POLICY 的判据） | 判据不可判 | suite 与 item_kind 的绑定使该 suite 在绝大多数包上恒为 PASSED。13-clients-lowcode.md:444 逐字「8 个 suite 的 outcome 全为 PASSED 或 SKIPPED，且 SKIPPED 仅允许出现在该包不含对应 item_kind 时」。本裁定不新增 item_kind，COMPENSATION_POLICY 挂在 AUTHZ_POLICY 上，而 AUTHZ_POLICY 按 04-identity-authz.md:423 覆盖 access_policies、sod_rules、approval_chains、approval_chain_nodes 四张表（本裁定再加第五张）。任何只改审批链或访问策略、不碰 compensation_policies 的 AUTHZ_POLICY 包——包括本簇第 9 条那 12 行默认链的包——都含该 item_kind，因此按 444 不许 SKIPPED，只能空判 PASSED。也就是说这道门禁在最常见的包上恒真，正撞通则第六条。 |
+| 应改 | 甲档 决策六其三（拟增 `COMPENSATION_POLICY` suite 的判据） | 判据不可判 | 历史清单当时为八套；F-21/F-52 后现行清单为九套且第九套固定为 `RULE_SEMANTICS`，本行不得解释为保留第十套候选。原缺陷仍成立：suite 与 item_kind 的绑定会使 `COMPENSATION_POLICY` 在绝大多数包上恒为 PASSED。本裁定不新增 item_kind，`COMPENSATION_POLICY` 挂在 `AUTHZ_POLICY` 上，而后者覆盖多张表；任何只改审批链或访问策略、不碰 compensation_policies 的包都含该 item_kind，只能空判 PASSED，正撞通则第六条。 |
 | 应改 | 乙档 决策一 与 决策二（边界的定义域） | 连带漏列 | 决策一声明不可配面包含「任何产生凭证或写台账与库存流水的迁移」，决策二用 posting_trigger_event_types 与 append_only_registry 两张表当定义域。但 00c 的 B-02 逐字把「原裁定给阶段 10 列的 finance.receivable_entries、finance.payable_entries、finance.advance_receipt_entries、finance.advance_payment_entries、finance.overbilling_entries 五张是带核销金额与状态机的可更新台账……五行一并删除」，append_only_registry 的十四行里根本没有应收、应付、预收、预付、超量开票五张往来台账。凡写这五张台账而不触发 13 行中任一事件的迁移（核销、部分核销、超量开票挂账变更一类）既不在甲判据内也不在乙判据内，按本裁定就是可配面——与决策一自己写的「写台账的迁移一律编译期冻结」正面相反。裁定未登记这个缺口，也未说明补法。 |
 | 应改 | 乙档 criteria 四（时限样例的越线判据） | 判据不可判 | 逐字「同一响应体中不出现任何推荐路径或建议改走红冲的字段（断言响应键集合不含此类键）」。「此类键」没有封闭键名清单，机器判不出一个键名算不算「推荐路径」；而且全卷没有任何端点产出过这类字段（PRD:2411 逐字「本系统不判定何时该用哪条」本就是已生效的弃权决定），该断言在任何实现下都为真。这是一条标准的恒真门禁，正撞通则第六条，且裁定还把它写成「全部可机判」的五条之一。 |
 | 应改 | 乙档 决策四（复用现成引擎，不造新引擎） | 代价被压低 | 「承载与下发走已有规则表」给不出行号。裁定 evidence 只引了 13-clients-lowcode.md 的 AST 上限与数值语义（实为 525、526 两行）与实现类型（531 行），没有任何一行指出规则 AST 存在哪张表、经哪个 item_kind 下发。13-clients-lowcode.md:242 逐字列出的 15 项 item_kind——CUSTOM_OBJECT、CUSTOM_FIELD、CUSTOM_RELATION、CUSTOM_INDEX、CUSTOM_VIEW、UI_LAYOUT、FLOW_DEFINITION、AUTHZ_ROLE、AUTHZ_POLICY、AUTHZ_FIELD_GRANT、REPORT_DEFINITION、METRIC_DEFINITION、DASHBOARD_DEFINITION、PRINT_TEMPLATE、NOTIFY_RULE——里没有任何一项承载脱离流程定义的单据前置条件规则。按 242 的封闭 CHECK，新增这类内容项必须同批改 ck_config_package_items_item_kind，即甲档 knock_on 一自己已经点破的那处。裁定却写「真正的新增只有一件事」，把新增一类内容项、新增一张（或指认一张）承载表这两项代价漏掉了。 |
-| 应改 | 第 9 条 决策二(乙) + criteria 四 + tier「计划级新增」 | 代价被压低 | fail-open 挂 DegradationLedger 这一步没有可用取值，也开不出第二条窗口。00-overview.md:75 逐字把 DegradationKind「唯一定义方定死为阶段 2……终态清单的唯一出处定死为阶段 14」，取值为阶段 2 三项（OFFSITE_SINK_NOT_CONFIGURED、WRITER_NOT_IN_SERVICE、PORT_NOT_IMPLEMENTED）加阶段 14 扩到 18 项，由 kind 的 CHECK 收口；裁定通篇没有指名 fail-open 用哪个 kind，三项里没有一项对得上「审批链缺失」，PORT_NOT_IMPLEMENTED 按同段逐字是「跨模块与平台能力缺位的唯一登记形态」，用它属误用。真要新增一个 kind，就要同批改阶段 2 的建表 CHECK 与阶段 14 的 18 项终态清单，而 touches 只列了阶段 4、6、7、9、10 与 PRD，tier 却记「计划级新增」。另有一处判据不成立：同段逐字「唯一约束 ux_degradation_windows_kind_scope_closed 改为在 kind、subject、scope_legal_entity_id、scope_accounting_period_id 与开窗状态上」，同一 scenario 第二次 fail-open 插不进第二行，决策二(乙)的「每次 fail-open 必须经 DegradationLedger 开一条降级窗口」与 criteria 四的「degradation_windows 增一行」只在第一次成立。 |
-| 应改 | 第 9 条 决策一 + 决策四 + knock_on 一 | 连带漏列 | 承载物改指之后，被指向的行不存在也不唯一。04-identity-authz.md:161 逐字给出 approval_chains 的索引为「pk、ux_approval_chains_legal_entity_id_code_version_no」，即唯一键含 version_no，一个裸 code 解析不到唯一行；裁定要求把 06-contract-sales.md:140 的「四个审批链编码是逻辑引用 platform_flow 的流程定义键」改为「逻辑引用 platform_authz.approval_chains.code」，却没说取哪个 version_no，也没说 is_active 为假的版本算不算命中。更直接的是决策四那 12 行只给了 scenario、节点、quorum、timeout_hours、is_active，没有给 code 与 name 两个必填列，且 12 行里没有任何一行对应 06-contract-sales.md:193 的 chain_kind 六值（TERMS、DISCOUNT、PAYMENT、ATTACHMENT、CREDIT、EFFECTIVE）；改指之后 clm.contract_types 的四个 approval_chain_*_code 指向一组不存在的行，合同审批出厂即无链——与上一条的六类高风险无链即拒叠加，EFFECTIVE 一类直接闭死。 |
-| 应改 | D-12-4 knock_on 第一段「十八改十九」的同批清单 | 连带漏列 | 该清单自称「逐处点名，一处不得漏（本卷已因计数失配栽过三次）」「合计 10 处、11 个数字」，实测两漏两错一虚：漏 00c:1899 逐字「逐个核过十八个取值：落点未配置、写出进程未投入运行、…」；漏 14:572 逐字「platform_ops.degradation_windows 的 kind 取值已由阶段 2 的 3 个扩展至 18 个」；所称 00c:3084 实为 00c:3115（己-2 行），所称 00c:3165 实为 00c:3196（「十八类 kind 一项不动」）；所称「13-clients-lowcode.md:1065 写的是「不新增任何 DegradationKind 取值，见裁定 F-06」」在该文件不成立——13:1065 是 create index concurrently 的风险表行，该文件内相近的一句在 13:839 且措辞不同。一份用来防计数失配的清单本身就是失配的。 |
+| 应改 | 第 9 条 决策二(乙) + criteria 四 + tier「计划级新增」 | 代价被压低 | fail-open 挂 DegradationLedger 没有可用取值，也开不出第二条窗口。F-55 终态清单为 21 项，仍没有一项对得上「审批链缺失」；PORT_NOT_IMPLEMENTED 是“跨模块与平台能力缺位”的专用取值，误用不成立。真要新增一个 kind 会把终态改成第二十二项并须同批改阶段 14 的 3→21 扩容迁移、终态 Rust 枚举和数据字典，且不得倒灌改写阶段 2 首次建表的三项 CHECK，远超原 touches。另因唯一约束，同一 scenario 第二次 fail-open 插不进第二行，原“每次开一条窗口”判据只在第一次成立。 |
+| 应改 | 第 9 条 决策一 + 决策四 + knock_on 一 | 连带漏列（已由 F-51 收口） | 当时拟采用的 `approval_chains.code` 单列应用查找无法唯一定位版本：04-identity-authz.md 的唯一键包含 `version_no`，且旧默认行还缺 `code/name` 与合同 `chain_kind` 覆盖。现行已删除 `clm.contract_types.approval_chain_*_code`，改为四个 `*_definition_id` 到 `platform_flow.process_definitions(legal_entity_id,id)` 的同法人真实复合外键；审批链本身按 `ApprovalScenarioCode` 和唯一活动槽解析，默认目录逐场景补齐。 |
+| 应改 | D-12-4 的旧“十八改十九”同批清单 | 连带漏列 | 该历史候选清单自身两漏两错一虚，且 D-12-4 最终未进入 27 条。F-52 的历史第十九项是 `REPLICATION_CROSSCHECK_NO_RESULT`，F-53 的历史第二十项是 `VIRUS_SCANNER_NOT_AVAILABLE`；F-55 已把现行施工顺序固定为阶段 2 三项、阶段 14 扩为含 `LEGAL_ENTITY_KEY_DOMAIN_UNAVAILABLE` 的终态 21 项。旧清单及 `BACKUP_RETENTION_WINDOW_SHORT` 均不得进入施工。 |
 | 应改 | D-12-4 criteria（三）演练门禁断言 | 判据不可判 | 断言为「两次演练的 backup_set_id 不同，且其中一次等于该落点上 verified_at 最早的 DAILY_FULL 的 id」。「最早的 DAILY_FULL」是随时间与回收任务变动的量：D-12-1 的回收会把早于锚点的全量销毁，演练之后再判定时，当初那份最早全量可能已被删或已不是最早，同一份演练报告在两个时点会得出不同结论，判据不可复算、不可复现。发布门禁必须能在证据包采集时点稳定判真假，这条做不到。 |
 | 应改 | D-12-4 criteria（二）「四态互斥，同一输入不得同时命中两态」 | 判据不可判 | 四个 basis 的定义互相包含：BOOTSTRAP 定义为「部署运行未满 D 天」，ANCHOR_MISSING 定义为「不存在 verified_at ≤ now − D 的有效全量备份」——部署运行未满 D 天时后者必然同时成立；GENERATIONS_SHORT（有效全量代数低于 3）在部署运行未满 3 天时同样与 BOOTSTRAP 同时成立。裁定没有给优先级规则，「四态互斥」这条断言按定义无法满足，用例必然失败。 |
 | 应改 | D-12-3 第二段（3）例行回收由 job-worker 按日调度 | 与既有条款冲突 | 14:331 逐字「触发面。只由 ops 专用路径与 ops 专用账号触发，不在 /api/v1/platform 前缀下对外暴露，因此不进入第 5 节端点表。」裁定新增的日调度回收由 job-worker 自动构造 DisposalRequest，既不是 ops 专用路径也不是 ops 专用账号触发，与该句正面冲突；裁定 touches 只写了「新增一张表、一条日调度任务、DisposalRequest 增 origin 字段、前置校验增一个分支、五个用例、退出条件第 17 项补两句」，14:331 一字未列。同处还有第二个未列的连带：14:333 第四项「落点可写性判定为 Writable，否则返回 PLATFORM.OFFSITE_SINK.UNWRITABLE」，落点长时间不可写（spec:1209 归档通道暂停）时例行回收将持续被拒并持续写审计，裁定未说明该噪声如何处置。 |

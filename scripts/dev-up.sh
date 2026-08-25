@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# F-57：HISTORICAL_LINUX_DEV_ONLY；不得作为 Windows Server 2022 生产启动、等价性或发布证据。
 # 交付物 D-13 本地开发环境：一条命令起 PostgreSQL 16 与全栈。
 #
 # 起的就是 deploy/compose/compose.yaml，不另写一份开发用编排。理由是另写一份就有了第三套取值，

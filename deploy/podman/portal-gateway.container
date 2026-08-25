@@ -1,3 +1,4 @@
+# F-57：HISTORICAL_LINUX_RESEARCH_ONLY；禁止用于当前 Windows Server 2022 生产部署或发布验收。
 # portal-gateway：公网供应商门户站点，取数一律经 core-server 的受控能力 API。
 # 规格第 13.1 章要求门户不持有事务数据库账号与文件存储目录的直接访问凭据，
 # 因此本容器既不挂机密目录也不挂 ep-files，只挂配置。

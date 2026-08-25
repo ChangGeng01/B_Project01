@@ -1,3 +1,4 @@
+# F-57：HISTORICAL_LINUX_RESEARCH_ONLY；禁止用于当前 Windows Server 2022 生产部署或发布验收。
 # archive-writer：事务日志连续归档、附件正文增量写出、审计证据写出，三项各不超过 15 分钟周期。
 # 本进程只读附件正文以产生服务器之外的副本，故 ep-files 挂只读；
 # 服务器之外落点本身是客户侧的挂载，本编排不代客户指派，见 ORCHESTRATION.md 的缺口四。

@@ -1,0 +1,621 @@
+openapi: 3.1.0
+info:
+  title: Enterprise Platform Ledger API — F-50 affected surface
+  version: 1.0.0-f50
+  description: |
+    本文件保留 F-50 新增或改变的 ledger HTTP 契约，只是 F-57 当前主题输入，尚待
+    精确再基线；它不是现行、已实现的完整 F-57 机器契约。历史上未受 F-50 影响的
+    ledger v1 路径曾按阶段 9 计划。总账更正只允许引用已过账凭证，
+    调用方提交“原凭证行 + 目标受控科目角色 + 金额”，服务端生成平衡的更正行；不存在自由分录、
+    任意 account_id 或修改原凭证的入口。
+  x-f57-status: CURRENT_SUBJECT_INPUT_PENDING_EXACT_REBASELINE
+  x-source-authority: F-50-current-subject-input
+  x-planned-implementation-tasks: [F57-20]
+  x-implementation-state: NOT_IMPLEMENTED_AS_FULL_F57_MACHINE_CONTRACT
+  x-scope: affected-paths-only
+jsonSchemaDialect: https://json-schema.org/draft/2020-12/schema
+servers:
+  - url: /
+tags:
+  - name: CorrectionVouchers
+security:
+  - bearerAuth: []
+paths:
+  /api/v1/ledger/correction-vouchers:
+    post:
+      tags: [CorrectionVouchers]
+      operationId: createCorrectionVoucher
+      summary: 提交受控总账更正凭证审批
+      description: |
+        仅用于源业务事实和资金事实均正确、只有已过账凭证科目归类错误的场景。
+        请求不接受 account_id、借贷方向、自由科目或完整分录；服务端按原行方向和目标科目角色
+        原子生成平衡更正凭证。调用方须完成重新认证；本端点只创建 FINANCE_MANAGER 审批与
+        加密命令快照，审批前不创建 CORR 单据、号码、余额、归集条目或凭证。审批通过回调
+        重验锁后事实并一次落终态。
+      parameters:
+        - $ref: '#/components/parameters/LegalEntityId'
+        - $ref: '#/components/parameters/DeviceId'
+        - $ref: '#/components/parameters/InternalClient'
+        - $ref: '#/components/parameters/RequestId'
+        - $ref: '#/components/parameters/IdempotencyKey'
+        - $ref: '#/components/parameters/ReauthToken'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CorrectionVoucherCreateRequest'
+      responses:
+        '202':
+          description: 更正命令已加密保存并进入审批，尚未创建任何 ledger/costing 业务事实
+          headers:
+            X-Request-Id:
+              $ref: '#/components/headers/XRequestId'
+            X-Trace-Id:
+              $ref: '#/components/headers/XTraceId'
+            Idempotent-Replay:
+              $ref: '#/components/headers/IdempotentReplay'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApprovalSubmissionSuccess'
+        '400':
+          $ref: '#/components/responses/Error400'
+        '403':
+          $ref: '#/components/responses/Error403'
+        '404':
+          $ref: '#/components/responses/Error404'
+        '409':
+          $ref: '#/components/responses/Error409'
+        '503':
+          $ref: '#/components/responses/Error503'
+      x-error-codes:
+        - LEDGER.CORRECTION_VOUCHER.ENTRY_NOT_ALLOWED
+        - LEDGER.CORRECTION_VOUCHER.SOURCE_NOT_POSTED
+        - LEDGER.CORRECTION_VOUCHER.AMOUNT_EXCEEDED
+        - PLATFORM.IDEMPOTENCY.KEY_REQUIRED
+        - PLATFORM.IDEMPOTENCY.PAYLOAD_MISMATCH
+        - PLATFORM.AUTHZ.REAUTH_REQUIRED
+        - PLATFORM.AUTHZ.NOT_FOUND_OR_DENIED
+      x-approval: always-required; scenario=LEDGER_CORRECTION_VOUCHER; default-role=FINANCE_MANAGER; callback-revalidates-and-posts-atomically
+    get:
+      tags: [CorrectionVouchers]
+      operationId: listCorrectionVouchers
+      summary: 查询更正凭证列表
+      parameters:
+        - $ref: '#/components/parameters/LegalEntityId'
+        - $ref: '#/components/parameters/DeviceId'
+        - $ref: '#/components/parameters/InternalClient'
+        - $ref: '#/components/parameters/RequestId'
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/PageSize'
+        - $ref: '#/components/parameters/Cursor'
+        - name: filter[source_voucher_id]
+          in: query
+          required: false
+          schema:
+            type: string
+            format: uuid
+        - name: filter[posting_date]
+          in: query
+          required: false
+          description: 取值形如 `eq:2026-08-21` 或 `between:2026-08-01,2026-08-31`。
+          schema:
+            type: string
+        - name: sort
+          in: query
+          required: false
+          description: 白名单为 `created_at`、`posting_date`、`doc_no`；默认 `created_at:desc,id:desc`。
+          schema:
+            type: string
+      responses:
+        '200':
+          description: 分页列表
+          headers:
+            X-Request-Id:
+              $ref: '#/components/headers/XRequestId'
+            X-Trace-Id:
+              $ref: '#/components/headers/XTraceId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CorrectionVoucherListSuccess'
+        '400':
+          $ref: '#/components/responses/Error400'
+        '403':
+          $ref: '#/components/responses/Error403'
+      x-error-codes:
+        - PLATFORM.AUTHZ.OBJECT_FORBIDDEN
+  /api/v1/ledger/correction-vouchers/{id}:
+    get:
+      tags: [CorrectionVouchers]
+      operationId: getCorrectionVoucher
+      summary: 查询更正凭证详情
+      parameters:
+        - $ref: '#/components/parameters/CorrectionVoucherId'
+        - $ref: '#/components/parameters/LegalEntityId'
+        - $ref: '#/components/parameters/DeviceId'
+        - $ref: '#/components/parameters/InternalClient'
+        - $ref: '#/components/parameters/RequestId'
+      responses:
+        '200':
+          description: 更正凭证详情
+          headers:
+            X-Request-Id:
+              $ref: '#/components/headers/XRequestId'
+            X-Trace-Id:
+              $ref: '#/components/headers/XTraceId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CorrectionVoucherSuccess'
+        '403':
+          $ref: '#/components/responses/Error403'
+        '404':
+          $ref: '#/components/responses/Error404'
+      x-error-codes:
+        - PLATFORM.AUTHZ.NOT_FOUND_OR_DENIED
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: opaque-session-token
+  parameters:
+    CorrectionVoucherId:
+      name: id
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+    LegalEntityId:
+      name: X-Legal-Entity-Id
+      in: header
+      required: true
+      schema:
+        type: string
+        format: uuid
+    DeviceId:
+      name: X-Device-Id
+      in: header
+      required: true
+      schema:
+        type: string
+        minLength: 1
+        maxLength: 64
+        pattern: '^[A-Za-z0-9_-]+$'
+    InternalClient:
+      name: X-Client
+      in: header
+      required: true
+      schema:
+        type: string
+        enum: [win, mac, ios, android, ops]
+    RequestId:
+      name: X-Request-Id
+      in: header
+      required: false
+      schema:
+        type: string
+        minLength: 8
+        maxLength: 64
+        pattern: '^[A-Za-z0-9_-]+$'
+    IdempotencyKey:
+      name: Idempotency-Key
+      in: header
+      required: true
+      description: 客户端生成的 UUIDv7；不包含 X-Reauth-Token 的载荷参与请求哈希。
+      schema:
+        type: string
+        format: uuid
+        pattern: '^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$'
+    ReauthToken:
+      name: X-Reauth-Token
+      in: header
+      required: true
+      schema:
+        type: string
+        minLength: 1
+    Page:
+      name: page
+      in: query
+      required: false
+      schema:
+        type: integer
+        minimum: 1
+        default: 1
+    PageSize:
+      name: page_size
+      in: query
+      required: false
+      schema:
+        type: integer
+        minimum: 1
+        maximum: 200
+        default: 20
+    Cursor:
+      name: cursor
+      in: query
+      required: false
+      schema:
+        type: string
+        minLength: 1
+  headers:
+    XRequestId:
+      schema:
+        type: string
+    XTraceId:
+      schema:
+        type: string
+        pattern: '^[0-9a-f]{32}$'
+    IdempotentReplay:
+      description: 同一幂等载荷重放时为 true；首次响应可以省略。
+      schema:
+        type: boolean
+  schemas:
+    AccountRole:
+      type: string
+      enum:
+        - ACCOUNTS_RECEIVABLE_UNBILLED
+        - ACCOUNTS_RECEIVABLE
+        - ADVANCE_FROM_CUSTOMER
+        - MAIN_OPERATING_REVENUE
+        - MAIN_OPERATING_COST
+        - INVENTORY
+        - ACCOUNTS_PAYABLE
+        - ACCOUNTS_PAYABLE_ACCRUED
+        - ADVANCE_TO_SUPPLIER
+        - OVERBILLING_SUSPENSE
+        - TAX_PAYABLE_OUTPUT
+        - TAX_PAYABLE_INPUT
+        - BANK_DEPOSIT
+        - CASH_ON_HAND
+        - DIRECT_EXPENSE_COST
+        - PROFIT_THIS_YEAR
+        - RETAINED_EARNINGS_UNDISTRIBUTED
+    PositiveMoney:
+      type: string
+      description: 大于 0 的 numeric(18,2) 十进制定点字符串。
+      pattern: '^(?:0\.(?:0[1-9]|[1-9][0-9])|[1-9][0-9]{0,15}\.[0-9]{2})$'
+      examples: ['100.00']
+    Money:
+      type: string
+      description: 非负 numeric(18,2) 十进制定点字符串。
+      pattern: '^(?:0|[1-9][0-9]{0,15})\.[0-9]{2}$'
+      examples: ['0.00']
+    CostCorrectionTargetRole:
+      type: string
+      description: 首版受控更正只允许成本同侧重分类；目标不得与原行角色相同。
+      enum: [MAIN_OPERATING_COST, DIRECT_EXPENSE_COST]
+    LedgerCorrectionCaptureAllocationInput:
+      type: object
+      additionalProperties: false
+      required: [source_capture_entry_id, amount]
+      properties:
+        source_capture_entry_id:
+          type: string
+          format: uuid
+          description: 必须是该原凭证行所属、当前仍有开放额的 costing.cost_entries 条目。
+        amount:
+          $ref: '#/components/schemas/PositiveMoney'
+    CorrectionInstructionInput:
+      type: object
+      additionalProperties: false
+      required: [source_voucher_line_id, target_account_role, amount]
+      properties:
+        source_voucher_line_id:
+          type: string
+          format: uuid
+        target_account_role:
+          $ref: '#/components/schemas/CostCorrectionTargetRole'
+        amount:
+          $ref: '#/components/schemas/PositiveMoney'
+        memo:
+          type: string
+          minLength: 1
+          maxLength: 500
+        source_capture_allocations:
+          type: array
+          description: 可省略或为空仅限服务端查得恰一个 live 成本归集候选并自动分配整行金额；多个候选时必须显式非空。存在时 entry id 必须唯一、全部属于 source_voucher_line_id，金额合计严格等于行 amount；批准后不得重算或换目标。
+          maxItems: 200
+          uniqueItems: true
+          items:
+            $ref: '#/components/schemas/LedgerCorrectionCaptureAllocationInput'
+    CorrectionVoucherCreateRequest:
+      type: object
+      additionalProperties: false
+      required: [source_voucher_id, reason, posting_date, lines]
+      properties:
+        source_voucher_id:
+          type: string
+          format: uuid
+        reason:
+          type: string
+          minLength: 1
+          maxLength: 500
+        posting_date:
+          type: string
+          format: date
+        lines:
+          type: array
+          minItems: 1
+          maxItems: 200
+          items:
+            $ref: '#/components/schemas/CorrectionInstructionInput'
+    CorrectionVoucherLine:
+      type: object
+      additionalProperties: false
+      required:
+        - id
+        - line_no
+        - source_voucher_line_id
+        - account_role
+        - account_id
+        - debit_amount
+        - credit_amount
+        - memo
+      properties:
+        id:
+          type: string
+          format: uuid
+        line_no:
+          type: integer
+          minimum: 1
+        source_voucher_line_id:
+          type: string
+          format: uuid
+        account_role:
+          $ref: '#/components/schemas/AccountRole'
+        account_id:
+          type: string
+          format: uuid
+          readOnly: true
+        debit_amount:
+          $ref: '#/components/schemas/Money'
+        credit_amount:
+          $ref: '#/components/schemas/Money'
+        memo:
+          type: string
+          minLength: 1
+          maxLength: 500
+    CorrectionVoucher:
+      type: object
+      additionalProperties: false
+      required:
+        - id
+        - doc_no
+        - source_voucher_id
+        - reason
+        - posting_date
+        - accounting_period_id
+        - generated_voucher_id
+        - initiated_by
+        - posted_at
+        - created_at
+        - lines
+      properties:
+        id:
+          type: string
+          format: uuid
+        doc_no:
+          type: string
+          minLength: 1
+          description: 由统一编号服务按类型码 CORR 生成。
+        source_voucher_id:
+          type: string
+          format: uuid
+        reason:
+          type: string
+        posting_date:
+          type: string
+          format: date
+        accounting_period_id:
+          type: string
+          format: uuid
+        generated_voucher_id:
+          type: string
+          format: uuid
+        initiated_by:
+          type: string
+          format: uuid
+        posted_at:
+          type: string
+          format: date-time
+        created_at:
+          type: string
+          format: date-time
+        lines:
+          type: array
+          items:
+            $ref: '#/components/schemas/CorrectionVoucherLine'
+    PaginationMeta:
+      type: object
+      additionalProperties: false
+      required: [page, page_size, total, total_pages]
+      properties:
+        page:
+          type: integer
+          minimum: 1
+        page_size:
+          type: integer
+          minimum: 1
+          maximum: 200
+        total:
+          type: integer
+          minimum: 0
+        total_pages:
+          type: integer
+          minimum: 0
+        next_cursor:
+          type: [string, 'null']
+    ApprovalSubmission:
+      type: object
+      additionalProperties: false
+      required: [approval_ref, scenario, requested_action, status]
+      properties:
+        approval_ref:
+          type: string
+          format: uuid
+        scenario:
+          const: LEDGER_CORRECTION_VOUCHER
+        requested_action:
+          const: POST
+        status:
+          const: PENDING_APPROVAL
+    ApprovalSubmissionSuccess:
+      type: object
+      additionalProperties: false
+      required: [success, data, error, meta, trace_id]
+      properties:
+        success:
+          const: true
+        data:
+          $ref: '#/components/schemas/ApprovalSubmission'
+        error:
+          type: 'null'
+        meta:
+          type: object
+        trace_id:
+          type: string
+          pattern: '^[0-9a-f]{32}$'
+    CorrectionVoucherSuccess:
+      type: object
+      additionalProperties: false
+      required: [success, data, error, meta, trace_id]
+      properties:
+        success:
+          const: true
+        data:
+          $ref: '#/components/schemas/CorrectionVoucher'
+        error:
+          type: 'null'
+        meta:
+          type: object
+        trace_id:
+          type: string
+          pattern: '^[0-9a-f]{32}$'
+    CorrectionVoucherListData:
+      type: object
+      additionalProperties: false
+      required: [items]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/CorrectionVoucher'
+    CorrectionVoucherListSuccess:
+      type: object
+      additionalProperties: false
+      required: [success, data, error, meta, trace_id]
+      properties:
+        success:
+          const: true
+        data:
+          $ref: '#/components/schemas/CorrectionVoucherListData'
+        error:
+          type: 'null'
+        meta:
+          $ref: '#/components/schemas/PaginationMeta'
+        trace_id:
+          type: string
+          pattern: '^[0-9a-f]{32}$'
+    ErrorDetail:
+      type: object
+      additionalProperties: false
+      required: [field, reason, value]
+      properties:
+        field:
+          type: string
+        reason:
+          type: string
+        value:
+          type: [string, integer, boolean, 'null']
+    AppError:
+      type: object
+      additionalProperties: false
+      required: [code, category, message, details, retryable, incident_no, occurred_at, advice]
+      properties:
+        code:
+          type: string
+          pattern: '^[A-Z][A-Z0-9_]*(?:\.[A-Z][A-Z0-9_]*){2,}$'
+        category:
+          type: string
+          enum: [VALIDATION, BUSINESS_CONFLICT, PERMISSION_DENIED, EXTERNAL_SYSTEM, INFRASTRUCTURE]
+        message:
+          type: string
+        details:
+          type: array
+          items:
+            $ref: '#/components/schemas/ErrorDetail'
+        retryable:
+          type: boolean
+        incident_no:
+          type: string
+        occurred_at:
+          type: string
+          format: date-time
+        advice:
+          type: string
+    ErrorEnvelope:
+      type: object
+      additionalProperties: false
+      required: [success, data, error, meta, trace_id]
+      properties:
+        success:
+          const: false
+        data:
+          type: 'null'
+        error:
+          $ref: '#/components/schemas/AppError'
+        meta:
+          type: 'null'
+        trace_id:
+          type: string
+          pattern: '^[0-9a-f]{32}$'
+  responses:
+    Error400:
+      description: 输入校验失败
+      headers:
+        X-Request-Id: {$ref: '#/components/headers/XRequestId'}
+        X-Trace-Id: {$ref: '#/components/headers/XTraceId'}
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorEnvelope'
+    Error403:
+      description: 权限或重新认证失败
+      headers:
+        X-Request-Id: {$ref: '#/components/headers/XRequestId'}
+        X-Trace-Id: {$ref: '#/components/headers/XTraceId'}
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorEnvelope'
+    Error404:
+      description: 记录不存在或无权访问；不泄露存在性
+      headers:
+        X-Request-Id: {$ref: '#/components/headers/XRequestId'}
+        X-Trace-Id: {$ref: '#/components/headers/XTraceId'}
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorEnvelope'
+    Error409:
+      description: 业务、状态、累计金额或幂等冲突
+      headers:
+        X-Request-Id: {$ref: '#/components/headers/XRequestId'}
+        X-Trace-Id: {$ref: '#/components/headers/XTraceId'}
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorEnvelope'
+    Error503:
+      description: 基础设施暂时不可用
+      headers:
+        X-Request-Id: {$ref: '#/components/headers/XRequestId'}
+        X-Trace-Id: {$ref: '#/components/headers/XTraceId'}
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorEnvelope'

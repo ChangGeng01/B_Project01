@@ -1,6 +1,6 @@
 # ADR-0011 端点上下文头推导为阶段 2 临时实现
 
-- 状态：已接受，且明确标注为临时
+- 状态：**已关闭**；阶段 4 已替换临时鉴权，客户端闭集后来由 F-55 扩展为现行八值
 - 出处：阶段 2 任务 #14 实施期偏离登记第五条
 - 替换方：阶段 4（租户与身份），与 ADR-0007 同一类临时状态
 
@@ -10,7 +10,7 @@
 
 ## 决定
 
-阶段 2 的 `extract_context` 对 `X-Legal-Entity-Id`、`X-Device-Id`、`X-Client`、`Authorization` 四头只做存在性与格式校验：UUID 形态、客户端类别取六值枚举、令牌非空。校验通过后按头面取值构造执行上下文，供仓储层取法人会话变量与审计列使用。重认证要求以 `require_reauth_token` 独立承载，同样只校存在性。
+阶段 2 当时的 `extract_context` 对 `X-Legal-Entity-Id`、`X-Device-Id`、`X-Client`、`Authorization` 四头只做存在性与格式校验：UUID 形态、客户端类别取当时六值枚举、令牌非空。该历史六值已被阶段 4 真实鉴权及 F-55 覆盖：现行 `ClientKind` 恰为 `win|mac|ios|android|portal|ops|server_admin|mcp` 八值；普通外部 `X-Client` 只接受前七值，`mcp` 只由 `/mcp` grant middleware 内部注入，审计另允许 `system`。校验通过后按头面取值构造执行上下文，供仓储层取法人会话变量与审计列使用。重认证要求以 `require_reauth_token` 独立承载，同样只校存在性。
 
 本决定在 02 计划 §12 实施期偏离登记第五条与本 ADR 两处显式标注为临时状态。替换时端点取上下文的调用面不变，只换 `extract_context` 的判定后端。
 
@@ -34,4 +34,4 @@
 
 ## 追加：已由阶段 4 关闭（任务 #23）
 
-本 ADR 标注的临时状态已由阶段 4 关闭：四头纯格式校验保留为第一道（runtime `http/headers.rs` 不变），真实校验经端口在 core-server 装配注入——认证层以 `Authorization` 令牌 SHA-256 摘要查 sessions 并校过期与闲置超时，法人校验层对照 `user_legal_entity_grants` 授权集合与设备限定法人取交集校验 `X-Legal-Entity-Id`，并在事务内写入 `app.legal_entity_id`、`app.request_id`、`app.trace_id` 三条会话变量。按本 ADR 既定承诺，`extract_context` 的交接面签名未动，端点取上下文的调用面不变，只换了判定后端；`docs/config-reference.md` 第 5 节的第二处临时状态声明已同步改为关闭说明。阶段 2 至阶段 4 之间产生的行的审计列追溯语义：以头面声称身份记录，本 ADR 负面段已如实披露，不做回填改写。
+本 ADR 标注的临时状态已由阶段 4 关闭：四头纯格式校验保留为第一道，真实校验经端口在 core-server 装配注入——认证层以 `Authorization` 令牌 SHA-256 摘要查 sessions 并校过期与闲置超时，法人校验层对照 `user_legal_entity_grants` 授权集合与设备限定法人取交集校验 `X-Legal-Entity-Id`，并在事务内写入 `app.legal_entity_id`、`app.request_id`、`app.trace_id` 三条会话变量。F-55 对同一格式层追加 `server_admin` 外部值与 middleware-only `mcp` 内部值，须按上段现行闭集修改 `runtime/http/headers.rs` 的 fixture，不能把“交接面签名未动”误读成六值冻结。`docs/config-reference.md` 第 5 节的第二处临时状态声明已同步改为关闭说明。阶段 2 至阶段 4 之间产生的行的审计列追溯语义：以头面声称身份记录，本 ADR 负面段已如实披露，不做回填改写。
