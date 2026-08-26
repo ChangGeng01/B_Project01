@@ -107,7 +107,7 @@ T0 通过后本阶段其余部分一律在这条已贯通的骨架上加厚，�
 | code | text | 否 | 档案编码，法人内唯一 |
 | name | text | 否 | 名称 |
 | subject_kind | text | 否 | CHECK in ROLE, POSITION, USER |
-| subject_id | uuid | 否 | 与 `subject_kind` 组成 `ROLE|POSITION|USER` 封闭多态主体；写事务按 kind 校验同法人目标与有效授权，属于显式多态白名单，不建伪外键 |
+| subject_id | uuid | 否 | 与 `subject_kind` 组成 `ROLE\|POSITION\|USER` 封闭多态主体；写事务按 kind 校验同法人目标与有效授权，属于显式多态白名单，不建伪外键 |
 | max_discount_rate | numeric(9,6) | 否 | 允许的最大折扣率，取值 0 至 1 |
 | allow_below_price_floor | boolean | 否 | 是否允许净单价低于价目行的价格下限，默认 false |
 | allow_no_price_list_hit | boolean | 否 | 价目未命中时是否视为权限内，默认 false |

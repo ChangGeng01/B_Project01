@@ -27,6 +27,9 @@ from docx_package_hygiene import sanitize_docx_package
 WORKSPACE = Path(__file__).resolve().parents[1]
 DEFAULT_OUTPUT = WORKSPACE / "docs" / "介绍" / "企业一体化经营管理平台-产品介绍与功能大纲.docx"
 OUTPUT = Path(os.environ.get("PRODUCT_INTRO_OUTPUT", DEFAULT_OUTPUT)).expanduser()
+# Freeze OOXML core and ZIP metadata so identical sources rebuild byte-for-byte.
+# Advance this only when the published document baseline is intentionally revised.
+DOCUMENT_TIMESTAMP = datetime(2026, 8, 26, 0, 0, 0, tzinfo=timezone.utc)
 
 
 # launch_messaging_guide -> compact_reference_guide token map.
@@ -665,9 +668,8 @@ def build_document():
     props.keywords = "企业管理, CRM, 合同, 订单, 采购, 财务, 售后, 私有化, 自动化, 能力包, MCP"
     props.comments = ""
     props.last_modified_by = "企业一体化经营管理平台"
-    generated_at = datetime.now(timezone.utc)
-    props.created = generated_at
-    props.modified = generated_at
+    props.created = DOCUMENT_TIMESTAMP
+    props.modified = DOCUMENT_TIMESTAMP
 
     # First-page customer-pack header pattern, without a decorative rule.
     spacer = doc.add_paragraph()
@@ -716,7 +718,7 @@ def build_document():
         ["项目", "说明"],
         [
             ["使用设备", "员工 Workbench 支持 Windows、macOS、iOS 和 Android 并自适应屏幕；权威服务器控制中心只运行在 Windows Server 2022"],
-            ["部署方式", "企业自控物理机或企业自控 IaaS 上的一台 Windows Server 2022 作为唯一写权威；服务器外备份目标、离线轮换介质和洁净恢复能力独立配置。核心交易数据库为自管 PostgreSQL 16，详见第 6 节"],
+            ["部署方式", "当前首版只在企业自控的 ThinkStation P340 物理机上运行一台 Windows Server 2022 作为唯一写权威；服务器外备份目标、离线轮换介质和洁净恢复能力独立配置。核心交易数据库为自管 PostgreSQL 16。未来 IaaS 只能通过新的独立认证档启用，详见第 6 节"],
             ["数据原则", "每个客户独立部署；同一客户数据库按法人行级权限和独立密钥域隔离；权威节点承载内容或可关联客户的持久数据与衍生数据全部落加密 HDD，Workbench 只允许最小、加密、可撤销、非权威缓存"],
             ["核心特点", "全链路闭环、长周期耐久自动化、动态权限、签名配置代、能力包热插拔、受控 MCP、高度定制和完整审计"],
             ["适用范围", "首版面向中国大陆业务，仅支持简体中文与人民币；不含多币种、外汇和进出口"],
@@ -943,7 +945,7 @@ def build_document():
     add_bullet(doc, "合同生效、付款与退款、开票与红冲、经营分录更正、经营期间锁定、迟到事实顺延例外和敏感数据导出属于高风险操作，必须按现行风险策略重新认证并进入相应审批，审批人不得与发起人为同一人，四端口径一致。", bullet_num_id)
 
     add_heading(doc, "企业自己选择部署位置", 2)
-    add_bullet(doc, "首版只有一台 Windows Server 2022 单写权威，不依赖第二台应用服务器；它可位于企业自控的中国大陆机房或企业自控境内 IaaS。最高安全生产仍必须另配服务器外连续备份目标、至少两块轮换离线加密介质和洁净 Windows 恢复能力。IaaS 必须证明快照、缓存、日志、运维副本和灾备不跨境，并证明底层 HDD 介质与缓存边界；无法证明时保持 STORAGE_MEDIA_UNVERIFIED，不能承载 HDD_STRICT 正式生产。", bullet_num_id)
+    add_bullet(doc, "首版只有一台运行在企业自控 ThinkStation P340 物理机上的 Windows Server 2022 单写权威，不依赖第二台应用服务器。最高安全生产仍必须另配服务器外连续备份目标、至少两块轮换离线加密介质和洁净 Windows 恢复能力。未来可增加客户自控境内 IaaS 独立认证档，但当前不实现、不接受；必须先发布新的架构与认证版本，并分别证明驻留、vTPM、底层 HDD、缓存、快照、运维副本、备份域和安全关机边界，不能复用 P340 证据。", bullet_num_id)
     add_bullet(doc, "首版核心交易数据库只支持并只认证 PostgreSQL 16，由客户在同一台服务器上自主管理；不使用云托管数据库。", bullet_num_id)
     add_bullet(doc, "企业已有的 Oracle、SQL Server、MySQL 可作为外部数据源接入，不作为核心交易数据库。", bullet_num_id)
     add_bullet(doc, "核心安装不依赖云托管数据库、消息、遥测、更新或厂商控制面；本地、自建、私有云或已有服务都必须实现同一受控 provider 契约，逐项认证后才可连接。", bullet_num_id)
@@ -964,7 +966,7 @@ def build_document():
 
     add_callout(
         doc,
-        "云服务器只是可选的部署位置，不代表使用共享 SaaS。每个客户仍拥有独立系统、独立数据、独立密钥和独立升级通道。",
+        "云服务器仅是未来认证选项，当前首版只接受 P340；它不等于共享 SaaS，每个客户仍有独立系统、数据、密钥和升级通道。",
         label="重要区别",
     )
 
@@ -1023,7 +1025,7 @@ def build_document():
         ("语言与币种：", "首版固定 zh-CN、CNY 和 Asia/Shanghai 业务显示；权威时间戳保存为 UTC，持续时间、租约与超时使用 monotonic clock。不支持多币种、外汇、进出口、报关、信用证和产品内容多语言。"),
         ("联网要求：", "最高安全档默认不启用业务投影离线读取；经签名设备策略逐对象、逐字段显式开放时，只允许有界、加密、可撤销的最小非权威投影。草稿、附件、现场证据和待提交意图可暂存，所有权威写入由服务器重验后生效，高风险动作不得离线生效。"),
         ("人工确认：", "合同生效、付款与退款、开票与红冲、经营分录更正、经营期间锁定、迟到事实顺延例外和敏感数据导出属于高风险操作，必须按现行风险策略重新认证并进入相应审批；审批链不可越权跳过，审批人不得与发起人为同一人。"),
-        ("数据库与部署：", "首版唯一权威数据库认证目标是同机自管 PostgreSQL 16；客户自控物理机或通过驻留和介质证据门禁的 IaaS VM 上，以一台 Windows Server 2022 作为单写权威，同时独立配置服务器外备份与洁净恢复能力。取得实际部署证书前不得称为已认证；权威节点全部客户及衍生持久数据必须落加密 HDD，核心运行不依赖 Linux、WSL、Kubernetes、共享 SaaS 或厂商云控制面。"),
+        ("数据库与部署：", "首版唯一权威数据库认证目标是在 ThinkStation P340 上同机自管 PostgreSQL 16，并以一台 Windows Server 2022 作为单写权威，同时独立配置服务器外备份与洁净恢复能力。取得实际部署证书前不得称为已认证；权威节点全部客户及衍生持久数据必须落加密 HDD，核心运行不依赖 Linux、WSL、Kubernetes、共享 SaaS 或厂商云控制面。IaaS 仅是未来独立 profile 扩展缝，当前选择必须失败关闭。"),
         ("外部连接：", "必须完成认证的核心 provider 目标为本地文件、Office 格式、REST/Webhook/MCP、SMTP 和 AD/LDAP；证据通过前保持关闭。其他身份、消息、签章、银行、税务和办公厂商按签名 provider 契约逐项取证后启用。"),
         ("性能与容量：", "ThinkStation P340 i5-10500、32GB、256GB SSD、单 1TB HDD 以约 20 名活跃用户为实机认证目标，不是登录硬上限或已达成承诺；恢复时间按数据量和实测证书签发。"),
     ]
@@ -1034,13 +1036,23 @@ def build_document():
             bullet_num_id,
             bold_lead=lead,
             compact=True,
-            font_size=10,
-            line_spacing=1.1,
+            font_size=9.5,
+            line_spacing=1.05,
         )
 
     OUTPUT.parent.mkdir(parents=True, exist_ok=True)
     doc.save(OUTPUT)
-    sanitize_docx_package(OUTPUT)
+    sanitize_docx_package(
+        OUTPUT,
+        package_timestamp=(
+            DOCUMENT_TIMESTAMP.year,
+            DOCUMENT_TIMESTAMP.month,
+            DOCUMENT_TIMESTAMP.day,
+            DOCUMENT_TIMESTAMP.hour,
+            DOCUMENT_TIMESTAMP.minute,
+            DOCUMENT_TIMESTAMP.second,
+        ),
+    )
     print(OUTPUT)
 
 

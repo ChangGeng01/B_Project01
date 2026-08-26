@@ -19,9 +19,11 @@
 - Only the 16 exact Employee API method/path pairs and generated Control API may be exposed; no generic object/table route exists.
 - Control and Employee transports converge on the same `AuthorityCommandGatewayV1`; neither can set actor, legal entity, policy verdict, SoD verdict, authority epoch, or authenticated device.
 - G3/G4 consume G0's canonical foundation nominals without redefining them. Every UUID-bearing run, candidate, command, journal, result, finalization, and recovery field uses the private strict `UuidV1` from `crates/foundation/src/identifier.rs`; raw `uuid::Uuid`, a second wrapper, and uppercase/simple/braced/URN/whitespace aliases are forbidden.
+- G3/G4 accept the business contract's §14.6 state table as the sole semantic authority. `docs/f57-api-state-domains.seed.tsv` remains G0's immutable historical import snapshot; it is never rewritten or treated as the live projection. Before Task 4, the owning node must exact-author the table into CapabilityGraph binding `business_state_domain_registry_v1` and regenerate the manifest-owned semantic contract plus Rust/database/OpenAPI/client projections. A candidate is stale if those live projections still expose the removed maintenance skip state or omit ProjectReceiptMilestone `WAIVED|CANCELLED`. G3/G4 never hand-patch generated enums or revive the seed as a second truth.
 - G3/G4 consume the G1-03 security spine read-only. A Control or Employee adapter may construct only its private authenticated ingress product and call `AuthorityCommandGatewayV1`; it cannot raw-construct, serialize, or accept `VerifiedSecurityContextV1`, `SecurityContextEnvelopeV1`, issuer material, or a backend ticket. `PgUnitOfWork::begin_authorized(&VerifiedSecurityContextV1)` is the sole public database-transaction constructor, and every CTC repository operation stays inside the resulting `AuthorizedPgTx`.
 - The minimum Workbench is online-only. `ClientIntentV1` is a versioned seam; no local authoritative business database or conflict engine is created here.
 - CTC-01 uses `STANDARD`, `source=CONTRACT_VERSION`, and procurement source `SALES_ORDER`. `DROP_SHIP` and the six-source procurement matrix remain G5 work.
+- CTC-01 deliberately exercises the READY → DIRECT_PURCHASE branch without an RFQ round. Direct purchase is not implicit PO authority: the scenario must call the already registered `award.propose` and, as a different principal, `award.decide` to create an APPROVED `DIRECT_PURCHASE` Award before `purchase_order.create`; `purchase_order.issue` may consume only the approved PO and valid Award remainder and can never grant an award itself.
 - A contract attachment is quarantined on HDD, digest-bound, scanned, and published before it can become evidence.
 - G4 closes `CONTRACT_FULFILMENT`, `SALES_ORDER_FULFILMENT`, and `RECEIVABLE_COLLECTION` only.
 - `PROCUREMENT_FULFILMENT` remains `WAITING`, with sole blocking obligation `PURCHASE_AP_CLOSED` and typed `ProcurementSettlementGapV1` showing all three false fields; this is a required success assertion, not an allowed failure.
@@ -441,7 +443,7 @@ git commit -m "feat: add minimum ctc carriers"
 - Regenerate: `testkit/src/f57_cases/generated_bindings.rs`
 
 **Interfaces:**
-- Consumes: G2 public commands/facts, G3 clients, G4 carriers, one signed generation, Fresh PostgreSQL 16.
+- Consumes: G2 public commands/facts, the exact Employee command discriminator registry in `docs/f57-api-discriminators.seed.tsv`, G3 clients, G4 carriers, one signed generation, Fresh PostgreSQL 16.
 - Produces: one synthetic/de-identified exact chain and objective state evidence.
 
 - [ ] **Step 1: Write the failing full-chain test using only external APIs.**
@@ -450,6 +452,12 @@ git commit -m "feat: add minimum ctc carriers"
 #[tokio::test]
 async fn ctc01_closes_customer_side_and_honestly_waits_for_procurement_settlement() {
     let run = Ctc01Harness::fresh_pg16().through_http_and_windows_ui().run().await.unwrap();
+    assert_eq!(run.command_discriminators(), CTC01_CHAIN);
+    assert!(run.command_discriminators().iter().all(|name| employee_command_registry().contains(name)));
+    assert_eq!(run.procurement_award().sourcing_kind, "DIRECT_PURCHASE");
+    assert_eq!(run.procurement_award().state, "APPROVED");
+    assert_ne!(run.procurement_award().proposed_by, run.procurement_award().decided_by);
+    assert!(run.purchase_order().references_valid_award(run.procurement_award()));
     assert_eq!(run.objective("CONTRACT_FULFILMENT").state, "CLOSED");
     assert_eq!(run.objective("SALES_ORDER_FULFILMENT").state, "CLOSED");
     assert_eq!(run.objective("RECEIVABLE_COLLECTION").state, "CLOSED");
@@ -473,27 +481,51 @@ Expected: FAIL at the first missing UI/API-to-handler connection; the test may n
 - [ ] **Step 3: Wire commands and generated UI actions without adding a second business path.**
 
 ```rust
-pub const CTC01_CHAIN: [&str; 10] = [
-    "customer.create",
-    "contract.version.activate",
-    "sales_order.create_from_contract",
-    "sales_order.release_standard",
-    "procurement_demand.create_from_sales_order",
+pub const CTC01_CHAIN: [&str; 32] = [
+    "mdm.master_record.create",
+    "mdm.master_record.submit",
+    "mdm.master_record.decide",
+    "mdm.master_record.activate",
+    "contract.create_draft",
+    "contract.submit",
+    "contract.approve",
+    "contract.record_signature",
+    "contract.activate",
+    "sales_order.submit",
+    "sales_order.approve",
+    "sales_order.release",
+    "procurement_demand.create",
+    "procurement_demand.admit",
+    "award.propose",
+    "award.decide",
+    "purchase_order.create",
+    "purchase_order.submit",
+    "purchase_order.decide",
     "purchase_order.issue",
-    "goods_receipt.record",
-    "delivery_evidence.accept",
-    "sales_invoice.issue",
-    "cash_receipt.allocate",
+    "goods_receipt.create",
+    "goods_receipt.post",
+    "delivery_confirmation.create",
+    "sales.delivery.confirm",
+    "billing_request.create",
+    "billing_request.submit",
+    "billing_request.decide",
+    "sales_invoice.create",
+    "sales_invoice.post",
+    "receipt.create",
+    "receipt.post",
+    "receipt.allocate",
 ];
 ```
 
-Every action uses generated discriminator/payload, server CAS and idempotency. The fixture creates two legal entities so the same run can prove positive isolation and negative cross-entity access. Contract file bytes enter quarantine and only a clean, same-digest published version can satisfy contract evidence. The concrete G4 handler module proves `CLM-001` and `SAL-002`; regeneration changes their handler descriptors from `NOT_DELIVERED` to `DELIVERED` without changing either seed symbol or generated facade body. This graph change also moves only the Tauri `G4_CTC_UI_API` carrier to `DELIVERED`, bound to `clients/workbench/e2e/ctc01.spec.ts` and the closed `Tauri2G4CtcUiApi` recipe; it asserts that Tauri G3 is already delivered, leaves Tauri G5 and all Flutter rows unchanged, and regenerates the six-row conformance manifest through the same manifest-set authority.
+`CTC01_CHAIN` is only the ordered scenario selector, not a second API registry: the test exact-joins every entry to an existing Employee `COMMAND` row in `docs/f57-api-discriminators.seed.tsv`, rejects unknown/duplicate substitutions, and never adds a discriminator. Between `contract.activate` and `sales_order.submit`, the harness waits for the existing contract-derivation fact to expose the exact-one `source=CONTRACT_VERSION` canonical order; it does not invent an extra order-creation discriminator. `procurement_demand.create` carries `source=SALES_ORDER`, and `award.propose` carries `sourcing_kind=DIRECT_PURCHASE`; the harness proves the proposing and deciding `PrincipalRefV1` values differ before PO creation. The PO commands run in create → submit → decide → issue order, then the scenario creates and posts goods receipt, creates and confirms sales delivery, completes the billing-request maker-checker path, creates/posts the sales invoice, and creates/posts/allocates the receipt. No `purchase_order.issue` handler may create, approve, expand, or repair an Award.
+
+Every action uses the generated discriminator/payload, server CAS and idempotency. The fixture creates two legal entities so the same run can prove positive isolation and negative cross-entity access. Contract file bytes enter quarantine and only a clean, same-digest published version can satisfy contract evidence. The concrete G4 handler module proves `CLM-001` and `SAL-002`; regeneration changes their handler descriptors from `NOT_DELIVERED` to `DELIVERED` without changing either seed symbol or generated facade body. This graph change also moves only the Tauri `G4_CTC_UI_API` carrier to `DELIVERED`, bound to `clients/workbench/e2e/ctc01.spec.ts` and the closed `Tauri2G4CtcUiApi` recipe; it asserts that Tauri G3 is already delivered, leaves Tauri G5 and all Flutter rows unchanged, and regenerates the six-row conformance manifest through the same manifest-set authority.
 
 - [ ] **Step 4: Run server and browser E2E.**
 
 Run: `cargo test -p ep-testkit --test f57_ctc01_e2e -- --nocapture`
 
-Expected: PASS with three closed objectives, one honestly waiting procurement objective, and no direct handler/repository shortcut.
+Expected: PASS with all 32 scenario commands exact-matched to the existing Employee registry, a DIRECT_PURCHASE approved Award produced by distinct `award.propose`/`award.decide` principals before the four-step PO path, three closed objectives, one honestly waiting procurement objective, and no implicit award, new discriminator, direct handler, or repository shortcut.
 
 Run: `npm --prefix clients/control-center run e2e`
 

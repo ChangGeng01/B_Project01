@@ -155,7 +155,7 @@
 | is_drop_ship | boolean | 否 | 默认 false，来源为直运订单时为 true 且 `suggested_purchase_type` 固定为 `DIRECT_EXPENSE` |
 | close_reason | text | 是 | 关闭原因 |
 | closed_at | timestamptz | 是 | |
-| open_stock_shortage_key | text | 是 | `GENERATED ALWAYS AS (CASE WHEN source_type='STOCK_SHORTAGE' AND status<>'CLOSED' THEN warehouse_id::text||':'||material_id::text ELSE NULL END) STORED`；客户端不可写 |
+| open_stock_shortage_key | text | 是 | `GENERATED ALWAYS AS (CASE WHEN source_type='STOCK_SHORTAGE' AND status<>'CLOSED' THEN warehouse_id::text\|\|':'\|\|material_id::text ELSE NULL END) STORED`；客户端不可写 |
 
 `status` CHECK 取值 `PENDING`、`PARTIALLY_ORDERED`、`ORDERED`、`CLOSED`。表级 CHECK：`ck_purchase_requisitions_ordered_qty_le_required`（`ordered_quantity <= required_quantity`）；`ck_purchase_requisitions_type_fields`（物料类必填 `material_id`，直接费用类必填 `expense_item_code` 且三个归集字段至少一项非空）；`ck_purchase_requisitions_stock_shortage_fields` 逐项判空并要求 STOCK_SHORTAGE 时 `warehouse_id/material_id` 均非空且类型为 MATERIAL、其他来源 `open_stock_shortage_key` 必为空；`ck_purchase_requisitions_drop_ship_type`（`is_drop_ship` 为真时类型必须为 `DIRECT_EXPENSE`）；`ck_purchase_requisitions_source_owner` 使用 NULL-safe 封闭形状：CONTRACT 要求 `contract_id IS NOT NULL`，SALES_ORDER 要求 `sales_order_id IS NOT NULL AND contract_id IS NOT NULL`，PROJECT_TASK 要求 `project_id IS NOT NULL` 而允许 `contract_id` 为空，STOCK_SHORTAGE 不借 `contract_id/sales_order_id/project_id` 冒充业务来源。旧的“PROJECT_TASK 一律要求合同”形状作废。
 
@@ -498,7 +498,7 @@ MATERIAL_RECEIPT POSTED 必须恰有一条 `OUT/PURCHASE_RETURN/PURCHASE_RETURN/
 | number_scheme | text | 否 | CHECK 取值 `UNIFIED_20/LEGACY_CODE_NUMBER` |
 | invoice_code | text | 是 | `UNIFIED_20` 必空；旧制必为 10 或 12 位 ASCII 数字 |
 | invoice_no | text | 否 | 数电恰 20 位、旧制恰 8 位 ASCII 数字 |
-| identifier_key | text | 否 | 数据库生成列：`number_scheme || ':' || coalesce(invoice_code,'') || ':' || invoice_no`，客户端不可写 |
+| identifier_key | text | 否 | 数据库生成列：`number_scheme \|\| ':' \|\| coalesce(invoice_code,'') \|\| ':' \|\| invoice_no`，客户端不可写 |
 | active_identifier_slot | text | 是 | 数据库生成列：`status IN ('UPLOADED','ACCEPTED')` 时等于 `identifier_key`，`RETURNED` 时为 NULL；客户端不可写 |
 | issued_on | date | 否 | |
 | ref_type | text | 否 | CHECK 取值 `PURCHASE_ORDER`、`GOODS_RECEIPT` |

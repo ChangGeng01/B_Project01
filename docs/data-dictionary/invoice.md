@@ -59,12 +59,12 @@ ISSUE 根为 `id=root_allocation_id,invoice_reversal_id=NULL`，VOID/RED_LETTER 
 
 | 列 | 类型 | 可空 | 规则 |
 |---|---|---:|---|
-| invoice_medium | text | 否 | `ELECTRONIC|PAPER` |
-| number_scheme | text | 否 | `UNIFIED_20|LEGACY_CODE_NUMBER` |
+| invoice_medium | text | 否 | `ELECTRONIC\|PAPER` |
+| number_scheme | text | 否 | `UNIFIED_20\|LEGACY_CODE_NUMBER` |
 | invoice_code | text | 条件 | 统一 20 位为空；旧制为 10/12 位 ASCII 数字 |
 | invoice_no | text | 否 | 统一制 20 位；旧制 8 位 ASCII 数字 |
 | identifier_key | text | 否 | `GENERATED ALWAYS AS (...) STORED` |
-| owner_type | text | 否 | `SALES_BLUE|PURCHASE_BLUE|OUTPUT_RED|INPUT_RED` |
+| owner_type | text | 否 | `SALES_BLUE\|PURCHASE_BLUE\|OUTPUT_RED\|INPUT_RED` |
 | owner_id | uuid | 否 | 指向唯一业务头 |
 
 `legal_entity_id`、`invoice_medium`、`number_scheme`、`invoice_no`、`identifier_key`、`owner_type`、`owner_id` 全部 `NOT NULL`。数据库 CHECK 分别把三组枚举限定为表中列值；制式 CHECK 逐项使用 `IS NULL/IS NOT NULL`，明确要求统一制代码为空且号码为 20 位 ASCII 数字、旧制代码非空且为 10/12 位 ASCII 数字且号码为 8 位 ASCII 数字，不依赖 SQL `UNKNOWN` 拒绝非法行。

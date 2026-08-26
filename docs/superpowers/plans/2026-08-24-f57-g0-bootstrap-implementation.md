@@ -914,7 +914,7 @@ Create `docs/f57-migration-reservations.v2.tsv` byte-for-byte from master §4.1 
 
 Migration-baseline validation is a two-state closed machine so the permanent registry test remains valid before and after Task 6. `PREIMAGE_PENDING` is legal only while the apply manifest is absent, all three draft bytes exact-match their registered preimage hashes, all three catalog rows are `PLANNED`, and catalog cardinality is exactly `66 EXISTING + 322 PLANNED = 388`. `POSTIMAGE_APPLIED` is legal only when the deterministic apply manifest exact-binds the baseline-registry digest, all three preimage hashes, all three `target_contract_id` values and all three effective postimage hashes, the current draft bytes exact-match those postimages, all three catalog rows are `EXISTING`, and cardinality is exactly `69 EXISTING + 319 PLANNED = 388`. A manifest with any preimage still on disk, a postimage without the manifest, mixed pre/post bytes or catalog states, unknown postimage, partial three-row set, or invalid manifest is rejected. `gate g0` accepts only `POSTIMAGE_APPLIED` and signs/binds the manifest digest in its receipt.
 
-Create `docs/f57-feature-owner-registry.v1.tsv` byte-for-byte from master §2.1 and `docs/f57-platform-mechanism-registry.v1.tsv` byte-for-byte from master §2.2. Their 17 and 30 IDs are the only legal `FeatureOwnerIdV1` and `PlatformMechanismIdV1` values; legacy schema/module aliases and crate-path inference are never accepted as owners. Create `docs/f57-task-staged-paths.v1.tsv` with exact header `task_id\tpath\tpath_kind\tcondition`. The task IDs are `G0-01..06`, `G1-01..07`, `G2-01..07`, `G3-01..02`, `G4-01..03`, `G5-01`, `G5-02A`, `G5-02B`, `G5-02C`, `G5-03..09`, and `G6-10..14`. `path_kind` is the closed set `EXACT_FILE|NEW_TREE|GENERATED_MANIFEST_SET`; `condition` is `ALWAYS|TAURI2_CERTIFIED|FLUTTER_RUST_REQUIRED`. The canonical annotations map mechanically: `Create (`NEW_TREE`)` means action `Create` plus kind `NEW_TREE` and retains the task's default condition; `Create|Modify (`TAURI2_CERTIFIED|FLUTTER_RUST_REQUIRED`)` means the named action, kind `EXACT_FILE`, and that condition; `Create|Regenerate (`GENERATED_MANIFEST_SET`)` means kind `GENERATED_MANIFEST_SET` and retains the task default. An unknown, combined, reordered, or action-incompatible annotation is rejected. Every G5-02A row has task-default `TAURI2_CERTIFIED`; every G5-02B row has task-default `FLUTTER_RUST_REQUIRED`; every other task defaults `ALWAYS`. The two selected-stack DLP rows in G5-02C and the exact selected-stack Workbench rows in G5-03 override that default with their matching branch condition, while all shared server/test/graph rows remain `ALWAYS`. Any conditional row requires the same verified signed stack-decision receipt; the obsolete token `TAURI2_REJECTED` is rejected. An existing tree may use only exact-file rows; `NEW_TREE` requires the registered root and all descendants to be absent at task-begin. `Create|Regenerate (GENERATED_MANIFEST_SET)` grants only the deterministic members listed by the staged projection manifest; during its first G0 creation, `task stage` independently regenerates the manifest from the staged graph/generator, exact-compares its self-declared 29 families and nested members, and only then trusts the set. At pre-commit that manifest is digest-verified, not signed; the clean-HEAD gate later sign-binds its digest. `Generate` is legal only for an exact member of such a family and therefore creates no independent staging authority. Only `Create|Modify|Regenerate|Expand`, manifest-owned `Generate`, and both source/destination of an explicit leaf-file `Move` become stageable rows; a directory move or directory operand is never legal. `Read|Consumes|Execute|Verify` entries never grant write or staging permission. Task 15 is evidence-only and has no staging row. Task 1 expands every comma/shorthand write entry in the five approved plans into normalized rows and freezes the resulting registry digest in the G0 receipt; missing task, unknown annotation/condition, overlapping conditional writer, unregistered leaf, absolute/parent/glob path, pre-task dirty path, or staged-set mismatch fails closed.
+Create `docs/f57-feature-owner-registry.v1.tsv` byte-for-byte from master §2.1 and `docs/f57-platform-mechanism-registry.v1.tsv` byte-for-byte from master §2.2. Their 17 and 30 IDs are the only legal `FeatureOwnerIdV1` and `PlatformMechanismIdV1` values; legacy schema/module aliases and crate-path inference are never accepted as owners. Create `docs/f57-task-staged-paths.v1.tsv` with exact header `task_id\tpath\tpath_kind\tcondition`. The task IDs are `G0-01..06`, `G1-01..07`, `G2-01..07`, `G3-01..02`, `G4-01..03`, `G5-01`, `G5-02A`, `G5-02B`, `G5-02C`, `G5-03..09`, and `G6-10..14`. `path_kind` is the closed set `EXACT_FILE|NEW_TREE|GENERATED_MANIFEST_SET`; `condition` is `ALWAYS|TAURI2_CERTIFIED|FLUTTER_RUST_REQUIRED`. The canonical annotations map mechanically: `Create (`NEW_TREE`)` means action `Create` plus kind `NEW_TREE` and retains the task's default condition; `Create|Modify (`TAURI2_CERTIFIED|FLUTTER_RUST_REQUIRED`)` means the named action, kind `EXACT_FILE`, and that condition; `Create|Regenerate (`GENERATED_MANIFEST_SET`)` means kind `GENERATED_MANIFEST_SET` and retains the task default. An unknown, combined, reordered, or action-incompatible annotation is rejected. Every G5-02A row has task-default `TAURI2_CERTIFIED`; every G5-02B row has task-default `FLUTTER_RUST_REQUIRED`; every other task defaults `ALWAYS`. The two selected-stack DLP rows in G5-02C and the exact selected-stack Workbench rows in G5-03 override that default with their matching branch condition, while all shared server/test/graph rows remain `ALWAYS`. Any conditional row requires the same verified signed stack-decision receipt; the obsolete token `TAURI2_REJECTED` is rejected. An existing tree may use only exact-file rows; `NEW_TREE` requires the registered root and all descendants to be absent at task-begin. `Create|Regenerate (GENERATED_MANIFEST_SET)` grants only the deterministic members listed by the staged projection manifest; during its first G0 creation, `task stage` independently regenerates the manifest from the staged graph/generator, exact-compares its self-declared 30 families and nested members, and only then trusts the set. At pre-commit that manifest is digest-verified, not signed; the clean-HEAD gate later sign-binds its digest. `Generate` is legal only for an exact member of such a family and therefore creates no independent staging authority. Only `Create|Modify|Regenerate|Expand`, manifest-owned `Generate`, and both source/destination of an explicit leaf-file `Move` become stageable rows; a directory move or directory operand is never legal. `Read|Consumes|Execute|Verify` entries never grant write or staging permission. Task 15 is evidence-only and has no staging row. Task 1 expands every comma/shorthand write entry in the five approved plans into normalized rows and freezes the resulting registry digest in the G0 receipt; missing task, unknown annotation/condition, overlapping conditional writer, unregistered leaf, absolute/parent/glob path, pre-task dirty path, or staged-set mismatch fails closed.
 
 `f57` registers this complete closed grammar from G0:
 
@@ -965,10 +965,13 @@ git commit -m "feat: freeze f57 delivery registry"
 - Create: `crates/platform/capability-graph/src/model.rs`
 - Create: `crates/platform/capability-graph/src/compiler.rs`
 - Create: `crates/platform/capability-graph/src/canonical.rs`
+- Create: `crates/platform/capability-graph/src/semantic.rs`
 - Create: `crates/platform/capability-graph/src/import.rs`
 - Create: `crates/platform/capability-graph/tests/compiler.rs`
 - Create: `crates/platform/capability-graph/tests/fixtures/graph-v1-golden.json`
+- Create: `crates/platform/capability-graph/tests/fixtures/semantic-six-table-normalization-v1-golden.json`
 - Create: `docs/schemas/f57-capability-graph.v1.schema.json`
+- Create: `docs/schemas/f57-semantic-normalized-payloads.v1.schema.json`
 - Create: `docs/schemas/f57-client-lifecycle-fixture-corpus.v1.schema.json`
 - Create: `docs/capability-graph/f57-core.v1.json`
 - Create: `testkit/fixtures/client-lifecycle/trust/android-fixture-root.der`
@@ -999,7 +1002,7 @@ git commit -m "feat: freeze f57 delivery registry"
 
 **Interfaces:**
 - Consumes: the foundation-owned shared identifier/delivery/client nominals; the five API seeds; 185 delivery bindings; four isolated non-production native fixture build lanes whose private signing material remains outside the repository; business state-domain contract; and ADR-0025.
-- Produces: the immutable reviewed 20-file lifecycle corpus (four public DER roots plus 16 native packages), strict plain `fixture-corpus.v1.json`, its sole schema, exact four-root/16-package typed CapabilityGraph vectors, the canonical `capability_package_slot_templates` vector, `compile(graph: CapabilityGraphV1, generator: GeneratorIdentityV1, delivery_registry: &DeliveryRegistryV1, mode: CompileModeV1) -> Result<CompiledCapabilityGraphV1, Vec<GraphErrorV1>>`, compiled typed copies of all three vectors, and canonical graph digest.
+- Produces: the immutable reviewed 20-file lifecycle corpus (four public DER roots plus 16 native packages), strict plain `fixture-corpus.v1.json`, its sole schema, exact four-root/16-package typed CapabilityGraph vectors, the canonical `capability_package_slot_templates` vector, repository-reading `semantic_authoring_preflight(root, graph)`, the closed contract-kind validator/source-layout/codec registry and actual-six-table normalization golden, pure `compile(graph: CapabilityGraphV1, generator: GeneratorIdentityV1, delivery_registry: &DeliveryRegistryV1, mode: CompileModeV1) -> Result<CompiledCapabilityGraphV1, Vec<GraphErrorV1>>`, compiled typed copies of all three vectors, the flattened graph-owned semantic-contract vector, and canonical graph digest.
 
 - [ ] **Step 1: Write compiler failure and determinism tests.**
 
@@ -1084,6 +1087,8 @@ fn graph_v1_schema_rust_and_golden_wire_are_identical() {
     assert_eq!(graph.graph_id, "f57-core");
     assert!(graph.architecture_inputs.is_empty());
     assert!(graph.capability_package_slot_templates.is_empty());
+    assert!(graph.semantic_table_anchors.is_empty());
+    assert!(graph.semantic_row_schemas.is_empty());
     assert_eq!(graph.client_lifecycle_fixture_trust_roots.len(), 4);
     assert_eq!(graph.client_lifecycle_fixture_trust_roots.platforms(), [
         "android", "ios", "macos", "windows",
@@ -1109,6 +1114,107 @@ fn graph_v1_schema_rust_and_golden_wire_are_identical() {
     assert_code(graph_with_fixture_role_outcome_or_order_drift(), "CAPABILITY_GRAPH_CLIENT_FIXTURE_SOURCE_BINDING_INVALID");
     assert_eq!(strict_graph_enum_vectors(), exact_graph_reachable_jcs_vectors_from_master_section_3());
     assert!(!generated_graph_schema_defines_runtime_topology_nominals());
+}
+
+#[test]
+fn semantic_contracts_are_typed_self_contained_and_cycle_free() {
+    let authored = semantic_authoring_preflight(
+        repository_root(),
+        fixture_graph_with_complete_business_semantics(),
+    ).unwrap();
+    assert_eq!(authored.registered_table_keys(), [
+        "business_state_domain_registry_v1",
+        "compensation_command_registry_v1",
+        "objective_execution_registry_v1",
+        "objective_trigger_closure_registry_v1",
+        "termination_policy_registry_v1",
+        "timeout_policy_registry_v1",
+    ]);
+    assert_eq!(authored.normalized_six_table_rows().len(), 89);
+    assert!(authored.source_layouts_and_codecs_equal_master_six_table_registry());
+    assert!(authored.normalized_rows_contain_no_opaque_policy_or_state_utf8());
+    assert_eq!(
+        canonical_json_bytes(authored.normalized_six_table_rows()).unwrap(),
+        include_bytes!("fixtures/semantic-six-table-normalization-v1-golden.json"),
+    );
+    assert_eq!(
+        generated_semantic_normalized_payloads_schema_bytes(),
+        read("docs/schemas/f57-semantic-normalized-payloads.v1.schema.json"),
+    );
+    assert!(semantic_normalized_payload_schema_imports_graph_once_without_reverse_edge());
+    let compiled = compile(
+        authored.into_graph(),
+        fixture_generator(),
+        &fixture_delivery_registry(),
+        CompileModeV1::Activation { due_profile: DeliveryProfileV1::G4Ctc01 },
+    ).unwrap();
+    assert!(compiled.semantic_table_anchors_are_sorted_unique_and_fully_referenced());
+    assert!(compiled.semantic_row_schemas_are_sorted_unique_and_strict());
+    assert!(compiled.semantic_contracts_are_sorted_unique_by_contract_id());
+    assert!(compiled.semantic_contracts.iter().all(|contract| {
+        contract.rows_are_sorted_unique()
+            && contract.fields_are_sorted_unique()
+            && contract.exact_row_count_matches()
+            && compiled.row_schema_accepts_every_typed_value(contract)
+            && compiled.provenance_resolves_once_and_matches_schema(contract)
+            && contract.projection_path_matches_contract_id()
+            && contract.projection_sha256 == sha256(canonical_json_bytes(
+                &SemanticContractProjectionV1::from_binding(contract)
+            ).unwrap())
+    }));
+    let expected_objective_kinds = F57_BUSINESS_OBJECTIVE_KIND_V1_EXACT
+        .map(|wire| ObjectiveKindV1::parse(wire).unwrap());
+    assert_eq!(compiled.objective_definition_kind_set(), expected_objective_kinds);
+    for contract_kind in [
+        SemanticContractKindV1::ObjectiveTriggerClosureRegistry,
+        SemanticContractKindV1::ObjectiveExecutionRegistry,
+        SemanticContractKindV1::CompensationCommandRegistry,
+    ] {
+        assert_eq!(compiled.objective_row_key_set(contract_kind), expected_objective_kinds);
+    }
+    let trigger_rows = compiled.single_contract_rows(
+        SemanticContractKindV1::ObjectiveTriggerClosureRegistry
+    ).unwrap();
+    assert_eq!(
+        compiled.timeout_policy_row_key_set(),
+        trigger_rows.distinct_timeout_policy_id_set(),
+    );
+    assert_eq!(
+        compiled.termination_policy_row_key_set(),
+        trigger_rows.distinct_termination_policy_id_set(),
+    );
+    assert_eq!(
+        compiled.workflow_definition_objective_kind_coverage_set(),
+        expected_objective_kinds,
+    );
+    assert!(compiled.workflow_definitions_are_nonempty_for_every_objective_kind());
+    assert!(compiled.workflow_definition_ids_are_global_unique_and_kind_correct());
+    assert!(compiled.nested_policy_state_and_workflow_payloads_are_schema_bound_canonical_jcs());
+    assert!(compiled.candidate_query_bindings_are_all_absent_or_all_present());
+    assert!(compiled.objective_contract_ids_resolve_to_six_dedicated_kinds());
+    assert!(compiled.all_semantic_references_resolve_once_in_allowed_contract_kind());
+    assert!(compile_does_not_read_markdown_or_generated_semantic_contract_files());
+    assert_code(
+        semantic_authoring_preflight(repository_root(), graph_with_anchor_table_byte_drift()),
+        "CAPABILITY_SEMANTIC_ANCHOR_SOURCE_DIGEST_MISMATCH",
+    );
+    assert_code(graph_with_unregistered_semantic_anchor(), "CAPABILITY_SEMANTIC_ANCHOR_UNRESOLVED");
+    assert_code(graph_with_unknown_or_mismatched_row_schema(), "CAPABILITY_SEMANTIC_ROW_SCHEMA_UNRESOLVED");
+    assert_code(graph_with_wrong_validator_for_contract_kind(), "CAPABILITY_SEMANTIC_VALIDATOR_KIND_MISMATCH");
+    assert_code(graph_with_header_index_or_codec_drift(), "CAPABILITY_SEMANTIC_SOURCE_LAYOUT_MISMATCH");
+    assert_code(graph_with_contract_table_missing_source_layout(), "CAPABILITY_SEMANTIC_SOURCE_LAYOUT_REQUIRED");
+    assert_code(graph_with_graph_native_source_layout(), "CAPABILITY_SEMANTIC_SOURCE_LAYOUT_FORBIDDEN");
+    assert_code(graph_with_opaque_nested_utf8_payload(), "CAPABILITY_SEMANTIC_STRUCTURED_PAYLOAD_REQUIRED");
+    assert_code(graph_with_semantic_row_digest_drift(), "CAPABILITY_SEMANTIC_CONTRACT_DIGEST_MISMATCH");
+    assert_code(graph_with_duplicate_contract_or_row_or_field(), "CAPABILITY_SEMANTIC_CONTRACT_DUPLICATE_ID");
+    assert_code(graph_with_wrong_semantic_cell_kind(), "CAPABILITY_SEMANTIC_CONTRACT_ROW_SCHEMA_MISMATCH");
+    assert_code(graph_with_wrong_workflow_provenance(), "CAPABILITY_SEMANTIC_PROVENANCE_KIND_INVALID");
+    assert_code(graph_with_15_wrong_objective_kind_rows(), "CAPABILITY_OBJECTIVE_KIND_EXACT_SET_MISMATCH");
+    assert_code(graph_with_timeout_or_termination_policy_key_gap(), "CAPABILITY_OBJECTIVE_POLICY_KEY_SET_MISMATCH");
+    assert_code(graph_with_workflow_id_keyed_as_objective_or_wrong_kind(), "CAPABILITY_WORKFLOW_OBJECTIVE_COVERAGE_MISMATCH");
+    assert_code(graph_with_partial_candidate_query_binding(), "CAPABILITY_CANDIDATE_QUERY_BINDING_INCOMPLETE");
+    assert_code(graph_with_swapped_objective_contract_kinds(), "CAPABILITY_OBJECTIVE_CONTRACT_KIND_MISMATCH");
+    assert_code(graph_with_unresolved_objective_or_authorization_reference(), "CAPABILITY_SEMANTIC_REFERENCE_UNRESOLVED");
 }
 
 #[test]
@@ -1162,6 +1268,8 @@ pub struct CapabilityGraphV1 {
     pub client_lifecycle_fixture_trust_roots: Vec<ClientLifecycleFixtureTrustRootSourceV1>,
     pub client_lifecycle_fixture_sources: Vec<ClientLifecycleFixtureSourceV1>,
     pub capability_package_slot_templates: Vec<CapabilityPackageGraphSlotV1>,
+    pub semantic_table_anchors: Vec<SemanticTableAnchorV1>,
+    pub semantic_row_schemas: Vec<SemanticRowSchemaV1>,
     pub capabilities: Vec<CapabilityNodeV1>,
 }
 
@@ -1244,6 +1352,9 @@ pub fn compile(
     let client_lifecycle_fixture_trust_roots = graph.client_lifecycle_fixture_trust_roots.clone();
     let client_lifecycle_fixture_sources = graph.client_lifecycle_fixture_sources.clone();
     let capability_package_slot_templates = graph.capability_package_slot_templates.clone();
+    let semantic_table_anchors = graph.semantic_table_anchors.clone();
+    let semantic_row_schemas = graph.semantic_row_schemas.clone();
+    let semantic_contracts = flatten_active_semantic_contracts(&graph, &mode)?;
     let partitions = activation_partitions(&graph, &mode)?;
     Ok(CompiledCapabilityGraphV1 {
         graph_digest_sha256: sha256(&canonical_json),
@@ -1253,6 +1364,9 @@ pub fn compile(
         client_lifecycle_fixture_trust_roots,
         client_lifecycle_fixture_sources,
         capability_package_slot_templates,
+        semantic_table_anchors,
+        semantic_row_schemas,
+        semantic_contracts,
         activation_profile: mode.activation_profile(),
         activation_eligible: mode.is_activation(),
         active_capability_ids: partitions.active_capability_ids,
@@ -1261,9 +1375,13 @@ pub fn compile(
 }
 ```
 
-`compile` is a validator, never a normalizer: it rejects the first noncanonical or duplicate stable-interface vector before any semantic validation or digest calculation. The one-time importer and every later generator may build into maps internally, but must call an explicit deterministic `canonicalize_for_authoring` before presenting a graph to `compile`; committed authoring bytes are then exact-compared with that canonical result. Silent sorting inside `compile`, accepting insertion/filesystem/database order, or producing a digest for noncanonical input is forbidden.
+`compile` is a validator, never a normalizer: it rejects the first noncanonical or duplicate stable-interface vector before any semantic validation or digest calculation. The one-time importer and every later authoring tool may build into maps internally, but must call an explicit deterministic `canonicalize_for_authoring` before presenting a graph to `compile`; committed authoring bytes are then exact-compared with that canonical result. Silent sorting inside `compile`, accepting insertion/filesystem/database order, or producing a digest for noncanonical input is forbidden.
 
-`docs/schemas/f57-capability-graph.v1.schema.json` is generated from those exact Rust types, checked in, and treated as a golden artifact—not separately hand-maintained. It has exactly one direct import `../evidence/f57-foundation.v1.schema.json` for shared digest/path/capability/error/delivery/client nominals and may not copy any of them; foundation never imports graph. Root constants, identifier grammars, enum tags/wires, field sets including required `architecture_inputs`, `client_lifecycle_fixture_trust_roots`, `client_lifecycle_fixture_sources` and `capability_package_slot_templates`, sorting keys, and `CapabilityCarrierKindV1` are exactly master §3. CapabilityGraph owns `CapabilityPackageGraphSlotV1` and preserves that canonical vector byte-for-byte even while the G0 import starts with the exact empty vector; a later package-capable graph may populate it only through a graph-version amendment. The later deployed-participant `RuntimeCarrierV1` is deliberately absent from this graph schema/source and is solely owned with the runtime-topology family in Task 5; graph parsing rejects a topology-carrier value where a capability carrier is required without defining a second enum. Both Rust deserialization and JSON Schema use `additionalProperties=false`; schema generation drift, a missing/direct-import definition, a copied topology nominal, or an importer output that fails either validator blocks G0-02.
+The repository-reading `semantic_authoring_preflight(root, graph)` and pure `compile` have separate, testable boundaries. Preflight fixed-loads only each registered `SemanticTableAnchorV1.document_path + table_key`, requires the unique exact BEGIN/END marker pair and LF-only table preimage defined in master §3, verifies its digest, exact-matches the complete header/index/codec vector, invokes the contract-kind's closed validator and exact-compares its canonical normalized typed rows to the graph binding. It rejects a moved/edited/ambiguous/CRLF table, a header alias/reorder, codec/validator mismatch, an opaque nested UTF-8 policy/state value and never reads a generated projection. The positive golden above must read the actual six marker pairs in `docs/superpowers/specs/2026-08-23-f57-business-execution-contract.md`, produce all `15+15+15+15+15+14=89` normalized rows and byte-match the independently reviewed normalization golden; synthetic fixtures alone cannot satisfy this test. `compile` opens no file: it proves root anchors and schemas are sorted/unique, each anchor's contract kind/schema join is valid, each active binding provenance follows the master closed rule, and every row key/field/value matches its resolvable strict schema and validator. It reconstructs only `SemanticContractProjectionV1`, exact-checks `projection_path`, `projection_sha256`, row count, containing-node owner, projection targets and all cross-contract references, then flattens the complete unique set by `contract_id`. It exact-compares Objective definitions plus trigger/closure, execution and compensation row-key sets to `F57_BUSINESS_OBJECTIVE_KIND_V1_EXACT`; timeout/termination row keys must instead equal the distinct policy IDs referenced from the trigger/closure rows, while workflow rows are keyed by `WorkflowDefinitionIdV1` and their normalized `objective_kind` coverage must equal the exact 15-kind set with at least one definition per kind. CandidateQuery's three optional fields must be all absent or all present, and the six Objective contract references must resolve to six dedicated non-interchangeable kinds. This separation closes the generated-input cycle, the unverified-Markdown-anchor gap and the former policy/workflow key-type contradiction.
+
+`docs/schemas/f57-capability-graph.v1.schema.json` is generated from those exact Rust types, checked in, and treated as a golden artifact—not separately hand-maintained. It has exactly one direct import `../evidence/f57-foundation.v1.schema.json` for shared digest/path/capability/error/delivery/client nominals and may not copy any of them; foundation never imports graph. Root constants, identifier grammars, enum tags/wires, field sets including required `architecture_inputs`, `client_lifecycle_fixture_trust_roots`, `client_lifecycle_fixture_sources`, `capability_package_slot_templates`, `semantic_table_anchors` and `semantic_row_schemas`, the one-to-one contract-kind/validator registry, source layout/codec wires, `CanonicalJcsObjectUtf8V1`, sorting keys, and `CapabilityCarrierKindV1` are exactly master §3. CapabilityGraph owns `CapabilityPackageGraphSlotV1`, `SemanticTableAnchorV1` and `SemanticRowSchemaV1` and preserves those vectors byte-for-byte even while the initial bootstrap import starts with exact empty vectors; later activation-ready authoring may populate them only under graph-version amendment and complete reference validation. The later deployed-participant `RuntimeCarrierV1` is deliberately absent from this graph schema/source and is solely owned with the runtime-topology family in Task 5; graph parsing rejects a topology-carrier value where a capability carrier is required without defining a second enum. Both Rust deserialization and JSON Schema use `additionalProperties=false`; schema generation drift, a missing/direct-import definition, a copied topology nominal, or an importer output that fails either validator blocks G0-02.
+
+`docs/schemas/f57-semantic-normalized-payloads.v1.schema.json` is the sole schema owner of the strict normalized `StateDomainDefinitionV1`, `TimeoutPolicyDefinitionV1` and `WorkflowDefinitionV1` object families consumed through `CANONICAL_JCS_OBJECT`. It imports the capability-graph schema exactly once for graph-owned nominals and has no reverse import. `StateDomainDefinitionV1` closes the exact fields named by business contract §14.6, with tagged `PERSISTED_LIFECYCLE|DERIVED_CLASSIFICATION`, typed transition/precedence/guard/invariant/reverse-trigger rows and no prose field. `TimeoutPolicyDefinitionV1` closes the model-tagged parameter union and exact fields in §8.2.2.1. `WorkflowDefinitionV1` closes §8.4's complete definition, step/edge/condition/compensation/upgrade/rollout types; arbitrary JSON, script/SQL/network expressions and untyped maps are unrepresentable. `semantic.rs` is the sole Rust owner of these DTOs and validators. The schema and Rust are generated/byte-golden together; a schema-name alias, opaque string, copied nominal, unknown field or graph↔payload schema cycle blocks G0-02.
 
 G0-02 creates and reviews one immutable 20-file native lifecycle corpus before finalizing the graph: four public DER roots at the exact `testkit/fixtures/client-lifecycle/trust/{android,ios,macos,windows}-fixture-root.der` paths and the exact 16 package paths listed in Files. Four platform build lanes use dedicated non-production fixture roots and externally held ephemeral/private signing material; only public roots and final package bytes enter the repository. No private key, password, provisioning secret or production trust anchor may occur in the tree, manifest, logs or staged set. Package IDs use only reserved `ep.f57.fixture.*` test namespaces, and the public roots are trusted only in resettable conformance runners. Each lane records its nonzero source-tree/toolchain digest and closed reproducible-build recipe ID, then a clean verifier constructs a new isolated trust store from only that platform's exact DER root and native-parses all four packages. Ordinary G0/G5 runs never regenerate or resign this corpus; changing any byte/root/recipe is a deliberate graph-version amendment that replaces and reviews the complete affected closure.
 
@@ -1271,7 +1389,7 @@ G0-02 creates and reviews one immutable 20-file native lifecycle corpus before f
 
 `client_lifecycle_fixture_trust_roots` is required at every graph stage with exactly four rows in order `android,ios,macos,windows`; each binds its fixed public DER path, exact digest and root SPKI. `client_lifecycle_fixture_sources` is likewise required with exactly 16 rows canonical-sorted by `(platform,role)`: one row for every platform × `UPGRADE_BASELINE|REVOKED_PACKAGE|DOWNGRADE_PACKAGE|FAILED_UPDATE_PACKAGE` pair. The outcome bijection is exact: `UPGRADE_BASELINE→ACCEPTED_BASELINE`, `REVOKED_PACKAGE→REJECT_REVOKED_PACKAGE`, `DOWNGRADE_PACKAGE→REJECT_DOWNGRADE`, and `FAILED_UPDATE_PACKAGE→FAILED_UPDATE_PRESERVES_TARGET`. Each fixture's `fixture_trust_root_der_sha256` equals its platform's sole root row, and its native chain terminates only at that root. `compile` rejects 3/5 roots, 15/17 packages, duplicate/missing/reordered row, another role/outcome/root mapping, invalid metadata or local nominal copy; it preserves both validated lifecycle vectors plus `capability_package_slot_templates` in `CompiledCapabilityGraphV1` and includes all three in canonical graph bytes/digest. Projection consumes only those typed vectors; it never re-parses `canonical_json` or discovers bytes/metadata/trust from filesystem, network, ambient trust, argv or environment.
 
-The importer materializes the master §3 `ImportedContractV1` union with every original field of all five TSV families. Projection code is tested with those source paths made unavailable and must still reproduce their accepted bytes from the compiled graph alone. Activation replaces incomplete semantics without deleting `imported_contract`; native nodes have no imported payload. The complete `GeneratorIdentityV1` survives compilation and every generated family exact-matches all three identity fields.
+The importer materializes the master §3 `ImportedContractV1` union with every original field of all five TSV families. Projection code is tested with those source paths made unavailable and must still reproduce their accepted bytes from the compiled graph alone. For explicitly registered machine tables, the owning task additionally converts the exact anchored Markdown rows into canonical `SemanticContractRowV1`/`SemanticContractFieldV1` values before authoring; the graph binding preserves provenance but the typed rows, not Markdown, are the compiled authority. Activation replaces incomplete semantics without deleting `imported_contract`; native nodes have no imported payload. The complete `GeneratorIdentityV1` survives compilation and every generated family exact-matches all three identity fields.
 
 `CompileModeV1` is the exact set `BootstrapImport|Activation { due_profile }`. `BootstrapImport` permits only nodes carrying an exact legacy source binding and marks the compiled graph `activation_eligible=false`; it does not pretend imported API rows already contain full authorization, owner, lifecycle, objective, carrier, and evidence semantics.
 
@@ -1279,7 +1397,7 @@ The importer materializes the master §3 `ImportedContractV1` union with every o
 
 `Activation { due_profile }` validates and activates only the profile-scoped due closure: every `RequirementBinding` whose `first_due_profile` exact-matches the supplied 185-row `DeliveryRegistryV1` and is `<=due_profile`, plus every dependency reachable from an enabled binding, must be fully activation-ready. A `SliceProbe` likewise exact-matches the registry's probe list and the deterministically derived contract/fixture/evidence/rationale/assertion closure; it must expose exactly one nonempty typed probe evidence requirement. `RequirementBinding` and `SliceProbe` nodes are bookkeeping owned exactly by `platform.capability-graph`; every semantic child carries its real registered feature/platform owner. Child due profiles are never authored: the compiler recomputes each as the minimum profile of every reachable incoming binding/probe. Any missing/extra/mismatched registry binding or imported/incomplete node in the selected closure fails. A later-profile Requirement remains in the same signed graph as `DISABLED_NOT_CERTIFIED { first_due_profile }`; it may not own an active route, menu, command, query, MCP tool, provider binding, automation trigger, or package activation. A registered `SliceProbe` child is a separate non-user-facing child capability and never activates its parent Requirement. The compiler emits stable `active_capability_ids` and `disabled_capabilities` partitions under the same graph digest. At G6 all 185 release-due rows must be complete; a deferred-boundary row is complete only when its typed seam and negative enable/claim evidence are activation-ready while the deferred implementation stays disabled.
 
-Across the selected closure, Activation requires ID syntax, exact version, one owner, every schema/state/error/evidence/configuration/event/metric/impact reference, command/query/fact/data-object uniqueness, single fact writer, acyclic dependencies, allowed carrier, authorization completeness, deferred disablement, and 185 exact delivery references. Config IDs, ErrorCodes, EventTypes, MetricIDs and ImpactRuleIDs are closed stable identifiers owned by exactly one graph node; a generated catalog exact-joins them and no legacy markdown registry can introduce a second value. `validate_all` returns stable errors sorted by `(code, capability_id, path)`. Canonical arrays sort by the master plan's declared stable keys; state transitions sort exactly by `(from,to,action_id)`. UI presentation order, where required, is owned by its generated UI-schema ordinal and is not inferred from graph array insertion order.
+Across the selected closure, Activation requires ID syntax, exact version, one owner, every schema/state/error/evidence/configuration/event/metric/impact/semantic reference, command/query/fact/data-object uniqueness, single fact writer, acyclic dependencies, allowed carrier, authorization completeness, deferred disablement, and 185 exact delivery references. Config IDs, ErrorCodes, EventTypes, MetricIDs, ImpactRuleIDs and SemanticContract IDs are closed stable identifiers owned by exactly one graph node; generated catalogs exact-join them and no legacy Markdown or runtime table can introduce a second value. Every lifecycle guard/invariant, authorization scope/condition/candidate query, and objective trigger/reopen/closure/responsibility/effect/timeout/termination/compensation/workflow reference resolves exactly once in an allowed contract kind; the complete business set exact-joins 15 ObjectiveKind rows. `validate_all` returns stable errors sorted by `(code, capability_id, path)`. Canonical arrays sort by the master plan's declared stable keys; state transitions sort exactly by `(from,to,action_id,guard_ids,invariant_ids)`. UI presentation order, where required, is owned by its generated UI-schema ordinal and is not inferred from graph array insertion order.
 
 Implement `cargo xtask f57 graph import-seeds` as a one-time strict importer. Before authoring output, it fixed-loads the exact corpus manifest, 4 roots and 16 packages; verifies bytes, native metadata, leaf/root SPKI, isolated chain, root-digest join, reserved package namespace, recipe/source/toolchain bindings and absence of committed secrets; then exact-compares the resulting typed root/source vectors. It fails if `docs/capability-graph/f57-core.v1.json` already exists unless its canonical content is identical. Its constructor explicitly supplies `architecture_inputs: Vec::new()`, the exact four `client_lifecycle_fixture_trust_roots`, exact 16 `client_lifecycle_fixture_sources` and `capability_package_slot_templates: Vec::new()`; omission/default of any field is rejected by Serde/schema. The committed authoring graph contains all 185 `f57.req.*` nodes plus imported API/state/route children, records the source digest of every imported row, and remains non-activatable until each Requirement's exact first-due owner task—including G0 and G6—replaces that node and its required closure with complete activation semantics. Every imported Requirement binding and generated slice-probe bookkeeping node uses owner `platform.capability-graph`; its reachable semantic children use the exact feature/platform owner registry. The importer never derives a new owner from legacy `owner_task`. It stores no test result, package bytes or secret inside the graph.
 
@@ -1312,7 +1430,9 @@ git commit -m "feat: establish f57 capability graph and reviewed fixture corpus"
 - Create: `crates/platform/capability-graph/tests/projections.rs`
 - Create: `crates/platform/capability-graph/tests/fixtures/projection-manifest-v1-golden.json`
 - Create: `crates/platform/capability-graph/tests/fixtures/client-platform-lifecycle-policy-v1-golden.json`
+- Create: `crates/platform/capability-graph/tests/fixtures/semantic-contracts-manifest-v1-golden.json`
 - Create: `docs/schemas/f57-projection-manifest.v1.schema.json`
+- Create: `docs/schemas/f57-semantic-contracts-manifest.v1.schema.json`
 - Create: `docs/generated/f57/requirement-delivery.tsv`
 - Create: `docs/generated/f57/capability-index.tsv`
 - Create: `docs/generated/f57/registry/config-catalog.v1.json`
@@ -1323,6 +1443,8 @@ git commit -m "feat: establish f57 capability graph and reviewed fixture corpus"
 - Create: `docs/generated/f57/registry/impact-catalog.v1.json`
 - Create: `docs/generated/f57/client-conformance-manifest.v1.json`
 - Generate: `docs/generated/f57/client-platform-lifecycle-policy.v1.json`
+- Create: `docs/generated/f57/semantic-contracts/manifest.v1.json`
+- Generate: the exact `docs/generated/f57/semantic-contracts/<contract-id>.v1.json` member set from compiled graph bindings
 - Create: `docs/generated/f57/rust/manifest.v1.json`
 - Create: `docs/generated/f57/requirement-test-facades.v1.json`
 - Create (`GENERATED_MANIFEST_SET`): `docs/generated/f57/projection-manifest.v1.json`
@@ -1374,7 +1496,7 @@ fn projection_manifest_wire_and_non_circular_exact_set_are_frozen() {
     let artifacts = project_all(&compiled_real_graph()).unwrap();
     let manifest = ProjectionManifestV1::from_artifacts(&artifacts).unwrap();
     assert_eq!(manifest.schema_version, 1);
-    assert_eq!(manifest.families.len(), 29);
+    assert_eq!(manifest.families.len(), 30);
     assert_eq!(manifest.family_ids(), PROJECTION_IDS.sorted_by_wire_bytes());
     assert!(manifest.global_paths_are_unique());
     assert!(!manifest.contains_path("docs/generated/f57/projection-manifest.v1.json"));
@@ -1383,18 +1505,64 @@ fn projection_manifest_wire_and_non_circular_exact_set_are_frozen() {
         "client-conformance-manifest.v1.json",
         "requirement-test-facades.v1.json",
         "rust/manifest.v1.json",
+        "semantic-contracts/manifest.v1.json",
     ]);
     let lifecycle = manifest.family("client-conformance-manifest.v1.json").unwrap().members();
     assert_eq!(lifecycle.len(), 1);
     assert_eq!(lifecycle[0].output_path, "docs/generated/f57/client-platform-lifecycle-policy.v1.json");
-    assert_eq!(lifecycle[0].owner_kind, ProjectionOutputOwnerKindV1::Family);
-    assert_eq!(lifecycle[0].owner_id.as_deref(), Some("client-conformance-manifest.v1.json"));
+    assert!(matches!(
+        &lifecycle[0].owner,
+        ProjectionOutputOwnerV1::Family(id)
+            if id.as_str() == "client-conformance-manifest.v1.json"
+    ));
     assert_eq!(lifecycle[0].media_type, "application/vnd.ep.f57-client-platform-lifecycle-policy-v1+json");
     assert_eq!(read(&lifecycle[0].output_path), include_bytes!(
         "fixtures/client-platform-lifecycle-policy-v1-golden.json"
     ));
     assert_eq!(canonical_json_bytes(&manifest).unwrap(), include_bytes!("fixtures/projection-manifest-v1-golden.json"));
     assert_eq!(generated_projection_manifest_schema_bytes(), read("docs/schemas/f57-projection-manifest.v1.schema.json"));
+}
+
+#[test]
+fn semantic_contract_family_is_exact_projection_of_compiled_graph_rows() {
+    let compiled = compiled_real_graph();
+    let artifacts = project_all(&compiled).unwrap();
+    let family = projection_family(&artifacts, "semantic-contracts/manifest.v1.json");
+    let primary: SemanticContractsManifestV1 = strict_from_slice(family.primary().bytes()).unwrap();
+    assert_eq!(primary.schema_version, 1);
+    assert_eq!(primary.purpose, SemanticContractsManifestPurposeV1::SemanticContractsManifest);
+    assert_eq!(primary.graph_digest_sha256, compiled.graph_digest_sha256);
+    assert_eq!(primary.generator_identity, compiled.generator_identity);
+    assert_eq!(
+        primary.bindings,
+        compiled.semantic_contracts.iter()
+            .map(SemanticContractsManifestBindingV1::from)
+            .collect::<Vec<_>>()
+    );
+    assert_eq!(family.members().len(), compiled.semantic_contracts.len());
+    for contract in &compiled.semantic_contracts {
+        let member = family.member_by_output_path(&contract.projection_path).unwrap();
+        let expected_bytes = canonical_json_bytes(
+            &SemanticContractProjectionV1::from_binding(contract)
+        ).unwrap();
+        assert_eq!(member.bytes(), expected_bytes);
+        assert_eq!(member.descriptor.sha256, contract.projection_sha256);
+        assert!(matches!(
+            &member.descriptor.owner,
+            ProjectionOutputOwnerV1::Family(id)
+                if id.as_str() == "semantic-contracts/manifest.v1.json"
+        ));
+    }
+    assert_eq!(family.primary().bytes(), include_bytes!(
+        "fixtures/semantic-contracts-manifest-v1-golden.json"
+    ));
+    assert_eq!(
+        generated_semantic_contracts_manifest_schema_bytes(),
+        read("docs/schemas/f57-semantic-contracts-manifest.v1.schema.json")
+    );
+    assert!(project_all_does_not_read_business_markdown_or_generated_contract_files());
+    assert_code(project_with_missing_extra_or_reordered_semantic_member(), "PROJECTION_SEMANTIC_MEMBER_SET_MISMATCH");
+    assert_code(project_with_semantic_manifest_binding_drift(), "PROJECTION_SEMANTIC_MANIFEST_BINDING_MISMATCH");
 }
 
 #[test]
@@ -1509,7 +1677,7 @@ Expected: FAIL because `projection.rs` and generated manifests do not exist.
 - [ ] **Step 3: Implement closed projection output.**
 
 ```rust
-pub const PROJECTION_IDS: [&str; 29] = [
+pub const PROJECTION_IDS: [&str; 30] = [
     "requirement-delivery.tsv",
     "capability-index.tsv",
     "api-discriminators.tsv",
@@ -1536,6 +1704,7 @@ pub const PROJECTION_IDS: [&str; 29] = [
     "ui/portal.ui-schema.v1.json",
     "client-conformance-manifest.v1.json",
     "rust/manifest.v1.json",
+    "semantic-contracts/manifest.v1.json",
     "authorization-catalog.json",
     "test-manifest.json",
     "requirement-test-facades.v1.json",
@@ -1552,7 +1721,7 @@ pub fn project_all(compiled: &CompiledCapabilityGraphV1) -> Result<Vec<Projectio
 }
 ```
 
-Implement the exact `ProjectionArtifactV1`, descriptor, owner, role, media, family and `ProjectionManifestV1` types from master §3. `ProjectionManifestV1::from_artifacts` exact-checks one shared graph digest and complete generator identity, then groups the sorted primary/member descriptors into precisely 29 closed families. It never includes output bytes or its own path/digest. Both the strict Rust wire and `docs/schemas/f57-projection-manifest.v1.schema.json` must accept the checked-in golden vector byte-for-byte and reject unknown fields, a 30th family, self-reference, duplicate path, wrong media/owner, upperhex digest, member-order drift or generator mismatch.
+Implement the exact `ProjectionArtifactV1`, descriptor, owner, role, media, family and `ProjectionManifestV1` types from master §3. `ProjectionManifestV1::from_artifacts` exact-checks one shared graph digest and complete generator identity, then groups the sorted primary/member descriptors into precisely 30 closed families. It never includes output bytes or its own path/digest. Both the strict Rust wire and `docs/schemas/f57-projection-manifest.v1.schema.json` must accept the checked-in golden vector byte-for-byte and reject unknown fields, a 31st family, self-reference, duplicate path, wrong media/owner, upperhex digest, member-order drift or generator mismatch.
 
 All repository semantic projections are rooted at `docs/generated/f57/`. The five import seed files remain byte-identical to their accepted G0 preimage and become immutable historical import snapshots during the authority-switch commit; they are not projection destinations and no later graph generation compares against or rewrites them. The three OpenAPI authorities are exactly `docs/generated/f57/openapi/control-center.v1.yaml`, `employee-api.v1.yaml`, and `portal.v1.yaml`. The old absent paths `docs/openapi/control-center.v1.yaml` and `docs/openapi/employee-api.v1.yaml` become permanent `SUPERSEDED_PLANNED_PATH` entries and must never be created; the existing `docs/openapi/*.yaml` files remain historical/current-subject inputs only. Task 3 atomically updates `docs/openapi/README.md` and the authority register to that exact state. The six generated registry catalogs are the only machine truth for config, data objects, error codes, events, metrics, and impact rules; the similarly named legacy markdown/data-dictionary files remain non-blocking inputs and cannot gate or extend implementation.
 
@@ -1560,7 +1729,9 @@ All repository semantic projections are rooted at `docs/generated/f57/`. The fiv
 
 `rust/manifest.v1.json` is the second multi-member projection family. It contains the canonical-sorted exact members `{owner_id,path,sha256}` and binds each member to the graph and generator digests. Feature-owned Rust DTO output is written only to `crates/features/<owning-feature>/src/public/generated.rs` once that feature exists; platform-owned Rust DTO output is written only to the owning platform crate's `src/public/generated.rs`. `project_family("rust/manifest.v1.json", ...)` returns both that family manifest and the exact member bytes; no child task may hand-create a DTO, add an unmanifested generated member, or write a global DTO crate. Requirement facades and Rust remain the only two families permitted to generate outside `docs/generated/f57/`.
 
-`client-conformance-manifest.v1.json` is the third and only remaining multi-member projection family; the total remains exactly 29, never 30. Its primary projects exactly the six typed carriers from master §3 and stores closed recipe IDs, delivery state and exact source paths, never executable command text. Its exact sole member is `docs/generated/f57/client-platform-lifecycle-policy.v1.json`, owned by `FAMILY(client-conformance-manifest.v1.json)` with media `application/vnd.ep.f57-client-platform-lifecycle-policy-v1+json`; no other member or owner kind is legal. That member is plain JCS with `schema_version=1`, purpose `EP-F57-CLIENT-PLATFORM-LIFECYCLE-POLICY-V1`, `policy_id=F57_CLIENT_PLATFORM_LIFECYCLE_BASELINE_V1`, `policy_revision=1`, and the exact four UTF-8 platform-sorted lifecycle rows from master §3. Its four trust-root descriptors and 16 fixture descriptors are a total one-to-one transformation of the compiled graph's typed vectors, including exact root-DER digest/SPKI joins; policy generation may not read package bytes, filesystem, network, trust store, argv or environment. Before any policy byte is emitted, G0-03 preflight fixed-loads the one corpus manifest and only its exact 20 enumerated paths, exact-compares every graph row/digest/metadata/recipe binding, and native-verifies each leaf chain in a new isolated trust store containing only that platform's exact DER root. Missing/extra/alternate/ambient root, manifest/schema/media/path drift, secret/private material, partial corpus or local regenerated substitute fails before projection. The family primary, member descriptor/digest, graph digest and generator identity bind the policy without a new family or signer row. G0 writes all six carriers as `NOT_DELIVERED`; G3/G4 and exactly one G5 client branch update graph delivery state and regenerate the family. Before a stack decision, only the initial Tauri G3/G4 carrier may be invoked by its owning gate. After the signed decision, G5/G6 require the three selected-stack rows to be `DELIVERED`; a rejected tree is permanently `REJECTED_FIXTURE`.
+`client-conformance-manifest.v1.json` is the third multi-member projection family. Its primary projects exactly the six typed carriers from master §3 and stores closed recipe IDs, delivery state and exact source paths, never executable command text. Its exact sole member is `docs/generated/f57/client-platform-lifecycle-policy.v1.json`, owned by `FAMILY(client-conformance-manifest.v1.json)` with media `application/vnd.ep.f57-client-platform-lifecycle-policy-v1+json`; no other member or owner kind is legal. That member is plain JCS with `schema_version=1`, purpose `EP-F57-CLIENT-PLATFORM-LIFECYCLE-POLICY-V1`, `policy_id=F57_CLIENT_PLATFORM_LIFECYCLE_BASELINE_V1`, `policy_revision=1`, and the exact four UTF-8 platform-sorted lifecycle rows from master §3. Its four trust-root descriptors and 16 fixture descriptors are a total one-to-one transformation of the compiled graph's typed vectors, including exact root-DER digest/SPKI joins; policy generation may not read package bytes, filesystem, network, trust store, argv or environment. Before any policy byte is emitted, G0-03 preflight fixed-loads the one corpus manifest and only its exact 20 enumerated paths, exact-compares every graph row/digest/metadata/recipe binding, and native-verifies each leaf chain in a new isolated trust store containing only that platform's exact DER root. Missing/extra/alternate/ambient root, manifest/schema/media/path drift, secret/private material, partial corpus or local regenerated substitute fails before projection. The family primary, member descriptor/digest, graph digest and generator identity bind the policy without a new signer row. G0 writes all six carriers as `NOT_DELIVERED`; G3/G4 and exactly one G5 client branch update graph delivery state and regenerate the family. Before a stack decision, only the initial Tauri G3/G4 carrier may be invoked by its owning gate. After the signed decision, G5/G6 require the three selected-stack rows to be `DELIVERED`; a rejected tree is permanently `REJECTED_FIXTURE`.
+
+`semantic-contracts/manifest.v1.json` is the fourth and only remaining multi-member family; the total is exactly 30, never 29 or 31. Its primary at `docs/generated/f57/semantic-contracts/manifest.v1.json` is strict `SemanticContractsManifestV1` JCS with `schema_version=1`, purpose `EP-F57-SEMANTIC-CONTRACTS-MANIFEST-V1`, the exact compiled graph/generator identities and canonical bindings sorted by `contract_id`. `docs/schemas/f57-semantic-contracts-manifest.v1.schema.json` owns only that primary envelope and references graph-owned semantic nominals; it may not copy or weaken them. Each member is the one-to-one `SemanticContractProjectionV1 {schema_version=1,contract_id,contract_kind,row_schema_id,rows}` at its binding's `projection_path`, with media `application/json`, digest equal to `projection_sha256`, and descriptor owner `FAMILY(semantic-contracts/manifest.v1.json)`. The primary binding exact-repeats each compiled contract's ID, kind, path, digest, schema, row count, business owner and projection-target vector. Member lookup is by exact path/ID, never positional zip. The projector consumes only the compiled typed vector; it never reads a Markdown source, existing generated member, database row or handwritten registry. Missing/extra/reordered members, path collision, primary/member binding drift, member/graph digest mismatch, schema/count mismatch or orphan semantic reference fails before any output is written.
 
 Before generating, Task 3 replaces exactly the `GOV-010` and `NFR-010` requirement-binding nodes plus only their reachable G0 mechanism dependencies with complete `ActivationReady` semantics: registry integrity, projection drift, staging safety, signed-receipt schema, authorization, lifecycle, owner, carrier, and concrete evidence bindings. No later-profile requirement node is promoted. `compile(real_graph, real_generator, &real_delivery_registry, Activation { G0_BOOTSTRAP })` must pass with those two active and the other 183 sealed `DISABLED_NOT_CERTIFIED`; `BootstrapImport` remains available only for the historical byte-round-trip test and can never issue the G0 receipt.
 
@@ -1572,7 +1743,7 @@ Every generated Rust/TypeScript facade copies the seed symbol exactly and delega
 
 Run: `cargo xtask f57 graph generate`
 
-Expected: after exact 20-file corpus/isolated-trust preflight, all 29 projection families, including deterministic `policy/p340-certification-policy.v1.json`, the third multi-member client-conformance family with its sole root-bound `client-platform-lifecycle-policy.v1.json` member and exact media, the exact 22 facade members/185 symbols, the compiled-discovery binding member, the exact graph-owned Rust DTO members, and `docs/generated/f57/projection-manifest.v1.json` are written with one graph digest; the two superseded `docs/openapi` planned paths remain absent.
+Expected: after exact 20-file corpus/isolated-trust preflight, all 30 projection families, including deterministic `policy/p340-certification-policy.v1.json`, the third multi-member client-conformance family with its sole root-bound `client-platform-lifecycle-policy.v1.json` member, the fourth semantic-contract family with the exact compiled-contract member set, the exact 22 facade members/185 symbols, the compiled-discovery binding member, the exact graph-owned Rust DTO members, and `docs/generated/f57/projection-manifest.v1.json` are written with one graph digest; the two superseded `docs/openapi` planned paths remain absent.
 
 Run: `cargo xtask f57 graph generate --check`
 
@@ -3152,6 +3323,14 @@ pub struct RuntimeParticipantV1 {
     pub allowed_persistence: PersistenceClassV1,
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq, serde::Deserialize, serde::Serialize)]
+#[serde(rename_all = "SCREAMING_SNAKE_CASE")]
+pub enum DatabaseConnectionPrivilegeClassV1 {
+    Normal,
+    Reserved,
+    Superuser,
+}
+
 #[derive(Clone, Debug, Eq, PartialEq, serde::Deserialize, serde::Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct DatabaseConsumerV1 {
@@ -3159,6 +3338,7 @@ pub struct DatabaseConsumerV1 {
     pub service_identity: String,
     pub database_role: String,
     pub purpose: String,
+    pub connection_privilege_class: DatabaseConnectionPrivilegeClassV1,
     pub steady_pool_max: u32,
     pub peak_pool_max: u32,
     pub acquire_timeout_ms: u64,

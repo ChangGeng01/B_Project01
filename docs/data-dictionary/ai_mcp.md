@@ -35,23 +35,23 @@ F-55 不新增 AI 草案表、AI 结果表、MCP 调用日志表、MCP session �
 | package_digest | bytea | 否 | 无 | 整包 SHA-256，固定 32 字节 |
 | manifest_digest | bytea | 否 | 无 | JCS manifest SHA-256，固定 32 字节 |
 | signer_subject | text | 否 | 无 | 已验证签名主体，1..512 |
-| signature_kind | text | 否 | 无 | `PROD_AUTHENTICODE|DEV_ECDSA_P256` |
+| signature_kind | text | 否 | 无 | `PROD_AUTHENTICODE\|DEV_ECDSA_P256` |
 | installed_root_ref | text | 否 | 无 | ACL 保护只读安装根引用，不是可提交路径 |
 | install_receipt_id | uuid | 否 | 无 | `ops.signed_artifact.install_receipt.v1` 幂等收据 id |
 | installed_at | timestamptz | 否 | 无 | 安装器完成原子发布的时点 |
 | prompt_template_version | text | 否 | 无 | 活动固定提示模板版本，1..64 |
 | max_context_tokens | int | 否 | 无 | 必须大于 2048，给固定 2048 输出 token 留空间 |
 | max_concurrent_requests | int | 否 | 15 | 固定 15，CHECK `=15` |
-| execution_profile | text | 否 | 无 | `CPU_LOCAL|GPU_LOCAL` |
+| execution_profile | text | 否 | 无 | `CPU_LOCAL\|GPU_LOCAL` |
 | resource_formula_version | text | 否 | `AI_RAM_V1_0_095_HOST` | 首版只允许该字面量 |
-| certification_report_ref | text | 是 | 无 | exact `ep-evidence://ai-resource/<release-batch>/<model-package>/<cpu-local|gpu-local>/sha256/<digest>` opaque ref |
+| certification_report_ref | text | 是 | 无 | exact `ep-evidence://ai-resource/<release-batch>/<model-package>/<cpu-local\|gpu-local>/sha256/<digest>` opaque ref |
 | certification_report_digest | bytea | 是 | 无 | `AiResourceCertificationReportV1` exact JCS SHA-256；32 字节，与 ref 同空同非空 |
 | verified_at | timestamptz | 是 | 无 | 包签名、hash、Runtime ABI 双重验证完成时点 |
 | certified_at | timestamptz | 是 | 无 | 资源认证完成时点 |
 | activated_at | timestamptz | 是 | 无 | 成为唯一活动包时点 |
 | disabled_at | timestamptz | 是 | 无 | 停用时点 |
 | revoked_at | timestamptz | 是 | 无 | 撤销时点 |
-| status | text | 否 | `REGISTERED` | `REGISTERED|VERIFIED|CERTIFIED|ACTIVE|DISABLED|REVOKED` |
+| status | text | 否 | `REGISTERED` | `REGISTERED\|VERIFIED\|CERTIFIED\|ACTIVE\|DISABLED\|REVOKED` |
 | active_slot | smallint | 是 | 生成列 | `status='ACTIVE'` 时为 1，否则 NULL |
 
 唯一约束固定为 `UNIQUE(model_code,model_version)`、`UNIQUE(package_digest)`、`UNIQUE(install_receipt_id)`、`UNIQUE(active_slot)`。`installed_root_ref` 只能是 `ep-install://ai-model/sha256/<package_digest lowerhex>`。状态边只有 `REGISTERED→VERIFIED→CERTIFIED→ACTIVE`、`ACTIVE→DISABLED`、`DISABLED→CERTIFIED`，任一非 REVOKED 状态可到 `REVOKED`；REVOKED 终态。认证收据事务先插 REGISTERED，再走合法边到 VERIFIED；CERTIFIED/ACTIVE 必须同时具有 `certification_report_ref/certification_report_digest`，ACTIVE 还必须具有 `verified_at/certified_at/activated_at`，PROD 环境拒绝 DEV 签名。报告 ref grammar、编译期根、owner/DACL/reparse 防护、最大 1 MiB strict report、`AI_RESOURCE_CERTIFICATION_V1` ECDSA P-256 sidecar、当前 release batch/产品 build/ai runtime/模型包/ABI/profile/server spec/load/gate 逐项绑定与每次激活复验，全部按 F-55 §3.7；`certified_at` 必须等于 report `finished_at`，不得只因 ref/digest 非空判绿。身份、摘要、签名、安装根/收据、提示版本、Runtime ABI、模型限制和 execution profile 全部不可更新；升级登记新行。
@@ -75,9 +75,9 @@ Stage 14 的 `AiRuntimeReleaseFactsV1` 只是由当前签名 PE/Cargo.lock/vendo
 | created_by、updated_by | uuid | 否 | 无 | 以 `(legal_entity_id,user_id)` 指向法人授权 |
 | code | text | 否 | 无 | 法人内唯一，`^[a-z][a-z0-9._-]{0,63}$` |
 | name | text | 否 | 无 | 1..200 |
-| direction | text | 否 | 无 | `INBOUND|OUTBOUND` |
-| transport | text | 否 | 无 | `INBOUND_HTTPS|REMOTE_STREAMABLE_HTTP|LOCAL_SIGNED_STDIO|LOCAL_WINDOWS_HYPERV_CONTAINER` |
-| status | text | 否 | `REGISTERED` | `REGISTERED|PENDING_APPROVAL|ENABLED|DISABLED|REVOKED` |
+| direction | text | 否 | 无 | `INBOUND\|OUTBOUND` |
+| transport | text | 否 | 无 | `INBOUND_HTTPS\|REMOTE_STREAMABLE_HTTP\|LOCAL_SIGNED_STDIO\|LOCAL_WINDOWS_HYPERV_CONTAINER` |
+| status | text | 否 | `REGISTERED` | `REGISTERED\|PENDING_APPROVAL\|ENABLED\|DISABLED\|REVOKED` |
 
 shape CHECK 固定为 INBOUND 只能配 `INBOUND_HTTPS`，OUTBOUND 只能配其余三值。`UNIQUE(legal_entity_id,id)`、`UNIQUE(legal_entity_id,code)`、`UNIQUE(legal_entity_id,id,direction,transport)` 均建立为候选键。状态边固定 `REGISTERED→PENDING_APPROVAL→DISABLED`、`DISABLED→ENABLED`、`ENABLED→DISABLED`，任一非 REVOKED 状态可到 `REVOKED`；REVOKED 终态。ENABLE 必须在同一事务证明恰有一份同 connector 的 compatible ACTIVE manifest、credential probe 成功，且 F-56 同一 current signed grant 在本行 `legal_entity_id` scope 内含 `F55Mcp`、状态为 `Active|ExpiringSoon|GracePeriod`；并要求共同 `RG-LICENSE-MODULE-LIFECYCLE-GREEN` 与 `RG-MCP-CONFORMANCE-GREEN|RG-MCP-CONTAINMENT-GREEN` 对同一 run/deployment/build 均真实通过。历史 purchased、配置开关、模块码或人工证据不能替代 currently licensed；DISABLE/REVOKE 在 Restricted 中仍允许并保留全部版本与审计。
 
@@ -94,7 +94,7 @@ shape CHECK 固定为 INBOUND 只能配 `INBOUND_HTTPS`，OUTBOUND 只能配其�
 | registry_payload_sha256 | bytea | 否 | 无 | `registry_jcs` raw bytes SHA-256，32 bytes；digest 不嵌入自身 payload |
 | source_generation_item_id | uuid | 否 | 无 | `MCP_TRANSPORT_REGISTRY` generation item 的 immutable ID |
 | source_generation_payload_sha256 | bytea | 否 | 无 | 当前 signed generation payload digest，32 bytes |
-| state | text | 否 | `ACTIVE` | `ACTIVE|SUPERSEDED`；只有新 ACTIVE 插入可把原 ACTIVE 原子 supersede |
+| state | text | 否 | `ACTIVE` | `ACTIVE\|SUPERSEDED`；只有新 ACTIVE 插入可把原 ACTIVE 原子 supersede |
 | active_slot | smallint | 是 | 生成列 | ACTIVE 时 1，否则 NULL |
 | activated_at | timestamptz | 否 | 无 | verified current generation 激活时点 |
 | superseded_at | timestamptz | 是 | 无 | SUPERSEDED 必填，ACTIVE 必空 |
@@ -127,7 +127,7 @@ shape CHECK 固定为 INBOUND 只能配 `INBOUND_HTTPS`，OUTBOUND 只能配其�
 | remote_host | text | 是 | 无 | 规范 ASCII host；无 userinfo/通配符 |
 | remote_port | int | 是 | 无 | 1..65535 |
 | remote_path | text | 是 | 无 | 规范绝对路径，不含 fragment |
-| credential_ref | text | 是 | 无 | 可选 canonical `WindowsCredentialRef`；逐字复用配置参考第 5 节的 grammar、512-byte 引用界与 Win32 `TargetName` 映射，不另造 parser；不存 secret。CredentialBlob 固定 1..2560 bytes（`CRED_MAX_CREDENTIAL_BLOB_SIZE=5*512`），仅由 SCM 加载 profile 后的 `ep-integ|ep-plugin` 服务 current token 经 F-55 维护协议写入；普通管理员 vault 不等价 |
+| credential_ref | text | 是 | 无 | 可选 canonical `WindowsCredentialRef`；逐字复用配置参考第 5 节的 grammar、512-byte 引用界与 Win32 `TargetName` 映射，不另造 parser；不存 secret。CredentialBlob 固定 1..2560 bytes（`CRED_MAX_CREDENTIAL_BLOB_SIZE=5*512`），仅由 SCM 加载 profile 后的 `ep-integ\|ep-plugin` 服务 current token 经 F-55 维护协议写入；普通管理员 vault 不等价 |
 | artifact_legal_entity_id | uuid | 是 | 无 | local transport 必填且等于本行法人 |
 | artifact_attachment_version_id | uuid | 是 | 无 | local 签名包附件版本 |
 | artifact_hash | bytea | 是 | 无 | local artifact SHA-256，固定 32 字节 |
@@ -148,7 +148,7 @@ shape CHECK 固定为 INBOUND 只能配 `INBOUND_HTTPS`，OUTBOUND 只能配其�
 | wfp_recv_accept_v6_filter_key | uuid | 是 | 无 | stdio `FWPM_LAYER_ALE_AUTH_RECV_ACCEPT_V6` deterministic persistent block key；其余为空 |
 | wfp_resource_assignment_v4_filter_key | uuid | 是 | 无 | stdio `FWPM_LAYER_ALE_RESOURCE_ASSIGNMENT_V4` deterministic persistent block key；其余为空 |
 | wfp_resource_assignment_v6_filter_key | uuid | 是 | 无 | stdio `FWPM_LAYER_ALE_RESOURCE_ASSIGNMENT_V6` deterministic persistent block key；其余为空 |
-| status | text | 否 | `DRAFT` | `DRAFT|PENDING_APPROVAL|APPROVED|ACTIVE|SUPERSEDED|REJECTED|REVOKED` |
+| status | text | 否 | `DRAFT` | `DRAFT\|PENDING_APPROVAL\|APPROVED\|ACTIVE\|SUPERSEDED\|REJECTED\|REVOKED` |
 | approval_ref | uuid | 是 | 无 | 审批实例引用 |
 | approved_by、rejected_by | uuid | 是 | 无 | 法人授权用户证据 |
 | approved_at、rejected_at | timestamptz | 是 | 无 | 审批结论时点 |
@@ -203,7 +203,7 @@ gateway/plugin-host 的 manifest 公钥不进数据库。唯一离线验证根�
 | last_proof_counter | bigint | 否 | 0 | 无前导零 u64 逻辑范围；数据库非负且始终等于 used_calls |
 | issued_at | timestamptz | 否 | `now()` | 签发时点 |
 | expires_at | timestamptz | 否 | 无 | `issued_at < expires_at <= issued_at + 600 seconds` |
-| state | text | 否 | `ACTIVE` | `ACTIVE|CONSUMED|REVOKED|EXPIRED` |
+| state | text | 否 | `ACTIVE` | `ACTIVE\|CONSUMED\|REVOKED\|EXPIRED` |
 | revoked_at | timestamptz | 是 | 无 | 仅 REVOKED 必填 |
 
 两组允许项不能同时为空。token 的唯一 wire grammar 是 `epmcp1.` + 恰好 32 个 CSPRNG bytes 的 43-char RFC 4648 §5 base64url-no-pad，全串恰好 50 ASCII bytes；解析必须满足 `\Aepmcp1\.[A-Za-z0-9_-]{43}\z`、解码恰好 32 bytes，并且无 padding 重编码后逐 byte 等于输入。hash 与 DPoP 均使用完整 50-byte ASCII token，不是解码后的随机 bytes。`UNIQUE(legal_entity_id,id)` 与 `UNIQUE(token_hash)` 固定。真实父链固定为：
@@ -223,7 +223,7 @@ gateway/plugin-host 的 manifest 公钥不进数据库。唯一离线验证根�
 
 | 列名 | 类型 | 可空 | 默认 | 语义 |
 |---|---|---:|---|---|
-| carrier_kind | text | 是 | 无 | 完整行：`CUSTOMER_CONTROLLED_PHYSICAL|CUSTOMER_CONTROLLED_DOMESTIC_IAAS_VM` |
+| carrier_kind | text | 是 | 无 | 完整行：`CUSTOMER_CONTROLLED_PHYSICAL\|CUSTOMER_CONTROLLED_DOMESTIC_IAAS_VM` |
 | provider_code | text | 是 | 无 | 完整行：物理机固定 `CUSTOMER_CONTROLLED`；VM 为批准 provider code |
 | region_code | text | 是 | 无 | 完整行：物理机为 site code；VM 为 provider region code |
 | residency_jurisdiction_code | text | 是 | 无 | 完整行：合同数据驻留法域码 |

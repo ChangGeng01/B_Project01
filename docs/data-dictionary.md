@@ -434,7 +434,7 @@ NULL-safe CHECK 强制两类字段组合：SIGN_IN_MFA 从 ISSUED 直接到 CONS
 | source_event_id | uuid | 否 | 无 | 触发事件 id；同法人唯一 |
 | source_event_type | text | 否 | 无 | 首版只允许 `clm.contract.terminated.v1` |
 | reason | text | 否 | 无 | 清洗后的来源动作理由，长度 1 至 2000 |
-| status | text | 否 | 无 | `RUNNING|DONE|FAILED` |
+| status | text | 否 | 无 | `RUNNING\|DONE\|FAILED` |
 | item_total | int | 否 | 0 | 目录占位与真实目标项目总数，非负 |
 | item_done | int | 否 | 0 | DONE 数，非负且不大于总数 |
 | item_dead | int | 否 | 0 | DEAD 数，非负且不大于总数 |
@@ -456,8 +456,8 @@ CHECK：RUNNING 的 `finished_at` 为空；DONE 必须 `finished_at` 非空、`i
 | target_doc_id | uuid | 是 | 无 | 未接线占位及 `NO_APPLICABLE_TARGET` 目录终态为空，真实目标项目必填 |
 | target_doc_no | text | 是 | 无 | 目标为空的目录项为空；仅展示，不作授权依据 |
 | target_doc_line_no | int | 是 | 无 | 非空时大于 0 |
-| disposition_kind | text | 否 | 无 | `AUTO_CLOSE|AUTO_CANCEL|MANUAL_DECISION|INFORM_ONLY` |
-| state | text | 否 | 无 | `PENDING|DISPATCHING|DONE|DEAD` |
+| disposition_kind | text | 否 | 无 | `AUTO_CLOSE\|AUTO_CANCEL\|MANUAL_DECISION\|INFORM_ONLY` |
+| state | text | 否 | 无 | `PENDING\|DISPATCHING\|DONE\|DEAD` |
 | attempts | smallint | 否 | 0 | 0..9；首投失败为 1，第八次重试仍失败为 9 |
 | available_at | timestamptz | 否 | now() | 下一次可领取时间 |
 | locked_by、locked_until | text、timestamptz | 是 | 无 | 同空同非空；只允许 DISPATCHING 持有 |
@@ -483,7 +483,7 @@ audit `after` 恰为 `{schema_version:1,purpose:"EP-MODULE-SIGNER-REVOKED-DISABL
 |---|---|---|---|---|
 | module_code | text | 否 | 无 | foundation 的 15 个 `ModuleCode` 之一，全表唯一 |
 | display_name | text | 否 | 无 | 1..64 UTF-8 bytes |
-| install_state | text | 否 | 无 | `NOT_INSTALLED|INSTALLED_DISABLED|INSTALLED_ENABLED` |
+| install_state | text | 否 | 无 | `NOT_INSTALLED\|INSTALLED_DISABLED\|INSTALLED_ENABLED` |
 | installed_at | timestamptz | 是 | 无 | 首次 INSTALL 时点 |
 | state_changed_at | timestamptz | 是 | 无 | 最近动作提交时点 |
 | package_id | uuid | 是 | 无 | 内层 manifest `package_id` |
@@ -562,30 +562,30 @@ initial-governance 只使用一套 typed evidence：`projection_digest(domain,dt
 | deployment_id | uuid | 否 | 无 | 必须等于签名部署清单和 Stage 14 current deployment id |
 | governance_legal_entity_id | uuid | 否 | 无 | 首张 RELEASED grant 冻结的部署治理法人；真实 FK 指向 `platform_core.legal_entities(id) ON DELETE RESTRICT`，全部后继逐字相同且 LIST scope 必含 |
 | issued_to | text | 否 | 无 | 1..256 UTF-8 bytes |
-| license_kind | text | 否 | 无 | `PERPETUAL|SUBSCRIPTION` |
+| license_kind | text | 否 | 无 | `PERPETUAL\|SUBSCRIPTION` |
 | issued_at | timestamptz | 否 | 无 | 签发时刻，UTC 秒精度 |
 | valid_from | date | 否 | 无 | 生效日 |
 | valid_to | date | 是 | 无 | SUBSCRIPTION 必填且不早于 valid_from；PERPETUAL 必空 |
 | maintenance_valid_to | date | 是 | 无 | SUBSCRIPTION 等于 valid_to；PERPETUAL 为空或不早于 valid_from |
-| legal_entity_scope | text | 否 | 无 | `ALL|LIST` |
+| legal_entity_scope | text | 否 | 无 | `ALL\|LIST` |
 | legal_entity_ids | uuid[] | 否 | `'{}'` | ALL 恰为空；LIST 为按 wire bytes 排序去重的 1..1024 个 UUID，并必须包含 `governance_legal_entity_id` |
 | legal_entity_limit | int | 否 | 无 | 1..1,000,000 |
 | named_user_limit | int | 否 | 无 | 1..1,000,000 |
 | registered_device_limit | int | 否 | 无 | 1..1,000,000 |
 | module_codes | text[] | 否 | 无 | 排序、去重、非空；元素取 15 个 ModuleCode |
-| entitlement_codes | text[] | 否 | `'{}'` | 排序、去重、可为空；元素只取 `F55_LOCAL_AI|F55_MCP` |
+| entitlement_codes | text[] | 否 | `'{}'` | 排序、去重、可为空；元素只取 `F55_LOCAL_AI\|F55_MCP` |
 | payload_sha256 | bytea | 否 | 无 | 32 raw bytes；JSON wire 只收 64 lowerhex，从本行 grant 列重建 JCS 后必须相等 |
 | signature | bytea | 否 | 无 | grant detached CMS exact bytes，1..1,048,576 bytes |
 | signer_subject | text | 否 | 无 | exact `spki-sha256:<64 lowerhex>`，逐字命中签名 `DeploymentManifestV1.license_trusted_signer_subjects` 唯一 roster；显示 DN 不参与比较 |
 | trust_bundle_sha256 | bytea | 否 | 无 | 32 bytes；grant 首次 RELEASE 时使用的离线 release trust bundle 摘要，必须等于 `grant_source_config_item_id` 所指 RELEASED item 的 `accepted_trust_bundle_sha256`；不可变且不要求永久等于以后轮换出的当前 bundle 摘要 |
 | supersedes_grant_id | uuid | 是 | 无 | 自 FK `ON DELETE RESTRICT`；首 grant 为空，续期指 current 直接前驱，不得成环 |
 | superseded_at | timestamptz | 是 | 无 | 移出 current slot 的可信时点 |
-| current_slot | smallint | 是 | 无 | 只允许 `0|null`，普通唯一键保证至多一张 current |
+| current_slot | smallint | 是 | 无 | 只允许 `0\|null`，普通唯一键保证至多一张 current |
 | last_trusted_at | timestamptz | 否 | 无 | UTC 秒精度；新 grant 初值固定为 `max(pre_import_trusted_now,candidate.issued_at)`，此后只允许单调推进 |
 | revoked_at | timestamptz | 是 | 无 | 接受撤销的本地可信时点 |
 | revocation_id | uuid | 是 | 无 | signed revocation id；非空时唯一 |
 | revocation_issued_at | timestamptz | 是 | 无 | signed revocation `issued_at`，UTC 秒精度 |
-| revocation_reason_code | text | 是 | 无 | `CONTRACT_ENDED|REISSUED|COMPROMISED|CUSTOMER_REQUEST` |
+| revocation_reason_code | text | 是 | 无 | `CONTRACT_ENDED\|REISSUED\|COMPROMISED\|CUSTOMER_REQUEST` |
 | revocation_payload_sha256 | bytea | 是 | 无 | 撤销组非空时 32 raw bytes；JSON wire 只收 64 lowerhex，按列重建 JCS 后必须相等 |
 | revocation_signature | bytea | 是 | 无 | 撤销组非空时 detached CMS exact bytes，1..1,048,576 bytes |
 | revocation_signer_subject | text | 是 | 无 | exact `spki-sha256:<64 lowerhex>`；显示 DN 仅展示 |
@@ -988,7 +988,7 @@ Stage 11 的 `V20261020090130__sales_add_costing_capture_foreign_keys.sql` 为�
 | 列 | 类型 | 可空 | 规则 |
 |---|---|---:|---|
 | code | text | 否 | 法人内唯一，类型码 `WHSE`，首次生效后冻结 |
-| status | text | 否 | `DRAFT|PENDING_APPROVAL|EFFECTIVE|VOID` |
+| status | text | 否 | `DRAFT\|PENDING_APPROVAL\|EFFECTIVE\|VOID` |
 | is_active | boolean | 否 | 默认 true |
 | deactivated_at | timestamptz | 是 | 与 is_active 一致 |
 | version_no | bigint | 否 | 默认 0，已生效时大于 0 |
@@ -1018,12 +1018,12 @@ Stage 11 的 `V20261020090130__sales_add_costing_capture_foreign_keys.sql` 为�
 | accounting_period_id | uuid | 否 | 同法人复合外键指向 `ledger.accounting_periods` |
 | accounting_period_seq | int | 否 | 法人内会计期间单调序号 |
 | deferred_from_period_id | uuid | 是 | 非空时同法人复合外键指向 `ledger.accounting_periods`，记录关期顺延来源 |
-| direction | text | 否 | `IN|OUT|VALUE_ADJUST` |
-| reason | text | 否 | `PURCHASE_RECEIPT|SALES_RETURN|DELIVERY_CONFIRMATION|PURCHASE_RETURN|PURCHASE_INVOICE_VARIANCE|MIGRATION_OPENING|MIGRATION_HISTORY` |
-| source_doc_type | text | 否 | `PURCHASE_RECEIPT|PURCHASE_RETURN|DELIVERY_CONFIRMATION|SALES_RETURN|PURCHASE_INVOICE|MIGRATION_STOCK_ADJUSTMENT|MIGRATION_STOCK_HISTORY` |
+| direction | text | 否 | `IN\|OUT\|VALUE_ADJUST` |
+| reason | text | 否 | `PURCHASE_RECEIPT\|SALES_RETURN\|DELIVERY_CONFIRMATION\|PURCHASE_RETURN\|PURCHASE_INVOICE_VARIANCE\|MIGRATION_OPENING\|MIGRATION_HISTORY` |
+| source_doc_type | text | 否 | `PURCHASE_RECEIPT\|PURCHASE_RETURN\|DELIVERY_CONFIRMATION\|SALES_RETURN\|PURCHASE_INVOICE\|MIGRATION_STOCK_ADJUSTMENT\|MIGRATION_STOCK_HISTORY` |
 | source_doc_id | uuid | 否 | 与 type/module 组成封闭多态来源 |
 | source_doc_no | text | 否 | 长度 1..64 |
-| source_module | text | 否 | 由 type 派生，`procure|sales|invoice|migration` |
+| source_module | text | 否 | 由 type 派生，`procure\|sales\|invoice\|migration` |
 | line_count | int | 否 | 数据库 CHECK 固定 `line_count BETWEEN 1 AND 200`；计价段而非来源业务行数量 |
 | request_hash | bytea | 否 | `SHA-256(JCS(command))`，CHECK 固定 32 字节 |
 
@@ -1042,7 +1042,7 @@ NULL-safe 组合 CHECK 只允许九组 `direction/reason/source_doc_type/source_
 | batch_no | text | 否 | 默认 `'-'`，长度 1..64，字符集 `[A-Za-z0-9._-]` |
 | quantity | numeric(18,6) | 否 | 非零；IN 为正，OUT 为负 |
 | qty_balance_after | numeric(18,6) | 否 | 大于等于 0 |
-| direction | text | 否 | `IN|OUT`，与 quantity 符号组成完整 CHECK |
+| direction | text | 否 | `IN\|OUT`，与 quantity 符号组成完整 CHECK |
 | business_date | date | 否 | 冗余自 movement |
 | accounting_period_id | uuid | 否 | 同法人复合外键指向会计期间，值冗余自 movement |
 | accounting_period_seq | int | 否 | 冗余自 movement |
@@ -1062,9 +1062,9 @@ NULL-safe 组合 CHECK 只允许九组 `direction/reason/source_doc_type/source_
 | warehouse_id、material_id | uuid | 否 | 分别同法人复合外键指向 MDM 仓库、物料 |
 | quantity | numeric(18,6) | 否 | IN 正、OUT 负、VALUE_ADJUST 为 0 |
 | amount | numeric(18,2) | 否 | IN 非负、OUT 非正、VALUE_ADJUST 非零 |
-| direction | text | 否 | `IN|OUT|VALUE_ADJUST`，冗余自 movement |
+| direction | text | 否 | `IN\|OUT\|VALUE_ADJUST`，冗余自 movement |
 | applied_unit_price | numeric(18,6) | 否 | 大于等于 0；VALUE_ADJUST 为 0 |
-| pricing_branch | text | 否 | `ESTIMATED_PO_PRICE|OVERBILL_INVOICE_PRICE|MOVING_AVERAGE|MOVING_AVERAGE_CLEARING|ORIGINAL_DELIVERY_PRICE|VARIANCE_ON_HAND|MIGRATION_OPENING|MIGRATION_HISTORY` |
+| pricing_branch | text | 否 | `ESTIMATED_PO_PRICE\|OVERBILL_INVOICE_PRICE\|MOVING_AVERAGE\|MOVING_AVERAGE_CLEARING\|ORIGINAL_DELIVERY_PRICE\|VARIANCE_ON_HAND\|MIGRATION_OPENING\|MIGRATION_HISTORY` |
 | value_balance_after | numeric(18,2) | 否 | 大于等于 0 |
 | qty_balance_after | numeric(18,6) | 否 | 大于等于 0 |
 | moving_avg_unit_price_after | numeric(18,6) | 否 | 大于等于 0 |

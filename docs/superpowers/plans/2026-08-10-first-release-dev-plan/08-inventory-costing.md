@@ -141,7 +141,7 @@ schema 固定为 `inventory`，属主角色 `ep_mod_inventory`，运行期读写
 | material_id | uuid | 否 | |
 | quantity | numeric(18,6) | 否 | 与同源数量流水同值，VALUE_ADJUST 时为 0 |
 | amount | numeric(18,2) | 否 | 入库大于等于 0、出库小于等于 0、调整可正可负；方向组合 CHECK 固定此符号，单价为零时取 0，理由见第 4.3 节边界条件 |
-| direction | text | 否 | 冗余自 movement，取 `IN|OUT|VALUE_ADJUST`；与 amount 的 CHECK 固定为 `(IN AND amount>=0) OR (OUT AND amount<=0) OR VALUE_ADJUST`，R3 逐行核对与 movement 一致 |
+| direction | text | 否 | 冗余自 movement，取 `IN\|OUT\|VALUE_ADJUST`；与 amount 的 CHECK 固定为 `(IN AND amount>=0) OR (OUT AND amount<=0) OR VALUE_ADJUST`，R3 逐行核对与 movement 一致 |
 | applied_unit_price | numeric(18,6) | 否 | 本次实际取价，VALUE_ADJUST 时为 0 |
 | pricing_branch | text | 否 | ck 取值见下文八项 |
 | value_balance_after | numeric(18,2) | 否 | |

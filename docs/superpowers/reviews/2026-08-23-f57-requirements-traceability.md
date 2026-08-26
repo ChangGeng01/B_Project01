@@ -314,7 +314,7 @@
 | NFR-006 | F57 | 正式服务器原生支持 Windows Server 2022，不依赖 WSL | RETAINED | authority-runtime | 安装、服务和补丁测试 |
 | NFR-007 | F57 | 容量档绑定硬件、数据规模、配置代和实测基准 | EXPANDED | capacity | profile 签名与失效测试 |
 | NFR-008 | F57 | 暖备必须证明单写 fencing；任何实测 RPO/RTO 只能按 `NFR-014` 登记为候选 SLO，未连续取证不得认证 | EXPANDED | availability | 分区、旧主隔离、提升、证书绑定和未认证展示阻断测试 |
-| NFR-009 | F57 | IaaS 使用同一产品包、客户控制且位于获准境内区域；manifest 记录 provider/region/tenant control/vTPM/media/cache/snapshot 证据，HDD 介质或处理位置不能证明时失败关闭，禁止托管数据库/KMS/队列偷换 | EXPANDED | carrier | 物理/IaaS exact carrier、region/vTPM/media/cache/snapshot/provider-root 与托管组件负向测试 |
+| NFR-009 | F57 | 当前首版只接受 P340；`IAAS_WINDOWS_SERVER_HDD_STRICT` 仅保留为未来独立 profile 接口，当前 selector 必须稳定返回 `PROFILE_NOT_IMPLEMENTED` / `STORAGE_MEDIA_UNVERIFIED`，禁止进入候选、发布或生产 terminal。未来新 graph/profile version 才可要求同一产品包、客户控制、获准境内区域及 provider/region/tenant control/vTPM/media/cache/snapshot 证据，并继续禁止托管数据库/KMS/队列偷换 | DEFERRED_WITH_INTERFACE | carrier | 当前 IaaS selector/route/terminal 全部拒绝、P340 证据不可复用；未来 profile 的 region/vTPM/media/cache/snapshot/provider-root 与托管组件负向契约测试 |
 | NFR-010 | PRD/F57 | 错误码稳定且有关联 ID，不暴露堆栈、对象或秘密 | RETAINED | error-registry | error contract 测试 |
 | NFR-011 | F57 | 故障矩阵覆盖断电、满盘、坏盘、锁、重复、网络和插件 | EXPANDED | verification | fault-injection suite |
 | NFR-012 | F57 | 必须从洁净 Windows Server 和备份恢复完整权威环境 | EXPANDED | recovery | bare-metal recovery drill |

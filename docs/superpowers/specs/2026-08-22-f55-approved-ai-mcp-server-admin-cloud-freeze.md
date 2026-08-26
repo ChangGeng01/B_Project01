@@ -1099,8 +1099,8 @@ MCP 调用不另建调用日志表。`MCP_AUDIT_NAMESPACE` 固定为 UUID `3f9b8
 | 阶段/方法 | `decoded_name_sha256` | `binding_digest` | `request_schema_code/version` | `input_field_codes` |
 |---|---|---|---|---|
 | 六方法在 identity 后但 name/URI 尚未成功规范解码 | NULL | NULL | NULL | `[]` |
-| `server/discover|tools/list|resources/list|resources/templates/list` 通过 transport schema | NULL | NULL | NULL | `[]` |
-| `tools/call|resources/read` 已规范解码、binding 尚未解析/不可见 | exact decoded name/URI SHA-256 lowerhex | NULL | NULL | `[]` |
+| `server/discover\|tools/list\|resources/list\|resources/templates/list` 通过 transport schema | NULL | NULL | NULL | `[]` |
+| `tools/call\|resources/read` 已规范解码、binding 尚未解析/不可见 | exact decoded name/URI SHA-256 lowerhex | NULL | NULL | `[]` |
 | `tools/call` binding 已解析 | 同上 | canonical binding JCS SHA-256 lowerhex | binding 的 request schema code/正整数 version | 实际允许输入字段 code 集；无字段为 `[]` |
 | `resources/read` binding 已解析 | 同上 | canonical binding JCS SHA-256 lowerhex | NULL | `[]` |
 
@@ -1324,14 +1324,14 @@ F-55 建议预留以下 9 个全局唯一 14 位版本。它们在本文中是�
 
 | 键 | 默认/边界 |
 |---|---|
-| `EP__AI__ENABLED` | false；只有 F-56 current grant 对目标法人含 `F55LocalAi`、状态为 `Active|ExpiringSoon|GracePeriod`，`RG-LICENSE-MODULE-LIFECYCLE-GREEN`、ACTIVE 模型和两项 AI 门禁均成立才可 true |
+| `EP__AI__ENABLED` | false；只有 F-56 current grant 对目标法人含 `F55LocalAi`、状态为 `Active\|ExpiringSoon\|GracePeriod`，`RG-LICENSE-MODULE-LIFECYCLE-GREEN`、ACTIVE 模型和两项 AI 门禁均成立才可 true |
 | `EP__AI__PLAN_TTL_SECONDS` | 固定 300，不可调高 |
 | `EP__AI__MAX_CONCURRENT_REQUESTS` | 固定 15；必须与资源认证负载一致 |
 | `EP__AI__QUEUE_CAPACITY` | 固定 30 |
 | `EP__AI__COMPOSE_TIMEOUT_MS` | 固定 120000 |
 | `EP__AI__RESULT_ROW_LIMIT` | 固定 1000 |
 | `EP__AI__RESULT_BYTES_LIMIT` | 固定 8388608 |
-| `EP__MCP__INBOUND_ENABLED` | false；只有 F-56 current grant 对目标法人含 `F55Mcp`、状态为 `Active|ExpiringSoon|GracePeriod`，`RG-LICENSE-MODULE-LIFECYCLE-GREEN`、compatible ACTIVE inbound manifest、`RG-MCP-CONFORMANCE-GREEN` 与 `RG-MCP-CONTAINMENT-GREEN` 同时成立才可 true |
+| `EP__MCP__INBOUND_ENABLED` | false；只有 F-56 current grant 对目标法人含 `F55Mcp`、状态为 `Active\|ExpiringSoon\|GracePeriod`，`RG-LICENSE-MODULE-LIFECYCLE-GREEN`、compatible ACTIVE inbound manifest、`RG-MCP-CONFORMANCE-GREEN` 与 `RG-MCP-CONTAINMENT-GREEN` 同时成立才可 true |
 | `EP__MCP__OUTBOUND_ENABLED` | false；只有与入站相同的一项 F-56 `F55Mcp` 当前授权及 `RG-LICENSE-MODULE-LIFECYCLE-GREEN` 成立，且 compatible ACTIVE outbound manifest、`RG-MCP-CONFORMANCE-GREEN` 与 `RG-MCP-CONTAINMENT-GREEN` 同时成立才可 true；不存在方向许可证 |
 | `EP__MCP__GRANT_TTL_SECONDS` | 默认/最大均 600 |
 | `EP__MCP__MAX_CALLS_PER_GRANT` | 默认/最大均 100 |

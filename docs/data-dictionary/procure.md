@@ -19,9 +19,9 @@
 | created_at | timestamptz | 否 | 效果追加时点 |
 | created_by | uuid | 否 | 主体或固定系统主体 |
 | goods_receipt_line_id | uuid | 否 | 同 schema 外键 |
-| source_kind | text | 否 | `GOODS_RECEIPT|PURCHASE_RETURN|PURCHASE_INVOICE|PURCHASE_CREDIT_NOTE` |
+| source_kind | text | 否 | `GOODS_RECEIPT\|PURCHASE_RETURN\|PURCHASE_INVOICE\|PURCHASE_CREDIT_NOTE` |
 | source_doc_line_id | uuid | 否 | 来源业务行；同 schema 用 FK，跨 schema 经 owner 契约校验 |
-| direction | text | 否 | `INCREASE|DECREASE`，符号不编码在金额中 |
+| direction | text | 否 | `INCREASE\|DECREASE`，符号不编码在金额中 |
 | quantity | numeric(18,6) | 否 | `>= 0`；与 amount 至少一项大于零 |
 | amount | numeric(18,2) | 否 | `>= 0`；与 quantity 至少一项大于零；MidpointAwayFromZero 到 2 位 |
 | accounting_period_id | uuid | 否 | 只取 `ResolvedPeriod` |

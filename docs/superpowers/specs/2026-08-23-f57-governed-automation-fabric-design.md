@@ -19,17 +19,37 @@
 
 ### 1.1 现行权威顺序
 
-发生文字差异时，按以下顺序解释：
+发生文字差异时，只有下面恰 25 份具名文件参加全局 precedence。README、评审和取代登记只能链接本表，不得复制、缩写或另排一套顺序。每一行只包含一份可定位文件；数字越小优先级越高：
 
 1. 本文 F-57 总体设计；
-2. [F-57 业务执行契约](2026-08-23-f57-business-execution-contract.md)与[客户端/生命周期/安全运营执行契约](2026-08-23-f57-client-lifecycle-security-contract.md)；
-3. [F-57 需求追踪矩阵](../reviews/2026-08-23-f57-requirements-traceability.md)与[权威和取代登记](../reviews/2026-08-23-f57-authority-supersession-register.md)；
-4. ADR-0023/ADR-0024 的窄技术冻结、[Windows/P340 生产档案](2026-08-23-f57-windows-p340-production-profile.md)和仓库级威胁模型的 F-57 现行部分；
-5. `docs/f57-task-ownership.seed.tsv`、`docs/f57-migration-baseline.v1.tsv` 与 `docs/f57-legacy-migration-disposition.seed.tsv` 三份设计时冻结登记；baseline 文件以 SHA-256=`52930d7ae32ee02ddda38199bcc144f5f6747fcfbe33e740741a0f21604ca8fd` 冻结 78 行（66 个不可变已存在、3 个待受控修订后应用、7 个由 F-57 取代且必须缺席、2 个延期接口且必须缺席）。它与后者 310 行 exact-join 为 388 行 pre-F57 catalog；2026-08-24 收敛修订只把后者的 `aggregate_replacement_paths` 重绑到现行 47 条 reservation（42 条承担旧迁移替代，5 条是净新增 F-57 基础），未改变 legacy version/path、disposition、owner bucket 或 mapping rule；legacy 完整文件 SHA-256 固定为 `06566ca354b6279391e5ec3a0152316a8eb38d1f10cb09dc23953370883c3196`。两份登记都不得由实现者改写；G0 只允许按 baseline 中三个 `target_contract_id` 修订对应草案，并由生成 apply manifest 与候选 receipt 绑定 postimage；
-6. [F-57 收敛实施主计划](../plans/2026-08-24-f57-converged-program.md)及其四份可执行子计划；计划只能落实上位契约，不能弱化或改写其 exact-set、状态、守恒、安全边界和阶段状态；2026-08-23 版旧计划永久保留为 `HISTORICAL_DETAIL_INPUT`，不得按原 25 项全局串行顺序执行；
-7. F-50 财务一致性裁定和首版 PRD 中未被 F-57 改变的领域细节；
-8. 收敛计划 G0 完成 F-57 再基线后的数据字典、接口、迁移、错误码、事件、指标和影响面机器登记表；G0 之前它们只是受控历史输入；
-9. F-51、F-55、F-56及更早设计、计划和评审，仅在本文明确保留的窄范围内继续有效。
+2. [F-57 业务执行契约](2026-08-23-f57-business-execution-contract.md)；
+3. [客户端/生命周期/安全运营执行契约](2026-08-23-f57-client-lifecycle-security-contract.md)；
+4. [F-57 需求追踪矩阵](../reviews/2026-08-23-f57-requirements-traceability.md)；
+5. [权威和取代登记](../reviews/2026-08-23-f57-authority-supersession-register.md)；
+6. [ADR-0025](../../adr/ADR-0025-f57-capability-graph-and-feature-first-boundaries.md)；
+7. [ADR-0024](../../adr/ADR-0024-f57-backup-key-envelope.md)；
+8. [ADR-0023](../../adr/ADR-0023-f57-provider-manifest-resource-grant.md)；
+9. [ADR-0022](../../adr/ADR-0022-f57-multi-lane-ci-and-windows-2022-authority.md)；
+10. [ADR-0021](../../adr/ADR-0021-epb1-backup-envelope.md)；
+11. [ADR-0020](../../adr/ADR-0020-dual-recipient-data-key-recovery.md)；
+12. [ADR-0019](../../adr/ADR-0019-f57-runtime-topology-and-measured-connection-budget.md)；
+13. [Windows/P340 生产档案](2026-08-23-f57-windows-p340-production-profile.md)；
+14. [仓库级威胁模型](../../threat-model.md)（仅该文件首页声明的 F-57 现行部分）；
+15. [`docs/f57-task-ownership.seed.tsv`](../../f57-task-ownership.seed.tsv)；
+16. [`docs/f57-migration-baseline.v1.tsv`](../../f57-migration-baseline.v1.tsv)；
+17. [`docs/f57-legacy-migration-disposition.seed.tsv`](../../f57-legacy-migration-disposition.seed.tsv)；
+18. [F-57 收敛实施主计划](../plans/2026-08-24-f57-converged-program.md)；
+19. [G0 启动计划](../plans/2026-08-24-f57-g0-bootstrap-implementation.md)；
+20. [G1/G2 权威主干计划](../plans/2026-08-24-f57-authority-spine-implementation.md)；
+21. [G3/G4 CTC-01 计划](../plans/2026-08-24-f57-ctc01-implementation.md)；
+22. [G5/G6 扩展与发布计划](../plans/2026-08-24-f57-expansion-release-implementation.md)；
+23. [F-50 财务一致性裁定](2026-08-21-f50-financial-consistency-design.md)；
+24. [《管理软件基本需求》原始需求](../../介绍/管理软件基本需求.docx)；
+25. [首版 PRD](2026-08-09-first-release-prd.md) 中未被以上文件改变的领域细节。
+
+F-51、F-55、F-56、2026-07-19 设计、旧十四阶段计划、旧评审、配置/数据字典等未列文件不组成隐含的第 26 级，也不能彼此按日期裁决。它们只可作为历史/detail input：其中窄规则只有在上面 1–25 的某份文件明确重述，或以具名文件与具名章节/登记项精确绑定时，才通过该上位文件获得现行效力。若实施需要一个未被 1–25 收编的旧细节，或两个未列输入互相不等，文档门必须失败并先修订上位文件；不得由开发者猜测、按日期选新、或把“明确保留”解释成整份旧文件复活。
+
+其中三份冻结登记仍保持原有内容与摘要：baseline 以 SHA-256=`52930d7ae32ee02ddda38199bcc144f5f6747fcfbe33e740741a0f21604ca8fd` 冻结 78 行（66 个不可变已存在、3 个待受控修订后应用、7 个由 F-57 取代且必须缺席、2 个延期接口且必须缺席），并与 310 行 legacy disposition exact-join 为 388 行 pre-F57 catalog；legacy 完整文件 SHA-256 固定为 `06566ca354b6279391e5ec3a0152316a8eb38d1f10cb09dc23953370883c3196`。实现计划只能落实上位契约，不能弱化 exact-set、状态、守恒、安全边界或阶段状态。G0 生成的数据字典、接口、迁移、错误码、事件、指标和影响面投影在运行时是图绑定的机器读物，但永远不能反向覆盖 CapabilityGraph；生成物与本表上位输入不等时必须失败关闭，而不是再用“后生成者优先”裁决。
 
 低位文档不得反向恢复被本文取代的固定角色、固定九进程、首版本地模型、声明式内置模块包限制、SSD 持久化缓存或旧管理端形态。
 
@@ -122,7 +142,7 @@ Workbench 是办公端，只负责显示、输入、设备能力、最小离线�
 
 权威节点必须以原生 Windows 服务运行，核心不得依赖 Linux、WSL、Kubernetes、厂商 SaaS 控制平面或第二台应用服务器。Linux 专用 AI/OCR/工业组件只能作为客户可选的外部提供者连接，不能成为核心运行条件。
 
-同一部署包必须支持客户控制的物理 Windows Server 与客户控制的 IaaS Windows Server。云 carrier 不改变客户对操作系统、数据库、数据卷、密钥和更新的控制权。但本项目的 `HDD_STRICT` 生产档只有在云提供者能证明权威卷的底层 HDD 介质、缓存和快照边界符合策略时才能认证；普通 IaaS 云盘只能标记为 `STORAGE_MEDIA_UNVERIFIED`，不得存放本项目要求物理 HDD 的正式生产数据。
+产品架构和安装包格式必须保留未来接入客户控制 IaaS Windows Server 的独立扩展缝，但当前首版生产 profile 只接受物理 P340 的 `SINGLE_DISK_DEGRADED_PRODUCTION`；当前选择 `IAAS_WINDOWS_SERVER_HDD_STRICT` 必须以 `PROFILE_NOT_IMPLEMENTED` / `STORAGE_MEDIA_UNVERIFIED` 失败关闭。未来只有新 graph/profile version 能启用云 carrier，且客户仍须控制操作系统、数据库、数据卷、密钥和更新；云提供者还必须可审计地证明权威卷底层 HDD 介质、缓存和快照边界符合策略。普通 IaaS 云盘不得存放本项目要求物理 HDD 的正式生产数据，P340 证据也不得复用。
 
 Windows Server 2022 是当前首发认证基线，不是永久平台。Microsoft 生命周期页列出的 PT 日期为主流支持截至 2026-10-13、扩展支持截至 2031-10-14。第一阶段必须交付 OS adapter seam、2022 安装/恢复证据、后继 LTSC 探针和签名迁移 playbook；Windows Server 2025 或当时后继 LTSC 的真实安装、原地/并行迁移、驱动、BitLocker/TPM、数据库恢复、服务账号、回滚和业务一致性认证作为明确阶段边界 `DEF-010` 激活。主流支持结束后签发新生产证书必须附补丁来源、支持策略、客户风险接受和已排期迁移认证；扩展支持结束前必须完成迁移。迁移证据未通过不得擅自变更生产基线（稳定需求 `NFR-016`）。
 
@@ -210,6 +230,8 @@ F-57 生产运行时只能采用原生 Windows Service、Service SID、命名管
 ### 4.9 单一能力图与生成投影
 
 系统必须只有一个可签名、可版本化的业务能力语义源 `CapabilityGraphV1`。每个能力节点由唯一 `CapabilityId + version + owning_feature` 标识，并至少绑定 command/query/fact、输入/结果/错误 schema、状态与不变量、授权 scope/conditions/risk/SoD、数据 owner、Objective/closure、允许 carrier、生命周期和证据要求。
+
+复杂语义不得因为不适合塞进一行 graph struct 就退化成第二真值。G0 先建立通用语义合约 wire/compiler/projection；以后每个 owning task 只可读取现行契约中以唯一 BEGIN/END marker 和 digest 明确登记的机器表锚点，并通过 graph-owned 的 exact source-header/index/codec、contract-kind validator 与独立 normalization golden，把状态守卫/不变量、授权 scope/condition/CandidateQuery、Objective trigger/reopen/closure、责任能力、effect intent、timeout、termination和 compensation 转换成排序、强类型的 `SemanticContractRowV1`/`SemanticContractFieldV1`。策略参数、状态定义和 workflow graph 等嵌套结构只能使用 schema-bound `CANONICAL_JCS_OBJECT`，不得降级成普通 UTF8。唯一例外是业务合同 §8.4 的 workflow：它以固定 authoring rule 直接作为 `GRAPH_NATIVE + WORKFLOW_DEFINITION_REGISTRY` 行进入图，禁止另建 Markdown workflow 表。每份绑定都携带 typed provenance、投影路径/摘要、可在 graph root exact-resolve 的 row schema、exact row count、owner 和 projection targets。Graph digest 因而直接覆盖语义行；strict `SemanticContractProjectionV1` JSON 和 `SemanticContractsManifestV1` primary 都从已编译绑定生成，不是编译所需的先决输入。Graph 内的 lifecycle、authorization 和 objective 字段只是对这些绑定行的强类型索引，必须逐字段 exact-join，不能作为另一份可独立修改的摘要；Objective definition、trigger/execution/compensation 用冻结的 15-kind exact row-key set，timeout/termination 用 trigger 所引用的 dedicated policy-ID exact set，workflow 用全局 workflow-ID row key并按 definition.objective_kind 覆盖同一 15-kind set，三者不得混为“都是 15 行”。运行时 registry、OpenAPI、客户端、UI、MCP、Excel 和测试只能从同一已编译绑定生成；契约表、绑定、投影任一不等即整代拒绝，历史 seed 永久不回写。
 
 以下内容只能是同一能力图的确定性投影，不得继续作为可独立手改的第二真值：
 
@@ -747,7 +769,7 @@ CI 分为四层：
 - Tauri 2 是否通过四平台硬门；失败后的唯一回退已固定为 Flutter + Rust；
 - 新增 HDD 的具体型号、控制器或 Windows 镜像实现，以实机证据选择；
 - 客户在已认证 core/provider 目录中启用哪些连接器、身份提供者、密钥提供者和外部 AI；未取证 provider 保持关闭；
-- 客户物理机或 IaaS carrier 的具体网络、备份介质和责任人；
+- 当前客户 P340 物理机的具体网络、备份介质和责任人；未来 IaaS 只有在另行授权的新 graph/profile version 落地后才成为独立现场选择；
 - 法规、财税、密码应用和行业认证所需的专业签字。
 
 这些选择具有固定验证门和失败处置，开发人员不得因此改变本文的产品边界。

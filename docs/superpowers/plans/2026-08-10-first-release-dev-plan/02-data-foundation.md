@@ -56,15 +56,15 @@
 | crate | 归属层 | 装配进程 | 本阶段职责 |
 |---|---|---|---|
 | `ep-adapter-db-pg` | adapter | 同上 | 唯一 PostgreSQL 16 实现：四池构建、`after_connect` 与 `after_release` 钩子、RLS 会话变量、编解码、迁移历史读取、SQLSTATE 23503 的统一错误映射；`PgTx` 与 `PgUnitOfWork` 的声明与实现、`UnitOfWork` 两个方法的唯一实现、重试执行体、四个连接模型类型的定义与取值、公共能力基线到 PostgreSQL 类型与索引的映射 |
-| `ep-adapter-kms` | adapter | core-server、job-worker；系统机密解封按 recipient 注入其他具名消费者 | 内置 KMS 与 HSM 两种数据载体实现，即 `ep_foundation::port::kms` 的 `KmsBackend` 与 `KmsSigningKeyIdentityResolver` 的 `BuiltinKmsBackend|HsmKmsBackend`；另实现 `ep_foundation::port::secret::SecretUnsealer` 的 builtin/HSM recipient-bound 载体。数据 KMS common master 不用于系统机密库；builtin 每 recipient 独立 DPAPI KEK，HSM 每 recipient 独立 nonextractable object |
+| `ep-adapter-kms` | adapter | core-server、job-worker；系统机密解封按 recipient 注入其他具名消费者 | 内置 KMS 与 HSM 两种数据载体实现，即 `ep_foundation::port::kms` 的 `KmsBackend` 与 `KmsSigningKeyIdentityResolver` 的 `BuiltinKmsBackend\|HsmKmsBackend`；另实现 `ep_foundation::port::secret::SecretUnsealer` 的 builtin/HSM recipient-bound 载体。数据 KMS common master 不用于系统机密库；builtin 每 recipient 独立 DPAPI KEK，HSM 每 recipient 独立 nonextractable object |
 | `tools/ep-migrate` | 工具二进制 | 不属八进程，只在迁移窗口内以 `ep_migrator` 运行 | 按 C-02 补齐 `apply`、`status`、`check`、`gen-rls`、`open-window` 五个子命令的实现与六个退出码 |
-| `tools/ep-secretctl` | 工具二进制 | 不属运行期进程；受控本机维护 | 补齐 `bootstrap|put|verify|migrate|finalize-migration|retire|inventory|wincred` 八命令闭集；前七项实现系统机密库，`wincred` 只走配置参考第 5 节的目标服务 current-token 管道协议 |
+| `tools/ep-secretctl` | 工具二进制 | 不属运行期进程；受控本机维护 | 补齐 `bootstrap\|put\|verify\|migrate\|finalize-migration\|retire\|inventory\|wincred` 八命令闭集；前七项实现系统机密库，`wincred` 只走配置参考第 5 节的目标服务 current-token 管道协议 |
 | `ep-foundation` | 底座 | 全部 | 在阶段 1 已建的 `port::kms` 补齐六方法 `KmsBackend`、只读 `KmsSigningKeyIdentityResolver` 与九个词汇/值类型；在 `port::secret` 定义 `SecretUnsealer`、`SecretRef`、`BootstrapRef`、`SecretBytes` 与 recipient 枚举。`SecretBytes` 不实现 Clone/Debug/Display/Serialize。均不新增 foundation 顶层模块或业务概念 |
 | `ep-platform-runtime` | platform | 使用系统机密的进程 | 定义同步只读 `SecretProvider` 与 `KmsSecretProvider`；构造时固化 deployment_id 与 recipient，调用方不能传入或切换 recipient；不提供写入、latest、监听或 fallback |
 | `ep-testkit` | 测试 | 无 | 独占库夹具、法人夹具、安全上下文夹具、越权矩阵驱动器 |
 | `ep-datagen` | 工具 | 无 | 规模参数框架与公共列填充器 |
 | `ep-platform-tenancy` | platform | core-server、job-worker | 按 A-04 交付组织架构五张表的迁移，以及 `LegalEntityDirectory` 与 `DepartmentClosureQuery` 两个 trait 及其 pg 实现 |
-| `ep-platform-obs` | platform | 全部 | 按不可改的 `V20260901104500` 交付 `DegradationLedger` 与初始三值 `DegradationKind`：`OFFSITE_SINK_NOT_CONFIGURED|WRITER_NOT_IN_SERVICE|PORT_NOT_IMPLEMENTED`。Stage 14 的 `V20261023092500` 才扩 Rust 接受域与 DB CHECK 到终态 21 项；另承担第 7.2 节既有指标分工 |
+| `ep-platform-obs` | platform | 全部 | 按不可改的 `V20260901104500` 交付 `DegradationLedger` 与初始三值 `DegradationKind`：`OFFSITE_SINK_NOT_CONFIGURED\|WRITER_NOT_IN_SERVICE\|PORT_NOT_IMPLEMENTED`。Stage 14 的 `V20261023092500` 才扩 Rust 接受域与 DB CHECK 到终态 21 项；另承担第 7.2 节既有指标分工 |
 
 进程侧结论：portal-gateway 与 plugin-host 不链接 `ep-adapter-db-pg`，由 CI 的 `cargo metadata` 断言强制，这是规格第 7.7 章两进程常驻连接数为零的编译期保证，不依赖运行期配置。archive-writer 与 backup-writer 同样不链接该 crate，其复制角色凭据只由各自系统账户持有，本阶段只交付其数据库侧的角色、权限与 `pg_hba` 约束，进程实现属备份阶段；两个写出进程是否投入运行按规格第 7.7 章的部署期与运行期两分判定，部署期三项遏制手段缺一即不得启用该角色、两个写出进程随之不得投入运行，仅该章第三项在角色已启用之后的运行期例外保留。
 

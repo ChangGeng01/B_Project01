@@ -1,6 +1,6 @@
 # F-57 文档权威与取代登记
 
-> 日期：2026-08-23（Australia/Melbourne）
+> 日期：2026-08-23（Australia/Melbourne）；审计更新：2026-08-26
 > 状态：`CURRENT`；2026-08-24 收敛修订、ADR-0025 与五文件实施计划集已获用户批准
 > 目的：让开发、测试和评审人员能够唯一判断“哪句话仍可执行”，而不需要按文件日期猜测
 
@@ -24,13 +24,15 @@
 | `HISTORICAL` | 只用于决策追溯，不是实现入口 |
 | `DEFERRED` | 已有设计或计划，但当前产品阶段明确不执行 |
 
-历史文件中出现“当前”“冻结”“可直接开发”等原句，不改变本登记给出的状态。旧文档中的 `Task 1…25` 一律只解释为 `F57-01…F57-25` 需求所有权桶；实际执行节点、顺序、文件、迁移和门禁只由 2026-08-24 五文件计划集决定。
+本登记的文件状态是文件分类，不是项目开发状态。项目状态入口统一使用 `development_state=READY_NOT_AUTHORIZED`、`blocking_reason=DEVELOPMENT_AUTHORIZATION_REQUIRED`、`implementation_state=NOT_IMPLEMENTED` 和 `production_state=PRODUCTION_NOT_READY`；`CURRENT_PLAN_NOT_AUTHORIZED` 仅表示计划文件的分类，绝不构成开发授权。
+
+逐文件冲突的唯一 precedence 由 F-57 总体设计 §1.1 持有；本登记只记录文件范围、取代关系和阅读/执行入口，不另设或重排权威顺序。历史文件中出现“当前”“冻结”“可直接开发”等原句，不改变本登记给出的分类。旧文档中的 `Task 1…25` 一律只解释为 `F57-01…F57-25` 需求所有权桶；实际执行节点、顺序、文件、迁移和门禁只由 2026-08-24 五文件计划集决定。
 
 ## 2. 文件级登记
 
 | 文件 | 状态 | 现行范围 | 禁止用法 |
 |---|---|---|---|
-| `README.md` | `CURRENT` | 唯一阅读顺序、开发与生产状态入口 | 用旧 F-55/F-56/十四阶段入口覆盖 F-57 |
+| `README.md` | `CURRENT` | 阅读导航及开发/生产状态入口；逐文件 precedence 仅链接至总体设计 §1.1 | 把导航编号当权威排序，或用旧 F-55/F-56/十四阶段入口覆盖 F-57 |
 | `docs/介绍/管理软件基本需求.docx` | `CURRENT_SUBJECT` | 客户原始业务需求来源；人员分类只作人物模板 | 作为技术架构、固定岗位授权或范围优先级裁定 |
 | `docs/介绍/企业一体化经营管理平台-产品介绍与功能大纲.docx` | `CURRENT_SUMMARY_NON_NORMATIVE` | 面向非技术读者的产品定位、业务术语和能力概览 | 作为规范、范围、接口、实现状态、性能/恢复承诺或验收证据；用介绍中的说法覆盖 F-57 |
 | `2026-08-23-f57-governed-automation-fabric-design.md` | `CURRENT` | 产品、架构、权限、自动化、能力包、双端、存储、硬件、安全、商业与 2026-08-24 收敛修订 | 把文档批准解释为产品开发已授权或旧计划仍可执行 |
@@ -50,7 +52,7 @@
 | `docs/generated/f57/requirement-test-facades.v1.json` | `G0_GENERATED_AUTHORITY` | G0 确定性生成 22 canonical target、185 exact symbol 与 owner binding manifest | 手工创建 facade、umbrella pass、skip/ignore、或把文件存在当测试已执行 |
 | `testkit/src/f57_cases/generated_bindings.rs` | `G0_GENERATED_AUTHORITY` | G0 生成 Rust handler 的 exact delivered binding；只引用已交付 concrete handler | 手工注册、catch-all、未交付 handler 返回 PASS 或绕过 language-local registry |
 | `docs/generated/f57/test-manifest.json` | `G0_GENERATED_AUTHORITY` | G0 生成 TestID/target/symbol/language/handler exact join | 由 task prose 或 target-wide 运行替代 exact symbol ownership |
-| `docs/generated/f57/projection-manifest.v1.json` | `G0_GENERATED_AUTHORITY` | G0 生成精确 29-family 非自引根清单（含 P340 policy）；每个 primary/member 含 exact path/media/owner/digest，根绑定 graph digest 与完整 generator identity | 手工编辑投影、漏 regenerate、让 manifest 自哈希、隐藏动态成员或用不同 graph/generator 拼 gate |
+| `docs/generated/f57/projection-manifest.v1.json` | `G0_GENERATED_AUTHORITY` | G0 生成精确 30-family 非自引根清单（恰四个 multi-member，含 P340 policy 与 semantic contracts）；每个 primary/member 含 exact path/media/owner/digest，根绑定 graph digest 与完整 generator identity | 手工编辑投影、漏 regenerate、让 manifest 自哈希、隐藏动态成员或用不同 graph/generator 拼 gate |
 | `docs/generated/f57/client-conformance-manifest.v1.json` | `G0_GENERATED_AUTHORITY` | CapabilityGraph 生成三项栈中立 conformance ID、Tauri/Flutter 六个 closed recipe、delivery state 与 exact source path；G5/G6 只运行签名选择栈 | 在 manifest 中放任意 shell、继续用被拒 Tauri fixture、缺失 Flutter G3/G4 carrier 或跨候选复用结果 |
 | `docs/generated/f57/rust/manifest.v1.json` | `G0_GENERATED_AUTHORITY` | CapabilityGraph 生成所有 feature/platform owner Rust DTO member 的 owner/path/digest exact set；成员与 manifest 同步生成 | 手写 DTO、全局 DTO crate、未登记 member、客户端另造协议类型或漏 no-diff |
 | `docs/generated/f57/migration-apply-manifest.v1.json` | `G0_GENERATED_AUTHORITY` | G0-06 在三草案 postimage 通过后一次性生成 canonical 69-file baseline apply set；自身不自签，由 clean-candidate receipt 签名绑定其 digest；F57 suffix 只从独立 reservation manifest 的连续 `CREATED` prefix 派生 | 把 manifest 当迁移已运行；要求其自签造成生成循环；向其中追加 F57 row；允许 pre/post 混态、任意 SQL 扫描或缺席路径进入 apply set |
@@ -58,19 +60,19 @@
 | `docs/f57-api-discriminators.seed.tsv` | `CURRENT_SUBJECT_IMPORT` | 437 行 Control/Employee/Portal command/query 的 surface、owner task、introduced version、payload/result/error `$ref`、CAS mode 与 audience 唯一机器闭集；G0 无损导入后状态转为 `HISTORICAL_IMPORT_SNAPSHOT` | 脱离 G0 修改；用 inline 摘要、OpenAPI 单边或实现者临场命名覆盖；把登记当作 API 已实现；G0 后继续当 live projection 回写 |
 | `docs/f57-api-component-shapes.seed.tsv` | `CURRENT_SUBJECT_IMPORT` | 638 行判别字组件形状、profile、参数、显式字段与 owner 的唯一机器闭集；规范化 Rust 路径由 G0 确定性投影产生，不是 seed 列；G0 无损导入后状态转为 `HISTORICAL_IMPORT_SNAPSHOT` | 由 OpenAPI、Rust 或客户端单边新增/改名字段；把组件登记当作 schema 已实现；伪造 seed 中不存在的 Rust 路径列；G0 后继续当 live projection 回写 |
 | `docs/f57-api-component-state-domains.seed.tsv` | `CURRENT_SUBJECT_IMPORT` | 218 行 state/state-filter/nested-item 组件到唯一状态域和 owner 的机器绑定；G0 无损导入后状态转为 `HISTORICAL_IMPORT_SNAPSHOT` | 按 schema 名猜状态域；遗漏内嵌页 item；用通用 `STATE_CODE` 代替有限枚举；G0 后继续当 live projection 回写 |
-| `docs/f57-api-state-domains.seed.tsv` | `CURRENT_SUBJECT_IMPORT` | 65 个 wire 状态域及其有限值闭集；语义 exact-join F-57 业务契约 §14.6 和其余现行领域图/派生规则；语义 `UNKNOWN` 仅存在于 `EFFECT_V1|PAYMENT_V1|REFUND_V1`；G0 无损导入后状态转为 `HISTORICAL_IMPORT_SNAPSHOT` | 在其他域自造 `UNKNOWN`、自造 `OTHER|CUSTOM`、与领域状态分叉，或把展示枚举当作可直接写入的状态机；G0 后继续当 live projection 回写 |
+| `docs/f57-api-state-domains.seed.tsv` | `CURRENT_SUBJECT_IMPORT` | 65 个 wire 状态域及其有限值闭集；语义 exact-join F-57 业务契约 §14.6 和其余现行领域图/派生规则；语义 `UNKNOWN` 仅存在于 `EFFECT_V1\|PAYMENT_V1\|REFUND_V1`；G0 无损导入后状态转为 `HISTORICAL_IMPORT_SNAPSHOT` | 在其他域自造 `UNKNOWN`、自造 `OTHER\|CUSTOM`、与领域状态分叉，或把展示枚举当作可直接写入的状态机；G0 后继续当 live projection 回写 |
 | `docs/f57-api-direct-routes.seed.tsv` | `CURRENT_SUBJECT_IMPORT` | 47 行、11 列 Control/Employee/Portal 直连 HTTP 路由以及 111 个严格组件、security/profile/schema triple 与完整 error-code set 的机器闭集；G0 无损导入后状态转为 `HISTORICAL_IMPORT_SNAPSHOT` | 从 prose 猜 route；增加通配代理/隐含错误；把上传完成误当 PUBLISHED；覆盖共享组件 profile；G0 后继续当 live projection 回写 |
 | `docs/f57-fresh-pg-task-profiles.seed.tsv` | `HISTORICAL_DETAIL_INPUT` | 旧 23-task database harness/PG catalog 检查思路，可供现行测试设计引用 | 执行旧 argv、让它覆盖 G0 `fresh-pg` 的 69-baseline + contiguous-F57 算法，或作为现行机器权威 |
 | `docs/f57-ci-stage-registry.seed.tsv` | `HISTORICAL_DETAIL_INPUT` | 旧 11-stage 检查意图与结果 schema 参考 | 执行 `ci-stage` 旧命令、恢复第二套 stage/verdict、或覆盖现行 Rust `f57 verify/gate` |
 | `docs/f57-ci-lane-task-profiles.seed.tsv` | `HISTORICAL_DETAIL_INPUT` | 旧 F57-01…25 lane 聚合思路与 native runner 需求参考 | 把 ownership bucket 当执行节点，或覆盖现行 delivery DAG/DeliveryProfile/candidate gate |
-| 本登记 | `CURRENT` | 文档优先级和取代范围 | 不定义业务字段或算法 |
+| 本登记 | `CURRENT` | 文件范围、取代关系与阅读/执行入口；逐文件 precedence 仅引用总体设计 §1.1 | 另造文档优先级、把文件分类当项目状态，或定义业务字段/算法 |
 | `2026-08-23-f57-windows-p340-production-profile.md` | `CURRENT_SUBJECT` | Windows Server、SSD/HDD、P340、UPS、备份、容量与上线门；与总体设计冲突时总体设计优先 | 宣称未经实机证据的容量、RPO/RTO、HA 或生产认证 |
 | `2026-08-24-f57-converged-program.md` | `CURRENT_PLAN_NOT_AUTHORIZED` | 唯一执行索引、DAG、迁移 exact-set、L0–L3 证据和阶段提升规则 | 在未获开发授权时执行，或跳过 G0 直接进入后续阶段 |
 | `2026-08-24-f57-g0-bootstrap-implementation.md` | `CURRENT_PLAN_NOT_AUTHORIZED` | G0 能力图、生成、边界与 L0/L1 启动计划 | 把计划存在当成 G0 已通过 |
 | `2026-08-24-f57-authority-spine-implementation.md` | `CURRENT_PLAN_NOT_AUTHORIZED` | G1 权威主干与 G2 CTC 数据实现计划 | 在 G0 receipt 之前执行，或把 G2 当成客户端切片已通过 |
 | `2026-08-24-f57-ctc01-implementation.md` | `CURRENT_PLAN_NOT_AUTHORIZED` | G3/G4 双 UI、CTC-01 与 L2 开发切片计划 | 在 verified G2 same-candidate aggregate 之前执行、拼入早期 standalone G1 receipt，或把 `DEV_SLICE_GREEN` 当成发布认证 |
 | `2026-08-24-f57-expansion-release-implementation.md` | `CURRENT_PLAN_NOT_AUTHORIZED` | G5 完整集成和 G6 最高安全发布认证计划 | 跳过客户端技术门、P340、备份、恢复或最终候选同一性 |
-| `2026-08-23-f57-governed-automation-fabric-implementation.md` | `HISTORICAL_DETAIL_INPUT` | 保存 2026-08-23 的文件、接口、迁移、测试和证据细节，供现行计划提取 | 执行任一旧 task、按编号推导全局顺序，或把旧 25-task/11-stage aggregate 当成现行门禁 |
+| `2026-08-23-f57-governed-automation-fabric-implementation.md` | `HISTORICAL_DETAIL_INPUT` | 保存 2026-08-23 的文件、接口、迁移、测试和证据细节，供现行计划提取；首页主动实施指令已移除，仅保留历史引用说明 | 执行任一旧 task/命令/迁移/门禁、按编号推导全局顺序，或把旧 25-task/11-stage aggregate 当成现行门禁 |
 | `2026-08-23-f57-development-readiness-verification.md` | `CURRENT` | 现行静态演算、计划覆盖和开发/生产状态结论 | 把静态闭合当成代码、实机、恢复或生产认证已经通过 |
 | `docs/ci-pipeline.md` | `CURRENT_SUBJECT` | F-57 Windows authority、Apple、Android 三执行器与签名证据聚合目标契约；尚未实现 | 把旧 Linux CI、任一单 lane 或文档存在本身当作发布通过 |
 | `docs/threat-model.md` | `CURRENT_SUBJECT` | 仅 `Overview` 的 F-57 产品边界与 `F-57 增补威胁与强制控制` 为现行；两个 `HISTORICAL_NON_NORMATIVE_APPENDIX` 只作攻击故事来源 | 不得恢复附录中的固定九进程、本地模型首发、第五客户端、旧凭据/扫描/备份或声明式包全局限制 |
@@ -78,7 +80,7 @@
 | `2026-08-09-first-release-prd.md` | `PARTIALLY_SUPERSEDED` | 与 F-57 不冲突的业务字段、状态、规则、异常和验收细节 | 固定岗位授权、旧 AI/延期、固定九进程、第五客户端、旧容量与恢复值 |
 | `2026-07-19-enterprise-private-operations-platform-design.md` | `PARTIALLY_SUPERSEDED` | Rust/PostgreSQL/私有部署及未冲突领域细节 | 作为当前总体设计入口 |
 | `2026-08-21-f51-development-readiness-freeze.md` | `PARTIALLY_SUPERSEDED` | 未冲突的具体业务默认值；RoleCode 仅是模板种子 | 把岗位/角色解释为唯一权限边界，或恢复不允许委托/临时授权的旧结论 |
-| `2026-08-22-f55-approved-ai-mcp-server-admin-cloud-freeze.md` | `PARTIALLY_SUPERSEDED` | MCP 安全意图、Windows 隔离、客户自控 IaaS、可复用签名/证据规则 | 要求首发本地模型、固定九进程、第五客户端或旧能力闭集 |
+| `2026-08-22-f55-approved-ai-mcp-server-admin-cloud-freeze.md` | `PARTIALLY_SUPERSEDED` | MCP 安全意图、Windows 隔离、未来客户自控 IaaS 的最小安全意图、可复用签名/证据规则；IaaS 当前仍是 `DEFERRED_WITH_INTERFACE` | 要求首发本地模型、固定九进程、第五客户端、旧能力闭集或把 IaaS 当作当前等价生产 carrier |
 | `2026-08-22-f56-license-signed-module-package-freeze.md` | `PARTIALLY_SUPERSEDED` | 许可四态、离线许可、内置模块许可信封、停用保留数据、信任链 | 把内置模块许可包等同全部能力包，或禁止 F-57 的 WASM/受控容器/客户包 |
 | `docs/adr/*` | `CURRENT_SUBJECT` | 与 F-57 不冲突且状态为接受的窄技术决定 | 反向覆盖 F-57；冲突 ADR 必须另立取代 ADR |
 | [ADR-0019](../../adr/ADR-0019-f57-runtime-topology-and-measured-connection-budget.md) | `CURRENT_SUBJECT` | `ep-platform-runtime`、部署可变进程数、逐硬件/配置代 exact 连接消费者与实测预算、integration-gateway 零能力 | 恢复固定九进程、强制 `ai-inferer` 或把 `37+10+5=52` 当产品真值 |

@@ -169,7 +169,7 @@ package ceiling ∩ provider ceiling ∩ invocation grant ∩ current runtime au
 
 签名 DeploymentManifest 与 BackupEvidence 使用各自 strict schema 记录 `jurisdiction=CN`、国家/区域、物理或云 carrier、处理/备份位置、证明摘要、`verified_at` 和 `expires_at`。ProviderManifest 不得复制该字段别名，必须仅使用 ADR-0023 `data_policy.processing_location: ProcessingLocationEvidenceV1`，其中 `residency_profile=CN_MAINLAND_ONLY_V1` 且 `country_or_region.country_code=CN`，并 exact-bind carrier、endpoint、数据类别、证据摘要、验证者和有效期。地点未知、证明过期、跨境 endpoint、跨境日志/遥测、境外备份或支持导出一律失败关闭。公网 DNS、证书服务或包下载不因此获得客户内容；它们只能处理不含客户/部署可关联值的公开材料。
 
-IaaS 必须是客户控制、境内区域、Windows Server 单机且无托管数据库/KMS/队列偷换；provider/tenant root 可复制内存/磁盘的残余风险必须披露。云卷不能证明底层 HDD 介质与缓存边界时保持 `STORAGE_MEDIA_UNVERIFIED`，不能承载 `HDD_STRICT` 正式生产。
+当前首版只接受境内客户自控 P340 物理机；`IAAS_WINDOWS_SERVER_HDD_STRICT` 仅是未来独立 profile 扩展缝，当前必须返回 `PROFILE_NOT_IMPLEMENTED` / `STORAGE_MEDIA_UNVERIFIED` 并禁止进入候选、发布或生产 terminal。未来新 graph/profile version 若获另行授权，IaaS 才须证明客户控制、境内区域、Windows Server 单机且无托管数据库/KMS/队列偷换，并披露 provider/tenant root 可复制内存/磁盘的残余风险；云卷不能证明底层 HDD 介质与缓存边界时仍不得承载 `HDD_STRICT` 正式生产。
 
 ### 5.2 语言、币种和业务时间 (`NFR-018`)
 

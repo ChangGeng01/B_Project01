@@ -918,7 +918,7 @@ bootstrap 事务提交后，core-server 必须在任何 public readiness 前以 
 | source_event_id | uuid | not null |
 | source_event_type | text | not null，首版只允许 `clm.contract.terminated.v1` |
 | reason | text | not null，清洗后长度 1 至 2000 |
-| status | text | not null，CHECK 取 `RUNNING|DONE|FAILED` |
+| status | text | not null，CHECK 取 `RUNNING\|DONE\|FAILED` |
 | item_total | int | not null default 0，非负 |
 | item_done | int | not null default 0，非负且不大于 item_total |
 | item_dead | int | not null default 0，非负且不大于 item_total |
@@ -943,8 +943,8 @@ bootstrap 事务提交后，core-server 必须在任何 public readiness 前以 
 | target_doc_id | uuid | null；未接线目录占位项及 `NO_APPLICABLE_TARGET` 终态目录项为空，真实目标项非空 |
 | target_doc_no | text | null；目标为空的目录项为空 |
 | target_doc_line_no | int | null，非空时大于 0 |
-| disposition_kind | text | not null，CHECK 取 `AUTO_CLOSE|AUTO_CANCEL|MANUAL_DECISION|INFORM_ONLY` |
-| state | text | not null，CHECK 取 `PENDING|DISPATCHING|DONE|DEAD` |
+| disposition_kind | text | not null，CHECK 取 `AUTO_CLOSE\|AUTO_CANCEL\|MANUAL_DECISION\|INFORM_ONLY` |
+| state | text | not null，CHECK 取 `PENDING\|DISPATCHING\|DONE\|DEAD` |
 | attempts | smallint | not null default 0，CHECK 取 0 至 9；首投失败为 1，第八次重试仍失败为 9 |
 | available_at | timestamptz | not null default now() |
 | locked_by | text | null |
@@ -981,9 +981,9 @@ bootstrap 事务提交后，core-server 必须在任何 public readiness 前以 
 | schema_version | int | not null，CHECK 大于 0；由 owner 模块逐场景冻结 |
 | command_enc | bytea | not null，非空；AES-256-GCM 信封密文，是命令 DTO 的唯一持久载体 |
 | command_key_ref | text | not null，指向当前法人密钥域内用途为 FIELD、密级 30 的数据密钥引用 |
-| command_digest | bytea | not null，固定 32 字节；取 `SHA-256(command_enc || canonical_aad)`，只校验密文完整性，不是明文等值索引 |
+| command_digest | bytea | not null，固定 32 字节；取 `SHA-256(command_enc \|\| canonical_aad)`，只校验密文完整性，不是明文等值索引 |
 | request_hash | bytea | not null，固定 32 字节；只哈希法人、owner_module、scenario、action、schema_version、process_instance_id 与幂等键等非敏感规范路由封套，不哈希命令明文 |
-| state | text | not null default 'PENDING'，CHECK 取 `PENDING|CONSUMED|REJECTED|EXPIRED` |
+| state | text | not null default 'PENDING'，CHECK 取 `PENDING\|CONSUMED\|REJECTED\|EXPIRED` |
 | consumed_at | timestamptz | null |
 | expired_at | timestamptz | null |
 | result_object_type | text | null；CONSUMED 必填，owner 模块冻结的稳定对象类型码，长度 1..64 |

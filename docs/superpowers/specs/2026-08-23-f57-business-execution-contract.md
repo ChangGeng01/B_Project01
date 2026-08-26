@@ -113,7 +113,7 @@ Opportunity 当前字段至少包括：
 | probability_bps | 0 至 10000；除终态约束外不按阶段暗改 |
 | expected_close_on | 非终态必填，可版本化变更 |
 | responsibility_query_id | 指向能力型候选解析，不保存固定岗位 |
-| current_assignee_id | 可空；只是当前责任，不授予权限 |
+| current_assignee | 可空；必须是 foundation 唯一 `PrincipalRefV1 {kind,id}`；只是当前责任，不授予权限，主体 kind 参与相等、幂等与审计 |
 | source_kind、source_ref | MANUAL、CUSTOMER_INTERACTION、SERVICE_SIGNAL、RENEWAL_SIGNAL 四类 |
 | next_action_at | 进入 QUALIFYING、SOLUTION、COMMERCIAL 后必填 |
 | loss_reason_code、cancel_reason_code | 仅对应状态可有值 |
@@ -181,6 +181,7 @@ T-F57-CRM-003 必须至少包含：
 - follow_up_is_append_only_and_correction_links_original
 - planned_follow_up_exact_state_and_completion_fact
 - overdue_follow_up_escalates_without_fake_completion
+- opportunity_current_assignee_uses_full_principal_kind_and_id
 - expired_or_revoked_assignee_does_not_expand_authority
 - concurrent_stage_change_uses_optimistic_version
 
@@ -374,27 +375,31 @@ DemandSourceKind 只能取：
 - MANUAL_REQUEST
 - EXTERNAL_PRODUCTION
 
-每条 ProcurementDemandLine 必须引用一个且仅一个 source ref，并保存 source_version、source_line、requested_item_snapshot、required_quantity、uom、required_on、delivery_site、open_quantity 和 source_digest。
+每条 ProcurementDemandLine 必须引用一个且仅一个 source ref，并保存 source_version、source_line、requested_item_snapshot、accepted_requested_quantity、uom、required_on、delivery_site、cancelled_quantity、currently_valid_awarded_quantity、unawarded_open_quantity 和 source_digest；后三个数量只能由 §5.2 的 owner facts 派生，不能作为三个可独立编辑的真值。
 
-EXTERNAL_PRODUCTION 的幂等键固定为 legal_entity_id、provider_id、external_system_id、external_demand_id、external_version。相同版本重放返回原 demand；低版本拒绝；高版本只通过 ChangeDemand 创建差异事实。
+EXTERNAL_PRODUCTION 的幂等键固定为 legal_entity_id、provider_id、external_system_id、external_demand_id、external_version。相同版本重放返回原 demand；低版本拒绝；高版本只通过现有 `procurement_demand.change` 创建差异事实。
 
 ### 5.2 需求数量守恒
 
 1. 合并、拆分、询价和授标通过 DemandAllocation 关联，不改写原来源。
-2. 对每条 demand line，cancelled_quantity + awarded_quantity + open_quantity 必须始终等于 accepted_requested_quantity。
-3. award allocation、PO allocation 和 accepted receipt 的累计数量不得超过当前开放数量；超收只走现行收货例外审批。
+2. 对每条 demand line，唯一需求层公式固定为 `accepted_requested_quantity = cancelled_quantity + currently_valid_awarded_quantity + unawarded_open_quantity`。`currently_valid_awarded_quantity` 只统计已批准且未被撤销/减量的 AwardAllocation；`unawarded_open_quantity` 是尚未被有效 Award 占用且未取消的数量。旧字段名 `awarded_quantity/open_quantity` 若仍存在，只能是这两个量的投影别名，不得形成另一套计算口径。
+3. 三层额度分别校验，禁止用命令后的当前 `unawarded_open_quantity` 同时约束全部阶段：
+   - `award.decide` 批准的本次正数量只能占用该命令加锁前的 `unawarded_open_quantity`，成功后同量从 unawarded 移入 currently-valid-awarded；
+   - 未撤销 PO allocation 的累计数量不得超过其引用的有效已批准 AwardAllocation 数量；`purchase_order.create`、`purchase_order.submit`、`purchase_order.decide` 与 `purchase_order.issue` 均不能隐式扩大或制造 Award；
+   - accepted goods receipt 的累计净数量不得超过已发出 PO allocation 的累计净数量；合法超收只能走现行收货例外审批，并保存超收批准证据，不能回写扩大 Award 或 PO。
 4. 不同法人不得合并。不同物料/版本、单位不可证明换算、交付地点不兼容或 required_on 超出同一采购窗口时不得自动合并。
 5. 来源事实减少或撤销时，只能减少尚未授标部分；已授标/已发 PO 必须进入影响处置或采购变更。
+6. 释放必须停留在事实对应层级：`award.revoke` 只把确证未被下游不可撤销效果占用的 Award 数量释放回 `unawarded_open_quantity`；PO 作废、供应商拒单或确证短缺只释放 PO 层未执行数量，仍有效 Award 下可重新建 PO，不自动撤销 Award；收货拒收、收货冲销或退货只释放收货层对应净数量。只有 typed impact/shortfall/replacement fact 明确要求重采，并依法撤销/减量上层占用时，才重算需求层；Unknown 不释放任何层级。
 
 ### 5.3 Demand 状态机
 
 | 状态 | 含义 |
 |---|---|
 | DRAFT | 尚未完成准入 |
-| READY | 已校验，可直接建 PO 或进入询价 |
+| READY | 已校验，可不经 RFQ 进入受控直采授标，或进入询价；两条路径都必须先形成 approved Award 才能建 PO |
 | SOURCING | 至少一个有效 RFQ round 正在执行 |
 | PARTIALLY_AWARDED | 部分数量已有有效授标 |
-| AWARDED | 全部开放数量已授标或经批准取消 |
+| AWARDED | 至少存在一笔当前有效授标，且全部未取消数量均已授标 |
 | CLOSED | 采购、收货/退货和相关经济义务满足 |
 | CANCELLED | 全量在任何授标前经批准取消 |
 
@@ -402,15 +407,15 @@ EXTERNAL_PRODUCTION 的幂等键固定为 legal_entity_id、provider_id、extern
 
 | 当前状态 | 允许后继 | 唯一命令/事实与门禁 |
 |---|---|---|
-| DRAFT | READY、CANCELLED | `AdmitDemand` 要求来源 exact-one、快照、数量、单位、地点和日期校验通过；`CancelDemand` 要求从未存在有效 Award/PO 且 maker-checker 批准 |
-| READY | SOURCING、PARTIALLY_AWARDED、AWARDED、CANCELLED | `StartSourcing` 要求至少一个 RFQRound 进入 OPEN；`ApplyApprovedAward` 按数量守恒进入部分或全量授标；取消仍要求从未授标 |
+| DRAFT | READY、CANCELLED | `procurement_demand.admit` 要求来源 exact-one、快照、数量、单位、地点和日期校验通过；`procurement_demand.cancel` 要求历史上从未存在任何 Award/PO 事实且 maker-checker 批准 |
+| READY | SOURCING、PARTIALLY_AWARDED、AWARDED、CANCELLED | `procurement_demand.start_sourcing` 要求至少一个 RFQRound 进入 OPEN；RFQ 或 DIRECT_PURCHASE 都只能由 `award.propose` 后不同主体执行 `award.decide` 形成 approved Award，再按需求层公式进入部分或全量授标；取消仍要求历史上从未存在任何 Award/PO 事实 |
 | SOURCING | READY、PARTIALLY_AWARDED、AWARDED | 最后一个有效 round 以 NO_AWARD/CANCELLED/CANCELLED_BY_REVISION 终结且替代 round 尚未 OPEN 时回 READY；批准 Award 后按有效授标数量进入部分或全量授标 |
-| PARTIALLY_AWARDED | READY、AWARDED | `StartSourcing` 可为剩余 open quantity 新建并 OPEN round，但 Demand 仍保持 PARTIALLY_AWARDED；全部有效 Award 被合法撤销且无已发 PO 占用时回 READY；开放数量归零时进入 AWARDED |
-| AWARDED | READY、PARTIALLY_AWARDED、CLOSED | `ReleaseConfirmedShortfall`/`RevokeAward` 只能释放确证未执行数量并按剩余有效 Award 数量回到 READY 或 PARTIALLY_AWARDED；`CloseDemand` 必须满足采购、收货/退货和经济义务关闭谓词 |
-| CLOSED | READY、PARTIALLY_AWARDED | 仅登记表中的重开事实可执行 `ReopenDemand`；先追加 `DemandReopened` 和新 cycle，再按仍有效 Award 数量确定目标 |
+| PARTIALLY_AWARDED | READY、AWARDED | `procurement_demand.start_sourcing` 可为剩余 `unawarded_open_quantity` 新建并 OPEN round，但 Demand 仍保持 PARTIALLY_AWARDED；也可继续走 DIRECT_PURCHASE 的 `award.propose`/`award.decide`；全部有效 Award 被 `award.revoke` 合法撤销且无已发 PO 占用时回 READY；`unawarded_open_quantity` 归零时进入 AWARDED |
+| AWARDED | READY、PARTIALLY_AWARDED、CLOSED | typed supplier-rejection/shortfall/return facts 与 `award.revoke` 只能按 §5.2 释放对应层级，并按剩余有效 Award 和 `unawarded_open_quantity` 回到 READY 或 PARTIALLY_AWARDED；`procurement_demand.close` 必须满足采购、收货/退货和经济义务关闭谓词 |
+| CLOSED | READY、PARTIALLY_AWARDED | 仅登记表中的重开事实可执行 `procurement_demand.reopen`；先追加 `DemandReopened` 和新 cycle，再按仍有效 Award 数量确定目标 |
 | CANCELLED | 无 | 终态；来源恢复时创建新 Demand 并引用旧事实，不得复活原记录 |
 
-状态派生优先级固定为：已满足 closure predicate 才是 CLOSED；否则有效授标数量大于 0 且 open quantity 大于 0 为 PARTIALLY_AWARDED，有效授标/批准取消已覆盖全部 accepted quantity 为 AWARDED；有效授标为 0 且有 OPEN round 为 SOURCING；其余已准入记录为 READY。不得因同时存在 OPEN round 把已有部分授标隐藏成 SOURCING，也不得在 `Effect=Unknown` 时释放数量。重开不设置可手工置位的 REOPENED 状态；原 cycle、Award、PO 和数量事实全部保留。
+状态派生优先级固定为：已满足 closure predicate 才是 CLOSED；否则 `cancelled_quantity = accepted_requested_quantity`、`currently_valid_awarded_quantity = 0` 且历史上从未存在任何 Award/PO 事实时为 CANCELLED；否则 `currently_valid_awarded_quantity > 0` 且 `unawarded_open_quantity > 0` 为 PARTIALLY_AWARDED；否则 `currently_valid_awarded_quantity > 0` 且 `currently_valid_awarded_quantity + cancelled_quantity = accepted_requested_quantity` 为 AWARDED；有效授标为 0 且有 OPEN round 为 SOURCING；其余已准入记录为 READY。全量取消但历史上存在 Award/PO、取消量没有 maker-checker 事实、或数量公式不成立时不是某个可派生状态，而是非法事实组合并失败关闭。不得因同时存在 OPEN round 把已有部分授标隐藏成 SOURCING，也不得在 `Effect=Unknown` 时释放数量。重开不设置可手工置位的 REOPENED 状态；原 cycle、Award、PO 和数量事实全部保留。
 
 ### 5.4 RFQ round 状态机
 
@@ -473,22 +478,22 @@ SupplierQuoteVersion 至少保存：
 
 1. 系统先执行资格门：供应商启用、资质有效、同法人、报价有效、单位可换算、税额可重算、交付可满足或已声明偏差。失败项不得进入可选集合。
 2. 系统对合格报价统一展示净额、税额、总额、可供数量、承诺交期、质量/风险证据和偏差，不用未冻结的黑盒评分自动授标。
-3. 授标由有 procurement.award.create 能力的主体提出，由不同主体审批；Award 保存完整 comparison_snapshot_digest、全部候选、选中行、数量、价格、原因和例外。
-4. 同一 demand line 可分给多个供应商；各 AwardAllocation 合计不得超过 open_quantity。
+3. Award sourcing kind 只取 `RFQ|DIRECT_PURCHASE`。READY 可选 DIRECT_PURCHASE 而不创建 RFQ，但仍必须由有 procurement.award.create 能力的主体调用现有 `award.propose`，再由不同主体以现有 `award.decide` 审批；只有 APPROVED 才形成有效 Award。DIRECT_PURCHASE proposal 必须保存供应商资格、价格/条款证据、直采 reason、政策例外/风险决定和 comparison_snapshot_digest，不得把“免 RFQ”解释为“免授标”或免 maker-checker。
+4. 同一 demand line 可分给多个供应商；每个 `award.decide` 只能占用加锁前 `unawarded_open_quantity`，各有效 AwardAllocation 按 §5.2 守恒。
 5. 选择同等交付条件下非最低总额报价时，必须填写 exception reason 并走风险审批。并列最低价也必须明确选择并记录理由。
 6. 供应商报价的部分数量可以被 AwardAllocation 选中，但不得改写报价。如果部分数量会改变阶梯价格、最低采购量、运输、税或交付条款，必须取得新的 SupplierQuoteVersion 后才能授标。
-7. Award 批准后才可创建 PO；PO 发出仍属于 AUTH-007 高风险效果。
+7. RFQ 和 DIRECT_PURCHASE 都只有在 Award APPROVED 后才可调用 `purchase_order.create`；随后仍须依次通过现有 `purchase_order.submit`、`purchase_order.decide` 和 `purchase_order.issue`。`purchase_order.issue` 只消费已批准 PO 和有效 Award 的剩余额度，绝不隐式授标；PO 发出仍属于 AUTH-007 高风险效果。
 
 ### 5.7 授标撤销和重开
 
 | 事实 | 处理 |
 |---|---|
-| Award 批准但 PO 未发出 | 通过 RevokeAward 追加撤销；原分配回到 open_quantity，RFQ 可新建 round |
-| PO 发出被证明未执行 | 走 PO 取消/变更后释放剩余 demand |
+| Award 批准但 PO 未发出 | 通过 `award.revoke` 追加撤销；确证无下游占用的分配回到 `unawarded_open_quantity`，RFQ 可新建 round，或重新发起 DIRECT_PURCHASE proposal |
+| PO 发出被证明未执行 | 走 PO 取消/变更后只释放 PO 层未执行额度；Award 仍有效时可在其剩余额度内重建 PO，不自动回到 `unawarded_open_quantity` |
 | PO 发出结果 Unknown | Demand 与 Award 保持各自原状态且数量继续占用；只有该次 PO issue `Effect` 及其 `PROCUREMENT_FULFILMENT` objective 进入 RECONCILING，禁止创建替代 PO |
-| 供应商拒单或取消未履行数量 | 释放确证未履行数量并重开 demand |
-| 短收、拒收 | 对最终确认缺口重开，不按整单重开 |
-| 采购退货 | 只有仍需替换的退回数量重开；纯退款不自动重采 |
+| 供应商拒单或取消未履行数量 | typed fact 先释放 PO 层确证未履行数量；只有同时撤销/减量 Award 或 replacement decision 明确需要重新寻源时才重算 demand |
+| 短收、拒收 | 只释放收货层最终确认缺口；需要替换时按 typed replacement/shortfall fact 逐层处置，不按整单重开 |
+| 采购退货 | 只冲减对应 accepted receipt 净量；只有仍需替换的退回数量按 typed replacement fact 逐层重开，纯退款不自动重采 |
 | 来源订单/项目取消 | 尚未授标部分取消；已授标部分进入影响处置 |
 | 无报价或全部不合格 | RFQ 为 NO_AWARD，Demand 返回 READY 并创建异常 work item |
 
@@ -498,13 +503,20 @@ T-F57-PROC-001 和 T-F57-PROC-003 必须至少包含：
 
 - six_demand_sources_are_exact_one_and_idempotent
 - merge_split_preserve_source_and_quantity_conservation
+- demand_accepted_equals_cancelled_valid_awarded_and_unawarded_open
+- fully_cancelled_never_awarded_demand_derives_cancelled_not_awarded
+- fully_cancelled_after_any_award_or_po_fact_fails_closed
 - rfq_round_content_is_immutable_after_open
 - late_quote_requires_equal_treatment_or_new_round
 - supplier_quote_versions_preserve_original_evidence
 - procurement_demand_edges_commands_and_derived_precedence_are_exact
 - supplier_quote_version_edges_are_closed_and_terminal_history_is_immutable
 - award_requires_comparison_snapshot_and_maker_checker
-- partial_multi_supplier_award_preserves_open_quantity
+- ready_direct_purchase_uses_award_propose_and_decide_without_rfq
+- purchase_order_issue_cannot_implicitly_create_or_expand_award
+- partial_multi_supplier_award_preserves_unawarded_open_quantity
+- award_po_and_receipt_each_enforce_its_own_quantity_ceiling
+- revocation_shortfall_and_return_release_only_the_corresponding_layer
 - changed_partial_quantity_terms_require_new_supplier_quote_version
 - po_unknown_blocks_duplicate_award_and_send
 - supplier_rejection_short_receipt_and_return_reopen_exact_shortage
@@ -653,10 +665,10 @@ EntitlementSnapshot 至少保存：
 1. 首发周期类型只取 ONE_TIME 和 CALENDAR_INTERVAL；预测维护、传感器触发和复杂 EAM 继续延期。
 2. recurrence_anchor 固定为服务合同/维护计划的 approved_start_at，不以实际完成日漂移。
 3. occurrence_key 固定由 legal_entity、plan_version、schedule_rule_id、planned_at 组成；全局唯一，重启、重复 timer 和多 worker 不得重复生成。
-4. 服务器停机跨过到期时点后，恢复时为每个仍有效且未生成的到期时点创建 OVERDUE occurrence，不合并、不静默跳过。
-5. 合同或计划在 planned_at 前已暂停/终止时不生成；已生成未关闭工单进入合同影响处置。
-6. 设备停用、转移或找不到时创建事故，不把该期视为完成。
-7. 当前 occurrence 关闭时必须证明下一 occurrence 已存在，或计划已到期/终止且有终止证据。
+4. 服务器停机跨过一个或多个到期时点后，恢复时为每个仍有效且未生成的到期时点分别补建初态即为 OVERDUE 的 occurrence，不合并、不改成 PLANNED/DUE、不静默跳过。
+5. 合同或计划在 planned_at 前已暂停时不生成；终止生效后不得生成尚未创建的未来 occurrence。合同/计划在 occurrence 已生成后提前终止时，每个尚未完成 occurrence 只能进入 CANCELLED，并绑定 typed `PlanTerminationEvidence`（合同/计划版本、终止 reason、effective_at、影响处置和审批）；已开始业务效果的 occurrence 必须先完成补偿/影响处置，不能删除或伪装完成。
+6. 设备停用、转移、找不到或状态与计划冲突时必须打开 typed incident，occurrence 保持其事实应有的 DUE/OVERDUE/IN_PROGRESS，不进入 COMPLETED 或另造跳过状态。
+7. 当前 occurrence 进入 COMPLETED 时必须证明下一 occurrence 已存在，或计划按期结束/合法终止且有 typed `PlanTerminationEvidence`；CANCELLED 不制造维护成功事实。
 
 ### 6.10 服务重开
 
@@ -681,6 +693,9 @@ T-F57-SRV-003、T-F57-SRV-006、T-F57-SRV-008、T-F57-SRV-009、T-F57-SRV-010 �
 - labor_overlap_manual_correction_and_rate_snapshot
 - major_critical_require_root_cause_and_capa
 - maintenance_occurrence_is_unique_across_restart_and_downtime
+- downtime_backfills_each_missed_occurrence_as_overdue
+- maintenance_occurrence_has_no_skipped_state_or_edge
+- early_contract_or_plan_termination_cancels_with_typed_evidence
 - disabled_equipment_creates_incident_not_false_completion
 - close_requires_evidence_and_reopen_preserves_prior_cycle
 - charge_proposal_does_not_bypass_invoice_or_finance_owner
@@ -698,7 +713,7 @@ ProjectRisk 至少包含：
 - project_id、risk_no、category、description；
 - likelihood 1 至 5、impact 1 至 5、score 为两者乘积；
 - impact_summary、可选 exposure_amount_minor；
-- responsibility_query_id、current_assignee_id；
+- responsibility_query_id、可空 `current_assignee: PrincipalRefV1 {kind,id}`；该引用只是当前责任，不授予权限，kind 参与相等、幂等和审计；
 - response_strategy：AVOID、MITIGATE、TRANSFER、ACCEPT；
 - mitigation_actions、due_at、review_at；
 - trigger_fact_refs、evidence_refs、row_version、generation。
@@ -723,9 +738,11 @@ CLOSED 或 ACCEPTED 风险在触发条件再次出现、里程碑延期、合同
 2. 项目成本等于已确认且未冲销的 inventory issue/cost、direct procurement cost、service labor/expense 和批准的其他经营成本；每项必须可下钻来源。
 3. ProjectReceiptMilestone 保存合同版本/付款计划引用、触发条件、应收金额、due_on 和 acceptance evidence requirement。
 4. 里程碑完成只能创建 invoice/receivable obligation，不得伪造已开票或已收款。
-5. 收款节点关闭要求对应 receivable 已由 finance 确认核销、批准减免/冲销，或按合同变更正式取消。
-6. 项目关闭要求全部强制里程碑和任务结束、交付/验收证据有效、开放风险为 0、采购和服务关联义务关闭、项目成本与收款节点完成对账。
-7. 项目不得自行生成 sales delivery、service installation、invoice 或 receipt 事实；它只能发出公开命令并引用这些 owner 返回的 evidence。相同外部验收文档只能有一个 canonical digest，项目、销售和服务保存引用而非各自上传三份权威副本。
+5. §14.6 的 `PROJECT_RECEIPT_MILESTONE_V1` 行是唯一状态 registry，本节只解释其 closure coverage，不形成第二真值。每个收款节点由 finance owner facts 唯一派生 `CANCELLED|PAID|WAIVED|INVOICED|BLOCKED|DUE|READY`，禁止状态写命令。`cash_coverage` 只累计有效到款核销；`waiver_coverage` 只累计有效 maker-checker 减免、核销或法律消灭事实；二者不得重复覆盖同一金额且累计不超过里程碑金额。closure coverage 只有三种：`cash_coverage = milestone_amount` 为 PAID；`cash_coverage + waiver_coverage = milestone_amount` 且 waiver 为正为 WAIVED；正式合同变更取消该节点，且已有发票/应收/到款效果已撤销、退款或合法处置完毕，为 CANCELLED。
+6. 派生优先级固定为：合法取消 coverage 完整则 CANCELLED；否则全额 cash coverage 为 PAID；否则 cash+waiver 全覆盖为 WAIVED；否则有效已开票覆盖里程碑金额为 INVOICED；否则前置义务未满足为 BLOCKED；否则服务器业务日达到 due_on 为 DUE；否则 READY。任何时刻按这一顺序只能得到一个状态。
+7. 合同变更撤销/取代取消、waiver 撤销/更正、到款核销释放/收款冲销、发票红冲或前置义务反向事实都必须按同一优先级重新派生；历史状态和原 owner facts 不改写。PAID、WAIVED、CANCELLED 因合法反向事实失去 coverage 时均可回到 INVOICED/BLOCKED/DUE/READY 等唯一结果，不是持久终态。
+8. 项目关闭要求全部强制里程碑和任务结束、交付/验收证据有效、开放风险为 0、采购和服务关联义务关闭、项目成本与收款节点完成对账；每个强制 ProjectReceiptMilestone 必须为 PAID、WAIVED 或 CANCELLED，并带完整 coverage refs。
+9. 项目不得自行生成 sales delivery、service installation、invoice 或 receipt 事实；它只能发出公开命令并引用这些 owner 返回的 evidence。相同外部验收文档只能有一个 canonical digest，项目、销售和服务保存引用而非各自上传三份权威副本。
 
 ### 7.3 项目验收
 
@@ -734,7 +751,11 @@ T-F57-PRJ-003 必须至少包含：
 - risk_score_state_and_escalation_are_exact
 - risk_acceptance_requires_independent_approval_and_review_date
 - risk_transition_edges_and_reopen_target_are_deterministic
+- project_risk_current_assignee_uses_full_principal_kind_and_id
 - milestone_creates_receivable_obligation_not_fake_cash
+- receipt_milestone_exact_states_priority_and_single_derivation
+- receipt_milestone_paid_waived_cancelled_require_exact_closure_coverage
+- receipt_milestone_reverse_facts_rederive_without_history_rewrite
 - project_cost_is_source_backed_and_reversal_aware
 - closed_project_reopens_on_acceptance_withdrawal_or_material_variance
 
@@ -796,7 +817,7 @@ CTC-01 不改变上述采购关闭谓词。其 exact 主链只关闭 `CONTRACT_F
 
 表中的 `definition_owner` 只表示 Objective 定义由哪个业务 feature 维护；Objective 实例、cycle、obligation、effect、evidence 和 closure 的权威写 owner 始终是平台机制 `platform.flow`，`automation` 只是禁止用于所有权判断的历史模块/数据库别名。业务 feature 只能通过公开 fact/command 触发或影响 Objective，禁止各域自行建立第二套 Objective 表。
 
-`RULING-SALES-FULFILMENT-XOR-01`：销售订单在首次 RELEASE 前冻结 `sales_type`，RELEASE 后不得在 `STANDARD` 与 `DROP_SHIP` 间原位转换。一次 canonical release 必须且只能产生一个主履约族：
+局部业务不变量 `SALES_PRIMARY_FULFILMENT_XOR`：销售订单在首次 RELEASE 前冻结 `sales_type`，RELEASE 后不得在 `STANDARD` 与 `DROP_SHIP` 间原位转换。一次 canonical release 必须且只能产生一个主履约族：
 
 - `sales_type=STANDARD`：恰写一条 payload 中 `sales_type` 为 `STANDARD` 的 `SALES_ORDER_RELEASED`，且只创建 `SALES_ORDER_FULFILMENT`；
 - `sales_type=DROP_SHIP`：恰写一条 payload 中 `sales_type` 为 `DROP_SHIP` 的 `DROP_SHIP_ORDER_RELEASED`，且只创建 `DROP_SHIP_FULFILMENT`。
@@ -807,6 +828,7 @@ CTC-01 不改变上述采购关闭谓词。其 exact 主链只关闭 `CONTRACT_F
 
 上表只供人阅读；实现、`f57check` 和 `ClosureRegistry` 的唯一机器输入是下表，不得从中文句子分词或临场命名。除 `[]` 表示空数组外，所有 `|` 分隔项都是 ASCII upper-snake token，按字节序排序去重后进入签名 generation；runtime export 必须 exact-match，未知 token、prose-only cell、空白别名或大小写变体均拒绝。
 
+<!-- F57-SEMANTIC-TABLE:objective_trigger_closure_registry_v1:BEGIN -->
 | ObjectiveKind | trigger_kinds exact-set | closure_rule_id | reopen_trigger_kinds exact-set | timeout_policy_id | termination_policy_id |
 |---|---|---|---|---|---|
 | OPPORTUNITY_CONVERSION | OPPORTUNITY_ENTERED_COMMERCIAL | OPPORTUNITY_DECISION_AND_SUCCESSOR_V1 | OPPORTUNITY_FORMALLY_REOPENED\|OPPORTUNITY_SUCCESSOR_INVALIDATED_BEFORE_IRREVERSIBLE_FULFILMENT | OPPORTUNITY_DECISION_TIMEOUT_V1 | OPPORTUNITY_TERMINATION_V1 |
@@ -824,6 +846,7 @@ CTC-01 不改变上述采购关闭谓词。其 exact 主链只关闭 `CONTRACT_F
 | PROJECT_DELIVERY_ACCEPTANCE | PROJECT_BECAME_ACTIVE | PROJECT_DELIVERY_FULL_COVERAGE_V1 | PROJECT_ACCEPTANCE_WITHDRAWN\|PROJECT_CONTRACT_OR_PROJECT_CHANGED\|PROJECT_COST_OR_RECEIPT_MATERIAL_VARIANCE\|PROJECT_NEW_RISK_OPENED | PROJECT_EARLIEST_DUE_V1 | PROJECT_TERMINATION_V1 |
 | CONTRACT_RENEWAL | CONTRACT_RENEWAL_WINDOW_OPENED | CONTRACT_RENEWAL_DECISION_AND_SUCCESSOR_V1 | CONTRACT_RENEWAL_CUSTOMER_DECISION_CHANGED\|CONTRACT_RENEWAL_SUCCESSOR_INVALIDATED | CONTRACT_RENEWAL_WINDOW_V1 | CONTRACT_RENEWAL_TERMINATION_V1 |
 | SUPPLIER_RETURN_RECOVERY | SUPPLIER_RETURN_CONFIRMED | SUPPLIER_RETURN_FULL_RECOVERY_V1 | SUPPLIER_RETURN_QUANTITY_VARIANCE_FOUND\|SUPPLIER_RETURN_REFUND_REVERSED\|SUPPLIER_RETURN_REPLACEMENT_FAILED\|SUPPLIER_RETURN_SUPPLIER_REJECTED_RECEIPT | SUPPLIER_RETURN_TIMEOUT_V1 | SUPPLIER_RETURN_TERMINATION_V1 |
+<!-- F57-SEMANTIC-TABLE:objective_trigger_closure_registry_v1:END -->
 
 `ClosureRule`、`TriggerKind` 与 reopen `TriggerKind` 只能由这张表生成；`QUOTE_RESOLUTION` 的 reopen 数组恰为空，终结版本只能新建版本/Quote，不得造 `NO_REOPEN` 假 token。每个 trigger/reopen fact 的 payload schema 由对应 owner 的 typed fact catalog 提供并绑定 evidence digest；缺 schema 或不能 exact-join owner fact 时该 generation 不得激活。
 
@@ -831,6 +854,7 @@ CTC-01 不改变上述采购关闭谓词。其 exact 主链只关闭 `CONTRACT_F
 
 下表是 `ClosureRegistryV1` 的唯一输入，不允许实现方增加 `CUSTOM` obligation/effect/evidence。每个实例的 `responsibility_query` 都必须是 §11 的 `CandidateQuery`，固定绑定表中 capability、subject 的 legal_entity/object scope、当前 grant/device、SoD exclusions 和 due_at；查不到人进入 `ESCALATED_NO_CANDIDATE`，不得回退到固定岗位。表内用 `|` 分隔的 token 是闭集；只有标明“按适用分支”的 obligation 可由签名分支谓词记录 `NOT_APPLICABLE`，其余必须生成并闭合。
 
+<!-- F57-SEMANTIC-TABLE:objective_execution_registry_v1:BEGIN -->
 | ObjectiveKind | obligations exact-set | responsibility capability | permitted typed effect intents | evidence exact-set |
 |---|---|---|---|---|
 | OPPORTUNITY_CONVERSION | COMMERCIAL_INPUT_COMPLETE\|DECISION_RECORDED\|CANONICAL_SUCCESSOR_LINKED | crm.opportunity.convert | ISSUE_QUOTE_REQUEST\|CREATE_CONTRACT_DRAFT_REQUEST\|CREATE_SALES_ORDER_DRAFT_REQUEST\|RECORD_LOSS_OR_CANCEL | OpportunitySnapshot\|CommercialValidation\|OpportunityDecision\|CanonicalSuccessorRef |
@@ -848,6 +872,11 @@ CTC-01 不改变上述采购关闭谓词。其 exact 主链只关闭 `CONTRACT_F
 | PROJECT_DELIVERY_ACCEPTANCE | MILESTONES_CLOSED\|TASKS_CLOSED\|ACCEPTANCE_VALID\|PROCUREMENT_SERVICE_CLOSED\|RISKS_ZERO\|COST_RECONCILED\|RECEIPT_MILESTONES_CLOSED | project.delivery.fulfil | CREATE_PROJECT_TASK\|REQUEST_PROCUREMENT\|REQUEST_SERVICE_INSTALLATION\|REQUEST_INVOICE\|REQUEST_RISK_ACTION | ProjectVersion\|TaskClosureSet\|MilestoneClosureSet\|AcceptanceEvidence\|ProcurementServiceCoverage\|RiskSnapshot\|CostReconciliation\|ReceiptMilestoneCoverage |
 | CONTRACT_RENEWAL | RENEWAL_DECISION_RECORDED\|SUCCESSOR_EFFECTIVE_OR_NO_RENEWAL_APPROVED\|EXISTING_OBLIGATIONS_DISPOSED | clm.contract.renew | CREATE_RENEWAL_QUOTE\|CREATE_CONTRACT_VERSION\|RECORD_NO_RENEWAL_DECISION | RenewalWindowEvidence\|CustomerDecision\|SuccessorContractVersion\|NoRenewalApproval\|ExistingObligationDisposition |
 | SUPPLIER_RETURN_RECOVERY | RETURN_AUTHORIZED\|RETURN_SHIPPED_RECEIVED\|INVENTORY_COST_CLOSED\|PURCHASE_AP_CLOSED\|REFUND_OR_REPLACEMENT_CLOSED | procure.supplier_return.fulfil | AUTHORIZE_SUPPLIER_RETURN\|SHIP_SUPPLIER_RETURN\|REQUEST_PURCHASE_CREDIT\|REQUEST_SUPPLIER_REFUND\|CREATE_REPLACEMENT_DEMAND | SupplierReturnAuthorization\|ReturnShipmentReceipt\|SupplierReceiptOrDispute\|InventoryCostFact\|PurchaseCreditFact\|RefundFact\|ReplacementDemandClosure |
+<!-- F57-SEMANTIC-TABLE:objective_execution_registry_v1:END -->
+
+本表 `evidence exact-set` 的 CamelCase 项是 strict `SchemaRefV1`，表示关闭计算必须加载的 evidence payload schema；它们不是 `E-F57-*` 交付证据编号，也不得塞入 `EvidenceIdV1`。CapabilityGraph Objective summary 对应字段固定为 `closure_evidence_schemas`。G0 的 `OBJECTIVE_EXECUTION_REGISTRY_V1` adapter 必须用 `SCHEMA_REF_SET` 解码、排序并逐项 exact-resolve；把这些值当普通字符串、UpperToken 或交付 EvidenceID 均失败关闭。
+
+Registry 分支解释不得制造新命令或新 evidence owner：`PROCUREMENT_FULFILMENT` 的 `AwardSnapshot` 对 RFQ 与 DIRECT_PURCHASE 都必需；既有 `RFQDecision` 类型必须以其签名 sourcing-path 判别记录 RFQ round 结果，或记录 READY 上 DIRECT_PURCHASE 的“RFQ 不适用”决定、理由和 `award.propose`/`award.decide` refs，不能用缺失 evidence 表示直采。`PERIODIC_MAINTENANCE_CYCLE` 的计划/合同提前终止分支必须以既有 `PlanTerminationEvidence` 覆盖每个 CANCELLED occurrence，不能追加不存在的跳过 token。`PROJECT_DELIVERY_ACCEPTANCE` 的既有 `ReceiptMilestoneCoverage` 必须携带 §14.6 唯一派生状态、coverage amount/refs、优先级命中项及全部有效反向事实 refs；项目不得复制 finance facts。表中 effect intent 仍只是 owner-command 意图登记，不是另一组公开 API discriminator。
 
 所有 effect intent 只调用相应 owner 的公开命令；objective engine 不得直接写销售、库存、发票、资金、服务或项目事实。
 
@@ -891,26 +920,29 @@ CTC-01 不改变上述采购关闭谓词。其 exact 主链只关闭 `CONTRACT_F
 
 上一张表供业务阅读；机器不得解析其中中文、日期短语或分号。`TimeoutPolicyDefinitionV1` strict fields 恰为 `policy_id,model,anchor_tokens,selection,calendar,parameters,on_timeout_actions,manufactures_success`；数组按 token 排序去重，`manufactures_success` 恒为 false。`parameters` 是由 `model` 判别的 strict object：`FIXED_GRACE` 只含 `default_seconds,min_seconds,max_seconds`；`EXACT_FACT_TIME|EACH_FACT_DUE|EARLIEST_OPEN_FACT_DUE` 必须为空对象；`SIGNED_LEAD_TIME_BEFORE` 只含 `min_days,max_days`；`OFFSET_SCHEDULE` 只含 `default_offsets_days,min_offset_days,max_offset_days`；`SEVERITY_MATRIX` 只含 `response_seconds_by_severity,resolution_seconds_by_severity,min_seconds,max_seconds`；`ENTITLEMENT_OR_FALLBACK` 只含 `fallback_response_seconds,fallback_resolution_seconds,min_seconds,max_seconds`；`FIXED_WINDOW` 只含 `seconds`；`RENEWAL_WINDOW` 只含 `default_days_before_expiry,min_days_before_expiry,max_days_before_expiry`。下表 code span 内每个 object 都是 strict JSON/JCS 唯一输入；未知/缺字段、不同单位、浮点数、负数、数组乱序/重复或额外 key 均拒绝。
 
+<!-- F57-SEMANTIC-TABLE:timeout_policy_registry_v1:BEGIN -->
 | timeout_policy_id | canonical `TimeoutPolicyDefinitionV1` JSON |
 |---|---|
-| OPPORTUNITY_DECISION_TIMEOUT_V1 | `{"policy_id":"OPPORTUNITY_DECISION_TIMEOUT_V1","model":"FIXED_GRACE","anchor_tokens":["OPPORTUNITY_ENTERED_COMMERCIAL_AT"],"selection":"SINGLE","calendar":"UTC_CALENDAR","parameters":{"default_seconds":2592000,"min_seconds":86400,"max_seconds":15552000},"on_timeout_actions":["ESCALATE_DECISION_OVERDUE"],"manufactures_success":false}` |
-| QUOTE_VALID_UNTIL_V1 | `{"policy_id":"QUOTE_VALID_UNTIL_V1","model":"EXACT_FACT_TIME","anchor_tokens":["QUOTE_VERSION_VALID_UNTIL"],"selection":"SINGLE","calendar":"UTC_CALENDAR","parameters":{},"on_timeout_actions":["MARK_QUOTE_VERSION_EXPIRED"],"manufactures_success":false}` |
-| CONTRACT_OBLIGATION_DUE_V1 | `{"policy_id":"CONTRACT_OBLIGATION_DUE_V1","model":"EACH_FACT_DUE","anchor_tokens":["CONTRACT_OBLIGATION_DUE_AT"],"selection":"EACH","calendar":"CONTRACT_CALENDAR","parameters":{},"on_timeout_actions":["CREATE_CONTRACT_BREACH","ESCALATE_CONTRACT_RISK"],"manufactures_success":false}` |
-| SALES_DELIVERY_TIMEOUT_V1 | `{"policy_id":"SALES_DELIVERY_TIMEOUT_V1","model":"FIXED_GRACE","anchor_tokens":["SALES_ORDER_PROMISED_AT"],"selection":"SINGLE","calendar":"UTC_CALENDAR","parameters":{"default_seconds":86400,"min_seconds":0,"max_seconds":2592000},"on_timeout_actions":["ESCALATE_SALES_DELIVERY_OVERDUE"],"manufactures_success":false}` |
-| DROP_SHIP_DELIVERY_TIMEOUT_V1 | `{"policy_id":"DROP_SHIP_DELIVERY_TIMEOUT_V1","model":"FIXED_GRACE","anchor_tokens":["CUSTOMER_PROMISED_AT","SUPPLIER_COMMITTED_AT"],"selection":"EARLIEST","calendar":"UTC_CALENDAR","parameters":{"default_seconds":86400,"min_seconds":0,"max_seconds":2592000},"on_timeout_actions":["ESCALATE_DROP_SHIP_OVERDUE"],"manufactures_success":false}` |
-| PROCUREMENT_LEAD_TIME_V1 | `{"policy_id":"PROCUREMENT_LEAD_TIME_V1","model":"SIGNED_LEAD_TIME_BEFORE","anchor_tokens":["PROCUREMENT_REQUIRED_ON"],"selection":"SINGLE","calendar":"UTC_CALENDAR","parameters":{"min_days":0,"max_days":365},"on_timeout_actions":["ESCALATE_PROCUREMENT_LATE"],"manufactures_success":false}` |
-| RECEIVABLE_DUNNING_SCHEDULE_V1 | `{"policy_id":"RECEIVABLE_DUNNING_SCHEDULE_V1","model":"OFFSET_SCHEDULE","anchor_tokens":["RECEIVABLE_DUE_ON"],"selection":"SINGLE","calendar":"UTC_CALENDAR","parameters":{"default_offsets_days":[0,7,30],"min_offset_days":0,"max_offset_days":180},"on_timeout_actions":["ISSUE_DUNNING_DAY_0","ISSUE_DUNNING_DAY_30","ISSUE_DUNNING_DAY_7"],"manufactures_success":false}` |
-| RETURN_COMPLETION_TIMEOUT_V1 | `{"policy_id":"RETURN_COMPLETION_TIMEOUT_V1","model":"FIXED_GRACE","anchor_tokens":["RETURN_REFUND_APPROVED_AT"],"selection":"SINGLE","calendar":"UTC_CALENDAR","parameters":{"default_seconds":1209600,"min_seconds":86400,"max_seconds":7776000},"on_timeout_actions":["OPEN_RETURN_COMPLETION_INCIDENT"],"manufactures_success":false}` |
-| COMPLAINT_SEVERITY_SLA_V1 | `{"policy_id":"COMPLAINT_SEVERITY_SLA_V1","model":"SEVERITY_MATRIX","anchor_tokens":["CUSTOMER_COMPLAINT_ACCEPTED_AT"],"selection":"SINGLE","calendar":"SIGNED_BUSINESS_CALENDAR","parameters":{"response_seconds_by_severity":{"CRITICAL":3600,"MAJOR":14400,"OTHER":86400},"resolution_seconds_by_severity":{"CRITICAL":259200,"MAJOR":604800,"OTHER":1296000},"min_seconds":3600,"max_seconds":2592000},"on_timeout_actions":["ESCALATE_COMPLAINT_FIRST_RESPONSE","ESCALATE_COMPLAINT_RESOLUTION"],"manufactures_success":false}` |
-| SERVICE_ENTITLEMENT_SLA_V1 | `{"policy_id":"SERVICE_ENTITLEMENT_SLA_V1","model":"ENTITLEMENT_OR_FALLBACK","anchor_tokens":["SERVICE_WORK_ORDER_TRIAGED_AT"],"selection":"SINGLE","calendar":"ENTITLEMENT_CALENDAR","parameters":{"fallback_response_seconds":14400,"fallback_resolution_seconds":259200,"min_seconds":3600,"max_seconds":7776000},"on_timeout_actions":["ESCALATE_SERVICE_RESOLUTION","ESCALATE_SERVICE_RESPONSE"],"manufactures_success":false}` |
-| SATISFACTION_WINDOW_V1 | `{"policy_id":"SATISFACTION_WINDOW_V1","model":"FIXED_WINDOW","anchor_tokens":["SATISFACTION_SURVEY_OPENED_AT"],"selection":"SINGLE","calendar":"UTC_CALENDAR","parameters":{"seconds":604800},"on_timeout_actions":["RECORD_CONTROLLED_NO_RESPONSE_CANDIDATE"],"manufactures_success":false}` |
-| MAINTENANCE_GRACE_V1 | `{"policy_id":"MAINTENANCE_GRACE_V1","model":"FIXED_GRACE","anchor_tokens":["MAINTENANCE_OCCURRENCE_DUE_AT"],"selection":"SINGLE","calendar":"UTC_CALENDAR","parameters":{"default_seconds":86400,"min_seconds":0,"max_seconds":2592000},"on_timeout_actions":["MARK_MAINTENANCE_OCCURRENCE_OVERDUE"],"manufactures_success":false}` |
-| PROJECT_EARLIEST_DUE_V1 | `{"policy_id":"PROJECT_EARLIEST_DUE_V1","model":"EARLIEST_OPEN_FACT_DUE","anchor_tokens":["OPEN_PROJECT_MILESTONE_DUE_AT","OPEN_PROJECT_TASK_DUE_AT"],"selection":"EARLIEST","calendar":"PROJECT_CALENDAR","parameters":{},"on_timeout_actions":["CREATE_PROJECT_RISK","ESCALATE_PROJECT_OVERDUE"],"manufactures_success":false}` |
-| CONTRACT_RENEWAL_WINDOW_V1 | `{"policy_id":"CONTRACT_RENEWAL_WINDOW_V1","model":"RENEWAL_WINDOW","anchor_tokens":["CONTRACT_EXPIRY_AT"],"selection":"SINGLE","calendar":"CONTRACT_CALENDAR","parameters":{"default_days_before_expiry":90,"min_days_before_expiry":1,"max_days_before_expiry":365},"on_timeout_actions":["ESCALATE_RENEWAL_WINDOW"],"manufactures_success":false}` |
-| SUPPLIER_RETURN_TIMEOUT_V1 | `{"policy_id":"SUPPLIER_RETURN_TIMEOUT_V1","model":"FIXED_GRACE","anchor_tokens":["SUPPLIER_RETURN_CONFIRMED_AT"],"selection":"SINGLE","calendar":"UTC_CALENDAR","parameters":{"default_seconds":1209600,"min_seconds":86400,"max_seconds":7776000},"on_timeout_actions":["OPEN_SUPPLIER_RETURN_INCIDENT"],"manufactures_success":false}` |
+| OPPORTUNITY_DECISION_TIMEOUT_V1 | `{"anchor_tokens":["OPPORTUNITY_ENTERED_COMMERCIAL_AT"],"calendar":"UTC_CALENDAR","manufactures_success":false,"model":"FIXED_GRACE","on_timeout_actions":["ESCALATE_DECISION_OVERDUE"],"parameters":{"default_seconds":2592000,"max_seconds":15552000,"min_seconds":86400},"policy_id":"OPPORTUNITY_DECISION_TIMEOUT_V1","selection":"SINGLE"}` |
+| QUOTE_VALID_UNTIL_V1 | `{"anchor_tokens":["QUOTE_VERSION_VALID_UNTIL"],"calendar":"UTC_CALENDAR","manufactures_success":false,"model":"EXACT_FACT_TIME","on_timeout_actions":["MARK_QUOTE_VERSION_EXPIRED"],"parameters":{},"policy_id":"QUOTE_VALID_UNTIL_V1","selection":"SINGLE"}` |
+| CONTRACT_OBLIGATION_DUE_V1 | `{"anchor_tokens":["CONTRACT_OBLIGATION_DUE_AT"],"calendar":"CONTRACT_CALENDAR","manufactures_success":false,"model":"EACH_FACT_DUE","on_timeout_actions":["CREATE_CONTRACT_BREACH","ESCALATE_CONTRACT_RISK"],"parameters":{},"policy_id":"CONTRACT_OBLIGATION_DUE_V1","selection":"EACH"}` |
+| SALES_DELIVERY_TIMEOUT_V1 | `{"anchor_tokens":["SALES_ORDER_PROMISED_AT"],"calendar":"UTC_CALENDAR","manufactures_success":false,"model":"FIXED_GRACE","on_timeout_actions":["ESCALATE_SALES_DELIVERY_OVERDUE"],"parameters":{"default_seconds":86400,"max_seconds":2592000,"min_seconds":0},"policy_id":"SALES_DELIVERY_TIMEOUT_V1","selection":"SINGLE"}` |
+| DROP_SHIP_DELIVERY_TIMEOUT_V1 | `{"anchor_tokens":["CUSTOMER_PROMISED_AT","SUPPLIER_COMMITTED_AT"],"calendar":"UTC_CALENDAR","manufactures_success":false,"model":"FIXED_GRACE","on_timeout_actions":["ESCALATE_DROP_SHIP_OVERDUE"],"parameters":{"default_seconds":86400,"max_seconds":2592000,"min_seconds":0},"policy_id":"DROP_SHIP_DELIVERY_TIMEOUT_V1","selection":"EARLIEST"}` |
+| PROCUREMENT_LEAD_TIME_V1 | `{"anchor_tokens":["PROCUREMENT_REQUIRED_ON"],"calendar":"UTC_CALENDAR","manufactures_success":false,"model":"SIGNED_LEAD_TIME_BEFORE","on_timeout_actions":["ESCALATE_PROCUREMENT_LATE"],"parameters":{"max_days":365,"min_days":0},"policy_id":"PROCUREMENT_LEAD_TIME_V1","selection":"SINGLE"}` |
+| RECEIVABLE_DUNNING_SCHEDULE_V1 | `{"anchor_tokens":["RECEIVABLE_DUE_ON"],"calendar":"UTC_CALENDAR","manufactures_success":false,"model":"OFFSET_SCHEDULE","on_timeout_actions":["ISSUE_DUNNING_DAY_0","ISSUE_DUNNING_DAY_30","ISSUE_DUNNING_DAY_7"],"parameters":{"default_offsets_days":[0,7,30],"max_offset_days":180,"min_offset_days":0},"policy_id":"RECEIVABLE_DUNNING_SCHEDULE_V1","selection":"SINGLE"}` |
+| RETURN_COMPLETION_TIMEOUT_V1 | `{"anchor_tokens":["RETURN_REFUND_APPROVED_AT"],"calendar":"UTC_CALENDAR","manufactures_success":false,"model":"FIXED_GRACE","on_timeout_actions":["OPEN_RETURN_COMPLETION_INCIDENT"],"parameters":{"default_seconds":1209600,"max_seconds":7776000,"min_seconds":86400},"policy_id":"RETURN_COMPLETION_TIMEOUT_V1","selection":"SINGLE"}` |
+| COMPLAINT_SEVERITY_SLA_V1 | `{"anchor_tokens":["CUSTOMER_COMPLAINT_ACCEPTED_AT"],"calendar":"SIGNED_BUSINESS_CALENDAR","manufactures_success":false,"model":"SEVERITY_MATRIX","on_timeout_actions":["ESCALATE_COMPLAINT_FIRST_RESPONSE","ESCALATE_COMPLAINT_RESOLUTION"],"parameters":{"max_seconds":2592000,"min_seconds":3600,"resolution_seconds_by_severity":{"CRITICAL":259200,"MAJOR":604800,"OTHER":1296000},"response_seconds_by_severity":{"CRITICAL":3600,"MAJOR":14400,"OTHER":86400}},"policy_id":"COMPLAINT_SEVERITY_SLA_V1","selection":"SINGLE"}` |
+| SERVICE_ENTITLEMENT_SLA_V1 | `{"anchor_tokens":["SERVICE_WORK_ORDER_TRIAGED_AT"],"calendar":"ENTITLEMENT_CALENDAR","manufactures_success":false,"model":"ENTITLEMENT_OR_FALLBACK","on_timeout_actions":["ESCALATE_SERVICE_RESOLUTION","ESCALATE_SERVICE_RESPONSE"],"parameters":{"fallback_resolution_seconds":259200,"fallback_response_seconds":14400,"max_seconds":7776000,"min_seconds":3600},"policy_id":"SERVICE_ENTITLEMENT_SLA_V1","selection":"SINGLE"}` |
+| SATISFACTION_WINDOW_V1 | `{"anchor_tokens":["SATISFACTION_SURVEY_OPENED_AT"],"calendar":"UTC_CALENDAR","manufactures_success":false,"model":"FIXED_WINDOW","on_timeout_actions":["RECORD_CONTROLLED_NO_RESPONSE_CANDIDATE"],"parameters":{"seconds":604800},"policy_id":"SATISFACTION_WINDOW_V1","selection":"SINGLE"}` |
+| MAINTENANCE_GRACE_V1 | `{"anchor_tokens":["MAINTENANCE_OCCURRENCE_DUE_AT"],"calendar":"UTC_CALENDAR","manufactures_success":false,"model":"FIXED_GRACE","on_timeout_actions":["MARK_MAINTENANCE_OCCURRENCE_OVERDUE"],"parameters":{"default_seconds":86400,"max_seconds":2592000,"min_seconds":0},"policy_id":"MAINTENANCE_GRACE_V1","selection":"SINGLE"}` |
+| PROJECT_EARLIEST_DUE_V1 | `{"anchor_tokens":["OPEN_PROJECT_MILESTONE_DUE_AT","OPEN_PROJECT_TASK_DUE_AT"],"calendar":"PROJECT_CALENDAR","manufactures_success":false,"model":"EARLIEST_OPEN_FACT_DUE","on_timeout_actions":["CREATE_PROJECT_RISK","ESCALATE_PROJECT_OVERDUE"],"parameters":{},"policy_id":"PROJECT_EARLIEST_DUE_V1","selection":"EARLIEST"}` |
+| CONTRACT_RENEWAL_WINDOW_V1 | `{"anchor_tokens":["CONTRACT_EXPIRY_AT"],"calendar":"CONTRACT_CALENDAR","manufactures_success":false,"model":"RENEWAL_WINDOW","on_timeout_actions":["ESCALATE_RENEWAL_WINDOW"],"parameters":{"default_days_before_expiry":90,"max_days_before_expiry":365,"min_days_before_expiry":1},"policy_id":"CONTRACT_RENEWAL_WINDOW_V1","selection":"SINGLE"}` |
+| SUPPLIER_RETURN_TIMEOUT_V1 | `{"anchor_tokens":["SUPPLIER_RETURN_CONFIRMED_AT"],"calendar":"UTC_CALENDAR","manufactures_success":false,"model":"FIXED_GRACE","on_timeout_actions":["OPEN_SUPPLIER_RETURN_INCIDENT"],"parameters":{"default_seconds":1209600,"max_seconds":7776000,"min_seconds":86400},"policy_id":"SUPPLIER_RETURN_TIMEOUT_V1","selection":"SINGLE"}` |
+<!-- F57-SEMANTIC-TABLE:timeout_policy_registry_v1:END -->
 
 `TerminationPolicyDefinitionV1` strict fields 恰为 `policy_id,reason_codes,capability,decision_mode,guard_id`；reason_codes 排序去重，`decision_mode` 只取 `CAPABILITY_AND_SOD|MAKER_CHECKER|INDEPENDENT_REVIEW|CROSS_DOMAIN_IMPACT_APPROVAL`。每个非空 reason 展开一个 `TerminationRule={policy_id,reason_code,capability,decision_mode,guard_id}`；空数组展开零 termination rules。guard 是已注册的 typed predicate，不是脚本。
 
+<!-- F57-SEMANTIC-TABLE:termination_policy_registry_v1:BEGIN -->
 | termination_policy_id | reason_codes exact-set | capability | decision_mode | guard_id |
 |---|---|---|---|---|
 | OPPORTUNITY_TERMINATION_V1 | CUSTOMER_DECLINED\|DUPLICATE_CONFIRMED\|LEGAL_PROHIBITION | crm.opportunity.terminate | MAKER_CHECKER | OPPORTUNITY_NO_IRREVERSIBLE_EFFECT_OR_COMPENSATED_V1 |
@@ -928,9 +960,11 @@ CTC-01 不改变上述采购关闭谓词。其 exact 主链只关闭 `CONTRACT_F
 | PROJECT_TERMINATION_V1 | DUPLICATE_CONFIRMED\|LEGAL_PROHIBITION\|PROJECT_TERMINATED | project.terminate | MAKER_CHECKER | PROJECT_TERMINATION_IMPACT_CLOSED_V1 |
 | CONTRACT_RENEWAL_TERMINATION_V1 | CUSTOMER_DECLINED\|NO_RENEWAL_APPROVED\|SUPERSEDED | clm.contract.renew.terminate | CAPABILITY_AND_SOD | ORIGINAL_CONTRACT_FULFILMENT_UNCHANGED_V1 |
 | SUPPLIER_RETURN_TERMINATION_V1 | DUPLICATE_CONFIRMED\|LEGAL_PROHIBITION\|RETURN_WITHDRAWN_BEFORE_SHIPMENT | procure.supplier_return.terminate | CAPABILITY_AND_SOD | SUPPLIER_RETURN_SHIPMENT_EFFECT_DISPOSED_V1 |
+<!-- F57-SEMANTIC-TABLE:termination_policy_registry_v1:END -->
 
 `CompensationCommandRegistryV1` 是第三张机器表；每行 exact fields 为 `objective_kind,compensation_commands[]`，数组按 token byte order 排序唯一，不允许从人读表抽取：
 
+<!-- F57-SEMANTIC-TABLE:compensation_command_registry_v1:BEGIN -->
 | ObjectiveKind | compensation_commands exact-set |
 |---|---|
 | OPPORTUNITY_CONVERSION | CANCEL_UNEFFECTED_DRAFT\|MARK_DUPLICATE_SUCCESSOR\|WITHDRAW_ISSUED_QUOTE |
@@ -948,6 +982,7 @@ CTC-01 不改变上述采购关闭谓词。其 exact 主链只关闭 `CONTRACT_F
 | PROJECT_DELIVERY_ACCEPTANCE | CANCEL_OPEN_PROJECT_TASK\|RECONCILE_COST_RECEIPT\|REOPEN_MILESTONE_OR_RISK\|REQUEST_DOMAIN_OWNER_REVERSAL |
 | CONTRACT_RENEWAL | APPLY_CONTRACT_IMPACT\|SUPERSEDE_SUCCESSOR_DRAFT\|WITHDRAW_RENEWAL_QUOTE |
 | SUPPLIER_RETURN_RECOVERY | RECALL_UNSHIPPED_RETURN\|RECEIVE_BACK_OR_RECONCILE\|REOPEN_REPLACEMENT_DEMAND\|REVERSE_PURCHASE_CREDIT_REFUND |
+<!-- F57-SEMANTIC-TABLE:compensation_command_registry_v1:END -->
 
 `f57check` 必须把 §8.2.0、§8.2.1 及本节三张机器表分别解析为 typed rows 后按 ObjectiveKind exact-join；人读表不得作为 fallback。Task 12 的 runtime export 必须逐字段 exact-match 15 rows，并用负例拒绝 prose token、未知/缺 policy、错误 duration unit、数组乱序/重复、Quote 非空 reopen、Receivable termination rule、未注册 guard 或一个全局 closure/timeout/termination 默认值。
 
@@ -966,6 +1001,8 @@ CTC-01 不改变上述采购关闭谓词。其 exact 主链只关闭 `CONTRACT_F
 ### 8.4 Workflow 编译、升级、灰度和回滚
 
 `WorkflowDefinitionV1` strict fields 为 `workflow_id,definition_version,generation,objective_kind,trigger_kinds[],step_graph,timeout_policy_id,compensation_graph,upgrade_policy,rollout_policy,rollback_generation,compiled_digest`。step kind 闭集为 `OWNER_COMMAND|WAIT_TYPED_FACT|TYPED_DECISION|FORK_JOIN_ALL|CLOSURE_CHECK|COMPENSATE`；condition 只能引用已登记 typed fact/field/operator，禁止任意脚本、SQL、动态网络调用、无界循环、隐式 effect 或未登记 closure。编译必须证明 step/edge 可达、每条路径有退出/超时、effect 有幂等/Unknown/compensation 契约、obligation/evidence 与 §8.2 registry exact-match、无悬空并发分支。
+
+Workflow 不再另建 Markdown 机器表。本节是唯一 authoring rule；G0 只建立 `authoring_rule_id=f57.workflow_definition.graph_native.v1`、`WORKFLOW_DEFINITION_REGISTRY_V1` validator 和 strict wire，实际 owning task 在其 ObjectiveKind 首次 activation-due 前把 definitions 写入 CapabilityGraph 的唯一 `WORKFLOW_DEFINITION_REGISTRY`、`GRAPH_NATIVE` semantic contract binding。每行以全局唯一 `workflow_id` 为 row key，并用 `CANONICAL_JCS_OBJECT(WorkflowDefinitionV1)` 保存完整 typed step/compensation graph；不得用 ObjectiveKind 充当 row key或把 JSON 放入普通 UTF8。该 binding 的 `definition.objective_kind` coverage 必须覆盖 `F57_BUSINESS_OBJECTIVE_KIND_V1_EXACT` 的全部 15 个 ObjectiveKind，每种至少一个 definition；Objective summary 只能引用该 binding 中属于同一 ObjectiveKind 且 exact-resolve 的 ID。生成后的 JSON、运行时数据库、UI 配置和手写 Rust 都只是投影或缓存，不能反向成为定义来源。其他八种 semantic contract 禁止使用 `GRAPH_NATIVE`，workflow registry 也禁止伪装成 `CONTRACT_TABLE`。
 
 运行实例固定原 definition_version/generation。升级决定闭集为：
 
@@ -1217,6 +1254,8 @@ T-F57-POR-003 必须至少包含：
 
 ### 11.1 WorkItemAssignment 状态
 
+所有 WorkItemAssignment 的 `current_assignee` 以及下列 attempt 的 `assignee` 都必须直接使用 foundation 唯一 `PrincipalRefV1 {kind,id}`，不得保存裸 UUID、默认 USER kind 或另造 assignee 类型。分配只表达责任；每次接受、开始和 effect 前仍按完整 principal kind+id 重验当前 grant，分配本身不授予权限。
+
 AssignmentState：
 
 - UNASSIGNED
@@ -1245,7 +1284,7 @@ AssignmentState：
 | COMPLETED | 无 | 终态；后续 obligation 用新的 review/work item，不复活原 assignment |
 | CANCELLED | 无 | 终态；原因和未完成影响必填 |
 
-每次 assignment attempt 固定 `attempt_id,query_id,assignee_id,accepted_at,checkpoint_ref,ended_reason,row_version`；从 RESOLVING/REASSIGNING 选人必须创建新 attempt，不能改写旧 assignee。所有状态变更使用 CAS；未列边一律拒绝。
+每次 assignment attempt 固定 `attempt_id,query_id,assignee: PrincipalRefV1 {kind,id},accepted_at,checkpoint_ref,ended_reason,row_version`；从 RESOLVING/REASSIGNING 选人必须创建新 attempt，不能改写旧 assignee。所有状态变更使用 CAS；未列边一律拒绝。
 
 CandidateQuery 必须按 capability、legal entity/record scope、条件、有效期、设备要求、金额/风险上限、SLA、位置、负载、回避和 SoD 解析。角色/岗位只能展开成 grant 模板，不能直接成为候选。
 
@@ -1280,6 +1319,8 @@ T-F57-AUT-004、T-F57-AUTH-003、T-F57-PLT-003 必须至少包含：
 - sod_excludes_maker_and_prior_incompatible_approvers
 - no_candidate_escalates_without_auto_approval
 - assignment_normal_chain_and_terminal_edges_are_closed
+- assignment_and_current_assignee_use_full_principal_kind_and_id
+- assignment_never_grants_authority
 - sla_clock_does_not_reset_on_reassignment
 - local_draft_is_not_transferred_and_server_draft_is_field_filtered
 
@@ -1426,26 +1467,30 @@ T-F57-GOV-001、T-F57-CLI-002、T-F57-CLI-005 必须至少包含：
 
 ### 14.6 API 状态域的现行补充裁决
 
-员工、Control 和 Portal API 暴露的 `state`/`states` 不是可由 OpenAPI 作者临场命名的展示词。`docs/f57-api-state-domains.seed.tsv` 冻结 65 个 wire enum；每个值必须逐字等于其领域权威。合同、销售订单、采购订单和设备沿用旧 PRD/阶段计划中未被 F-57 取代的精确语义，并由本节提升为 F-57 当前裁决。此前只有枚举、没有完整边或派生规则的状态域按下表收口。表内 `A→B|C` 表示从 A 只允许进入 B 或 C；未列边、终态出边、直接 SQL 改状态和用新名字替代旧状态一律拒绝。自环只在表中明确列出时允许，而且只能追加失败/重试事实，不能覆盖历史。
+员工、Control 和 Portal API 暴露的 `state`/`states` 不是可由 OpenAPI 作者临场命名的展示词。本表是状态语义的唯一权威；`docs/f57-api-state-domains.seed.tsv` 只保留为 G0 的历史导入快照，不得被重写、继续执行或作为第二真值。G0 建立语义合约机制后，所属节点必须把本表 exact-author 到 CapabilityGraph 的 `business_state_domain_registry_v1` 绑定，并只从该绑定生成现行机器投影、Rust、数据库约束、OpenAPI 和客户端。合同、销售订单、采购订单和设备沿用旧 PRD/阶段计划中未被 F-57 取代的精确语义，并由本节提升为 F-57 当前裁决。此前只有枚举、没有完整边或派生规则的状态域按下表收口。表内 `A→B|C` 表示从 A 只允许进入 B 或 C；未列边、终态出边、直接 SQL 改状态和用新名字替代旧状态一律拒绝。自环只在表中明确列出时允许，而且只能追加失败/重试事实，不能覆盖历史。
 
+<!-- F57-SEMANTIC-TABLE:business_state_domain_registry_v1:BEGIN -->
 | StateDomain | 语义种类与初态 | 允许边或唯一派生规则 | 终态 |
 |---|---|---|---|
-| `CONTRACT_V1` | 持久生命周期；`DRAFT` | `DRAFT→PENDING_APPROVAL|VOID`；`PENDING_APPROVAL→DRAFT|PENDING_SIGNATURE|REJECTED`；`REJECTED→DRAFT|VOID`；`PENDING_SIGNATURE→EFFECTIVE|REJECTED`；`EFFECTIVE→EFFECTIVE|IN_PERFORMANCE|TERMINATING`；`IN_PERFORMANCE→COMPLETED|TERMINATING`；`TERMINATING→TERMINATED|TERMINATING`。`EFFECTIVE` 自环只表示派生失败后保持原态，`TERMINATING` 自环只表示处置失败后保持原态。 | `COMPLETED|TERMINATED|VOID` |
-| `SALES_ORDER_V1` | 持久生命周期；`PENDING_RELEASE` | `PENDING_RELEASE→CANCELLED|RELEASED`；`RELEASED→CANCELLED|CHANGE_APPROVAL|DELIVERED|PARTIALLY_DELIVERED`；`CHANGE_APPROVAL→PARTIALLY_DELIVERED|RELEASED`，目标取进入审批前状态；`PARTIALLY_DELIVERED→CHANGE_APPROVAL|CLOSED|DELIVERED`。 | `CANCELLED|CLOSED|DELIVERED` |
-| `PURCHASE_ORDER_V1` | 持久生命周期；`DRAFT` | `DRAFT→PENDING_APPROVAL|VOIDED`；`PENDING_APPROVAL→CLOSED|ISSUED|REJECTED`；`REJECTED→CLOSED|DRAFT`；`ISSUED→CLOSED|PENDING_SUPPLIER_CONFIRM`；`PENDING_SUPPLIER_CONFIRM→SUPPLIER_CONFIRMED|SUPPLIER_RESCHEDULE_PROPOSED|VOIDED`；`SUPPLIER_RESCHEDULE_PROPOSED→PENDING_SUPPLIER_CONFIRM|SUPPLIER_CONFIRMED|VOIDED`；`SUPPLIER_CONFIRMED→CLOSED|COMPLETED|PARTIALLY_RECEIVED`；`PARTIALLY_RECEIVED→CLOSED|COMPLETED`；`COMPLETED→CLOSED`。VOIDED 守卫为尚无收货、采购发票或已批准付款效果；CLOSED 必须保留已发生事实。 | `CLOSED|VOIDED` |
-| `EQUIPMENT_V1` | 持久生命周期；`IN_STOCK` | `IN_STOCK→IN_SERVICE|RETURNED|SCRAPPED`；`IN_SERVICE→RETURNED|SCRAPPED|UNDER_REPAIR`；`UNDER_REPAIR→IN_SERVICE|RETURNED|SCRAPPED`。变更只留设备审计，不制造库存或财务事实。 | `RETURNED|SCRAPPED` |
-| `APPROVAL_CASE_V1` | 持久生命周期；`OPEN` | `OPEN→APPROVED|CANCELLED|EXPIRED|REJECTED`。一个结论只能写一次；重提建立新 case。 | `APPROVED|CANCELLED|EXPIRED|REJECTED` |
-| `COST_ENTRY_V1` | 持久生命周期；`DRAFT` | `DRAFT→SUBMITTED`；`SUBMITTED→APPROVED|REJECTED`；`APPROVED→POSTED`；`POSTED→REVERSED`。拒绝后修改建立新版本；已过账更正只能追加反向/更正事实。 | `REJECTED|REVERSED` |
-| `IMPORT_PROPOSAL_V1` | 持久生命周期；`DRAFT` | `DRAFT→FAILED_CONTAINED|VALIDATED`；`VALIDATED→FAILED_CONTAINED|PENDING_APPROVAL`；`PENDING_APPROVAL→APPROVED|FAILED_CONTAINED|REJECTED`；`APPROVED→APPLIED|FAILED_CONTAINED`。失败隔离保留原始文件 digest、逐行结果和补偿证据。 | `APPLIED|FAILED_CONTAINED|REJECTED` |
-| `MAINTENANCE_PLAN_V1` | 持久生命周期；`DRAFT` | `DRAFT→ACTIVE|CANCELLED`；`ACTIVE→CANCELLED|COMPLETED|PAUSED`；`PAUSED→ACTIVE|CANCELLED|COMPLETED`。暂停不改写已生成 occurrence。 | `CANCELLED|COMPLETED` |
-| `MAINTENANCE_OCCURRENCE_V1` | 持久生命周期；`PLANNED` | `PLANNED→CANCELLED|DUE|SKIPPED`；`DUE→CANCELLED|IN_PROGRESS|OVERDUE|SKIPPED`；`OVERDUE→CANCELLED|IN_PROGRESS|SKIPPED`；`IN_PROGRESS→CANCELLED|COMPLETED`。重复计划生成新的 occurrence，不重开旧终态。 | `CANCELLED|COMPLETED|SKIPPED` |
-| `PORTABLE_EXPORT_V1` | 持久生命周期；`PENDING_APPROVAL` | `PENDING_APPROVAL→APPROVED|EXPIRED|REJECTED`；`APPROVED→EXPIRED|PREPARING`；`PREPARING→EXPIRED|FAILED_CONTAINED|READY`；`READY→EXPIRED`。READY 只在导出包、清单、密钥包装和审计证据全部原子发布后成立。 | `EXPIRED|FAILED_CONTAINED|REJECTED` |
-| `PROJECT_RECEIPT_MILESTONE_V1` | 只读派生分类；初值由当前事实决定 | 禁止状态命令。优先级固定为：有效到款覆盖里程碑金额=`PAID`；否则有效已开票覆盖=`INVOICED`；否则前置义务未满足=`BLOCKED`；否则服务器业务日达到到期日=`DUE`；否则=`READY`。付款、核销、发票或前置义务被冲销时按同一优先级重新派生，历史事实不改写。 | 无；`PAID` 可因合法反向事实重新派生 |
-| `SATISFACTION_V1` | 持久生命周期；`OPEN` | `OPEN→CLOSED|RECORDED|WAITING_RESPONSE`；`WAITING_RESPONSE→CLOSED|RECORDED`；`RECORDED→CLOSED`。窗口到期的受控无响应证据才可 CLOSED；迟到相反证据建立新 follow-up cycle。 | `CLOSED` |
-| `SERVICE_EVIDENCE_V1` | 两阶段证据裁决；创建结果为 `VERIFIED` 或 `REJECTED` | 文件/签名/归属/时间验证失败直接创建 `REJECTED`；通过则创建 `VERIFIED`，随后只有 `VERIFIED→ACCEPTED|REJECTED`。证据字节不可改；纠正须新建 evidence ID 并引用旧项。 | `ACCEPTED|REJECTED` |
-| `SERVICE_REQUEST_V1` | 持久生命周期；`OPEN` | `OPEN→CANCELLED|TRIAGED`；`TRIAGED→ACCEPTED|CANCELLED`；`ACCEPTED→CANCELLED|CLOSED`。ACCEPTED 后的取消必须闭合已派生责任和效果，不能删除工单或证据。 | `CANCELLED|CLOSED` |
+| `CONTRACT_V1` | 持久生命周期；`DRAFT` | `DRAFT→PENDING_APPROVAL\|VOID`；`PENDING_APPROVAL→DRAFT\|PENDING_SIGNATURE\|REJECTED`；`REJECTED→DRAFT\|VOID`；`PENDING_SIGNATURE→EFFECTIVE\|REJECTED`；`EFFECTIVE→EFFECTIVE\|IN_PERFORMANCE\|TERMINATING`；`IN_PERFORMANCE→COMPLETED\|TERMINATING`；`TERMINATING→TERMINATED\|TERMINATING`。`EFFECTIVE` 自环只表示派生失败后保持原态，`TERMINATING` 自环只表示处置失败后保持原态。 | `COMPLETED\|TERMINATED\|VOID` |
+| `SALES_ORDER_V1` | 持久生命周期；`PENDING_RELEASE` | `PENDING_RELEASE→CANCELLED\|RELEASED`；`RELEASED→CANCELLED\|CHANGE_APPROVAL\|DELIVERED\|PARTIALLY_DELIVERED`；`CHANGE_APPROVAL→PARTIALLY_DELIVERED\|RELEASED`，目标取进入审批前状态；`PARTIALLY_DELIVERED→CHANGE_APPROVAL\|CLOSED\|DELIVERED`。 | `CANCELLED\|CLOSED\|DELIVERED` |
+| `PURCHASE_ORDER_V1` | 持久生命周期；`DRAFT` | `DRAFT→PENDING_APPROVAL\|VOIDED`；`PENDING_APPROVAL→CLOSED\|ISSUED\|REJECTED`；`REJECTED→CLOSED\|DRAFT`；`ISSUED→CLOSED\|PENDING_SUPPLIER_CONFIRM`；`PENDING_SUPPLIER_CONFIRM→SUPPLIER_CONFIRMED\|SUPPLIER_RESCHEDULE_PROPOSED\|VOIDED`；`SUPPLIER_RESCHEDULE_PROPOSED→PENDING_SUPPLIER_CONFIRM\|SUPPLIER_CONFIRMED\|VOIDED`；`SUPPLIER_CONFIRMED→CLOSED\|COMPLETED\|PARTIALLY_RECEIVED`；`PARTIALLY_RECEIVED→CLOSED\|COMPLETED`；`COMPLETED→CLOSED`。VOIDED 守卫为尚无收货、采购发票或已批准付款效果；CLOSED 必须保留已发生事实。 | `CLOSED\|VOIDED` |
+| `EQUIPMENT_V1` | 持久生命周期；`IN_STOCK` | `IN_STOCK→IN_SERVICE\|RETURNED\|SCRAPPED`；`IN_SERVICE→RETURNED\|SCRAPPED\|UNDER_REPAIR`；`UNDER_REPAIR→IN_SERVICE\|RETURNED\|SCRAPPED`。变更只留设备审计，不制造库存或财务事实。 | `RETURNED\|SCRAPPED` |
+| `APPROVAL_CASE_V1` | 持久生命周期；`OPEN` | `OPEN→APPROVED\|CANCELLED\|EXPIRED\|REJECTED`。一个结论只能写一次；重提建立新 case。 | `APPROVED\|CANCELLED\|EXPIRED\|REJECTED` |
+| `COST_ENTRY_V1` | 持久生命周期；`DRAFT` | `DRAFT→SUBMITTED`；`SUBMITTED→APPROVED\|REJECTED`；`APPROVED→POSTED`；`POSTED→REVERSED`。拒绝后修改建立新版本；已过账更正只能追加反向/更正事实。 | `REJECTED\|REVERSED` |
+| `IMPORT_PROPOSAL_V1` | 持久生命周期；`DRAFT` | `DRAFT→FAILED_CONTAINED\|VALIDATED`；`VALIDATED→FAILED_CONTAINED\|PENDING_APPROVAL`；`PENDING_APPROVAL→APPROVED\|FAILED_CONTAINED\|REJECTED`；`APPROVED→APPLIED\|FAILED_CONTAINED`。失败隔离保留原始文件 digest、逐行结果和补偿证据。 | `APPLIED\|FAILED_CONTAINED\|REJECTED` |
+| `MAINTENANCE_PLAN_V1` | 持久生命周期；`DRAFT` | `DRAFT→ACTIVE\|CANCELLED`；`ACTIVE→CANCELLED\|COMPLETED\|PAUSED`；`PAUSED→ACTIVE\|CANCELLED\|COMPLETED`。暂停不改写已生成 occurrence。 | `CANCELLED\|COMPLETED` |
+| `MAINTENANCE_OCCURRENCE_V1` | 持久生命周期；通常初态 `PLANNED`；停机恢复补建的漏期 occurrence 初态直接为 `OVERDUE` | `PLANNED→CANCELLED\|DUE`；`DUE→CANCELLED\|IN_PROGRESS\|OVERDUE`；`OVERDUE→CANCELLED\|IN_PROGRESS`；`IN_PROGRESS→CANCELLED\|COMPLETED`。合同/计划提前终止只以 typed `PlanTerminationEvidence` 进入 CANCELLED；设备异常打开 incident 并保持应有未完成状态；重复计划生成新的 occurrence，不重开旧终态。 | `CANCELLED\|COMPLETED` |
+| `PORTABLE_EXPORT_V1` | 持久生命周期；`PENDING_APPROVAL` | `PENDING_APPROVAL→APPROVED\|EXPIRED\|REJECTED`；`APPROVED→EXPIRED\|PREPARING`；`PREPARING→EXPIRED\|FAILED_CONTAINED\|READY`；`READY→EXPIRED`。READY 只在导出包、清单、密钥包装和审计证据全部原子发布后成立。 | `EXPIRED\|FAILED_CONTAINED\|REJECTED` |
+| `PROJECT_RECEIPT_MILESTONE_V1` | 只读派生分类；初值由当前 owner facts 决定 | 禁止状态命令。优先级固定为：有效合同变更已取消节点且既有效果处置完毕=`CANCELLED`；否则有效到款核销全额覆盖=`PAID`；否则有效到款+批准减免/核销/法律消灭全额覆盖且 waiver 为正=`WAIVED`；否则有效已开票覆盖=`INVOICED`；否则前置义务未满足=`BLOCKED`；否则服务器业务日达到到期日=`DUE`；否则=`READY`。coverage 不得重复或超额。合同取消被取代、waiver 撤销/更正、付款核销释放/冲销、发票红冲或前置义务反向时按同一优先级重新派生，历史事实不改写。 | 无；包括 `CANCELLED\|PAID\|WAIVED` 在内的任何结果都可因合法反向事实重新派生 |
+| `SATISFACTION_V1` | 持久生命周期；`OPEN` | `OPEN→CLOSED\|RECORDED\|WAITING_RESPONSE`；`WAITING_RESPONSE→CLOSED\|RECORDED`；`RECORDED→CLOSED`。窗口到期的受控无响应证据才可 CLOSED；迟到相反证据建立新 follow-up cycle。 | `CLOSED` |
+| `SERVICE_EVIDENCE_V1` | 两阶段证据裁决；创建结果为 `VERIFIED` 或 `REJECTED` | 文件/签名/归属/时间验证失败直接创建 `REJECTED`；通过则创建 `VERIFIED`，随后只有 `VERIFIED→ACCEPTED\|REJECTED`。证据字节不可改；纠正须新建 evidence ID 并引用旧项。 | `ACCEPTED\|REJECTED` |
+| `SERVICE_REQUEST_V1` | 持久生命周期；`OPEN` | `OPEN→CANCELLED\|TRIAGED`；`TRIAGED→ACCEPTED\|CANCELLED`；`ACCEPTED→CANCELLED\|CLOSED`。ACCEPTED 后的取消必须闭合已派生责任和效果，不能删除工单或证据。 | `CANCELLED\|CLOSED` |
+<!-- F57-SEMANTIC-TABLE:business_state_domain_registry_v1:END -->
 
-G0（所有权桶 `F57-01`）必须把上述值与 `docs/f57-api-state-domains.seed.tsv`、组件映射和未被取代的领域状态图逐域 exact-join；G4/G5 的对应 owner 再把各自 Rust 枚举、数据库 CHECK/派生查询、OpenAPI 和生成客户端 exact-join。对持久生命周期须穷举每条允许边、每条未列边和每个终态出边；对派生分类须证明不存在公开状态写命令并覆盖所有事实组合、反向事实和优先级并存组合。任何枚举/图/派生来源缺失或互相不等时，G0/所属节点失败关闭，不允许以“仅展示状态”为由放行。
+这四列不是运行时要再次解释的自由文本。G0 的冻结 adapter 必须 exact-match headers/codecs `StateDomain:MARKDOWN_CODE_UPPER_TOKEN`、`语义种类与初态:UTF8_EXACT`、`允许边或唯一派生规则:UTF8_EXACT`、`终态:UTF8_EXACT`，然后由唯一 `STATE_INVARIANT_REGISTRY_V1` validator 把完整四-cell tuple 归一化为 strict `StateDomainDefinitionV1` JCS object。对象至少显式含 `domain_id,mode,initial_or_output_states,transitions,derived_precedence,guard_ids,invariant_ids,terminal_states,reverse_fact_triggers`；不适用字段是 schema 定义的 exact 空数组而非遗漏/自由 prose。14 个归一化对象必须逐字节等于 G0 的独立 reviewed golden；Graph、投影、Rust、SQL/OpenAPI/client 都只消费这些对象，禁止消费三列中文原文。任何无法无损归一化的句子、未具名 guard/invariant/reverse fact、header/codec 漂移或把整段文字保存成 UTF8 semantic value 都阻止该 graph version 激活。
+
+G0（所有权桶 `F57-01`）必须先逐字节导入并封存 `docs/f57-api-state-domains.seed.tsv`，再建立 CapabilityGraph 语义绑定、行 schema、唯一投影和漂移门；它不得为了追上本表而改写历史 seed。G4/G5 的对应 owner 必须把本表 exact-author 为 `business_state_domain_registry_v1`，使生成的现行机器合约、Rust 枚举、数据库 CHECK/派生查询、OpenAPI 和客户端逐域 exact-join。若该绑定或现行投影仍给 `MAINTENANCE_OCCURRENCE_V1` 暴露跳过状态，或未给 `PROJECT_RECEIPT_MILESTONE_V1` 暴露 WAIVED/CANCELLED，则候选失败关闭；历史 seed 保持原字节并不构成漂移。对持久生命周期须穷举每条允许边、每条未列边和每个终态出边；对派生分类须证明不存在公开状态写命令并覆盖所有事实组合、反向事实和优先级并存组合。维护验收必须额外覆盖停机跨多期逐期 OVERDUE、typed termination→CANCELLED 和设备异常→incident；收款节点验收必须覆盖七态 exact-set、closure coverage、防重复/超额、全部优先级并存组合和每类反向事实。任何现行图/投影/实现来源缺失或互相不等时，G0/所属节点失败关闭，不允许以“仅展示状态”为由放行。
 
 ## 15. 首发地域、语言、币种和数据驻留
 

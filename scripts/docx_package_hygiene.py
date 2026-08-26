@@ -103,8 +103,12 @@ def _remove_cached_statistics(data: bytes) -> bytes:
     return _serialize(root) if changed else data
 
 
-def sanitize_docx_package(path: Path) -> None:
-    """Atomically sanitize one DOCX after python-docx saves it."""
+def sanitize_docx_package(
+    path: Path,
+    *,
+    package_timestamp: tuple[int, int, int, int, int, int] | None = None,
+) -> None:
+    """Atomically sanitize one DOCX and optionally freeze ZIP entry times."""
     path = Path(path)
     temp_path = path.with_name(f".{path.name}.hygiene.tmp")
     try:
@@ -115,6 +119,8 @@ def sanitize_docx_package(path: Path) -> None:
                     data = _normalize_wordprocessing_xml(data)
                 elif info.filename == "docProps/app.xml":
                     data = _remove_cached_statistics(data)
+                if package_timestamp is not None:
+                    info.date_time = package_timestamp
                 target.writestr(info, data)
         os.replace(temp_path, path)
     finally:

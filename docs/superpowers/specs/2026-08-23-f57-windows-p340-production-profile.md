@@ -3,7 +3,7 @@
 > 日期：2026-08-23（Australia/Melbourne）
 > 状态：已批准硬件和生产设计输入；尚未完成 Windows 实机、容量、恢复或发布认证
 > 开发门：`READY_NOT_AUTHORIZED`；只有用户另行明确授权后才可从收敛计划 G0 开始，本文描述的 F-57 安装、运行时、探针和证据链全部仍为 `NOT_IMPLEMENTED`
-> 适用硬件：ThinkStation P340 Tower、i5-10500、32GB RAM、256GB SSD、单 1TB HDD
+> 适用硬件：当前物理基线为 ThinkStation P340 Tower、i5-10500、32GB RAM、256GB SSD、单 1TB HDD；第 15 节只冻结未来客户自控 IaaS 的独立 `IAAS_WINDOWS_SERVER_HDD_STRICT` 扩展缝，当前首版不实现、不接受，也不继承 P340 证据
 > 适用系统：Windows Server 2022 原生服务
 > 权威关系：[F-57 总体设计](2026-08-23-f57-governed-automation-fabric-design.md) 的生产实施附录；生产运营 exact 契约见[客户端、生命周期与安全运营执行契约](2026-08-23-f57-client-lifecycle-security-contract.md)
 
@@ -178,6 +178,8 @@ PostgreSQL 16 必须按唯一的 `Postgres16WindowsPackageLockV1 -> Postgres16Wi
 
 关键 GUC、HBA、ident 采用冻结 canonical vector，effective vector 必须逐字节相等；连接上限固定 `max_connections=64|reserved_connections=4|superuser_reserved_connections=3`，不可分配安全余量为 2。每个数据库消费者逐行声明 `NORMAL|RESERVED|SUPERUSER` 并分别校验 `N+2<=57`、`R<=4`、`N+R+2<=61`、`S<=3`、`N+R+S+2<=64`；应用 NORMAL 不得拥有预留/超级权限，migration RESERVED 须为非 superuser 且持有 `pg_use_reserved_connections`，recovery 才可是 SUPERUSER。监听集合严格为排序去重的 `127.0.0.1|::1`；HBA 只证明 `hostssl` 与 `scram-sha-256`，逐 consumer authenticated probe 另行证明 libpq `channel_binding=require`、协商成功与角色属性。无 `trust`/外网 CIDR/ambient include/用户 tablespace；checksums、`fsync=on`、`full_page_writes=on`、`synchronous_commit=on`、`wal_level=replica`、`archive_mode=on` 与 `wal_sync_method=fsync_writethrough` 均按签名投影开启。`fsync_writethrough` 只是 Windows 兼容性 pin；production durability 必须由 installed-file-verified `pg_test_fsync.exe` 对同一 DATA_HDD 测试文件的 `fsync`/`fsync_writethrough` 双方法资格证据，再 exact-join 当前卷、驱动栈、write-cache、真实 UPS 及受控 flush/power-cut 试验。日志固定 collector→stderr→HDD；server eventlog destination 为 false，且 `Application` channel 两个固定 provider 的同 boot 完整 bookmark interval、provider registration、fixture ref/digest、零 clear/drop/gap/token 与 `coverage_complete=true` 必须全部读回，缺失、截断或错配即失败。engine 的 `cluster_system_identifier`、独立控制文件读出的 `pg_control_system_identifier`、认证 SQL 探针的 `sql_system_identifier` 与外层 `postgres_system_identifier` 四者必须是相同的非空规范十进制值。禁止 `initdb --waldir`，避免用 reparse 把 live WAL 从 PGDATA 分裂。
 
+PostgreSQL 文本日志的生产保留不是可覆盖的普通配置键。唯一已签政策固定普通目标 `max_age=30 days`、`max_total=20 GiB`、当前打开日志不可删且任何时候至少保留最近 `7 days`；站点法定/合同期限可延长保留，legal hold 可冻结对象，都不得缩短 7 日底线。清理只能由现有 `EPAuthorityControl` 内签名、带预览清单/边界/前后 digest/审计回执的 typed `POSTGRES_LOG_RETENTION_CLEANUP` 操作执行；`NT SERVICE\ep-postgres16` 和普通 Authority/backup identity 对历史日志无删除、改 ACL、解除 hold 或改保留政策权限。legal hold 使 30 日/20 GiB 不可同时满足时必须保留被保护字节并失败关闭，不得删除当前、7 日内或 held 文件来凑额度。
+
 模块化业务能力可以装配在 Authority 主体内；只有信任、资源或公开入口边界才拆进程。服务使用 Virtual Service Account 或独立 gMSA/客户账号，NTFS ACL、Windows Firewall、Job Object 和 named pipe ACL 按角色最小化。
 
 ## 7. 网络、TLS 与服务器使用规则
@@ -214,6 +216,7 @@ PostgreSQL 16 必须按唯一的 `Postgres16WindowsPackageLockV1 -> Postgres16Wi
 - HDD latency 或 queue 升高时先暂停低优先级任务；
 - 备份不可无限抢占交易，但备份保护超窗必须升级为不可抑制风险；
 - 所有暂停任务保留 durable checkpoint，资源恢复后继续。
+- `ProductionAdmissionHoldV1` 是 deployment-wide 失败关闭门；UPS 运行时证据失鲜、DATA_HDD 灾难替换或 current-roots 轮换不得只暂停一个队列或一个 scope。
 
 ## 9. 容量和磁盘安全线
 
@@ -225,12 +228,14 @@ yellow_free       = max(emergency_reserve × 2, p95_daily_growth × 30)
 red_free          = emergency_reserve
 ```
 
-- 低于 `yellow_free`：停止新大型导入、导出、报表和非必要索引重建；
-- 低于 `red_free`：释放预留后只允许完成在途事务、审计、安全处置和受控停机；
+- 低于 `max(yellow_free, 50 GiB)`：停止新大型导入、导出、报表和非必要索引重建；
+- 低于 `max(red_free, 40 GiB)`：创建 deployment-wide `ProductionAdmissionHoldV1`，释放预留后只允许完成在途事务、审计、安全处置和受控停机；
 - 无法写审计/WAL：权威写失败关闭；
 - 预留空间不得被普通文件或插件占用。
 
 旧 800GB/2TB 认证数据集和统一 4 小时恢复不适用于当前 1TB HDD。
+
+这两个附加底线只能收紧、不能取代现有公式或 `platform.file.free_space_min_bytes=100 GiB`。因此当前约 1TB P340 的实效门通常是可用空间低于约 `100 GiB` 就暂停批量，低于约 `50 GiB` 就全局 hold；签名站点政策、30 日 P95 增长或现有 100 GiB 文件底线产生更高阈值时必须取更高值。PostgreSQL 日志的 20 GiB 上限不是额外可消耗预留；legal hold 或 typed cleanup 失败导致它超限时立即按同一空间门升级。
 
 ### 9.2 20 人混合负载
 
@@ -276,11 +281,13 @@ UPS 是当前上线硬门，不是未来升级项。`crates/platform/ups-contrac
 
 首版 manifest 的 adapter 版本只经自定义 parser 接受无 build metadata 的规范 Semantic Versioning 2.0.0 字符串。轮询/状态最大年龄/provider 自检最大年龄/命令 ACK 最大等待固定为 `5/15/86400/30` 秒。`configuration_projection.configuration_generation` 必须为正，且它是 selected profile/outlet/P340 power-path 的唯一部署选择；endpoint 与 credential 分别只存在于 manifest 的 `transport_policy` 和 `credential_policy`，两者都不能在运行时覆盖。`adapter_configuration_sha256=SHA256(JCS(configuration_projection))`，manifest、identity、状态、命令和 ACK 必须重复相同 generation/digest，普通配置文件、环境变量或后续覆盖无效。标准 carrier 的 `supported_device_profiles` 必须为空，只能声明 AC、电池供电、电量和剩余时间四项能力，并固定为 Windows system status + 无凭据；vendor carrier 的设备 profile 必须非空、按 `device_profile_id` 严格排序且不得重复，每个 profile 的固件 revision 与受控 outlet group 都必须非空、严格排序且不得重复，并声明完整十项能力、精确选择一个已列 profile。USB/local-device 只能配 service-SID device ACL，并使用 canonical 小写 GUID、uppercase Configuration-Manager device instance 与 exact digest；HTTPS mutual TLS 只能配不可导出的 CNG 客户端证书；SNMPv3 authPriv 只能配 DPAPI-NG service-SID sealed secret。网络 endpoint 是可按客户部署签名定制的 structured row，只保存 numeric-IP octets、nonzero port、protocol 与 pinned peer identity，运行时 exact 一行；不固定某个站点 IP，也不接受 DNS、文本/IP 别名、重复或额外目标。任何交叉组合均拒绝。
 
-标准状态的 `device_profile_id=null`，其 `ups_adapter_identity=sha256(JCS({carrier_kind,adapter_manifest_ref,adapter_configuration_sha256,configuration_generation}))` 只表示 Windows carrier/配置身份，不冒充 UPS 硬件身份。vendor 状态的 profile ID 非空且精确命中 manifest，硬件身份固定为 `sha256(JCS({carrier_kind,adapter_manifest_ref,device_profile_id,manufacturer,model,serial_number,firmware_revision}))`；vendor 身份读回、状态、主机指纹、命令和 ACK 都必须重复该 nominal digest。每个状态的 runtime binding digest 必须等于 signed identity 内 runtime-security readback；initial/previous/trigger status 逐一 join，POWER 前后两个状态还必须同 boot/PID/start-key。sequence 只在该 binding 从 1 递增，进程重启须先签新 identity 才可重置。标准 self-test 恒为 UNKNOWN；vendor PASS/FAIL 必须带 UPS-owner 解析的原始 provider attestation，P340/POWER 只接受非未来且 24 小时内的 PASS，操作 05 仍只读，过期时阻止并要求实际运行自检。`valid_until=observed_at+15000ms`，已知电量必须在 `0..=100`，告警枚举严格排序且不得重复，只接受该绑定下最新且未过期状态。adapter 必须在任何 provider 调用前耐久化同一 boot/source 的私有 monotonic start marker；ACK 只能在 `start <= observed <= min(start+30000,command deadline)` 时成立。响应丢失只可在该内层期限内 query/adopt 原字节 ACK；30 秒时未知即 `COMMAND_STATE_UNKNOWN` 且禁止重发。两项 UTC 时间仅供报告，POWER 外层 600 秒只作 User32/composite/preshutdown 对账，不能放宽、重置或复活 30 秒内层期限。
+标准状态的 `device_profile_id=null`，其 `ups_adapter_identity=sha256(JCS({carrier_kind,adapter_manifest_ref,adapter_configuration_sha256,configuration_generation}))` 只表示 Windows carrier/配置身份，不冒充 UPS 硬件身份。vendor 状态的 profile ID 非空且精确命中 manifest，硬件身份固定为 `sha256(JCS({carrier_kind,adapter_manifest_ref,device_profile_id,manufacturer,model,serial_number,firmware_revision}))`；vendor 身份读回、状态、主机指纹、命令和 ACK 都必须重复该 nominal digest。每个状态的 runtime binding digest 必须等于 signed identity 内 runtime-security readback；initial/previous/trigger status 逐一 join，POWER 前后两个状态还必须同 boot/PID/start-key。sequence 只在该 binding 从 1 递增，进程重启须先签新 identity 才可重置。标准 self-test 恒为 UNKNOWN；vendor PASS/FAIL 必须带 UPS-owner 解析的原始 provider attestation，P340/POWER 只接受非未来且 24 小时内的 PASS，操作 05 仍只读，过期时阻止并要求实际运行自检。`valid_until=observed_at+15000ms`，已知电量必须在 `0..=100`，告警枚举严格排序且不得重复；fresh 的唯一判定是可信时间 `trusted_now < valid_until`，等于或晚于 `valid_until` 均立即视为 stale，只接受该 binding 下最新且 fresh 的状态。adapter 必须在任何 provider 调用前耐久化同一 boot/source 的私有 monotonic start marker；ACK 只能在 `start <= observed <= min(start+30000,command deadline)` 时成立。响应丢失只可在该内层期限内 query/adopt 原字节 ACK；30 秒时未知即 `COMMAND_STATE_UNKNOWN` 且禁止重发。两项 UTC 时间仅供报告，POWER 外层 600 秒只作 User32/composite/preshutdown 对账，不能放宽、重置或复活 30 秒内层期限。
 
 运行安全读回也采用闭合矩阵：标准模式不带 device ACL/firewall ref 且零目标；USB/local-device 必须带 device ACL 与 deny-all firewall 两个读回且零目标；网络模式不带 device ACL，必须带 exact-endpoint firewall 读回并只观察到 manifest 中那一个目标。两类读回字段均为 `application/octet-stream`，只由 UPS owner 的 `EP_F57_UPS_DEVICE_ACL_READBACK_V1|EP_F57_UPS_FIREWALL_READBACK_V1` 解析，不增加 release POWER opaque parser、schema 或 signer；所有模式的意外模块、子进程和凭据导出/泄漏计数必须为零。
 
-生产必须取得新鲜 `UpsStatusReadbackV1`，已知且通过在线/剩余运行时间/通信/自检/output 状态。status 直接逐字绑定 manifest ref、nominal adapter identity、配置投影 digest/代、`runtime_security_binding_sha256` 与证据时间；实际服务 SID/PID/start-key/held implementation binary 经该 digest exact-load signed identity 内同一份 runtime-security readback 后传递绑定，vendor UPS 的制造商/型号/序列号/固件经 nominal adapter identity 与选中 device profile 后传递绑定。受控 outlet group 与 P340 电源输入不在 status 重复字段中，而是经该 manifest ref 与配置 digest/代 exact-load 同一 signed `configuration_projection` 后传递绑定。需要控制时，typed command/ACK 再直接重复该投影身份及受控 outlet/P340 power-path 选择。USB 模式网络为零且设备 ACL 只给 SYSTEM 与控制服务 SID；网络模式只能访问 manifest 结构化 endpoint 中的 numeric-IP octets/nonzero port/protocol/pinned peer，DNS、proxy、redirect 和其他 socket 均为零。凭据只允许 nonexportable CNG key 或 DATA_HDD 上 DPAPI-NG service-SID sealed secret，argv、环境变量、日志、证据和普通配置中的 secret 计数必须为零。carrier 失联、字段未知、签名/版本/配置/服务身份/固件不合格或无法驱动下列固定顺序时为 `CAPABILITY_INSUFFICIENT`，阻止上线。普通 IaaS 不得借宿主“有冗余电源”的描述继承本档案的 UPS 证书；没有站点可见且已批准的电源/安全关机证据时，IaaS 仍不满足此门。
+生产必须取得新鲜 `UpsStatusReadbackV1`，已知且通过在线/剩余运行时间/通信/自检/output 状态。status 直接逐字绑定 manifest ref、nominal adapter identity、配置投影 digest/代、`runtime_security_binding_sha256` 与证据时间；实际服务 SID/PID/start-key/held implementation binary 经该 digest exact-load signed identity 内同一份 runtime-security readback 后传递绑定，vendor UPS 的制造商/型号/序列号/固件经 nominal adapter identity 与选中 device profile 后传递绑定。受控 outlet group 与 P340 电源输入不在 status 重复字段中，而是经该 manifest ref 与配置 digest/代 exact-load 同一 signed `configuration_projection` 后传递绑定。需要控制时，typed command/ACK 再直接重复该投影身份及受控 outlet/P340 power-path 选择。USB 模式网络为零且设备 ACL 只给 SYSTEM 与控制服务 SID；网络模式只能访问 manifest 结构化 endpoint 中的 numeric-IP octets/nonzero port/protocol/pinned peer，DNS、proxy、redirect 和其他 socket 均为零。凭据只允许 nonexportable CNG key 或 DATA_HDD 上 DPAPI-NG service-SID sealed secret，argv、环境变量、日志、证据和普通配置中的 secret 计数必须为零。carrier 失联、字段未知、签名/版本/配置/服务身份/固件不合格或无法驱动下列固定顺序时为 `CAPABILITY_INSUFFICIENT`，阻止上线。当前 IaaS profile 无条件拒绝，不能通过本档 UPS 门，也不得借宿主“有冗余电源”的描述继承本档证书；未来新 graph/profile version 若启用 IaaS，仍须用独立、站点可见且已批准的电源与安全关机证据通过其自己的门。
+
+运行时一旦最新 status 超过 15 秒有效期，必须立即建立 deployment-wide `ProductionAdmissionHoldV1`，拒绝新业务请求和新长任务，且不得因 Windows 仍显示 AC 而延迟。恢复窗口从首次过期的 monotonic tick 起累计最多 60 秒，中间闪断不重置；只有原 `ups_adapter_identity`/配置代/runtime binding 不变，并取得两个连续、严格递增 sequence、各自 fresh 且通信/自检/output/runtime 全部 PASS 的 status，才可经 admission CAS 撤销 hold。到 60 秒仍未满足该条件，即使 AC 仍显示在线，也必须启动本地失败安全链：排空并落盘审计/Outbox/附件，创建新鲜 PostgreSQL checkpoint 并停库，再请求 Windows 安全关机。无法控制 outlet 或无法取得同 command-ID typed ACK 时不得假定 UPS 已接受；仍完成本地关机并保持 hold，只允许人工启动后用新鲜设备/电源/数据卷/数据库恢复证据通过 admission CAS 重开。
 
 必须验证：
 
@@ -307,13 +314,15 @@ UPS 失联、失效、电池过期或 carrier 证据过期必须形成不可抑�
 
 active-config 必须 exact 指向当前签名 `BackupTopologySigningTrustCurrentPointerV1` 与 `BackupTopologyV1` head；前者 typed-load 唯一签名 `BackupTopologySigningTrustManifestV1`。部署 bootstrap 固定独立 trust-manifest authority，manifest 再固定 topology signer `CN=EP F57 Backup Topology Authority,O=Enterprise Platform` 的 SPKI、DN、离线链、撤销快照与 checkpoint；只有由该 verified-current trust 值构造的 safeguard owner `BackupTopologyAuthorityV1` 可验证 topology。拓扑/storage/support evidence、候选 signer、Windows ambient root、应用/备份恢复域及 ADR-0020 2-of-3 recipient/share roster 都不能自证。pointer/manifest generation/predecessor 与 topology revision/predecessor 各自单调连续，验证有效窗、证书和最多 300 秒 CMS signing window；topology exact-repeat current trust refs，并与 active-config current storage manifest join deployment/epoch/generation，最高档 `backup_target_ids` 恰为 singleton `[continuous_target.target_id]`。旧签名、fork、过期/撤销材料、manifest/target mismatch 或目录“最新”都不能回滚当前 tuple。
 
-拓扑按 enum 固定六角色、服务器外连续目标和按序 A/B 两块离线介质；writer/target-agent credential 分别 exact-join mTLS client/server SPKI，live evidence 必须逐字读回各自 host/media、failure、administration、credential、custody/location domain。每块介质恰有两个按 principal 排序、互异且与六角色分域的人类 custody binding；A/B 的 media ID、硬件序列、volume identity/GUID 和 live physical-disk identity 各自非空且互不相同。三块盘均为 HDD/GPT/NTFS/BitLocker software XTS-AES-256/100%；连续目标 protector exact-set 为 `{PUBLIC_KEY,RECOVERY_PASSWORD}`，离线盘为 `{RECOVERY_PASSWORD}`。有效最短保留期取站点法律期限、90 天、`2×检测延迟P99+洁净恢复验证窗口`、`2×轮换间隔` 四者最大值；离线代年龄不得超过 7 天，至少保留两代。
+拓扑按 enum 固定六角色、生产主机、服务器外连续目标和按序 A/B 两块离线介质；writer/target-agent credential 分别 exact-join mTLS client/server SPKI，live evidence 必须逐字读回各自 host/media、failure、administration、credential、custody/location domain。令 `E={PRODUCTION,CONTINUOUS,ROTATION_A,ROTATION_B}` 且 `D={failure,administration,credential,custody,location}`；对每个 `d∈D` 与任意 `x≠y∈E`，必须证明 `domain[d,x] ≠ domain[d,y]`，五个域的逐对不等都由 topology-pinned support evidence 原始证据得出，不接受一个 `shared=false` 布尔值。负例包括：连续目标与生产共用客户 tenant/root 或管理组，任两层复用同一 SPKI/secret 或恢复凭据，A/B 与生产共用机房/电源/故障边界，任两介质由同一 custody roster 单方掌控，或两块盘位于同一物理地点。每块介质恰有两个按 principal 排序、互异且与六角色分域的人类 custody binding；A/B 的 media ID、硬件序列、volume identity/GUID 和 live physical-disk identity 各自非空且互不相同。三块盘均为 HDD/GPT/NTFS/BitLocker software XTS-AES-256/100%；连续目标 protector exact-set 为 `{PUBLIC_KEY,RECOVERY_PASSWORD}`，离线盘为 `{RECOVERY_PASSWORD}`。有效最短保留期取站点法律期限、90 天、`2×检测延迟P99+洁净恢复验证窗口`、`2×轮换间隔` 四者最大值；离线代年龄不得超过 7 天，至少保留两代。
 
 每次安装、checkpoint preparation、PITR、生产启用及 retry 都要用新 challenge/session/object 采集 `StorageSafeguardReadbackV1`；其 expiry 精确为 `observed + topology.max_age` 且 max age 不超过 300 秒，消费时 current topology/storage-manifest head、trusted now 与显式 expected checkpoint head 均有效。所有 subordinate refs 必须按 kind typed-load 同一 topology-pinned support-evidence root：target probe/receipt 由当前 target-agent 单签，A/B transition/safe-eject/disconnection/custody/health 由两个当前 human custodians 双签，并 exact-hash 包含字段；Boolean 或任意 `ArtifactRefV1` 不能替代支持证据。目标必须同时满足容量公式和真实 `total/free/quota/reserve` 不等式，partial count/bytes/oldest optionality 一致、过期为零、耗尽暂停批量任务而不改历史；writer/target-agent/maintenance/retention/signer/recovery 六类完整最小权限负探针逐项拒绝。writer 只有一次性“刚写对象”精确读回 capability；target-agent 的直接存储操作全部拒绝。上线时 A/B 所有 domain/location 必须逐字匹配 topology，只能为 `VERIFIED_DISCONNECTED|SEALED_VERIFIED`，零 attachment、授权撤销、安全弹出、物理断开、健康、双人 custody，且 `bundle_contains_recovery_material=false`；任一 UNKNOWN/过期/共享域/链/签名/容量/探针失败都是 `NON_SUPPRESSIBLE_RISK`。
 
 备份保护的首次启动状态明确为 `INITIALIZING + INITIAL_POPULATION`：全新安装的 expected/latest/head、连续 retained refs 与 A/B verified refs 全部为空；它可证明基础设施安装完成，但不能授权 PITR、发布、恢复认证或生产。恢复 cut 固化后、checkpoint draft 构造前采集 fresh preparation；空链只可推导 sequence 1/prior None，签名后下一次 readback 必须进入 `BOOTSTRAPPING`。先把 current head 复制并验证到 A/B；只在 distinct continuous 与 A/B-union 代数仍低于 minimum、A/B 非空且并集含 head、其余健康条件全部成立时，才可由 verified head checked+1 创建 sequence 2/后续代。达到 minimum 并闭合最新 head 的 A/B 验证后，下一次 fresh readback 必须为 `HEALTHY` 且 transition 为空。
 
-trust/topology/storage roots 只能从 fresh `HEALTHY` 轮换。单一 active-config CAS 固定旧 head/roots 与新 roots并进入 `TRANSITIONING`；只允许一份从旧 head checked+1 续接、绑定新 roots 的 bridge checkpoint。随后只能在 `BOOTSTRAPPING + CURRENT_ROOTS_ROTATION` 完成该 bridge 的 A/B 离线复制/验证，不得创建第二 checkpoint 或启动第二轮换；闭合后才回到 `HEALTHY`。所有 retained refs 都必须 typed-load 为唯一连续链，current head exact-bind current trust/topology/storage tuple；`INITIALIZING|BOOTSTRAPPING|TRANSITIONING|NON_SUPPRESSIBLE_RISK` 一律禁止 PITR、release/recovery certification 和 production activation。
+正常 trust/topology/storage roots 只能从 fresh `HEALTHY` 轮换。在任何 active-config CAS 之前，先建立 deployment-wide `ProductionAdmissionHoldV1`，拒绝新请求/长任务，排空全部 accepted lease 并落盘同一 `write_barrier_id`；然后单一 CAS 固定旧 head/roots 与新 roots 并进入 `TRANSITIONING`。只允许一份从旧 head checked+1 续接、绑定新 roots 和该 hold/barrier 的 bridge checkpoint。随后只能在 `BOOTSTRAPPING + CURRENT_ROOTS_ROTATION` 完成该 bridge 的 A/B 离线复制/验证，不得创建第二 checkpoint 或启动第二轮换；`TRANSITIONING|BOOTSTRAPPING` 全程 hold 不得释放。只有新鲜 `HEALTHY`、`protection_transition=None`、current head exact-bind 新 trust/topology/storage tuple，且 deployment-wide admission CAS 同时重新核验 authority epoch/当前 OBSERVED generation/屏障后零旧 lease，才能重开。所有 retained refs 都必须 typed-load 为唯一连续链，current head exact-bind current trust/topology/storage tuple；`INITIALIZING|BOOTSTRAPPING|TRANSITIONING|NON_SUPPRESSIBLE_RISK` 一律禁止普通 PITR、release/recovery certification 和 production activation。
+
+DATA_HDD 已灾难性死亡时不走上述正常轮换，也不要求死盘产生 fresh `HEALTHY`。唯一 `DATA_HDD_DISASTER_REPLACEMENT` 接管链是：从服务器外的 current configuration/trust roots 和最后已认证 checkpoint/recovery cut 开始；取得两名互异恢复保管人授权；先建立 deployment-wide hold、排空/屏障旧权威并证明死盘/旧主无法再写；checked 提升 `authority_epoch` 与 storage generation；在新 HDD 上创建新的物理盘/volume GUID/volume identity、GPT/NTFS、BitLocker `{PUBLIC_KEY,RECOVERY_PASSWORD}` 和新 storage manifest；从选定 cut 洁净恢复，执行 PostgreSQL PITR、WAL/cluster identifier、附件/审计/Outbox/vault/包/所有启用数据类的全量核对；在新 tuple 上从空链重建连续备份与 A/B bootstrap，直到 fresh `HEALTHY`；当前首版最后必须重做 P340/20 人容量认证。未来只有新的 IaaS graph/profile version 才能改走其独立等价认证。该链中的 PITR 是 hold 下的灾难恢复专用操作，不是对 `NON_SUPPRESSIBLE_RISK` 的普通 PITR 放行；任一步未闭合都保持生产关闭，不得用新盘的空 `HEALTHY` 或仅文件可读替代恢复核对。
 
 服务器外连续目标必须按 deployment/writer 设置对象数、字节数、写入速率和并发 quota，并保留普通 writer 永远不可占用的 emergency reserve。quota 的数值由目标容量、实际恢复集、保留代际和增长证据签发，不存在适用于所有客户的固定默认值。target 满、quota 异常突增、partial upload 超时或 generation 爆发时必须立即：
 
@@ -367,22 +376,27 @@ P340 需要先验证最终安装两块匹配企业 HDD 所需的托架、可选 
 
 无法证明旧主已被隔离时不得提升。暖备会复制逻辑损坏或勒索效果，因此永远不计作不可变/离线备份。
 
-## 15. IaaS carrier
+## 15. 未来 IaaS carrier 扩展缝（当前不实现）
 
-相同 Windows Server 安装包可以运行在客户 IaaS，但 `HDD_STRICT` 合规不能从“云盘”名称推断。只有取得以下证据才可认证：
+未来相同 Windows Server 安装包可以运行在客户 IaaS，但当前首版只接受 P340，`IAAS_WINDOWS_SERVER_HDD_STRICT` 只是保留标识；当前任何选择、认证或激活尝试都必须返回 `PROFILE_NOT_IMPLEMENTED` / `STORAGE_MEDIA_UNVERIFIED` 并保持生产关闭。未来启用必须先发布新的 graph/profile version；其 `HDD_STRICT` 合规不能从“云盘”名称推断，也不能把 P340 主板/CPU/物理 UPS 证据改个 host ID 后复用。届时独立认证 profile/recipe 必须绑定当前 provider、客户 tenant/subscription、中国大陆 region、VM/host generation、Windows Server build、vTPM attestation、数据卷与备份拓扑，并至少取得：
 
-- 权威数据卷的底层介质为 HDD；
-- 缓存、快照、临时盘和 provider 运维副本的介质与权限符合策略；
-- 客户控制 OS、密钥、备份、网络和管理员；
-- 生产、备份和恢复材料处于不同凭据/故障域。
+- 客户对 tenant/subscription、OS 管理、网络、密钥、备份与删除/恢复流程的实际控制，以及 provider 特权人员的签名职责/合同边界；
+- 客户控制的中国大陆 region 和数据驻留证据，包括 cache、snapshot、temp disk、host migration、support bundle 与 provider 运维副本；
+- Secure Boot/trusted boot 与 fresh vTPM attestation，以及 BitLocker software XTS-AES-256 protector、anti-rollback 和 clean-vTPM/VM 恢复仪式；
+- 权威数据卷的底层物理介质为 HDD，并绑定虚拟盘到 provider 底层介质的可验证映射；同时证明 host/page/blob cache、snapshot、replica、temporary disk 与 maintenance copy 的介质、加密、驻留、保留和 provider 运维权限边界；
+- 禁止未登记 snapshot 回滚或把同 tenant/同宿主 snapshot 当备份，并用比对 authority epoch/storage generation/checkpoint head 的回滚负例证明失败关闭；
+- 生产、连续备份、A、B 在 administration/credential/failure/location/custody 五域全部逐对不等，且备份/恢复凭据不得由 provider/tenant 的单一主体掌控；
+- provider 电源/关机等价证据：客户可见的健康/事件源、不超过 15 秒的 fresh status、有界本地 checkpoint/停库/Windows guest shutdown、provider control-plane 命令的幂等 operation ID 与查询/对账、无 ACK 时不宣称成功，以及人工恢复门；不要求或伪造物理 UPS outlet。
 
-普通 IaaS 无法证明时，状态固定 `STORAGE_MEDIA_UNVERIFIED`，可以做开发/测试或采用另行批准的存储政策，但不得承载本项目字面“全部数据物理 HDD”的正式生产。
+未来 profile 实现后必须在洁净 Windows Server VM 上运行独立 recipe，产生 provider-contract/readback、vTPM/boot、HDD/cache/snapshot/operations-boundary、power/shutdown-equivalence、备份域和 clean-restore/capacity 证据；所有证据与候选 release/config/storage generation exact-join，任一 provider SKU/region/cache/snapshot/宿主策略或 vTPM 变更都使证书失效。它不能产生 `SINGLE_DISK_DEGRADED_PRODUCTION` 的 P340 硬件声明，只能产生 `IAAS_WINDOWS_HDD_STRICT_CERTIFIED`。该未来 profile 与 P340 互斥，不得拼接证据。
+
+普通 IaaS 无法证明任一上述事实、recipe 未实现/未运行、或证据过期/无法独立复验时，状态固定 `STORAGE_MEDIA_UNVERIFIED`，不得承载本项目字面“全部数据物理 HDD”的正式生产。本档当前总状态仍为 `READY_NOT_AUTHORIZED` / `NOT_IMPLEMENTED`，IaaS 路径当前无开发任务、无认证正路径、无生产 terminal；只有后续另行授权的新 graph/profile version 才能改变这一点。
 
 ### 15.1 中国大陆驻留
 
-首版真实客户数据及一切可关联客户的衍生数据只允许在中国大陆境内处理和持久化。该边界同时覆盖物理 P340/IaaS 权威节点、数据库/WAL、附件、索引、日志、审计、导出、临时文件、连续目标、离线轮换、恢复材料元数据、监控明细、支持诊断包、provider 输入/输出和客户可关联遥测；不能只证明主数据库在境内。
+首版真实客户数据及一切可关联客户的衍生数据只允许在中国大陆境内处理和持久化。当前该边界覆盖物理 P340 权威节点、数据库/WAL、附件、索引、日志、审计、导出、临时文件、连续目标、离线轮换、恢复材料元数据、监控明细、支持诊断包、provider 输入/输出和客户可关联遥测；不能只证明主数据库在境内。未来 IaaS profile 若由新 graph/profile version 启用，也必须完整继承这一边界。
 
-deployment、provider、backup、support 和 diagnostics manifest 必须记录 jurisdiction、region/物理保管地、处理方、endpoint/redirect、数据类别、证据 digest、验证时间和有效期。物理 P340、服务器外连续目标、两块离线介质和洁净恢复主机都必须位于中国大陆境内；IaaS 必须使用客户控制的中国大陆区域，并证明快照、缓存、日志、运维副本和灾备不会跨境。地点为 `UNKNOWN`、证据过期、DNS/重定向/支持通道越境或 provider 无法承诺境内处理时，对应 capability 失败关闭，禁止录入或发送真实客户数据（`NFR-017`）。
+deployment、provider、backup、support 和 diagnostics manifest 必须记录 jurisdiction、region/物理保管地、处理方、endpoint/redirect、数据类别、证据 digest、验证时间和有效期。当前物理 P340、服务器外连续目标、两块离线介质和洁净恢复主机都必须位于中国大陆境内。未来 IaaS profile 只有在新版本中证明客户控制的中国大陆区域，以及快照、缓存、日志、运维副本和灾备不会跨境后才可被考虑；当前仍固定关闭。地点为 `UNKNOWN`、证据过期、DNS/重定向/支持通道越境或 provider 无法承诺境内处理时，对应 capability 失败关闭，禁止录入或发送真实客户数据（`NFR-017`）。
 
 ## 16. 正式上线硬门
 
@@ -399,6 +413,7 @@ deployment、provider、backup、support 和 diagnostics manifest 必须记录 j
 - [ ] HDD SMART、温度、flush、坏扇区和断电行为通过；
 - [ ] 内存测试和至少 72 小时混合稳定负载通过；
 - [ ] `SIGNED_VENDOR_ADAPTER` manifest/config/profile/service/transport/credential 实机读回通过；`implementation_binary_ref` 与 held authority-kernel、configuration projection digest/generation、可部署定制的 structured numeric-IP endpoint、status→signed runtime binding、24 小时内 provider-authenticated self-test PASS、`5/15/86400/30` 秒冻结时限与独立 600 秒 POWER 对账窗通过；canonical `provider_operation_id` 已耐久绑定，same-ID/same-digest response-loss 只 query/adopt、changed-digest conflict、UNKNOWN 不重发，以及 UPS 自动安全关机和恢复启动通过。
+- [ ] UPS status 15 秒过期立即全局 hold/禁止新长任务；只有同 identity 在首次失鲜起累计 60 秒内两次连续 fresh PASS 才 CAS 撤销，否则 AC 仍在也完成本地 checkpoint/停库/Windows shutdown；无 outlet 控制或 ACK 时不宣称成功，人工启动+新鲜证据门通过。
 
 ### 数据路由
 
@@ -420,11 +435,14 @@ deployment、provider、backup、support 和 diagnostics manifest 必须记录 j
 ### 持久性与恢复
 
 - [ ] PostgreSQL checksums、`wal_sync_method=fsync_writethrough` 兼容性 pin、同 DATA_HDD 同文件 `fsync`/`fsync_writethrough` 双方法资格证据，以及当前驱动/write-cache/UPS exact join 下的强杀、flush 与断电测试通过；
+- [ ] PostgreSQL 日志精确保留证明 30 日/20 GiB 普通上限、当前日志不删、至少 7 日、legal hold 优先且超额失败关闭；只有 `EPAuthorityControl` typed cleanup 能按签名清单删除，PostgreSQL 身份删除历史的负例被 ACL 拒绝，且空间低于有效 `max(yellow_free,50 GiB)`/`max(red_free,40 GiB)` 门分别暂停批量/全局 hold。
 - [ ] 固定 PostgreSQL 16 安装包、签名、完整 `installed_files`↔SBOM 双射、服务身份与 typed `RUNNING`、未解析 SDDL→已创建账户 live DACL exact 比对、PGDATA/WAL/temp/log/archive 路径、四方 `system_identifier` 和 `postgresql.conf`/`pg_hba.conf` 已取证；`64/4/3` GUC、两槽安全余量、NORMAL/RESERVED/SUPERUSER 分类预算和角色属性全部通过，HBA `hostssl`+SCRAM 与 client `channel_binding=require` probe 分别通过；Event Log provider/bookmark/record/time/clear/drop/gap/fixture/digest/complete coverage 全量证据通过；仅 clean/same-lock adopt，异锁返回 maintenance；base backup、连续 WAL、`pg_verifybackup`、PITR 与附件一致 cut 在洁净 Windows 主机通过；
 - [ ] 当前状态、事实、审计和 Outbox 原子性通过；
 - [ ] 服务器外 writer 删除/覆盖/改 ACL/保留的负向探针全部拒绝；
 - [ ] active-config 分别选择 current `BackupTopologySigningTrustCurrentPointerV1` 与 topology；pointer/manifest 独立信任链、generation/predecessor、固定 signer DN/SPKI、链/撤销/checkpoint 均通过，私有 `BackupTopologyAuthorityV1` 未复用应用/备份恢复域或 recipient/share roster；storage manifest 的 `backup_target_ids` exact singleton，topology revision/predecessor、deployment/epoch/generation/currentness 全部通过；
 - [ ] 全新安装仅形成 `INITIALIZING + INITIAL_POPULATION` 空链；sequence 1 后进入 `BOOTSTRAPPING`，A/B 复制后按 head checked+1 补足 minimum，闭合后才为 `HEALTHY`。current-roots 轮换只从 fresh `HEALTHY` 开始，经单一 `TRANSITIONING` bridge 与不可再建 checkpoint 的 `BOOTSTRAPPING` A/B closure 回到健康；生产前 fresh `StorageSafeguardReadbackV1` 为 `HEALTHY`、transition 为空、显式 current head exact-match current trust/topology/storage tuple。typed support evidence 单签/双签、六角色负探针、physical total/free/quota/reserve、partial optionality/保留公式、A/B 状态链/无恢复材料/物理断开/健康/exact 两人 custody 全部通过；
+- [ ] normal current-roots 轮换证明 global hold→drain→barrier 严格早于 active-config CAS，hold 跨越完整 `TRANSITIONING|BOOTSTRAPPING`，只在 fresh `HEALTHY` + exact 新 roots + admission CAS 后重开；DATA_HDD 死盘演练明确不要求旧盘 fresh `HEALTHY`，但完成 off-host current trust/config/checkpoint/cut、双人授权、fencing、epoch/generation 提升、新 BitLocker/volume/storage manifest、洁净 PITR/全量核对、fresh backup/A-B bootstrap 和当前 P340 重认证后才接管。未来 IaaS 必须由新 graph/profile version 另行定义重认证链。
+- [ ] `E={PRODUCTION,CONTINUOUS,ROTATION_A,ROTATION_B}` 在 administration/credential/failure/location/custody 五域的每组两两不等全部有原始证据；同 tenant/root、同 SPKI/secret、同机房/电源故障域、同 custody roster 或同地点任一负例均阻止生产。
 - [ ] 连续目标使用独立 mTLS writer 身份和应用层加密；独立 checkpoint signer 在验证目标回执、对象 digest、PG backup manifest/WAL span 与附件集后才签名，writer 不可取得 signer/recovery key；
 - [ ] retention 保管身份只能按策略延长，不能单方缩短；最新备份被投毒时可从多个更早、已签名且仍在保留期的 generation 完整恢复；
 - [ ] 恢复拓扑 exact-set 同时含 `CONTINUOUS_APPEND_ONLY`、`OFFLINE_ROTATION`、`RECOVERY_MATERIAL`，三者 stable target/media ID、凭据、故障域与保管身份均已取证；本机 `LOCAL_DIR` 只可作 staging；
@@ -432,6 +450,7 @@ deployment、provider、backup、support 和 diagnostics manifest 必须记录 j
 - [ ] 连续目标 quota/reserve、耗尽/partial-object 处置和离线介质 exact 图均通过正反向测试：`BLANK → ENROLLED → ACTIVE_APPEND → VERIFIED_DISCONNECTED`，`VERIFIED_DISCONNECTED → ROTATION_DUE → ACTIVE_APPEND`（容量/健康/保留仍通过），以及 `ACTIVE_APPEND → SEALED_VERIFIED → RETIRED_PENDING_DISPOSAL → DESTROYED`（`SEALED_VERIFIED` 后不可回写，销毁后复用必须新建 `media_id`）；
 - [ ] 每个连续目标、每块离线介质和洁净恢复主机的可用容量都不小于实际可恢复集、加密/校验/恢复工作空间与 30 日 P95 增长余量之和；连续目标还须满足签名保留策略所需全部代际，容量不足即失败；
 - [ ] 从洁净 Windows Server 完整恢复通过。
+- [ ] 当前 profile selector 对 `IAAS_WINDOWS_SERVER_HDD_STRICT` 固定返回 `PROFILE_NOT_IMPLEMENTED` / `STORAGE_MEDIA_UNVERIFIED` 并保持生产关闭；未来新 graph/profile version 若启用 IaaS，才可新增独立 recipe 的客户控制/大陆驻留/vTPM/HDD-cache-snapshot-provider 运维边界/独立备份域/provider power-shutdown 等价证据门。
 
 ### 容量和诚实状态
 

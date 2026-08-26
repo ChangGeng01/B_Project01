@@ -139,7 +139,7 @@ open_amount = advance_open
 | 列 | 类型 | 可空 | 规则 |
 |---|---|---:|---|
 | refund_id | uuid | 否 | 同法人退款单 |
-| source_doc_type | text | 否 | `RECEIPT|PAYMENT` |
+| source_doc_type | text | 否 | `RECEIPT\|PAYMENT` |
 | source_doc_id | uuid | 否 | 对应原款项 |
 | linked_amount | numeric(18,2) | 否 | 大于 0 |
 | advance_consumed_amount | numeric(18,2) | 否 | 非负，只读投影 |

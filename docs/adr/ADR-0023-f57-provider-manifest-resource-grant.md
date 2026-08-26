@@ -32,7 +32,7 @@ payload 只能包含下列非空字段；`xml_policy` 是唯一条件字段，�
 | `package_ref` | `{package_id, package_version, package_manifest_digest}`；内置 provider 使用签名 release package 的等价 ref，不允许空 owner |
 | `carrier` | 本 ADR 第三节的闭合 carrier 变体 |
 | `codecs` | 非空、排序去重的 `ProviderCodecV1` 闭集 |
-| `contracts` | 非空数组；每项精确含 `operation_code`、`direction`=`INPUT|OUTPUT|RECONCILE`、`media_type`、`schema_id`、`schema_version`、`schema_digest`、`maximum_bytes` |
+| `contracts` | 非空数组；每项精确含 `operation_code`、`direction`=`INPUT\|OUTPUT\|RECONCILE`、`media_type`、`schema_id`、`schema_version`、`schema_digest`、`maximum_bytes` |
 | `provided_capabilities` | 非空、按 canonical capability id 排序去重 |
 | `operation_bindings` | 非空、按 `(capability,operation_code)` 排序唯一的 `ProviderOperationBindingV1`；把 capability/effect 唯一绑定到 contracts 与 reconcile operation |
 | `permission_ceiling` | 本 ADR 第四节的 `PermissionCeilingV1` |
@@ -55,7 +55,7 @@ payload 只能包含下列非空字段；`xml_policy` 是唯一条件字段，�
 |---|---|
 | `schema_version` | 常量 `1` |
 | `residency_profile` | 常量 `CN_MAINLAND_ONLY_V1` |
-| `country_or_region` | strict object `{country_code, region_code, location_kind}`；`country_code` 固定 `CN`，`region_code` 为客户部署清单或 provider 证据中的 canonical lower-ASCII region/site code，正则 `[a-z0-9][a-z0-9.-]{0,63}`，`location_kind` 只允许 `CUSTOMER_SITE|CUSTOMER_IAAS_REGION|EXTERNAL_PROVIDER_REGION` |
+| `country_or_region` | strict object `{country_code, region_code, location_kind}`；`country_code` 固定 `CN`，`region_code` 为客户部署清单或 provider 证据中的 canonical lower-ASCII region/site code，正则 `[a-z0-9][a-z0-9.-]{0,63}`，`location_kind` 只允许 `CUSTOMER_SITE\|CUSTOMER_IAAS_REGION\|EXTERNAL_PROVIDER_REGION` |
 | `carrier_kind` | 必须逐字等于本 manifest `carrier` 的标签 |
 | `carrier_binding_digest` | `sha256:` lowerhex；输入为本 manifest exact `carrier` object 的 JCS，用于把地点证据绑定到具体本地进程、IaaS 实例或远端 origin |
 | `endpoint_evidence` | 排序去重的 `ProcessingEndpointEvidenceV1[]`；无网络 carrier 必须为空，存在网络权限或 `REMOTE_HTTPS` 时不得为空 |
@@ -68,7 +68,7 @@ payload 只能包含下列非空字段；`xml_policy` 是唯一条件字段，�
 
 `ProcessingEndpointEvidenceV1` 字段恰为 `{origin,port,spki_sha256,country_code,region_code,operator_code,redirect_policy,proxy_policy,evidence_digest}`。`origin` 是无 path/query/fragment 的 canonical HTTPS origin，`port` 为 1..65535，`spki_sha256` 与 `evidence_digest` 使用 `sha256:` lowerhex，`country_code` 固定 `CN`，`region_code` 使用上表同一 grammar，`operator_code` 为 canonical provider/operator code，`redirect_policy` 与 `proxy_policy` 均固定 `DENY`。数组按 `(origin,port,spki_sha256)` 排序且组合唯一。
 
-`endpoint_evidence` 必须与 `permission_ceiling.network` exact-join：每个允许接收客户或可关联客户数据的 origin/port/SPKI 恰一行，`REMOTE_HTTPS` carrier 自身 origin 也必须恰一行；缺失、额外、DNS/HTTP 重定向、系统代理、解析后落到非 `CN` 网络证据、`UNKNOWN` 地区或过期证据均使 effective permission 为空。`carrier_binding_digest` 对物理/IaaS carrier 还必须分别命中第三节规定的宿主/region/nesting 证据。调用级 grant 不得扩大地点、endpoint 或数据类别；broker 每次网络 host call 都重验 active manifest、endpoint exact match 和证据有效期。
+`endpoint_evidence` 必须与 `permission_ceiling.network` exact-join：每个允许接收客户或可关联客户数据的 origin/port/SPKI 恰一行，`REMOTE_HTTPS` carrier 自身 origin 也必须恰一行；缺失、额外、DNS/HTTP 重定向、系统代理、解析后落到非 `CN` 网络证据、`UNKNOWN` 地区或过期证据均使 effective permission 为空。当前版本只允许权威端绑定 P340 物理宿主，`carrier_binding_digest` 必须命中第三节的物理宿主证据；权威端 IaaS 宿主分支仅为未来新 graph/profile version 的兼容接口，当前未注册、不得激活且 selector 固定拒绝。此限制不改变经本节单独约束的 `REMOTE_HTTPS` 外部 provider carrier。调用级 grant 不得扩大地点、endpoint 或数据类别；broker 每次网络 host call 都重验 active manifest、endpoint exact match 和证据有效期。
 
 ### 2.2 `DataPolicyV1` 与 `ProviderLifecycleV1` exact schema
 
@@ -114,7 +114,7 @@ JCS 中两个对象按字段名 canonicalize；闭集 token 大小写逐字匹�
 容器证据按 carrier 区分，不再引用未定义的 `BC-2`：
 
 - 物理 Windows Server 必须证明 CPU virtualization/SLAT、DEP、Hyper-V、Windows Containers、HCS、匹配 host/container build、Hyper-V isolation、资源容量与 escape 负例；`nesting` 固定为 `NOT_APPLICABLE_PHYSICAL`。
-- IaaS Windows Server 除上述证据外，必须额外绑定 cloud provider、tenant、region、instance/SKU、host generation 和该 SKU 的 nested-virtualization 实测证据；缺任一项返回 `HOST_CAPABILITY_UNAVAILABLE`。
+- IaaS Windows Server 宿主约束只保留给未来独立 graph/profile version；当前未注册、无 current activation terminal，任何权威端 IaaS 宿主选择都在执行 carrier 评估前固定返回 `PROFILE_NOT_IMPLEMENTED`。未来版本若显式启用，除上述证据外还必须额外绑定 cloud provider、tenant、region、instance/SKU、host generation 和该 SKU 的 nested-virtualization 实测证据；缺任一项返回 `HOST_CAPABILITY_UNAVAILABLE`。
 - P340 32GB profile 默认不激活 container。默认关闭不免除 adapter、conformance、drain/delete 和 orphan-cleanup 交付。
 
 ### 四、`PermissionCeilingV1` exact schema

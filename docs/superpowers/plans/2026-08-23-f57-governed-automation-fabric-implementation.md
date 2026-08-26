@@ -2,7 +2,7 @@
 
 > **状态：`HISTORICAL_DETAIL_INPUT`，永久禁止按本文件执行。** 2026-08-24 F-57 收敛设计、ADR-0025 与新五文件计划集已获用户批准。本文件只保留旧 25 项计划的字段、测试和推理来源；以下任务、迁移、命令和“GO”文字均不再发出实施指令。唯一执行入口是 `docs/superpowers/plans/2026-08-24-f57-converged-program.md`。
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+> **历史引用说明：** 本行原为面向执行者的实施提示，已于 2026-08-26 移除。保留该事实仅用于审计；本文件任何切片均不构成任务、命令、迁移、门禁或“GO”的执行指令。
 
 **Goal:** Build the F-57 Windows Server authority node, four-platform Workbench, governed capability/package system, durable automation fabric, dynamic authorization, complete business closure, and ransomware-resilient production profile without starting local-model delivery.
 

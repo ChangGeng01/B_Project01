@@ -29,7 +29,7 @@
 | schema_version | int | 否 | 无 | 大于 0，由 owner 模块逐场景冻结 |
 | command_enc | bytea | 否 | 无 | AES-256-GCM 信封密文，命令 DTO 唯一持久载体；非空 |
 | command_key_ref | text | 否 | 无 | 当前法人 FIELD/密级 30 数据密钥引用 |
-| command_digest | bytea | 否 | 无 | 32 字节 `SHA-256(command_enc || canonical_aad)`，不作查询或明文等值索引 |
+| command_digest | bytea | 否 | 无 | 32 字节 `SHA-256(command_enc \|\| canonical_aad)`，不作查询或明文等值索引 |
 | request_hash | bytea | 否 | 无 | 32 字节，仅覆盖非敏感规范路由封套与幂等键，不覆盖命令明文 |
 | state | text | 否 | `PENDING` | `PENDING`、`CONSUMED`、`REJECTED`、`EXPIRED` |
 | consumed_at | timestamptz | 是 | 无 | CONSUMED 唯一非空终态时间 |
