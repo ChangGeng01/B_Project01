@@ -702,6 +702,7 @@ WinCred 初始化、轮换与删除的唯一入口是随产品签名、进入 SB
 
 下列键曾出现在早期草案中，已随裁定删除，任何阶段不得再引入，此处只作追溯，不属第 2 节登记表：
 
+- `admission.active_window_seconds`、`admission.max_concurrent_users`、`admission.queue_max_len`、`admission.queue_wait_timeout_seconds`、`db.migration.expected_versions_path`：本批（F-50…F-57）自本节及第 2 节一并删除。**其中 `admission.max_concurrent_users` 与 `admission.queue_max_len` 代码中仍在使用**，故 `xtask configdoc` 现报「代码里有、文档中没有登记」；**该两键须在实现批次中随准入控制口径一并裁定去留，未裁定前不得视为已作废**（F-59 登记）。
 - `selfcheck.pending_as_failure`：随阶段 1 计划第 13 节假设二删除。Pending 项一律不阻止启动，这是固定行为不是开关；置真会让建设期的每一个进程都起不来，它没有真实的取用者。
 - `selfcheck.quota_manifest_path`：随第 13 节新增决定十四删除。资源限额改为部署侧的静态 drop-in 加一次性部署校验，不再有生成的配额清单文件，任何进程的启动自检中也不出现资源限额项。
 - `platform.notify.push_endpoint`、`portal.core_api.base_url`、`portal.upstream_base_url`：产品进程业务 IPC 已统一为固定 DACL 命名管道，管道名与 operation 是协议常量，不设 endpoint 配置，不得兼容读取或转换成 localhost HTTP；推送固定经 `\\.\pipe\ep-integ` 的 `push.dispatch.v1`。
