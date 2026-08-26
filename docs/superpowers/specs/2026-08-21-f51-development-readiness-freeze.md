@@ -339,7 +339,7 @@ Chrome、Edge 支持当前及前两个稳定大版本，Safari 支持当前及�
 5. **CI 唯一入口为 `cargo xtask ci`。** 内网平台固定 Forgejo + Woodpecker，Windows 构建 agent 执行该入口；不得让 `.github` 脚本成为第二套权威流水线。
 6. **GRNI 使用 procure 追加效果回写。** `procure` 建立仅追加 GRNI 效果事实，金额使用正数加 `INCREASE/DECREASE` 方向；收货、采购退货、进项发票受理和进项红字按实际会计期间追加效果。阶段 10 经 `ep_contract_procure::GrniEffectWritebackPort` 在同一事务回写，`GrniSubledgerBalanceQuery` 只读 procure 自有表并按截至期间累计，不跨读 invoice schema、不以当前 `invoiced_quantity` 倒推历史。
 7. **内部对账系统上下文。** `SecurityContext` 固定新增第 20 字段 `system_purpose: Option<SystemPurpose>`，枚举固定为 `SystemPurpose { General, Reconciliation }`。系统构造器签名为 `SecurityContext::system(legal_entity_id, request_id, trace_id, purpose)`，其中 `purpose` 写入 `Some(purpose)`；人工上下文固定为 `None`。不新增 `ReconContext`，不增加 `with_*` 权限变换方法。`SystemPurpose::Reconciliation` 除定义处外只允许在 `crates/platform/recon/src/executor.rs` 构造，由 `reconciliation-context-confined` archcheck 断言；job-worker 只调用 `ReconExecutor::run`，不得自行构造对账上下文。对象越权统一返回 `PLATFORM.AUTHZ.OBJECT_FORBIDDEN`。戊-11 据此关闭。
-8. **F-50 范围保持完整。** F-50 的 44 项验收、32 条错误码、行级发票、中央号码登记、显式核销效果、`effective_open`、历史追加切片、门户头行上传与受理回写均在首版范围内；F-51 不得用“低成本”理由删减其中任何一项。
+8. **F-50 范围保持完整。** F-50 的 **45** 项验收、32 条错误码（F-50 设计 §11 实数 45 条、序号 1–45 连续；本行原写 44，与 00c 同批更正，F-62；按本文 §1 冲突规则本行为权威，故此处必改）、行级发票、中央号码登记、显式核销效果、`effective_open`、历史追加切片、门户头行上传与受理回写均在首版范围内；F-51 不得用“低成本”理由删减其中任何一项。
 
 ## 16. 不阻塞编码的发布与专业门禁
 

@@ -16,7 +16,7 @@ pub enum Layer {
     Domain(String),
     Application(String),
     Adapter(String),
-    /// 八个二进制进程，负责装配，可依赖全部。
+    /// 九个二进制进程，负责装配，可依赖全部。
     Process(String),
     /// 开发期工具与夹具，不进制品或只随制品交付，不受层位约束。
     Tooling(String),

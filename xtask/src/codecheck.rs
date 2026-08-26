@@ -1,7 +1,8 @@
 //! `xtask codecheck` —— 九个二进制与其进程名、systemd 单元名、cgroup slice 名的对应。
 //!
-//! 判据出处是阶段 1 计划第 3.2 节末句：「九个二进制 crate 名与进程名、systemd 单元名、
-//! cgroup slice 名一一对应，由 `xtask codecheck` 断言」。
+//! 判据出处是阶段 1 计划第 3.2 节末句，现文逐字：「九个二进制 crate 名与进程名、
+//! Windows 服务名一一对应，由 `xtask codecheck` 断言」（历史版本曾作「八个……systemd 单元名、
+//! cgroup slice 名」；本模块的被测物仍含 quadlet 单元与 slice，见下）。
 //!
 //! 「一一对应」在四个维度上不是同一种对应，本模块按技术基线第 2 节进程表的实际取值判：
 //! crate 名与进程名、单元名三者逐字相等（`apps/<p>/` 目录名、`Cargo.toml` 的 `name`、

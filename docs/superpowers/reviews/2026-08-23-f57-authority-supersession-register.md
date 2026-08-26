@@ -26,7 +26,7 @@
 | `SUPERSEDED_DO_NOT_EXECUTE` | 整份文件已被 F-57 替代，只供历史追溯；**不得作为任何实现入口** |
 | `HISTORICAL_DO_NOT_EXECUTE` | 同 `HISTORICAL`，另显式禁止据以施工 |
 
-> **本表原缺后两码。** 实测该两码挂在全仓 **25 个文件**的横幅上，而本表（唯一状态词表）内命中 0，导致同一份文件可同时持有横幅状态与本表状态两个不同取值（例如 `2026-08-21-f50-financial-consistency-implementation.md` 横幅为 `SUPERSEDED_DO_NOT_EXECUTE`、本表第 131 行给 `HISTORICAL`）。现补入定义；两者冲突时以本表为准。
+> **本表原缺后两码。** 实测该两码挂在全仓 **25 个文件**的横幅上，而本表（唯一状态词表）内命中 0，导致同一份文件可同时持有横幅状态与本表状态两个不同取值（例如 `2026-08-21-f50-financial-consistency-implementation.md` 横幅为 `SUPERSEDED_DO_NOT_EXECUTE`、本表 `2026-08-21-f50-financial-consistency-implementation.md` 行给 `HISTORICAL`（原引第 131 行，因本次插行已漂移，改按文件名引用，F-62））。现补入定义；两者冲突时以本表为准。
 
 本登记的文件状态是文件分类，不是项目开发状态。项目状态入口统一使用 `development_state=READY_NOT_AUTHORIZED`、`blocking_reason=DEVELOPMENT_AUTHORIZATION_REQUIRED`、`implementation_state=NOT_IMPLEMENTED` 和 `production_state=PRODUCTION_NOT_READY`；`CURRENT_PLAN_NOT_AUTHORIZED` 仅表示计划文件的分类，绝不构成开发授权。
 
@@ -48,7 +48,7 @@
 | `docs/f57-migration-baseline.v1.tsv` | `CURRENT_SUBJECT` | pre-F57 78 行精确分区（66 immutable、3 rewrite、7 superseded absent、2 deferred absent），SHA-256=`52930d7ae32ee02ddda38199bcc144f5f6747fcfbe33e740741a0f21604ca8fd`；与 310-row legacy seed exact-join 为 388，G0 后可执行 baseline 恰为 69 | 改写登记、把 absent 行落盘、跳过三个 preimage/target/postimage 校验、或把文件本身当作 SQL 已修订/已应用 |
 | `docs/f57-legacy-migration-disposition.seed.tsv` | `CURRENT_SUBJECT` | 310 个缺失旧 `PLANNED` 版本到 `SUPERSEDED_BY_F57_REBASELINE`、唯一聚合 owner task、现行 47-row reservation 中 42 个替代路径和映射规则的逐行绑定；2026-08-24 收敛重绑后 SHA-256=`06566ca354b6279391e5ec3a0152316a8eb38d1f10cb09dc23953370883c3196` | 把处置种子当作迁移已经执行/重分类；跳过 G0 exact-join；由开发者临场重分配或恢复旧 34-path replacement 集 |
 | `docs/f57-feature-owner-registry.v1.tsv` | `G0_PLANNED_REGISTRY` | G0-01 只可按主计划 §2.1 创建 17-row exact `FeatureOwnerIdV1`/crate/schema/repository/fact-owner 登记 | 文件缺失时宣称已生成；从 schema 猜 owner；允许别名或双 writer |
-| `docs/f57-platform-mechanism-registry.v1.tsv` | `G0_PLANNED_REGISTRY` | G0-01 只可按主计划 §2.2 创建 30-row exact `PlatformMechanismIdV1`/crate/mechanism-scope 登记；planned root 也须先登记 | 文件缺失时宣称已生成；从 crate 猜 owner；平台机制侵占 feature business fact 或使用未登记 owner |
+| `docs/f57-platform-mechanism-registry.v1.tsv` | `G0_PLANNED_REGISTRY` | G0-01 只可按主计划 §2.2 创建 35-row exact `PlatformMechanismIdV1`/crate/mechanism-scope 登记；planned root 也须先登记 | 文件缺失时宣称已生成；从 crate 猜 owner；平台机制侵占 feature business fact 或使用未登记 owner |
 | `docs/f57-task-staged-paths.v1.tsv` | `G0_PLANNED_REGISTRY` | G0-01 从五份现行计划精确展开每个 task 的可暂存路径、路径类型和技术分支条件 | 在文件缺失时绕过 snapshot staging；使用 raw `git add`、目录/glob、未登记或预先 dirty 路径 |
 | `docs/f57-migration-reservations.v2.tsv` | `G0_PLANNED_REGISTRY` | G0-01 按主计划 §4.1 创建 exact 9-column/47-row F57 suffix；每行冻结 gate/owner/origin/映射 digest，42 legacy replacement + 5 net-new，仅 status 可由 owner task 原子单向转 `CREATED` | 把 reservation 当已创建 SQL；插入历史版本、跳号、重复 owner、修改非 status 字段或脱离 task commit 改状态 |
 | `docs/f57-delivery-dag.v1.tsv` | `G0_PLANNED_REGISTRY` | G0-01 按主计划 §5 创建不可变 42-row topology DAG；只含 direct dependency/product/migration/condition，不含交付状态；状态仅由签名回执派生 | 后续 task 改 TSV 冒充推进、增加状态列、按旧 Task 数字推断执行顺序，或跳过 aggregate receipt |

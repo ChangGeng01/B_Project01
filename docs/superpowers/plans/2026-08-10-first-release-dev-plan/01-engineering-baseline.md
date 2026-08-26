@@ -78,7 +78,7 @@ Windows/CI 最终冻结：产品服务、数据库与客户主数据卷只走 Wi
 | archive-writer | 无监听、spool 目录、IPC 客户端、15 分钟周期心跳占位、core-server 不可用时落 spool 并在恢复后补写 | 事务日志归档、附件写出、审计证据写出 |
 | backup-writer | 无监听、spool 目录、IPC 客户端、每日周期心跳占位 | 全量备份、校验、存量搬运 |
 
-**九个**二进制 crate 名与进程名、Windows 服务名一一对应，由 `xtask codecheck` 断言（本句原写「八个」，F-55 已把技术基线第 2 节进程表更新为九进程并新增 `ai-inferer`，此处同批更正）；与资源单位不构成一一对应——core-server 与 integration-gateway 同处一个资源单位，八个二进制落在七个资源单位内，该维判据按裁定 F-08 第八节随 `codecheck` 重写时改为断言这一多对一关系。archive-writer 与 backup-writer 在本阶段就不持有运行期应用账号，其配置结构体中根本不存在 db 段，配置里出现 db 段即启动失败，这是把规格第 7.7 章的账号边界前移到类型层。
+**九个**二进制 crate 名与进程名、Windows 服务名一一对应，由 `xtask codecheck` 断言（本句原写「八个」，F-55 已把技术基线第 2 节进程表更新为九进程并新增 `ai-inferer`，此处同批更正）；与资源单位不构成一一对应——core-server 与 integration-gateway 同处一个资源单位，**九个二进制落在八个产品资源单位内**（照 00b:37 与 00b:273 逐字；本句原写「八个落在七个」，F-62 同批更正），该维判据按裁定 F-08 第八节随 `codecheck` 重写时改为断言这一多对一关系。archive-writer 与 backup-writer 在本阶段就不持有运行期应用账号，其配置结构体中根本不存在 db 段，配置里出现 db 段即启动失败，这是把规格第 7.7 章的账号边界前移到类型层。
 
 具名 Job Object 的名称在本阶段一次冻结，不留配置分支：`Global\EP_<deployment UUID去连字符并转32位大写十六进制>_<suffix>`，suffix 封闭为 `APP_CORE|APP_WORKER|APP_PORTAL|APP_PLUGIN|APP_EDGE|APP_ARCHIVE|APP_BACKUP|APP_DB`。core/integration 共 APP_CORE，job-worker、portal、plugin、archive、backup、PostgreSQL 分别取对应 suffix，ops-agent 与第三方反向代理共 APP_EDGE。非规范/全零 deployment_id、推导名与 `deploy/resource-limits.toml` 不一致或同机异安装复用同 deployment_id 均在启动前失败；名称不设配置键。首版该文件只承载内存硬上限；CPU 比例/突发上限与磁盘 IO 份额不写值、不自动启用，未来须新版本正式裁定。
 
@@ -116,7 +116,7 @@ Windows/CI 最终冻结：产品服务、数据库与客户主数据卷只走 Wi
 #### 4.4 测试专用探针表，不进生产迁移目录
 
 为了在本阶段就把基线第 3.8 节的 RLS 模板、第 4 节的公共列、第 3.7 节的乐观锁与第 3.10 节的索引命名全部跑通，`ep-testkit` 在每个临时测试库中创建 schema `ci_probe` 与下表。它不出现在 `db/migrations/` 下，不进任何交付制品，`xtask sqlcheck` 规则 SQL-030 断言 `ci_probe` 字样不出现在生产迁移目录中。
-按 B-01，探针 schema 与探针表的建表函数一律带 `#[cfg(feature = "ci-probe")]`，Cargo feature 名固定为 `ci-probe`，在 `apps/core-server/Cargo.toml` 与 `testkit/Cargo.toml` 中声明且默认关闭。发布制品中不得出现该 feature 与探针表，判据由阶段 14 的发布门禁项 `RG-CI-PROBE-ABSENT` 承担，即发布制品的 `cargo tree -e features` 输出中不含 `ci-probe`，且交付安装包内的八个 PE 二进制中不含符号 `api_v1_system_echo`。判据形态不变，只换被测对象：首版交付形态是同一份安装包加服务注册脚本，没有镜像这一层。
+按 B-01，探针 schema 与探针表的建表函数一律带 `#[cfg(feature = "ci-probe")]`，Cargo feature 名固定为 `ci-probe`，在 `apps/core-server/Cargo.toml` 与 `testkit/Cargo.toml` 中声明且默认关闭。发布制品中不得出现该 feature 与探针表，判据由阶段 14 的发布门禁项 `RG-CI-PROBE-ABSENT` 承担，即发布制品的 `cargo tree -e features` 输出中不含 `ci-probe`，且交付安装包内的**九个 PE 二进制的只读数据节中不出现路由字面量 `/api/v1/system/echo`**（符号判据已由 14:842 按 F-08 补裁申撤下——msvc release 产物把内部函数名放进独立 PDB，符号判据在 PE 本体上恒真；该权威行逐字要求「阶段 1 计划里同一门禁项的两处复述须同批改」，F-62 照办）。判据形态不变，只换被测对象：首版交付形态是同一份安装包加服务注册脚本，没有镜像这一层。
 
 | 列 | 类型 | 可空 | 默认 | 约束 |
 |---|---|---|---|---|
@@ -260,7 +260,7 @@ cargo-llvm-cov 只支持全局阈值，因此本阶段自行实现分档。步�
 | GET /api/v1/system/metrics | 无 | Prometheus 文本，非 JSON 封套 | 无 | 天然幂等 | 无，仅回环，供 ops-agent 抓取 |
 | POST /api/v1/system/echo | `{ text: string, delay_ms?: int }` | `{ text, received_at }` | 见下 | 需 Idempotency-Key，本阶段只校验存在与格式，不做重放存储 | 仅在 feature `ci-probe` 下编译，发布构建不包含 |
 
-echo 端点存在的唯一理由是让封套、错误映射、并发闸门、同步等待上限、请求头校验、追踪与日志七条横切链路在阶段 1 就有端到端用例。按 B-01，它由 `#[cfg(feature = "ci-probe")]` 保护，feature 名固定为 `ci-probe`，在 `apps/core-server/Cargo.toml` 与 `testkit/Cargo.toml` 中声明且默认关闭；`xtask codecheck` 断言发布 profile 不启用该 feature，e2e 用例断言按发布 profile 构建并安装后该路径返回 404；发布制品层面的判定由阶段 14 的发布门禁项 `RG-CI-PROBE-ABSENT` 承担，判据为 `cargo tree -e features` 输出中不含 `ci-probe` 且交付安装包内的八个 PE 二进制中不含符号 `api_v1_system_echo`。
+echo 端点存在的唯一理由是让封套、错误映射、并发闸门、同步等待上限、请求头校验、追踪与日志七条横切链路在阶段 1 就有端到端用例。按 B-01，它由 `#[cfg(feature = "ci-probe")]` 保护，feature 名固定为 `ci-probe`，在 `apps/core-server/Cargo.toml` 与 `testkit/Cargo.toml` 中声明且默认关闭；`xtask codecheck` 断言发布 profile 不启用该 feature，e2e 用例断言按发布 profile 构建并安装后该路径返回 404；发布制品层面的判定由阶段 14 的发布门禁项 `RG-CI-PROBE-ABSENT` 承担，判据为 `cargo tree -e features` 输出中不含 `ci-probe` 且交付安装包内的**九个 PE 二进制的只读数据节中不出现路由字面量 `/api/v1/system/echo`**（同 14:842 现行判据，F-62 同批更正）。
 
 本阶段登记的错误码全集如下，同步写入 `docs/error-codes.md` 与 `ep-foundation` 的 `error::codes`，两处由 CI 比对。
 
@@ -523,7 +523,7 @@ E2E 在单机编排上跑，覆盖规格第 17.2 章中本阶段可达的部分�
 1. `cargo build --workspace --locked --offline --release` 成功，零 warning，`-D warnings` 生效。
 2. 每个 crate 的命名前缀、目录名与 `Cargo.toml` 中的 name 三处一致，由 archcheck 断言。不再断言 crate 清单与基线第 1.2 节逐项一致：逐项一致这条判据把 crate 边界变成必须走基线修订才能移动的冻结物，而真正要守的依赖方向由退出条件 3 的七条禁止项守住，foundation 一侧另由 `foundation-module-registry` 与 `foundation-no-single-owner` 两条规则单独接盘，新增 foundation 顶层模块必须同批改基线第 1.4 节；基线第 1.2 与 1.3 节的两张表相应降为现状记录，增删 crate 走普通评审。`codecov.toml` 的分档路径规则按目录前缀表达，不与 crate 清单逐项对应，新增 crate 不会静默逃出覆盖率分档。
 3. 依赖方向的七条禁止项在 archcheck 上各有一个负样例，负样例构建必须失败，正样例全部通过；其中第六条 `foundation-no-business` 的机检面由 `foundation-no-business`、`foundation-frozen-items`、`foundation-marker-shape`、`foundation-module-registry`、`foundation-no-single-owner` 五条规则合成，负样例分别为 foundation 依赖工作区内任一 crate、`id::marker` 的 22 项标记类型改名或增删、`id::marker` 中的标记类型形态违反（出现字段、方法或 derive 的 trait 实现）、foundation 顶层模块清单与基线第 1.4 节的顶层模块登记表不符、在非 marker 文件中出现含模块码词元的条目（如 `pub struct SalesOrderDto` 或 `pub mod invoice;`），共五个，本条负样例总数因此由七个变为十一个；其必要性一条不由任何工具判定，也不产出负样例，理由与登记见基线第 12 节通则第六条与第 12.1 节。
-4. 八个二进制启动、就绪、优雅停机、崩溃重启四条路径在 E2E 中全绿。
+4. **九个**二进制启动、就绪、优雅停机、崩溃重启四条路径在 E2E 中全绿（阶段 1 交付时点为八个并据此通过；第九个 `ai-inferer` 由 F-55 新增，其四条路径的 E2E 归其属主阶段 13c，在该阶段落地前本条按八个的历史通过记录读，F-62 注）。
 5. `ep-migrate` 的五个子命令 apply、status、check、gen-rls、open-window 参数解析齐备，六个退出码各有一个用例；迁移清单哈希在探针目录上比对通过且篡改后失败；`db/migrations/` 下 24 个空目录存在，且目录中不含任何顺序声明文件。空库上 24 个 schema 与 `platform_core.schema_history` 一张历史表的存在性判定归阶段 2。
 6. 六项已实现自检各自的通过与失败分支均有集成测试，自检项一律以注册名标识且各自带 Blocking 或 Degrading 一个档位；三项 Pending 项 `secrets-resolvable`、`audit-chain-verifiable`、`file-store-writable` 在报告中如实标注，且有一条 CI 断言保证未注册项数量只减不增。
 7. 十三条错误码在 `docs/error-codes.md` 与代码常量表中一致，重复码或缺失码即构建失败，其中 C-24 列明的七条由本阶段独家登记。
