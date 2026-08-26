@@ -32,8 +32,9 @@
 //! 阶段 4 任务 #22 新增二十三条的出处：04 计划 §6.5 错误码清单（扣除裁定
 //! C-24 已由阶段 1 独家登记的七码）：AUTHN 段九条、AUTHZ 段六条、SOD 段
 //! 两条、REAUTH 与 APPROVAL 各一条、HIGH_RISK_REQUEST 一条、USER_ACCOUNT
-//! 段三条；`RATE_LIMITED` 归类 INFRASTRUCTURE 取其登记的 503（限流 429
-//! 的运行时映射在封套层，登记口径与第 1 节分类表一致）。
+//! 段三条；`RATE_LIMITED` 归类 INFRASTRUCTURE 而 HTTP 取 429（分类表第 1 节
+//! 逐字「503，限流 429」，限流是该类唯一的 429 例外，裁定 F-63；
+//! 旧注声称「429 的运行时映射在封套层」——实测封套层无此映射，该设计从未实现，删）。
 //! 裁定 C-24 点名的七码由阶段 1 独家登记，本批不重复登记。
 //!
 //! 阶段 3b 任务 #21 新增一条的出处：03 计划第 3.4.11 节逐字「每次迁移写
@@ -141,7 +142,7 @@ codes! {
     PLATFORM_AUTHN_MFA_CHALLENGE_EXPIRED => "PLATFORM.AUTHN.MFA_CHALLENGE_EXPIRED", BusinessConflict, 409, false;
     PLATFORM_AUTHN_MFA_LAST_FACTOR_FORBIDDEN => "PLATFORM.AUTHN.MFA_LAST_FACTOR_FORBIDDEN", BusinessConflict, 409, false;
     PLATFORM_AUTHN_DEVICE_NOT_REGISTERED => "PLATFORM.AUTHN.DEVICE_NOT_REGISTERED", PermissionDenied, 403, false;
-    PLATFORM_AUTHN_RATE_LIMITED => "PLATFORM.AUTHN.RATE_LIMITED", Infrastructure, 503, true;
+    PLATFORM_AUTHN_RATE_LIMITED => "PLATFORM.AUTHN.RATE_LIMITED", Infrastructure, 429, true;
     PLATFORM_AUTHZ_LEGAL_ENTITY_NOT_GRANTED => "PLATFORM.AUTHZ.LEGAL_ENTITY_NOT_GRANTED", PermissionDenied, 403, false;
     PLATFORM_AUTHZ_ISOLATION_CONTROL_FORBIDDEN => "PLATFORM.AUTHZ.ISOLATION_CONTROL_FORBIDDEN", PermissionDenied, 403, false;
     PLATFORM_AUTHZ_DIRECT_DB_ACCESS_FORBIDDEN => "PLATFORM.AUTHZ.DIRECT_DB_ACCESS_FORBIDDEN", PermissionDenied, 403, false;
@@ -200,7 +201,10 @@ mod tests {
                 Category::Validation => &[400],
                 Category::PermissionDenied => &[403, 404],
                 Category::BusinessConflict => &[409],
-                Category::Infrastructure => &[503],
+                // F-63：限流是 Infrastructure 类唯一允许 429 的例外（分类表逐字「503，限流 429」）。
+                Category::Infrastructure => {
+                    if r.code.0.ends_with(".RATE_LIMITED") { &[429] } else { &[503] }
+                }
             };
             assert!(
                 want.contains(&r.http),

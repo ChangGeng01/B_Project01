@@ -659,6 +659,7 @@ rule/field_whitelist.rs         五项能力各自的返回字段白名单
 | SUPPLIER_CONFIRMED → PARTIALLY_RECEIVED | 存在已过账收货且累计收货数量小于订单数量 |
 | SUPPLIER_CONFIRMED / PARTIALLY_RECEIVED → COMPLETED | 物料类累计收货数量等于订单数量；直接费用类由发票模块经契约标记发票登记完毕 |
 | 任一态 → CLOSED | 采购主管填写原因提前关闭；剩余未收数量不再收货 |
+| ↳ F-63 注 | 本表为**不完全摘录**，采购订单状态域的唯一权威是 F-57 业务执行契约 §14.6（含 F-63 补入的改单回退与红冲重开两条边）；两表不一致时以 §14.6 为准 |
 | DRAFT / PENDING_SUPPLIER_CONFIRM / SUPPLIER_RESCHEDULE_PROPOSED → VOIDED | 无任何收货登记、无已登记采购发票、无已审批付款申请三条同时成立 |
 
 已下达订单的变更（数量、单价、交期、仓库）经 `actions/revise` 表达，守卫条件为该行已收货部分对应的数量与单价不允许变更，变更后订单回到 `PENDING_SUPPLIER_CONFIRM`。变更前后取值由 `platform_audit` 的 `before` 与 `after` 承载，本阶段不建变更历史表。

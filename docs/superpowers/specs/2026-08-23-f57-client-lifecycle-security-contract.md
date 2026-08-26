@@ -248,7 +248,7 @@ ErasureTombstoneV1
 
 ### 10.2 UPS provider
 
-首发支持两级 carrier：`WINDOWS_STANDARD_POWER_STATUS` 提供在线/电池/剩余估算和关机事件的最小证据；`SIGNED_VENDOR_ADAPTER` 额外提供型号、序列号、固件、电池日期、W/VA、self-test。生产认证要求实际设备至少提供在线状态、剩余运行时间、通信健康、自检或等价可验证信号，并能执行 Task 7 固定安全关机顺序；缺字段不得伪造默认值，改为 `CAPABILITY_INSUFFICIENT` 并阻止上线。
+首发支持两级 carrier：`WINDOWS_STANDARD_POWER_STATUS` 提供在线/电池/剩余估算和关机事件的最小证据；`SIGNED_VENDOR_ADAPTER` 额外提供型号、序列号、固件、电池日期、W/VA、self-test。**生产认证只认 `SIGNED_VENDOR_ADAPTER`**（F-63 按 RULING-UPS-01 与 threat-model §296 收严：最高安全档与 `POWER_SHUTDOWN` 只能使用候选绑定的签名适配器，首版唯一生产基线即最高安全档，故 `WINDOWS_STANDARD_POWER_STATUS` 无生产认证路径、仅供开发与非生产环境；本句原为「在线状态、剩余运行时间、通信健康、自检**或等价可验证信号**」的析取式，与严侧三处相反）。生产认证并须能执行 Task 7 固定安全关机顺序；缺字段不得伪造默认值，改为 `CAPABILITY_INSUFFICIENT` 并阻止上线。
 
 ### 10.3 20 人聚合负载
 

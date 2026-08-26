@@ -1170,6 +1170,7 @@ GRNI 的唯一子账事实为 `procure.goods_receipt_line_costings` 的追加效
 | Rust 核心与集成网关 | 20% | 16% | 11% |
 | Worker | 10% | 8% | 8% |
 | 本地 AI（复用原无承载搜索行） | 10% | 10% | 8% |
+| ↳ F-63 注：F-57 已判本地 AI 首版不启动（converged-program §10673 关闭其产出链），本行份额**不重新分配、整体留作未分配余量**；`floor(0.095 × CERTIFIED_HOST_RAM_BYTES)` 公式随之休眠，`ai-inferer` 落地（阶段 13c）时本行恢复原义 | — | — | — |
 | 插件运行时 | 5% | 5% | 4% |
 | 反向代理与运维代理 | 3% | 2% | 2% |
 | 公网门户（portal-gateway） | 3% | 3% | 1% |

@@ -216,6 +216,21 @@
 
 ## 4. 冲突裁决
 
+### RULING-F63-01：PURCHASE_ORDER_V1 的 REJECTED 出边取代 PRD:1567
+
+- **旧句**：PRD:1567 逐字「| 已驳回 | 草稿、已作废 | …」（已驳回可作废）。
+- **裁决**：F-57 §14.6 的 `REJECTED→CLOSED|DRAFT` **是有意取代而非遗漏**（F-63 按 F-61 衍生问登记）——
+  作废须走 `VOIDED` 三态守卫（计划 07:662），已驳回单据的退出走 `CLOSED`。PRD:1567 只作历史追溯。
+
+### RULING-F63-02：EMPLOYEE 与 PORTAL 面的 reauth 签发端点已裁、待种子再基线落地
+
+- **背景**：`PLATFORM.AUTHZ.REAUTH_REQUIRED` 在 9 条 EMPLOYEE/PORTAL 路由的封闭错误集内，
+  而唯一签发端点只在 CONTROL 面（`/control/v1/session/reauth`）。
+- **裁决**（F-63）：两面各补一条 reauth 端点（`/employee/v1/session/reauth`、`/portal/v1/session/reauth`），
+  镜像 `CONTROL_SESSION_REAUTH_V1` 族。**本轮不手造种子行**——落行需新增 shape/component 编号，
+  牵动 `f57-api-direct-routes`（47→49 行）、`f57-api-component-shapes` 与本表 `:68` 的机器闭集计数，
+  **须在下一次 API 种子再基线批次一并执行**；在此之前该 9 行闭集按「签发路径已裁、待落地」读。
+
 ### RULING-AUTHORITY-01：旧索引止于 F-56
 
 - **旧句**：F-50 至 F-56 已是最高链，旧体系可直接开发。
