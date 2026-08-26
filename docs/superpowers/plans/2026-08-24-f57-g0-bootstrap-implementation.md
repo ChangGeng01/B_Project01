@@ -604,7 +604,7 @@ fn task1_carrier_parser_uses_the_sole_early_recipe_contract() {
 
 Run: `cargo test -p ep-platform-release --test carrier_contract -- --nocapture`
 
-Run: `cargo test -p ep-foundation --test f57_foundation_wire -- --nocapture && cargo test -p ep-xtask --test f57_registry --test f57_cli -- --nocapture`
+Run: `cargo test -p ep-foundation --test f57_foundation_wire -- --nocapture && cargo test -p ep-xtask --test f57_registry --test f57_cli -- --nocapture && cargo test -p ep-platform-delivery-registry --test registry --test migration_closure -- --nocapture`
 
 Expected: FAIL because the foundation wire/schema root, `xtask/src/f57/registry.rs`, and `DeliveryRegistryV1` do not exist.
 
@@ -945,7 +945,7 @@ Create `verify.rs` here as the closed dispatcher shell used by the parser: it re
 
 Run: `cargo test -p ep-platform-release --test carrier_contract --all-targets --locked -- --nocapture`
 
-Run: `cargo test -p ep-foundation --test f57_foundation_wire -- --nocapture && cargo test -p ep-xtask --test f57_registry --test f57_cli --all-targets --locked -- --nocapture`
+Run: `cargo test -p ep-foundation --test f57_foundation_wire -- --nocapture && cargo test -p ep-xtask --test f57_registry --test f57_cli --all-targets --locked -- --nocapture && cargo test -p ep-platform-delivery-registry --test registry --test migration_closure --all-targets --locked -- --nocapture`
 
 Expected: PASS with the exact six recipe wires compiled from `carrier_contract.rs`, uppercase/case/unknown/extra/branch parser negatives, exit `2` for invalid syntax and `70/F57_CARRIER_NOT_DELIVERED` for all six known recipes; the exact 36 foundation definitions, strict UUID aliases, complete identifier/closed registries, typed result/Fresh-PG refs, ten principal wires, seven delivery profiles, 276 TestIDs, three data classifications, complete client wire sets, one zero-import schema root/direct-import DAG, typed distinct-reviewer golden, 185 rows, and zero duplicate or unmapped values.
 

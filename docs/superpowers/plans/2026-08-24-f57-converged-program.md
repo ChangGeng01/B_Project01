@@ -101,16 +101,19 @@ Credential/authenticator/device/session facts remain owned by the platform mecha
 
 ### 2.2 Exact platform-mechanism registry
 
-G0 also creates `docs/f57-platform-mechanism-registry.v1.tsv` with exact header `platform_mechanism_id\tcrate_root\tauthoritative_mechanism_scope` and the following canonical-sorted 30 rows. A platform mechanism may own security/operational state, but never a feature business fact. Planned roots are registry-reserved before their owning task creates them; an unregistered platform directory or graph owner is rejected.
+G0 also creates `docs/f57-platform-mechanism-registry.v1.tsv` with exact header `platform_mechanism_id\tcrate_root\tauthoritative_mechanism_scope` and the following canonical-sorted 35 rows. A platform mechanism may own security/operational state, but never a feature business fact. Planned roots are registry-reserved before their owning task creates them; an unregistered platform directory or graph owner is rejected.
 
 | `platform_mechanism_id` | Crate root | Sole mechanism scope |
 |---|---|---|
 | `platform.approval` | `crates/platform/approval` | approval-case, vote, escalation, and expiry state |
 | `platform.audit` | `crates/platform/audit` | append-only audit entry, segment, and checkpoint state |
+| `platform.authority-kernel` | `crates/platform/authority-kernel` | Sole Authority application composition root |
 | `platform.authz` | `crates/platform/authz` | grant, policy, authorization epoch, SoD, and decision evidence |
 | `platform.backup` | `crates/platform/backup` | backup set, medium, checkpoint, and recovery-certification state |
 | `platform.capability-graph` | `crates/platform/capability-graph` | capability compilation and deterministic projection metadata |
+| `platform.client-common` | `crates/platform/client-common` | Sole owner of shared client nominal/schema artifact ids |
 | `platform.command` | `crates/platform/command` | command envelope, idempotency, atomic receipt, and dispatch state |
+| `platform.delivery-registry` | `crates/platform/delivery-registry` | Sole production-linkable owner of MigrationClosureIdentityV1 |
 | `platform.endpoint-policy` | `crates/platform/endpoint-policy` | endpoint DLP decision and enforcement-readback state |
 | `platform.evidence-trust` | `crates/platform/evidence-trust` | product/deployment trust bootstrap, signer-registry provisioning, authenticated broker session, and evidence-signing authority state |
 | `platform.file` | `crates/platform/file` | file object, quarantine, scan, publication, and retention state |
@@ -126,6 +129,7 @@ G0 also creates `docs/f57-platform-mechanism-registry.v1.tsv` with exact header 
 | `platform.obs` | `crates/platform/obs` | health, metric-definition, alert, and diagnostic-redaction state |
 | `platform.outbox` | `crates/platform/outbox` | outbox item, attempt, acknowledgement, and terminal-delivery state |
 | `platform.package` | `crates/platform/package` | signed capability-package install, activation, drain, and rollback state |
+| `platform.powershell-trust` | `crates/platform/powershell-trust` | Sole owner of PowerShell script trust evaluation |
 | `platform.provider` | `crates/platform/provider` | provider manifest, grant, invocation, Unknown, and reconciliation state |
 | `platform.recon` | `crates/platform/recon` | reconciliation work item, match, exception, and closure state |
 | `platform.release` | `crates/platform/release` | generation, participant ACK, artifact pin, and promotion state |
@@ -135,6 +139,7 @@ G0 also creates `docs/f57-platform-mechanism-registry.v1.tsv` with exact header 
 | `platform.support` | `crates/platform/support` | remote-support request, approval, session, expiry, and cleanup state |
 | `platform.sync` | `crates/platform/sync` | bounded offline intent, conflict, replay, wipe, and re-attestation state |
 | `platform.tenancy` | `crates/platform/tenancy` | legal-entity partition metadata and tenant-key-domain binding state |
+| `platform.ups-contract` | `crates/platform/ups-contract` | Sole owner of UPS carrier capability contract |
 
 ## 3. Stable program interfaces
 
