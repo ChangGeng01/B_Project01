@@ -505,7 +505,12 @@ F-56 的内置 `MODULE_PACKAGE` 继续承担许可和内置模块生命周期；
 
 ## 规范依据
 
-- 总体范围、架构、安全、部署、风险与发布门：`docs/superpowers/specs/2026-07-19-enterprise-private-operations-platform-design.md`
+- **现行最高设计与权威边界（本文件第 3 行自称以其为最高边界，此前本节一条未列，现补）**：
+  `docs/superpowers/specs/2026-08-23-f57-governed-automation-fabric-design.md`、
+  `docs/superpowers/specs/2026-08-23-f57-business-execution-contract.md`、
+  `docs/superpowers/specs/2026-08-23-f57-client-lifecycle-security-contract.md`、
+  `docs/superpowers/reviews/2026-08-23-f57-authority-supersession-register.md`。
+- 总体范围、架构、安全、部署、风险与发布门（**按 F-57 权威登记为 `PARTIALLY_SUPERSEDED`，只取与 F-57 不冲突的部分**）：`docs/superpowers/specs/2026-07-19-enterprise-private-operations-platform-design.md`
 - 首版业务与角色/端点需求：`docs/superpowers/specs/2026-08-09-first-release-prd.md`
 - 共享技术基线：`docs/superpowers/plans/2026-08-10-first-release-dev-plan/00b-technical-baseline.md`
 - 身份与授权：`docs/superpowers/plans/2026-08-10-first-release-dev-plan/04-identity-authz.md`

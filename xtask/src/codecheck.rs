@@ -1,6 +1,6 @@
-//! `xtask codecheck` —— 八个二进制与其进程名、systemd 单元名、cgroup slice 名的对应。
+//! `xtask codecheck` —— 九个二进制与其进程名、systemd 单元名、cgroup slice 名的对应。
 //!
-//! 判据出处是阶段 1 计划第 3.2 节末句：「八个二进制 crate 名与进程名、systemd 单元名、
+//! 判据出处是阶段 1 计划第 3.2 节末句：「九个二进制 crate 名与进程名、systemd 单元名、
 //! cgroup slice 名一一对应，由 `xtask codecheck` 断言」。
 //!
 //! 「一一对应」在四个维度上不是同一种对应，本模块按技术基线第 2 节进程表的实际取值判：
@@ -35,7 +35,7 @@ const BASELINE: &str =
 /// 基线第 2 节进程表所在小节。
 const BASELINE_SECTION: &str = "## 2. 进程清单";
 /// 基线第 2 节点名的进程数。变更进程数必须先改基线，本工具据此判计数漂移。
-const EXPECTED_PROCESSES: usize = 8;
+const EXPECTED_PROCESSES: usize = 9;
 
 #[derive(Debug)]
 pub struct Report {
@@ -101,7 +101,7 @@ pub fn run(root: &Path) -> Report {
 
     if table.len() != EXPECTED_PROCESSES {
         problems.push(format!(
-            "{BASELINE} 第 2 节进程表有 {} 行，基线声称八个进程；计数漂移即不通过",
+            "{BASELINE} 第 2 节进程表有 {} 行，基线声称 {EXPECTED_PROCESSES} 个进程；计数漂移即不通过",
             table.len()
         ));
     }

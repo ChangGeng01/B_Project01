@@ -78,7 +78,7 @@ Windows/CI 最终冻结：产品服务、数据库与客户主数据卷只走 Wi
 | archive-writer | 无监听、spool 目录、IPC 客户端、15 分钟周期心跳占位、core-server 不可用时落 spool 并在恢复后补写 | 事务日志归档、附件写出、审计证据写出 |
 | backup-writer | 无监听、spool 目录、IPC 客户端、每日周期心跳占位 | 全量备份、校验、存量搬运 |
 
-八个二进制 crate 名与进程名、Windows 服务名一一对应，由 `xtask codecheck` 断言；与资源单位不构成一一对应——core-server 与 integration-gateway 同处一个资源单位，八个二进制落在七个资源单位内，该维判据按裁定 F-08 第八节随 `codecheck` 重写时改为断言这一多对一关系。archive-writer 与 backup-writer 在本阶段就不持有运行期应用账号，其配置结构体中根本不存在 db 段，配置里出现 db 段即启动失败，这是把规格第 7.7 章的账号边界前移到类型层。
+**九个**二进制 crate 名与进程名、Windows 服务名一一对应，由 `xtask codecheck` 断言（本句原写「八个」，F-55 已把技术基线第 2 节进程表更新为九进程并新增 `ai-inferer`，此处同批更正）；与资源单位不构成一一对应——core-server 与 integration-gateway 同处一个资源单位，八个二进制落在七个资源单位内，该维判据按裁定 F-08 第八节随 `codecheck` 重写时改为断言这一多对一关系。archive-writer 与 backup-writer 在本阶段就不持有运行期应用账号，其配置结构体中根本不存在 db 段，配置里出现 db 段即启动失败，这是把规格第 7.7 章的账号边界前移到类型层。
 
 具名 Job Object 的名称在本阶段一次冻结，不留配置分支：`Global\EP_<deployment UUID去连字符并转32位大写十六进制>_<suffix>`，suffix 封闭为 `APP_CORE|APP_WORKER|APP_PORTAL|APP_PLUGIN|APP_EDGE|APP_ARCHIVE|APP_BACKUP|APP_DB`。core/integration 共 APP_CORE，job-worker、portal、plugin、archive、backup、PostgreSQL 分别取对应 suffix，ops-agent 与第三方反向代理共 APP_EDGE。非规范/全零 deployment_id、推导名与 `deploy/resource-limits.toml` 不一致或同机异安装复用同 deployment_id 均在启动前失败；名称不设配置键。首版该文件只承载内存硬上限；CPU 比例/突发上限与磁盘 IO 份额不写值、不自动启用，未来须新版本正式裁定。
 
