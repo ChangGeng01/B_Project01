@@ -65,7 +65,7 @@
 | `20261025092500` | `db/migrations/platform_ops/V20261025092500__platform_ops_create_authority_service_fences.sql` | native Windows service lease/fencing readback; references canonical authz epoch |
 | `20261025092510` | `db/migrations/platform_ops/V20261025092510__platform_ops_create_backup_sets_media_and_certification.sql` | backup/offline media |
 | `20261025092520` | `db/migrations/platform_ops/V20261025092520__platform_ops_create_security_incidents_and_recovery_cuts.sql` | ransomware/clean restore |
-| `20261025092530` | `db/migrations/platform_core/V20261025092530__platform_core_create_production_activation_and_admission.sql` | production activation, generation admission/hold and final RLS/unpoliced closure |
+| `20261025092530` | `db/migrations/platform_core/V20261025092530__platform_core_backfill_f57_unpoliced_table_registry.sql` | production activation, generation admission/hold and final RLS/unpoliced closure |
 
 No other G5/G6 migration may occupy this block. Each task proves its exact prefix on Fresh PostgreSQL 16 before its gate.
 
@@ -4812,7 +4812,7 @@ git commit -m "test: add p340 and power certification harnesses"
 - Modify: `crates/adapter/db-pg/src/platform_core/mod.rs`
 - Modify: `crates/adapter/db-pg/src/lib.rs`
 - Modify: `crates/adapter/db-pg/Cargo.toml`
-- Create: `db/migrations/platform_core/V20261025092530__platform_core_create_production_activation_and_admission.sql`
+- Create: `db/migrations/platform_core/V20261025092530__platform_core_backfill_f57_unpoliced_table_registry.sql`
 - Modify: `xtask/src/f57/l2.rs`
 - Modify: `xtask/src/f57/cli.rs`
 - Modify: `xtask/src/f57/carrier.rs`
