@@ -10,7 +10,7 @@
 |---|---|
 | `CURRENT` | 现行权威，可以直接作为对应主题的实现依据 |
 | `CURRENT_SUBJECT` | 仅在明确主题内保持现行权威 |
-| `CURRENT_PLAN_NOT_AUTHORIZED` | 现行可执行计划；内容已就绪，但尚未获得开始产品开发的授权 |
+| `CURRENT_PLAN_NOT_AUTHORIZED` | 现行可执行计划；内容已就绪。**分类名保持不改；开发授权已于 2026-08-27 授予（F-65），本分类不再表示缺授权**，只余各计划自身的 BLOCKED_BY 依赖 |
 | `CURRENT_SUBJECT_IMPORT` | G0 前的受控导入输入；仍可审阅但不可手工扩展，G0 逐字节往返通过后转为 `HISTORICAL_IMPORT_SNAPSHOT` |
 | `HISTORICAL_IMPORT_SNAPSHOT` | G0 已验收的不可变导入前像；仅供来源审计，不再是现行投影目标，后续 graph 演进不回写也不与其永久求等 |
 | `GENERATED_PROJECTION` | 已由 CapabilityGraph 与登记输入确定性生成、绑定 graph digest/generator version 的现行机器投影；只能经 generator 更新 |
@@ -28,7 +28,7 @@
 
 > **本表原缺后两码。** 实测该两码挂在全仓 **25 个文件**的横幅上，而本表（唯一状态词表）内命中 0，导致同一份文件可同时持有横幅状态与本表状态两个不同取值（例如 `2026-08-21-f50-financial-consistency-implementation.md` 横幅为 `SUPERSEDED_DO_NOT_EXECUTE`、本表 `2026-08-21-f50-financial-consistency-implementation.md` 行给 `HISTORICAL`（原引第 131 行，因本次插行已漂移，改按文件名引用，F-62））。现补入定义；两者冲突时以本表为准。
 
-本登记的文件状态是文件分类，不是项目开发状态。项目状态入口统一使用 `development_state=READY_NOT_AUTHORIZED`、`blocking_reason=DEVELOPMENT_AUTHORIZATION_REQUIRED`、`implementation_state=NOT_IMPLEMENTED` 和 `production_state=PRODUCTION_NOT_READY`；`CURRENT_PLAN_NOT_AUTHORIZED` 仅表示计划文件的分类，绝不构成开发授权。
+本登记的文件状态是文件分类，不是项目开发状态。项目状态入口统一使用 `development_state=READY_NOT_AUTHORIZED`、`blocking_reason=NONE`（原 `DEVELOPMENT_AUTHORIZATION_REQUIRED`，2026-08-27 已授予，F-65）、`implementation_state=NOT_IMPLEMENTED` 和 `production_state=PRODUCTION_NOT_READY`；`CURRENT_PLAN_NOT_AUTHORIZED` 仅表示计划文件的分类，绝不构成开发授权。
 
 逐文件冲突的唯一 precedence 由 F-57 总体设计 §1.1 持有；本登记只记录文件范围、取代关系和阅读/执行入口，不另设或重排权威顺序。历史文件中出现“当前”“冻结”“可直接开发”等原句，不改变本登记给出的分类。旧文档中的 `Task 1…25` 一律只解释为 `F57-01…F57-25` 需求所有权桶；实际执行节点、顺序、文件、迁移和门禁只由 2026-08-24 五文件计划集决定。
 

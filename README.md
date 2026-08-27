@@ -5,7 +5,7 @@
 ## 当前状态
 
 - 文档完整度：**F-57 Governed Automation Fabric** 已完成 2026-08-24 收敛并获用户批准；`DESIGN_READY` 仅描述设计文档完整度，不是开发或实现状态。
-- 开发状态字段：`development_state=READY_NOT_AUTHORIZED`；`blocking_reason=DEVELOPMENT_AUTHORIZATION_REQUIRED`；`implementation_state=NOT_IMPLEMENTED`。五文件计划已具备所需细度，但用户尚未授权开始产品开发；首次获得授权后只能从 G0 开始。
+- 开发状态字段：`development_state=READY_NOT_AUTHORIZED`；`blocking_reason=NONE`；`DEVELOPMENT_AUTHORIZED=true`（开发授权已于 2026-08-27 由使用方授予（逐字指令「需要 完全 可即刻开发 状态 最谨慎」，留证 00c F-65）；状态机节点名依 converged §7 保持至 G0_BOOTSTRAP_GREEN）；`implementation_state=NOT_IMPLEMENTED`。五文件计划已具备所需细度；**授权已于 2026-08-27 获得（F-65），开发从 G0 开始**。
 - 范围：现行闭集仍为 **185 个 RequirementID（174 个主需求 + 11 个延期边界）**；没有删除、合并或静默延期最终要求。
 - 代码：仓库已有 Rust/PostgreSQL 骨架、早期平台逻辑和历史迁移；CapabilityGraph、F-57 权威主干、CTC-01、四端客户端、完整业务范围和发布认证均未实现。
 - 生产状态字段：`production_state=PRODUCTION_NOT_READY`。现有 ThinkStation P340、单 1TB HDD 和 Windows Server 2022 只是候选硬件；在 UPS、服务器外只追加备份、两块离线轮换 HDD、分域恢复材料、洁净恢复硬件、72 小时容量和完整 L3 证据通过前，不得录入真实客户数据。

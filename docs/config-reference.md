@@ -1,6 +1,6 @@
 # 配置参考
 
-> **F-57 总体开发状态（2026-08-23）：`READY_NOT_AUTHORIZED`；本文件生成式配置登记仍为 `REGISTRY_PENDING_REBASELINE` / `NOT_IMPLEMENTED`。** 下文 328/337 旧闭集、固定九进程、AI 例外、`NONE` 病毒扫描和任何可能把客户数据写到 `C:\ProgramData`/系统 SSD 的路径，不再是完整现行配置。只有用户另行明确授权后，才可依据 [F-57](superpowers/specs/2026-08-23-f57-governed-automation-fabric-design.md) 和本节部署清单规则从 G0 开始实现并再基线；当前不得执行开发。
+> **F-57 总体开发状态（2026-08-23）：`READY_NOT_AUTHORIZED`；本文件生成式配置登记仍为 `REGISTRY_PENDING_REBASELINE` / `NOT_IMPLEMENTED`。** 下文 328/337 旧闭集、固定九进程、AI 例外、`NONE` 病毒扫描和任何可能把客户数据写到 `C:\ProgramData`/系统 SSD 的路径，不再是完整现行配置。只有用户另行明确授权后，才可依据 [F-57](superpowers/specs/2026-08-23-f57-governed-automation-fabric-design.md) 和本节部署清单规则从 G0 开始实现并再基线；~~当前不得执行开发~~——开发授权已于 2026-08-27 由使用方授予（逐字指令「需要 完全 可即刻开发 状态 最谨慎」，留证 00c F-65）；状态机节点名依 converged §7 保持至 G0_BOOTSTRAP_GREEN；自 G0 起可实现并再基线。
 
 ## F-57 不可覆盖的部署清单
 
@@ -713,4 +713,4 @@ WinCred 初始化、轮换与删除的唯一入口是随产品签名、进入 SB
 
 ## 7. 当前状态
 
-F-57 总体仍为 `READY_NOT_AUTHORIZED`，本文件生成式登记仍为 `REGISTRY_PENDING_REBASELINE` / `NOT_IMPLEMENTED`。旧 **328 个配置族 / 337 个具体键** 只记录 F-56 快照，不是 F-57 终态计数；只有用户另行明确授权后，现行 G0 bootstrap 子计划的 Task 1 才可保留仍有效键、删除/拒绝历史旁路、登记 deployment/storage/capacity/generation/package/provider/sync/Windows 证据键，并让 `cargo xtask configdoc` 同时验证文档↔代码、稳定 volume ID、`{data_root}` 路由和生产禁止值。`IAAS_WINDOWS_SERVER_HDD_STRICT` 仅是未来保留标识：当前没有 recipe、schema、handler、正向测试或生产 terminal，选择它固定 `PROFILE_NOT_IMPLEMENTED` / `STORAGE_MEDIA_UNVERIFIED`；只有用户另行授权的新 graph/profile version 才可改变该边界。在 Windows agent 真实返回 0 前状态为 `UNVERIFIED`；当前不得执行开发、后续业务任务或宣称配置闭合。
+F-57 状态机节点仍为 `READY_NOT_AUTHORIZED`（**开发授权已于 2026-08-27 授予**，`DEVELOPMENT_AUTHORIZED=true`，见 F-65），本文件生成式登记仍为 `REGISTRY_PENDING_REBASELINE` / `NOT_IMPLEMENTED`。旧 **328 个配置族 / 337 个具体键** 只记录 F-56 快照，不是 F-57 终态计数；用户已于 2026-08-27 明确授权开发（F-65，覆盖 G0 各任务），现行 G0 bootstrap 子计划的 Task 1 据此可保留仍有效键、删除/拒绝历史旁路、登记 deployment/storage/capacity/generation/package/provider/sync/Windows 证据键，并让 `cargo xtask configdoc` 同时验证文档↔代码、稳定 volume ID、`{data_root}` 路由和生产禁止值。`IAAS_WINDOWS_SERVER_HDD_STRICT` 仅是未来保留标识：当前没有 recipe、schema、handler、正向测试或生产 terminal，选择它固定 `PROFILE_NOT_IMPLEMENTED` / `STORAGE_MEDIA_UNVERIFIED`；只有用户另行授权的新 graph/profile version 才可改变该边界。在 Windows agent 真实返回 0 前状态为 `UNVERIFIED`；**开发（G0）已获授权可执行（F-65）**；**后续业务任务仍不得执行——它们由 `BLOCKED_BY_G0/G1_G2` 依赖门锁定，不因授权解锁**；在该状态转绿前**不得宣称配置闭合**——UNVERIFIED 纪律不随授权消失。（F-65 复核注：本句初改时误删了「后续业务任务」禁令，经提交前对抗验证抓回恢复。）

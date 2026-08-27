@@ -2,7 +2,7 @@
 
 > 日期：2026-08-23（Australia/Melbourne）
 > 状态：已批准硬件和生产设计输入；尚未完成 Windows 实机、容量、恢复或发布认证
-> 开发门：`READY_NOT_AUTHORIZED`；只有用户另行明确授权后才可从收敛计划 G0 开始，本文描述的 F-57 安装、运行时、探针和证据链全部仍为 `NOT_IMPLEMENTED`
+> 开发门：`READY_NOT_AUTHORIZED`；用户已于 2026-08-27 明确授权（F-65），可从收敛计划 G0 开始，本文描述的 F-57 安装、运行时、探针和证据链全部仍为 `NOT_IMPLEMENTED`
 > 适用硬件：当前物理基线为 ThinkStation P340 Tower、i5-10500、32GB RAM、256GB SSD、单 1TB HDD；第 15 节只冻结未来客户自控 IaaS 的独立 `IAAS_WINDOWS_SERVER_HDD_STRICT` 扩展缝，当前首版不实现、不接受，也不继承 P340 证据
 > 适用系统：Windows Server 2022 原生服务
 > 权威关系：[F-57 总体设计](2026-08-23-f57-governed-automation-fabric-design.md) 的生产实施附录；生产运营 exact 契约见[客户端、生命周期与安全运营执行契约](2026-08-23-f57-client-lifecycle-security-contract.md)

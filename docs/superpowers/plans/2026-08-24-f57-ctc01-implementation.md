@@ -10,7 +10,7 @@
 
 **Spec:** `docs/superpowers/specs/2026-08-23-f57-governed-automation-fabric-design.md`
 
-**Status:** `READY_NOT_AUTHORIZED` / `BLOCKED_BY_G1_G2`; planning is complete, but implementation requires separate development authorization and one valid `G2_CTC_DATA_GREEN` aggregate whose payload embeds its same-candidate G0/G1/G2 closure. That aggregate authorizes task start only; G3 must execute its current-candidate predecessor set, while G4 exact-joins same-run L2 terminal records and starts only journal-`ABSENT` predecessor TestIDs on its own current run.
+**Status:** `READY_NOT_AUTHORIZED` / `BLOCKED_BY_G1_G2`; planning is complete, but implementation requires separate development authorization and one valid `G2_CTC_DATA_GREEN` aggregate whose payload embeds its same-candidate G0/G1/G2 closure. That aggregate authorizes task start only; G3 must execute its current-candidate predecessor set, while G4 exact-joins same-run L2 terminal records and starts only journal-`ABSENT` predecessor TestIDs on its own current run.（开发授权已于 2026-08-27 授予，F-65；本行阻塞仅余其 BLOCKED_BY 依赖）
 
 ## Global Constraints
 

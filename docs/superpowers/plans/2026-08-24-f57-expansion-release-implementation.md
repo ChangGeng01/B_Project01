@@ -10,7 +10,7 @@
 
 **Spec:** `docs/superpowers/specs/2026-08-23-f57-governed-automation-fabric-design.md`
 
-**Status:** `READY_NOT_AUTHORIZED` / `BLOCKED_BY_DEV_SLICE`; planning is complete, but no task may start before separate development authorization and its prerequisite gate receipt.
+**Status:** `READY_NOT_AUTHORIZED` / `BLOCKED_BY_DEV_SLICE`; planning is complete, but no task may start before separate development authorization and its prerequisite gate receipt.（开发授权已于 2026-08-27 授予，F-65；本行阻塞仅余其 BLOCKED_BY 依赖）
 
 ## Global Constraints
 
@@ -73,6 +73,7 @@ No other G5/G6 migration may occupy this block. Each task proves its exact prefi
 
 **Files:**
 - Create: `crates/platform/client-common/Cargo.toml`
+- Modify: `Cargo.lock`
 - Create: `crates/platform/client-common/src/lib.rs`
 - Create: `crates/platform/client-common/src/model.rs`
 - Create: `crates/platform/client-common/tests/wire.rs`

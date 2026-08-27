@@ -6,12 +6,13 @@
 
 历史状态（F-57 下无效）：**曾标为开发前冻结、尚未执行迁移**。本分册是 F-55 四张新增表、部署 carrier 追加列及所需候选键的历史逐列登记；AI/MCP 本体与 carrier 以 `docs/superpowers/specs/2026-08-22-f55-approved-ai-mcp-server-admin-cloud-freeze.md` 为历史来源，许可证、签名模块包、AI/MCP entitlement 与共同许可门禁的重叠面曾由更晚的 `docs/superpowers/specs/2026-08-22-f56-license-signed-module-package-freeze.md` 原子替换。它不表示迁移、代码、模型包、门禁或认证已经完成。
 
-四张新增表固定为：
+**五张**新增表固定为（本行原写「四张」，实际本册定义五张——第五张 `platform_meta.mcp_transport_registry_versions` 见 §2.1，F-65 更正）：
 
 1. `platform_ops.ai_model_packages`（部署级、无 RLS）；
 2. `platform_meta.mcp_connectors`（法人级、FORCE RLS）；
 3. `platform_meta.mcp_manifest_versions`（法人级、FORCE RLS）；
-4. `platform_authz.mcp_human_grants`（法人级、FORCE RLS）。
+4. `platform_authz.mcp_human_grants`（法人级、FORCE RLS）；
+5. `platform_meta.mcp_transport_registry_versions`（见 §2.1；F-65 补入清单——本清单原列四项与首句「五张」不符）。
 
 F-55 不新增 AI 草案表、AI 结果表、MCP 调用日志表、MCP session 表、secret 表或 Outbox 事件表。AI 计划只存在于五分钟签名 token；MCP 调用审计复用 `platform_audit.audit_events`；只有 F-55 MCP connector 的持久 credential 存 Windows Credential Manager，平台通用机密继续使用 ADR-0007 的 `secret://` KMS。
 
@@ -278,7 +279,8 @@ identity 后先在 caller 专用 1 GiB/1024-slot 目录预留一个 exact 1 MiB 
 
 ## 8. 迁移、索引与退出判据
 
-逐表迁移版本/路径只读 `docs/migration-catalog.md` 的 F-55 九行。四张表及 carrier 追加列必须满足：
+逐表迁移版本/路径只读 `docs/migration-catalog.md` 的 F-55 九行。**五张**表及 carrier 追加列必须满足（第五张 `mcp_transport_registry_versions` 的 FK/RLS/digest 判据同适用，F-65）：
+> **F-65 补**：第五张表不在 F-55 九行内，其迁移落点按 F-57 master §4.1 的两条 `platform_meta` 预留（`20261025091600`、`20261025091800`）承接——**此为按迁移名与 legacy seed `:279` 替换关系的推断，非逐字出处，G0 生成时须核**；「只读 F-55 九行」对第五张取不到，须并读上述两条。
 
 1. 所有具名 FK、RLS、FORCE RLS、候选键、状态边与不可变列由数据库元数据测试覆盖；
 2. 所有 digest/token hash 固定 32 字节；所有数组规范排序且无重复；

@@ -1,5 +1,7 @@
 # Legacy/compatibility OpenAPI input registry
 
+> **F-65 状态注（照 `metrics-catalog.md:136` 样板）**：本节描述的 checker **尚未实现**（全仓 `xtask/` 内 `openapi` 命中 0，CI 登记表 17 条命令无一涉及）；能力状态 `UNVERIFIED`——**不阻塞按本表开发，但在 checker 真实存在并返回 0 之前，不得声称本表的逐字段一致性已被机器验证**。承接与转绿判据随 G0 生成式权威批次定。
+
 This table is the machine-exact registry only for legacy/compatibility inputs under `docs/openapi/`; it is not the global F-57 OpenAPI authority. Values are literals, not prose: the checker parses each present historical/input YAML's `info.title`、`info.version` and four `info.x-*` extensions and requires exact equality with its row. The [F-57 authority and supersession register](../superpowers/reviews/2026-08-23-f57-authority-supersession-register.md) is the semantic authority/status map.
 
 The only current F-57 OpenAPI machine authorities are graph-generated at G0 under:

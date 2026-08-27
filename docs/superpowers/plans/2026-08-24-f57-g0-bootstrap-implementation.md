@@ -10,11 +10,11 @@
 
 **Spec:** `docs/superpowers/specs/2026-08-23-f57-governed-automation-fabric-design.md`
 
-**Status:** `READY_NOT_AUTHORIZED`; this is the first and only plan that may start after separate development authorization.
+**Status:** `READY_NOT_AUTHORIZED`（node per §7）; development authorization **granted 2026-08-27** (F-65) — this plan **may start now**.
 
 ## Global Constraints
 
-- This plan may start only after explicit development authorization; its present state is `READY_NOT_AUTHORIZED`.
+- This plan may start only after explicit development authorization — **granted 2026-08-27 by the user, recorded in 00c F-65**; the §7 node name remains `READY_NOT_AUTHORIZED` until `G0_BOOTSTRAP_GREEN`.
 - G0 creates no new F57/business migration and runs no production migration. Task 6 is the sole SQL exception: it corrects exactly three already-present, unpublished pre-release baseline drafts in place, proves the complete 69-file baseline on a disposable PostgreSQL 16 database, and does not claim Windows/P340/client/recovery certification.
 - The 185 RequirementIDs, their TestIDs, EvidenceIDs, owner buckets, and activation buckets remain immutable.
 - The five API seed families remain controlled import inputs until byte-stable round-trip succeeds; after that point their unchanged bytes become immutable `HISTORICAL_IMPORT_SNAPSHOT` evidence in the same commit. All live API projections then exist only under `docs/generated/f57/` and evolve from CapabilityGraph, never by rewriting the seed snapshots.

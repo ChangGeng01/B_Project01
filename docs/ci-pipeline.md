@@ -390,8 +390,8 @@ REQUIREMENT_SET=185
 TEST_ID_REGISTRY=276
 SIGNER_REGISTRY_ROWS=89
 DEVELOPMENT_READINESS=READY_NOT_AUTHORIZED
-DEVELOPMENT_AUTHORIZATION_REQUIRED
-DEVELOPMENT_AUTHORIZED=false
+DEVELOPMENT_AUTHORIZATION_GRANTED=2026-08-27
+DEVELOPMENT_AUTHORIZED=true
 IMPLEMENTATION_NOT_STARTED
 NO_F57_GATE_RECEIPT
 NO_RELEASE_CERTIFICATE
@@ -400,3 +400,24 @@ NO_PRODUCTION_GENERATION_ADMISSION
 ```
 
 首次授权开发时只执行 G0 的 L0/L1 架构和生成门。L2、L3 不能因命令已预登记而提前显示 PASS。
+
+## 附A　当前执行阶段表（真值镜像，F-65 还原）
+
+> 本表 11 条数据行由 F-65 自 `a98cacc` 版逐字还原（表头亦还原为原文）。**它与 `.github/ci/pipeline-stages.tsv` 是一对互检真值**——
+> `verify-pipeline-commands.sh` 逐行比对两者，本文件此前的整篇重写删掉了此表，使该自检落入退出码 3（未覆盖，「判定未做出，不得视为通过」）。
+> 本表描述**当前实际执行**的 11 阶段流水线（`.github/` 在 F-50…F-57 批次改动为 0 行，仍按此运行）；
+> 上文各节与 ADR-0022 描述的 F-57 多 lane 形态是**已批准目标（APPROVED_TARGET），尚未在 `.github/` 落地**；其生效须与真值表、脚本及 `.github/` 同批更新——**此为本注的要求，非 ADR-0022 载文**（F-65 复核注：初稿把该要求误归 ADR-0022 名下，经提交前对抗验证更正）。
+
+| 阶段 | id | 名称 | 出处 |
+|---|---|---|---|
+| 1 | `toolchain-offline` | 工具链与离线依赖自检 | 退出条件 1 的 `--locked --offline` 前置；R-09 的离线依赖仓库 |
+| 2 | `build` | 全工作区发布构建 | 退出条件 1 |
+| 3 | `archcheck` | 结构与依赖方向门禁 | 退出条件 2、3、21、26、27 |
+| 4 | `sqlcheck` | SQL 静态检查 | 退出条件 5、11 |
+| 5 | `codecheck` | 代码静态检查 | 退出条件 9 的代码侧、`#[ignore]` 存活判定 |
+| 6 | `registry-docs` | 登记文件与代码一致性 | 退出条件 7、8、9、23、24 |
+| 7 | `supply-chain` | 供应链门禁与制品签名 | 计划第 11 节指名本阶段；退出条件 14、15 |
+| 8 | `reproducible-build` | 可复现构建两次比对 | 计划第 12.1 节 R-03 指名本阶段；退出条件 13 |
+| 9 | `test-coverage` | 测试分层与覆盖率分档 | 退出条件 6、12、22 |
+| 10 | `e2e` | 端到端与 T0 贯通目标 | 退出条件 4、25 |
+| 11 | `deploy-limits` | 部署资源限额一次性校验 | 退出条件 16 |

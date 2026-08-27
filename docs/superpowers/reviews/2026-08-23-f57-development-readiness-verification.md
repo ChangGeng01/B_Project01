@@ -2,17 +2,17 @@
 
 > 日期：2026-08-24（Australia/Melbourne）；审计更新：2026-08-26
 > 文档状态：`CURRENT` / `DESIGN_READY`
-> 开发状态字段：`development_state=READY_NOT_AUTHORIZED`；`blocking_reason=DEVELOPMENT_AUTHORIZATION_REQUIRED`；`implementation_state=NOT_IMPLEMENTED`
+> 开发状态字段：`development_state=READY_NOT_AUTHORIZED`；`blocking_reason=NONE`；`DEVELOPMENT_AUTHORIZED=true`（开发授权已于 2026-08-27 由使用方授予（逐字指令「需要 完全 可即刻开发 状态 最谨慎」，留证 00c F-65）；状态机节点名依 converged §7 保持至 G0_BOOTSTRAP_GREEN）；`implementation_state=NOT_IMPLEMENTED`
 > 生产状态字段：`production_state=PRODUCTION_NOT_READY`
-> 首个可执行范围：用户另行明确授权开发后，仅 G0；当前没有任何开发 `GO`
+> 首个可执行范围：仅 G0；**开发 `GO` 已于 2026-08-27 由使用方授予（F-65）**
 
 ## 1. 结论先行
 
 F-57 的产品选择、架构边界、业务闭环、迁移顺序、故障语义、硬件诚实状态和分层证据已经收敛为一套可直接执行的设计与五文件计划集。现行闭集仍是 185 个 RequirementID，产品未决为 0；2026-08-23 的旧 25 项计划不再参与执行。
 
-“可直接开发”只表示开发人员不需要临场决定架构、数据库所有者、接口字段、失败结果或先后顺序。它不表示代码、迁移、Windows 服务、四端、备份、恢复或 P340 容量已经实现或通过。开发仍需用户下一次明确授权，且必须从 G0 开始。
+“可直接开发”只表示开发人员不需要临场决定架构、数据库所有者、接口字段、失败结果或先后顺序。它不表示代码、迁移、Windows 服务、四端、备份、恢复或 P340 容量已经实现或通过。开发所需的用户明确授权**已于 2026-08-27 取得（F-65）**，且必须从 G0 开始。
 
-本文用三个独立字段描述开发：`development_state=READY_NOT_AUTHORIZED`、`blocking_reason=DEVELOPMENT_AUTHORIZATION_REQUIRED`、`implementation_state=NOT_IMPLEMENTED`。`DESIGN_READY=true` 只描述文档完整度；它们均不构成开发授权或另一可执行阶段。
+本文用三个独立字段描述开发：`development_state=READY_NOT_AUTHORIZED`、`blocking_reason`（原 `DEVELOPMENT_AUTHORIZATION_REQUIRED`，**2026-08-27 已授予并改 `NONE`**，F-65）、`implementation_state=NOT_IMPLEMENTED`。`DESIGN_READY=true` 只描述文档完整度；它们均不构成开发授权或另一可执行阶段。
 
 当前 P340 不能承载真实客户数据。只有同一最终候选完成 L3、取得 `RELEASE_CERTIFIED`，并另行满足站点 UPS、服务器外只追加目标、两块离线轮换 HDD、两套分域 2-of-3 恢复材料、洁净恢复硬件、两名不同客户批准人对五项单盘风险的有效接受和新鲜现场读回，才可由独立生产启用 authority 在唯一 terminal CAS 中同时提交 `ACTIVATED` 与 `GENESIS_FULL_CERTIFICATION` 的 `ProductionGenerationAdmissionV1`。证书和 activation row 都不是单独启用权；只有 router exact-match 当前 OBSERVED digest 的 admission 才开业务命令/查询路由。
 
@@ -417,7 +417,8 @@ SIGNER_REGISTRY_ROWS=89
 DESIGN_READY=true
 IMPLEMENTATION_PLANS_READY=true
 development_state=READY_NOT_AUTHORIZED
-blocking_reason=DEVELOPMENT_AUTHORIZATION_REQUIRED
+blocking_reason=NONE
+DEVELOPMENT_AUTHORIZED=true  # granted 2026-08-27, F-65
 implementation_state=NOT_IMPLEMENTED
 G0_BOOTSTRAP_GREEN=false
 DEV_SLICE_GREEN=false
@@ -427,4 +428,4 @@ PRODUCTION_ACTIVATED_SINGLE_DISK_DEGRADED=false
 production_state=PRODUCTION_NOT_READY
 ```
 
-因此当前准确表述是：**F-57 设计已收敛；`development_state=READY_NOT_AUTHORIZED`、`blocking_reason=DEVELOPMENT_AUTHORIZATION_REQUIRED`、`implementation_state=NOT_IMPLEMENTED`，且 `production_state=PRODUCTION_NOT_READY`。下一次若用户明确授权开发，只执行 G0。未来即使得到 `RELEASE_CERTIFIED`，仍须独立完成双人单盘风险接受、现场重验和唯一 activation CAS，才能声明生产启用。**
+因此当前准确表述是：**F-57 设计已收敛；`development_state=READY_NOT_AUTHORIZED`、`blocking_reason`（原 `DEVELOPMENT_AUTHORIZATION_REQUIRED`，**2026-08-27 已授予并改 `NONE`**，F-65）、`implementation_state=NOT_IMPLEMENTED`，且 `production_state=PRODUCTION_NOT_READY`。授权已于 2026-08-27 取得（F-65），执行从 G0 开始。未来即使得到 `RELEASE_CERTIFIED`，仍须独立完成双人单盘风险接受、现场重验和唯一 activation CAS，才能声明生产启用。**

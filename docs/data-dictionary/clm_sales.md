@@ -22,7 +22,7 @@
 | tax_rate | numeric(9,6) | 否 | 冻结税率 |
 | line_amount | numeric(18,2) | 否 | 第 10 节累计净额函数在整行数量处的值 |
 | line_amount_with_tax | numeric(18,2) | 否 | 第 10 节累计含税函数在整行数量处的值 |
-| order_type | text | 否 | NORMAL/DROP_SHIP/CONSIGNMENT/SUBSCRIPTION/LEASE |
+| order_type | text | 否 | STANDARD/DROP_SHIP/CONSIGNMENT/SUBSCRIPTION/LEASE（F-65 按 F-57 业务执行契约 `:272`（该行属 §4）：历史 `NORMAL` 只允许在一次性再基线迁移中映射为 `STANDARD`，**不得作为现行数据库枚举**；本行原列 NORMAL） |
 | cycle_unit/cycle_length | text/int | 是 | 订阅或租赁周期快照 |
 | lease_from/lease_to | date/date | 是 | 租赁区间快照 |
 | auto_renew | boolean | 否 | 自动续期快照 |

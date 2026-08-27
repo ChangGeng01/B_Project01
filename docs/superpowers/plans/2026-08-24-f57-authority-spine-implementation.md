@@ -10,7 +10,7 @@
 
 **Spec:** `docs/superpowers/specs/2026-08-23-f57-governed-automation-fabric-design.md`, `docs/superpowers/specs/2026-08-23-f57-business-execution-contract.md`, and `docs/superpowers/plans/2026-08-24-f57-converged-program.md`
 
-**Status:** `READY_NOT_AUTHORIZED` / `BLOCKED_BY_G0`; no task in this file may start until both separate development authorization and a valid `G0_BOOTSTRAP_GREEN` receipt exist.
+**Status:** `READY_NOT_AUTHORIZED` / `BLOCKED_BY_G0`; no task in this file may start until both separate development authorization and a valid `G0_BOOTSTRAP_GREEN` receipt exist.（开发授权已于 2026-08-27 授予，F-65；本行阻塞仅余其 BLOCKED_BY 依赖）
 
 ## Global constraints
 

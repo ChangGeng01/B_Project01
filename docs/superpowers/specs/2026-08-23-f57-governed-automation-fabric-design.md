@@ -764,7 +764,7 @@ CI 分为四层：
 
 ## 17. 已关闭与现场选择
 
-本设计不存在仍需产品负责人重新选择的产品方向；2026-08-24 收敛修订、ADR-0025 与五文件实施计划集已获用户批准并达到 `DESIGN_READY`。项目唯一当前开发状态仍为 `READY_NOT_AUTHORIZED`，阻断原因为 `DEVELOPMENT_AUTHORIZATION_REQUIRED`；只有用户另行明确授权后才可开发。以下属于实施或部署现场选择，不改变本文的目标架构：
+本设计不存在仍需产品负责人重新选择的产品方向；2026-08-24 收敛修订、ADR-0025 与五文件实施计划集已获用户批准并达到 `DESIGN_READY`。项目状态机节点为 `READY_NOT_AUTHORIZED`（保持至 `G0_BOOTSTRAP_GREEN`）；**开发授权已于 2026-08-27 由使用方明确授予**（`DEVELOPMENT_AUTHORIZED=true`，留证 00c F-65），G0 可开工。以下属于实施或部署现场选择，不改变本文的目标架构：
 
 - Tauri 2 是否通过四平台硬门；失败后的唯一回退已固定为 Flutter + Rust；
 - 新增 HDD 的具体型号、控制器或 Windows 镜像实现，以实机证据选择；

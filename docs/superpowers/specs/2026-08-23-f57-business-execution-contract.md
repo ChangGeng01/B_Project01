@@ -804,8 +804,6 @@ CLOSED 只在 §8.2 登记的重开事实到达后执行 `ReopenObjective`：追
 | DROP_SHIP_FULFILMENT | sales | DROP_SHIP 订单释放 | 供应商发运、客户签收/验收、销售发票/应收和采购应付链均勾稽 | 客户拒收/退货、供应商发运撤销、任一发票/资金效果冲销 |
 | PROCUREMENT_FULFILMENT | procure | Demand READY | 需求数量全部关闭；PO、收货/退货、采购发票/AP/付款义务勾稽；无 Unknown | Award/PO 撤销、供应商拒单、短拒收、需替换的采购退货、付款/发票冲销 |
 | RECEIVABLE_COLLECTION | finance | 应收或收款计划到期/生效 | 有效应收由已确认核销、有效贷项/冲销或批准减免完全覆盖 | 收款冲正、退款、发票重开、核销释放、金额更正 |
-
-CTC-01 不改变上述采购关闭谓词。其 exact 主链只关闭 `CONTRACT_FULFILMENT`、`SALES_ORDER_FULFILMENT`、`RECEIVABLE_COLLECTION`；`PROCUREMENT_FULFILMENT` 必须保持 `WAITING`，blocking obligation 固定为 `PURCHASE_AP_CLOSED`，并保存类型化 `ProcurementSettlementGapV1={purchase_invoice_recorded:false,payable_recognized:false,supplier_payment_settled:false}`。这三个字段来自相应 owner 的已提交事实，不接受客户端或自动化自报。G5 形成采购发票、应付和供应商付款事实后，三个字段全为 true，才允许按同一 closure rule 推进；任一冲销会重新变 false 并按登记规则重开。
 | RETURN_REFUND_CLOSURE | sales | 退货/退款获批 | 实物去向、库存/成本、发票红冲、应收释放和退款全部按适用分支完成 | 数量差异、退货拒收、红冲/退款失败或冲销、客户争议 |
 | CUSTOMER_COMPLAINT_RESOLUTION | service | 投诉受理 | 响应、责任、关联工单/CAPA、客户结论或受控无响应证据完成 | 客户有证据争议、同因复发、CAPA 失败、关联工单重开 |
 | SERVICE_WORK_ORDER_CLOSURE | service | 工单 TRIAGED | 通用谓词 + 对应 kind 谓词 + 成本/配件/证据勾稽 | 第 6.10 节任一事实 |
@@ -814,6 +812,8 @@ CTC-01 不改变上述采购关闭谓词。其 exact 主链只关闭 `CONTRACT_F
 | PROJECT_DELIVERY_ACCEPTANCE | project | 项目 ACTIVE | 里程碑/任务/验收/采购/服务/风险/成本/收款节点全部满足 | 验收撤销、项目/合同变更、新风险、成本/收款实质差异 |
 | CONTRACT_RENEWAL | clm | 进入续签窗口 | 新合同/版本生效，或经批准不续签且存量义务处置完成 | 窗口内客户决定改变、续签版本失效；原合同履约另行保持 |
 | SUPPLIER_RETURN_RECOVERY | procure | 采购退货确认 | 退货发运/接收、库存/成本、进项发票/AP 和返款/替换需求全部闭合 | 供应商拒收、返款冲销、替换采购失败、数量差异 |
+
+CTC-01 不改变上述采购关闭谓词。其 exact 主链只关闭 `CONTRACT_FULFILMENT`、`SALES_ORDER_FULFILMENT`、`RECEIVABLE_COLLECTION`；`PROCUREMENT_FULFILMENT` 必须保持 `WAITING`，blocking obligation 固定为 `PURCHASE_AP_CLOSED`，并保存类型化 `ProcurementSettlementGapV1={purchase_invoice_recorded:false,payable_recognized:false,supplier_payment_settled:false}`。这三个字段来自相应 owner 的已提交事实，不接受客户端或自动化自报。G5 形成采购发票、应付和供应商付款事实后，三个字段全为 true，才允许按同一 closure rule 推进；任一冲销会重新变 false 并按登记规则重开。
 
 表中的 `definition_owner` 只表示 Objective 定义由哪个业务 feature 维护；Objective 实例、cycle、obligation、effect、evidence 和 closure 的权威写 owner 始终是平台机制 `platform.flow`，`automation` 只是禁止用于所有权判断的历史模块/数据库别名。业务 feature 只能通过公开 fact/command 触发或影响 Objective，禁止各域自行建立第二套 Objective 表。
 
