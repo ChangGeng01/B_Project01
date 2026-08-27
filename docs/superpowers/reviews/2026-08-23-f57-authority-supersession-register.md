@@ -1,6 +1,6 @@
 # F-57 文档权威与取代登记
 
-> 日期：2026-08-23（Australia/Melbourne）；审计更新：2026-08-26
+> 日期：2026-08-23（Australia/Melbourne）；审计更新：2026-08-27
 > 状态：`CURRENT`；2026-08-24 收敛修订、ADR-0025 与五文件实施计划集已获用户批准
 > 目的：让开发、测试和评审人员能够唯一判断“哪句话仍可执行”，而不需要按文件日期猜测
 
@@ -65,7 +65,7 @@
 | `docs/f57-api-component-shapes.seed.tsv` | `CURRENT_SUBJECT_IMPORT` | 638 行判别字组件形状、profile、参数、显式字段与 owner 的唯一机器闭集；规范化 Rust 路径由 G0 确定性投影产生，不是 seed 列；G0 无损导入后状态转为 `HISTORICAL_IMPORT_SNAPSHOT` | 由 OpenAPI、Rust 或客户端单边新增/改名字段；把组件登记当作 schema 已实现；伪造 seed 中不存在的 Rust 路径列；G0 后继续当 live projection 回写 |
 | `docs/f57-api-component-state-domains.seed.tsv` | `CURRENT_SUBJECT_IMPORT` | 218 行 state/state-filter/nested-item 组件到唯一状态域和 owner 的机器绑定；G0 无损导入后状态转为 `HISTORICAL_IMPORT_SNAPSHOT` | 按 schema 名猜状态域；遗漏内嵌页 item；用通用 `STATE_CODE` 代替有限枚举；G0 后继续当 live projection 回写 |
 | `docs/f57-api-state-domains.seed.tsv` | `CURRENT_SUBJECT_IMPORT` | 65 个 wire 状态域及其有限值闭集；语义 exact-join F-57 业务契约 §14.6 和其余现行领域图/派生规则；语义 `UNKNOWN` 仅存在于 `EFFECT_V1\|PAYMENT_V1\|REFUND_V1`；G0 无损导入后状态转为 `HISTORICAL_IMPORT_SNAPSHOT` | 在其他域自造 `UNKNOWN`、自造 `OTHER\|CUSTOM`、与领域状态分叉，或把展示枚举当作可直接写入的状态机；G0 后继续当 live projection 回写 |
-| `docs/f57-api-direct-routes.seed.tsv` | `CURRENT_SUBJECT_IMPORT` | 47 行、11 列 Control/Employee/Portal 直连 HTTP 路由以及 111 个严格组件、security/profile/schema triple 与完整 error-code set 的机器闭集；G0 无损导入后状态转为 `HISTORICAL_IMPORT_SNAPSHOT` | 从 prose 猜 route；增加通配代理/隐含错误；把上传完成误当 PUBLISHED；覆盖共享组件 profile；G0 后继续当 live projection 回写 |
+| `docs/f57-api-direct-routes.seed.tsv` | `CURRENT_SUBJECT_IMPORT` | 49 行、11 列 Control/Employee/Portal 直连 HTTP 路由以及 117 个严格组件、security/profile/schema triple 与完整 error-code set 的机器闭集；G0 无损导入后状态转为 `HISTORICAL_IMPORT_SNAPSHOT` | 从 prose 猜 route；增加通配代理/隐含错误；把上传完成误当 PUBLISHED；覆盖共享组件 profile；G0 后继续当 live projection 回写 |
 | `docs/f57-fresh-pg-task-profiles.seed.tsv` | `HISTORICAL_DETAIL_INPUT` | 旧 23-task database harness/PG catalog 检查思路，可供现行测试设计引用 | 执行旧 argv、让它覆盖 G0 `fresh-pg` 的 69-baseline + contiguous-F57 算法，或作为现行机器权威 |
 | `docs/f57-ci-stage-registry.seed.tsv` | `HISTORICAL_DETAIL_INPUT` | 旧 11-stage 检查意图与结果 schema 参考 | 执行 `ci-stage` 旧命令、恢复第二套 stage/verdict、或覆盖现行 Rust `f57 verify/gate` |
 | `docs/f57-ci-lane-task-profiles.seed.tsv` | `HISTORICAL_DETAIL_INPUT` | 旧 F57-01…25 lane 聚合思路与 native runner 需求参考 | 把 ownership bucket 当执行节点，或覆盖现行 delivery DAG/DeliveryProfile/candidate gate |
@@ -222,7 +222,7 @@
 - **裁决**：F-57 §14.6 的 `REJECTED→CLOSED|DRAFT` **是有意取代而非遗漏**（F-63 按 F-61 衍生问登记）——
   作废须走 `VOIDED` 三态守卫（计划 07:662），已驳回单据的退出走 `CLOSED`。PRD:1567 只作历史追溯。
 
-### RULING-F63-02：EMPLOYEE 与 PORTAL 面的 reauth 签发端点已裁、待种子再基线落地
+### RULING-F63-02：EMPLOYEE 与 PORTAL 面的 reauth 签发端点已裁，2026-08-27 API 种子再基线批次已落地
 
 - **背景**：`PLATFORM.AUTHZ.REAUTH_REQUIRED` 在 9 条 EMPLOYEE/PORTAL 路由的封闭错误集内，
   而唯一签发端点只在 CONTROL 面（`/control/v1/session/reauth`）。
@@ -230,6 +230,32 @@
   镜像 `CONTROL_SESSION_REAUTH_V1` 族。**本轮不手造种子行**——落行需新增 shape/component 编号，
   牵动 `f57-api-direct-routes`（47→49 行）、`f57-api-component-shapes` 与本表 `:68` 的机器闭集计数，
   **须在下一次 API 种子再基线批次一并执行**；在此之前该 9 行闭集按「签发路径已裁、待落地」读。
+- **落地**（2026-08-27 API 种子再基线批次）：`docs/f57-api-direct-routes.seed.tsv` 插入两行，47→49 行
+  （CONTROL 12、EMPLOYEE 17、PORTAL 20）；排序键 `(surface,path UTF-8 bytes,method)`、`(surface,method,path)`
+  与 `operation_id` 两把唯一键、schema 命名正则与逐码 error-code 登记全部机器复验通过。
+  - `POST /employee/v1/session/reauth`＝`reauthenticateEmployeeSession`／`F57-18`／`EMPLOYEE_SESSION_DEVICE`／
+    `EMPLOYEE_SESSION_REAUTH_V1`／`EmployeeSessionReauthRequestV1`→`EmployeeSessionReauthenticatedV1`／
+    `EmployeeSessionReauthErrorsV1`。错误闭集（14 码）＝同面同 profile session 族行（`end|handshake|renew`
+    三行共用的 11 码全集）− `OBJECT_FORBIDDEN|LICENSE.RESTRICTED` ＋ MFA 挑战族四码 ＋ `REAUTH_REQUIRED`；
+    剥除两码镜像 CONTROL reauth 相对其同面 session 行的同式剥除（认证机制端点无 license/对象授权检查，
+    三面 session start 行同证），`GENERATION_INCOMPATIBLE|FORCED_UPDATE_REQUIRED` 不剥——EMPLOYEE 面含
+    bootstrap start 在内的全部 11 条非文件行无条件携带，是面级不变量而非端点级门。
+  - `POST /portal/v1/sessions/reauth`＝`reauthenticatePortalSession`／`F57-22`／`PORTAL_SESSION_BINDING_CSRF`／
+    `PORTAL_SESSION_REAUTH_V1`／`PortalSessionReauthRequestV1`→`PortalSessionReauthenticatedV1`／
+    `PortalSessionReauthErrorsV1`。错误闭集（15 码）＝同面同 profile session 族行（`sessions/end|renew`
+    共用的 13 码全集，已含 `REAUTH_REQUIRED`、幂等对与 `CONCURRENCY.STALE_VERSION`）− 同上两码 ＋ MFA
+    挑战族四码。裁决括注原写 `/portal/v1/session/reauth`（单数）；PORTAL 面 session 族既有三行全部为
+    `sessions/`（复数），按「镜像到目标面既有惯例、不逐字移植 CONTROL 路径」落为 `sessions/reauth`
+    （EMPLOYEE 括注与其面单数惯例本就一致）。
+- **计量与勘正**：严格组件并集 111→117（六个新 schema 仅登记于路由表）；`route_shape_profile` 闭集 37→39；
+  `security_profile` 闭集 12 不变。实测路由表组件与 `f57-api-component-shapes` 638 行零交集（CONTROL reauth
+  三组件自建表起即不在 shapes），故裁决预估「牵动 `f57-api-component-shapes`」不成立，本批仅动路由表一份
+  种子；discriminators/component-shapes/component-state-domains/state-domains 四表未动，437/638/218/65
+  计数不变。MFA 族四码适用依据：两面 session start 行均已含 `MFA_REQUIRED|MFA_INVALID`，
+  `MFA_CHALLENGE_EXPIRED|MFA_CHALLENGE_CONSUMED` 属被镜像的 reauth 挑战生命周期本身；逐码均已在
+  `docs/error-codes.md` 登记。
+- **同步修订**：本表 `:68` 行计数 47→49、111→117；客户端契约 §1.1 exact-set 插行并「16 个」→「17 个」；
+  业务契约 §14.3 清单插对并同步计数；G3/G4 计划全局约束 16→17。原 9 行消费闭集自此按「签发端点已落地」读。
 
 ### RULING-AUTHORITY-01：旧索引止于 F-56
 

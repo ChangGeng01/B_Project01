@@ -16,7 +16,7 @@
 
 - This plan accepts only a verified `G2_CTC_DATA_GREEN` aggregate whose nested G0/G1/G2 references exact-match candidate identity, repository tree, graph, generator, baseline/apply/F57 migration manifests, toolchain, and `gate_run_id`. If G1 is displayed separately, it must be the exact G1 artifact referenced inside that G2 payload; a merely same-graph or earlier standalone G1 receipt is historical and cannot satisfy entry. After the tree changes, the aggregate is historical dependency evidence only; `gate g3` creates its explicit signed run journal and obtains a fresh G0…G3 set, while G4 uses one explicit journal to exact-join signed L2 terminal results and starts only missing predecessor TestIDs. A started TestID is never rerun.
 - Every `fresh-pg` and G3/G4 gate applies the unchanged signed 69-file pre-F57 baseline before the contiguous `CREATED` F57 suffix. G3 ends at 19 F57 files (`88` total); G4 ends at 20 F57 files (`89` total). The 310 legacy and nine absent baseline paths remain absent.
-- Only the 16 exact Employee API method/path pairs and generated Control API may be exposed; no generic object/table route exists.
+- Only the 17 exact Employee API method/path pairs and generated Control API may be exposed; no generic object/table route exists. (RULING-F63-02 added `POST /employee/v1/session/reauth` to the exact-set.)
 - Control and Employee transports converge on the same `AuthorityCommandGatewayV1`; neither can set actor, legal entity, policy verdict, SoD verdict, authority epoch, or authenticated device.
 - G3/G4 consume G0's canonical foundation nominals without redefining them. Every UUID-bearing run, candidate, command, journal, result, finalization, and recovery field uses the private strict `UuidV1` from `crates/foundation/src/identifier.rs`; raw `uuid::Uuid`, a second wrapper, and uppercase/simple/braced/URN/whitespace aliases are forbidden.
 - G3/G4 accept the business contract's §14.6 state table as the sole semantic authority. `docs/f57-api-state-domains.seed.tsv` remains G0's immutable historical import snapshot; it is never rewritten or treated as the live projection. Before Task 4, the owning node must exact-author the table into CapabilityGraph binding `business_state_domain_registry_v1` and regenerate the manifest-owned semantic contract plus Rust/database/OpenAPI/client projections. A candidate is stale if those live projections still expose the removed maintenance skip state or omit ProjectReceiptMilestone `WAIVED|CANCELLED`. G3/G4 never hand-patch generated enums or revive the seed as a second truth.
@@ -219,7 +219,7 @@ git commit -m "feat: add minimum governed control center"
 - Regenerate (`GENERATED_MANIFEST_SET`): `docs/generated/f57/projection-manifest.v1.json`
 
 **Interfaces:**
-- Consumes: exact 16-route Employee API, G1-02's sole `DeviceCommandSignatureV1`/Ed25519 preimage contract, `ClientGenerationReportV1`, `ClientGenerationDirectiveV1`, generated TypeScript and UI schema.
+- Consumes: exact 17-route Employee API (16+session/reauth, RULING-F63-02), G1-02's sole `DeviceCommandSignatureV1`/Ed25519 preimage contract, `ClientGenerationReportV1`, `ClientGenerationDirectiveV1`, generated TypeScript and UI schema.
 - Produces: `employee_api::router(state: AuthorityHttpStateV1) -> axum::Router`, signed-schema renderer, Windows client shell, versioned but inactive `ClientIntentV1` seam, and current-candidate `G3_CLIENT_SHELL_GREEN`.
 
 - [ ] **Step 1: Write failing route-closure and non-authority tests.**

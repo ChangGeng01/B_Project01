@@ -29,6 +29,7 @@ Workbench 只通过签名 deployment manifest 中的 `employee_api_origin` 访�
 | `POST` | `/employee/v1/session/start` | 登录、MFA、设备绑定和初始 generation report；不接受客户端声明 actor、role、法人或 policy |
 | `POST` | `/employee/v1/session/handshake` | 代际握手；严格执行 §1.2.1，不能用缓存 directive 放宽 |
 | `POST` | `/employee/v1/session/renew` | 在当前身份、设备、撤销和 generation 全部重验后续期 |
+| `POST` | `/employee/v1/session/reauth` | 在已认证会话内签发并核销高风险重新认证挑战，成功换取一次性 `X-Reauth-Token`；不建立、不续期也不恢复会话 |
 | `POST` | `/employee/v1/session/end` | 注销并撤销当前 session/refresh family；幂等重复不复活 |
 | `POST` | `/employee/v1/commands` | 强类型命令提交；服务器重验身份、设备、授权、SoD、版本、generation 和幂等键 |
 | `GET` | `/employee/v1/commands/{request_id}` | 只读取得同 principal/device/legal-entity 作用域内的既有命令回执；不得重执行命令 |
@@ -43,7 +44,7 @@ Workbench 只通过签名 deployment manifest 中的 `employee_api_origin` 访�
 | `POST` | `/employee/v1/devices/{device_id}/attestations` | 提交受管设备证明；设备 ID 必须与认证上下文一致 |
 | `POST` | `/employee/v1/devices/{device_id}/wipe-receipts` | 提交签名擦除回执；它只证明擦除流程，不自行恢复设备信任 |
 
-OpenAPI、四端生成客户端、gateway 路由表和 contract test 必须逐项比较这 16 个 method/path pair。G4–G6 的业务 owner 只能在既有 `/commands`、`/queries` 信封中追加具名 discriminator；除非先修改本契约并同步所有权/版本登记，否则不得增加路径。
+OpenAPI、四端生成客户端、gateway 路由表和 contract test 必须逐项比较这 17 个 method/path pair。G4–G6 的业务 owner 只能在既有 `/commands`、`/queries` 信封中追加具名 discriminator；除非先修改本契约并同步所有权/版本登记，否则不得增加路径。
 
 ### 1.2 请求、结果和错误信封
 
