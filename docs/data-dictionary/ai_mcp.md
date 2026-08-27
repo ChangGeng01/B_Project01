@@ -4,7 +4,7 @@
 >
 > **激活/owner tasks：Tasks 14、15。** 本分册目前不是 F-57 实现权威，完成相应任务的再基线与显式激活前不得据此实施；Task 15 只交付 null provider boundary，本地 AI 实现仍为 `DEFERRED`。
 
-历史状态（F-57 下无效）：**曾标为开发前冻结、尚未执行迁移**。本分册是 F-55 四张新增表、部署 carrier 追加列及所需候选键的历史逐列登记；AI/MCP 本体与 carrier 以 `docs/superpowers/specs/2026-08-22-f55-approved-ai-mcp-server-admin-cloud-freeze.md` 为历史来源，许可证、签名模块包、AI/MCP entitlement 与共同许可门禁的重叠面曾由更晚的 `docs/superpowers/specs/2026-08-22-f56-license-signed-module-package-freeze.md` 原子替换。它不表示迁移、代码、模型包、门禁或认证已经完成。
+历史状态（F-57 下无效）：**曾标为开发前冻结、尚未执行迁移**。本分册是 F-55 四张新增表（**F-66 注：F-55 时点确为四张；第五张 `mcp_transport_registry_versions` 系 F-57 再基线新增，见 :9 更正与 §2.1**）、部署 carrier 追加列及所需候选键的历史逐列登记；AI/MCP 本体与 carrier 以 `docs/superpowers/specs/2026-08-22-f55-approved-ai-mcp-server-admin-cloud-freeze.md` 为历史来源，许可证、签名模块包、AI/MCP entitlement 与共同许可门禁的重叠面曾由更晚的 `docs/superpowers/specs/2026-08-22-f56-license-signed-module-package-freeze.md` 原子替换。它不表示迁移、代码、模型包、门禁或认证已经完成。
 
 **五张**新增表固定为（本行原写「四张」，实际本册定义五张——第五张 `platform_meta.mcp_transport_registry_versions` 见 §2.1，F-65 更正）：
 
