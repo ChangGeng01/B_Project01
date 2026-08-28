@@ -97,7 +97,7 @@
 
 ### 3.1 取值域与桶
 
-- `pool` 只取 `rw`、`ro`、`worker`、`ops` 四值，与 ADR-0018 冻结的 `PoolKind { Rw, Ro, Worker, Ops }` 逐项对应。
+- `pool` 只取 `rw`、`ro`、`worker`、`ops` 四值，与 ADR-0018 曾冻结的 `PoolKind { Rw, Ro, Worker, Ops }` 逐项对应（**F-67 注：ADR-0019 已明文取代 ADR-0018 的固定四池，四值在此仅作导入种子；现行权威为 ADR-0019 的按签名代 exact 登记**）。
 - `client` 取 `win`、`mac`、`ios`、`android`、`portal`、`ops`、`mcp` 七值，与 F-57 `ClientKind` 七个变体逐项对应；Control Center 固定为受信 `ops`，不存在 `server_admin`；`mcp` 只由 `/mcp` grant middleware 写入，`system` 只进入审计而不进入该指标标签。
 - `status_class` 取 `2xx`、`3xx`、`4xx`、`5xx`。
 - `ep_http_request_duration_seconds` 的桶固定为 0.05、0.1、0.25、0.5、1、2、3、5、10、30，与技术基线第 9.2 节逐值一致。改桶等同于改指标，须走一次登记变更。
@@ -135,7 +135,7 @@
 
 当前目标登记集固定为上表 70 项。F-54 对其既有 52 项执行的引用差集基线继续有效；F-55 追加 15 项，F-56 追加 3 项，均由同一校验纳入，不建立第二张注册表。剔除 crate、数据库角色/schema、测试库前缀、明确作废的 `ep_quota_throttled_total`、`ep_replication_crosscheck_age_seconds`、`ep_db_replication_crosscheck_age_seconds`，并把旧别名 `ep_db_retries_total`、`ep_tx_retry_total` 统一回 `ep_db_tx_retries_total` 后，指标 `referenced-minus-registered` 必须为 0。代码侧注册表、填充点与 `cargo xtask configdoc` 必须在首批实施中逐项与本表对齐；在该校验真实返回 0 之前能力状态为 `UNVERIFIED`，不阻塞按本目录开发，但不得声称登记漂移门禁已经验证通过。
 
-阶段注册责任固定为：阶段 1 五项，阶段 2 两项，阶段 3 十项（含 F-56 三项），阶段 4 十项，阶段 5 五项，阶段 9 七项，阶段 10 三项，阶段 11 五项，阶段 12 五项，阶段 13c（F-55）十五项，阶段 14 三项，合计 70。阶段 6、7、8、13（不含 13c）不新增指标，只填充通用 HTTP、数据库、Outbox 或对账指标；不得保留未命名配额。阶段 14 的三项写出/备份指标是基线早已具名的指标，不产生任何 Outbox 事件；F-55 的 AI/MCP/carrier 与 F-56 许可/模块指标同样不新增 Outbox 事件。
+**F-67 注：本段的阶段分派按旧十四阶段口径写成，其中「阶段 13c（F-55）」十五项的承接方已被 ADR-0019 撤销强制性（无 `ai-inferer` 进程即无 `ep_ai_working_set_bytes` 的被测对象）；本表在 G0 后由 generated metrics catalog 取代为机器真值，此处分派只作导入种子读。** 阶段注册责任固定为：阶段 1 五项，阶段 2 两项，阶段 3 十项（含 F-56 三项），阶段 4 十项，阶段 5 五项，阶段 9 七项，阶段 10 三项，阶段 11 五项，阶段 12 五项，阶段 13c（F-55）十五项，阶段 14 三项，合计 70。阶段 6、7、8、13（不含 13c）不新增指标，只填充通用 HTTP、数据库、Outbox 或对账指标；不得保留未命名配额。阶段 14 的三项写出/备份指标是基线早已具名的指标，不产生任何 Outbox 事件；F-55 的 AI/MCP/carrier 与 F-56 许可/模块指标同样不新增 Outbox 事件。
 
 ## 6. 维护纪律
 

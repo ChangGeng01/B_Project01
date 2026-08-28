@@ -107,7 +107,7 @@ Generated files are committed review artifacts. `cargo xtask f57 graph generate 
 - Create: `xtask/tests/fixtures/f57-final-l2-requirement-test-ids-v1-golden.jcs.json`
 - Create: `xtask/tests/fixtures/f57-l3-requirement-test-ids-v1-golden.jcs.json`
 - Create: `crates/foundation/src/delivery.rs`
-- Create: `crates/foundation/src/principal.rs`
+- Modify: `crates/foundation/src/principal.rs`（F-67 更正：该文件**已存在**并承载 A-02 冻结常量 `SYSTEM_PRINCIPAL_ID`，被 security/context、db-pg session 与 foundation_check 在用——本任务在**保留既有内容**的前提下加入 `PrincipalKindV1`／`PrincipalRefV1` 并成为 principal nominals 的唯一属主；照原文 Create 整文件新写会当场破坏全工作区编译）
 - Create: `crates/foundation/src/identifier.rs`
 - Create: `crates/foundation/src/client.rs`
 - Create: `crates/foundation/src/evidence.rs`
@@ -268,7 +268,7 @@ fn feature_owner_registry_is_the_exact_master_set() {
 fn platform_mechanism_registry_is_the_exact_master_set() {
     let owners = PlatformMechanismRegistryV1::load(repo_root()).unwrap();
     assert_eq!(owners.rows(), expected_platform_mechanisms_from_master_section_2_2());
-    assert_eq!(owners.rows().len(), 30);
+    assert_eq!(owners.rows().len(), 35); // F-67: master §2.2 is 35 rows since F-61; the old literal 30 contradicted the previous assertion line
     assert!(owners.resolve("platform.identity").is_ok());
     assert!(owners.resolve("platform.flow").is_ok());
     assert!(owners.resolve("identity").is_err());

@@ -1,5 +1,7 @@
 # 影响面规则目录
 
+> **F-67 注**：本文的「阶段退出点」列（3/6/7/10/12）、「实现属主」列（`ep-app-*`）与人工角色列均按旧十四阶段与旧模块口径写成——F-57 下这些退出点不再发生、`ep-app-*` 别名被业务契约 §0.2 禁作 owner、固定岗位由 RoleCode 模板种子取代；**本文在 G0 生成 impact-catalog.v1.json 时只作语义种子导入，上述三列须映射到 F-57 语义，不得照字面接线**。第 :66 的「阶段退出时注册数」验收在 F-57 下无触发时点，同此处置。
+
 > **F-57 状态：`REGISTRY_PENDING_REBASELINE`。** 旧七条合同终止规则只作可复用种子，不再是完整影响面闭集；F-57 的变更传播、objective 重开、退货/退款/撤回/权限/包/配置代影响必须在实施计划 Task 1 登记后执行。
 
 本文件是 `ep-platform-impact` 编译期目录常量的唯一文档登记源。首版目录固定为七条，且七条的 `upstream_event_type` 均为 `clm.contract.terminated.v1`。`cargo xtask configdoc --check-impact-catalog` 必须逐项比对本文件与代码常量；目录条数恒为 7，不能用尚未接线、空实现、Noop 或直接 DONE 的规则凑注册数。

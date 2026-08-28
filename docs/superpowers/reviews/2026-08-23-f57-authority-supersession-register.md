@@ -25,8 +25,9 @@
 | `DEFERRED` | 已有设计或计划，但当前产品阶段明确不执行 |
 | `SUPERSEDED_DO_NOT_EXECUTE` | 整份文件已被 F-57 替代，只供历史追溯；**不得作为任何实现入口** |
 | `HISTORICAL_DO_NOT_EXECUTE` | 同 `HISTORICAL`，另显式禁止据以施工 |
+| `HISTORICAL_NON_NORMATIVE` | 历史资料、无规范力（F-67 补：实测以横幅挂在 10+ 份早期评审/规格上而本表原缺） |
 
-> **本表原缺后两码。** 实测该两码挂在全仓 **25 个文件**的横幅上，而本表（唯一状态词表）内命中 0，导致同一份文件可同时持有横幅状态与本表状态两个不同取值（例如 `2026-08-21-f50-financial-consistency-implementation.md` 横幅为 `SUPERSEDED_DO_NOT_EXECUTE`、本表 `2026-08-21-f50-financial-consistency-implementation.md` 行给 `HISTORICAL`（原引第 131 行，因本次插行已漂移，改按文件名引用，F-62））。现补入定义；两者冲突时以本表为准。
+> **本表原缺的在用状态码不止两码**（F-66 时补两码时称「后两码」，F-67 复核又补 `HISTORICAL_NON_NORMATIVE`；原完备性表述不实，记此）。** 实测该两码挂在全仓 **25 个文件**的横幅上，而本表（唯一状态词表）内命中 0，导致同一份文件可同时持有横幅状态与本表状态两个不同取值（例如 `2026-08-21-f50-financial-consistency-implementation.md` 横幅为 `SUPERSEDED_DO_NOT_EXECUTE`、本表 `2026-08-21-f50-financial-consistency-implementation.md` 行给 `HISTORICAL`（原引第 131 行，因本次插行已漂移，改按文件名引用，F-62））。现补入定义；两者冲突时以本表为准。
 
 本登记的文件状态是文件分类，不是项目开发状态。项目状态入口统一使用 `development_state=READY_NOT_AUTHORIZED`、`blocking_reason=NONE`（原 `DEVELOPMENT_AUTHORIZATION_REQUIRED`，2026-08-27 已授予，F-65）、`implementation_state=NOT_IMPLEMENTED` 和 `production_state=PRODUCTION_NOT_READY`；`CURRENT_PLAN_NOT_AUTHORIZED` 仅表示计划文件的分类，绝不构成开发授权。
 

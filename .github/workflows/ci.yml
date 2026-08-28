@@ -2,8 +2,9 @@
 #
 # 待裁定：ADR-0005 已接受的决定一是「CI 平台取内网自建 Forgejo 加 Woodpecker」，
 # 本文件是 GitHub Actions 形态，与该 ADR 不一致。原因是本轮可写路径被限定在
-# `.github/` 之下。冲突与两条可选处置记在 docs/ci-pipeline.md 第 7 节，
-# ADR 一侧不动。无论最终取哪一条，要改的都只有本文件——判定逻辑全在
+# `.github/` 之下。冲突原记于 docs/ci-pipeline.md 旧第 7 节（两条可选处置：
+# 迁 .woodpecker/ 或修订 ADR-0005），该节已在 F-50…F-57 批次的整篇重写中被删，
+# 现登记于 00c F-67；ADR 一侧不动。该待裁定自始无决策归属与期限，F-67 已登记为开放项。无论最终取哪一条，要改的都只有本文件——判定逻辑全在
 # xtask 与 .github/ci/pipeline-stages.tsv 里，一行不动。
 #
 # 本文件不表达任何门禁判定逻辑，这是 ADR-0005 决定二的要求。它只做三件事：
