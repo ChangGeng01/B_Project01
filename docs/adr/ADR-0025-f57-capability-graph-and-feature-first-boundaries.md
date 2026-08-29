@@ -35,7 +35,7 @@ F-57 需要保留强边界，同时让第一条“客户—合同—订单—采
 2. 首条 CTC-01 切片涉及的业务域先迁；
 3. 现有 layer-first crate 可暂作兼容 facade，但不得新增业务规则；
 4. facade 的删除必须有依赖归零、投影一致和 fresh PostgreSQL 证据；
-5. 现有 API 五类 seed 首次确定性导入后降为 `GENERATED_PROJECTION`，ownership、legacy migration、FreshPG 和 CI profile 继续作为交付证据登记。
+5. 现有 API 五类 seed 首次确定性导入后降为 `HISTORICAL_IMPORT_SNAPSHOT`（**F-68 更正**：本行原写 `GENERATED_PROJECTION`，与权威登记 `CURRENT_SUBJECT_IMPORT` 行逐字「G0 逐字节往返通过后转为 `HISTORICAL_IMPORT_SNAPSHOT`」及 G0 计划的 `atomically change their authority-register status to HISTORICAL_IMPORT_SNAPSHOT` 相抵；seed 是导入前像，不是机器投影），ownership、legacy migration、FreshPG 和 CI profile 继续作为交付证据登记。
 
 ## 理由
 

@@ -118,6 +118,42 @@ skip "P2 掺入未交付门禁后不得返回 0" "十一个子命令本轮全部
 # P3 登记表说已交付而工具报未交付，流水线按不符处理并返回 1。
 skip "P3 登记表失真时流水线判不符" "十一个子命令本轮全部交付，没有任何子命令返回 70，该分支无法用真实子命令构造。规则仍在 verify-pipeline-commands.sh 与 run-pipeline.sh 内，一旦将来有子命令回到未交付态即自动重新可测。"
 
+# ---- 针对 compare-red-baseline.sh 的负样例 ---------------------------------
+# 这一组断言的是「基线红对照表不得变成恒真的挡箭牌」：它必须能报出新回归，
+# 也必须在实测取不到时判未覆盖，而不是静默判无回归。
+# 各例都用单行基线表加 --gates-only，只跑一道判定面，避免整轮 cargo test。
+
+COMPARE="$CI_DIR/compare-red-baseline.sh"
+
+printf 'gate\texpect_exit\texpect_count\tnote\ncodecheck\t0\t0\t负样例：谎称 codecheck 是绿的\n' >"$WORK/rb-lie.tsv"
+printf 'gate\texpect_exit\texpect_count\tnote\ncodecheck\t1\t2\t对照组：与实测相等\n' >"$WORK/rb-true.tsv"
+printf '# 只有注释，一行数据都没有\n' >"$WORK/rb-empty.tsv"
+printf 'gate\texpect_exit\texpect_count\tnote\ncargo-test\t1\t5\t负样例：被 --gates-only 跳过\n' >"$WORK/rb-skip.tsv"
+
+# N11 基线谎称某面是绿的，实测更红时必须报新回归，不得判一致。
+expect "N11 基线谎称绿时报出新回归" 2 "比基线更红" -- \
+    env EP_RED_BASELINE="$WORK/rb-lie.tsv" bash "$COMPARE" --gates-only
+
+# N12 基线表读不到时判未覆盖，不得当作无回归。
+expect "N12 基线表读不到判未覆盖" 3 "读不到基线表" -- \
+    env EP_RED_BASELINE="$WORK/nosuch.tsv" bash "$COMPARE" --gates-only
+
+# N13 基线表一行数据都没有时判未覆盖，不得因「零行零回归」判通过。
+expect "N13 空基线表判未覆盖" 3 "一行都没读到" -- \
+    env EP_RED_BASELINE="$WORK/rb-empty.tsv" bash "$COMPARE" --gates-only
+
+# N14 未知参数按用法错误处理，不得沉默地按默认路径跑下去。
+expect "N14 未知参数报用法错误" 64 "用法错误" -- \
+    bash "$COMPARE" --bogus
+
+# N15 跳过某一行即未覆盖：--gates-only 跳过 cargo-test 后不得判无回归。
+expect "N15 跳过的行判未覆盖" 3 "判定未做出" -- \
+    env EP_RED_BASELINE="$WORK/rb-skip.tsv" bash "$COMPARE" --gates-only
+
+# P4 对照组：基线与实测相等时必须返回 0——证明上面四条的非零不是恒非零。
+expect "P4 基线与实测相等时返回 0" 0 "与已登记基线逐面相等" -- \
+    env EP_RED_BASELINE="$WORK/rb-true.tsv" bash "$COMPARE" --gates-only
+
 # ---- 结论 ------------------------------------------------------------------
 
 echo

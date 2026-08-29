@@ -254,9 +254,20 @@ check_weight_sums() {
 	local cpu_sum=0 io_sum=0 slice file cpu io
 	while read -r slice _row _cpu_pct _io_pct _label; do
 		file=$(dropin_path "$slice")
-		[ -r "$file" ] || return 0 # 缺文件已在逐行检查中报过不符，这里不重复
-		cpu=$(read_key "$file" CPUWeight) || return 0
-		io=$(read_key "$file" IOWeight) || return 0
+		# 原来三处都是裸 `return 0`：整条「八行权重合计」判据被跳过且不记未覆盖，
+		# 合计这条独立判据于是既没做出、也不留痕（F-68）。
+		if [ ! -r "$file" ]; then
+			uncovered "${slice}　drop-in 读不到，八行权重合计判定未做出"
+			return 0
+		fi
+		cpu=$(read_key "$file" CPUWeight) || {
+			uncovered "${slice}　CPUWeight 读不出，八行权重合计判定未做出"
+			return 0
+		}
+		io=$(read_key "$file" IOWeight) || {
+			uncovered "${slice}　IOWeight 读不出，八行权重合计判定未做出"
+			return 0
+		}
 		cpu_sum=$((cpu_sum + cpu))
 		io_sum=$((io_sum + io))
 	done <<EOF

@@ -89,7 +89,10 @@ prepare_state() {
 	local pw=$STATE_DIR/secrets/postgres-superuser
 	if [ ! -f "$pw" ]; then
 		# 开发机口令，只在本状态目录内有效，不进仓库也不进任何制品。
-		LC_ALL=C tr -dc 'a-zA-Z0-9' </dev/urandom | head -c 32 >"$pw"
+		# 不用 `tr … | head -c 32`：head 取满即退出，tr 收到 SIGPIPE 返回 141，
+		# `set -o pipefail` 把整条管道判非零，`set -e` 于是在首次运行当场中止
+		# （141 也不在本脚本第 13-18 行声明的退出码集合内）。改为先取够再截。
+		LC_ALL=C head -c 512 /dev/urandom | LC_ALL=C tr -dc 'a-zA-Z0-9' | cut -c1-32 >"$pw"
 		chmod 0600 "$pw"
 		printf '已生成    开发机数据库超级用户口令 %s\n' "$pw"
 	fi

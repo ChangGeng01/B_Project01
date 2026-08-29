@@ -23,6 +23,17 @@ WORKSPACE = Path(__file__).resolve().parents[1]
 DEFAULT_INPUT = WORKSPACE / "docs" / "介绍" / "管理软件基本需求.docx"
 INPUT = Path(os.environ.get("REQUIREMENTS_SNAPSHOT_INPUT", DEFAULT_INPUT)).expanduser()
 OUTPUT = Path(os.environ.get("REQUIREMENTS_SNAPSHOT_OUTPUT", INPUT)).expanduser()
+
+# 冻结时间戳：docx 的 core properties 与 ZIP 条目时间都取它，两次运行才逐字节相同。
+DOCUMENT_TIMESTAMP = datetime(2026, 8, 26, 0, 0, 0, tzinfo=timezone.utc)
+PACKAGE_TIMESTAMP = (
+    DOCUMENT_TIMESTAMP.year,
+    DOCUMENT_TIMESTAMP.month,
+    DOCUMENT_TIMESTAMP.day,
+    DOCUMENT_TIMESTAMP.hour,
+    DOCUMENT_TIMESTAMP.minute,
+    DOCUMENT_TIMESTAMP.second,
+)
 OLD_MARKER = "文档状态：原始需求输入（历史快照）"
 MARKER = "文档状态：客户原始业务需求基线（F-57 追踪来源）"
 NOTE = (
@@ -134,7 +145,21 @@ def finalize_document(doc: Document) -> None:
     props.keywords = "客户需求, 企业管理, CRM, 合同, 订单, 采购, 财务, 售后, F-57"
     props.author = "客户原始需求（F-57 基线）"
     props.last_modified_by = "企业一体化经营管理平台"
-    props.modified = datetime.now(timezone.utc)
+    # 冻结时间戳：`OUTPUT` 默认就是 `INPUT`（本文件 :25），用 now() 会让每次运行都改写
+    # 一个受版本控制的 docx，产生永久性的伪差异。兄弟脚本 build_product_intro.py 已用
+    # 同一做法做到逐字节可复现（F-68）。
+    props.created = DOCUMENT_TIMESTAMP
+    props.modified = DOCUMENT_TIMESTAMP
+
+
+def style_marker_heading(run, paragraph) -> None:
+    """标记段标题的样式只此一处。
+
+    原先插入路径给琥珀色 9C6500 加底纹、更新路径给蓝色 1F4E78 不加底纹，
+    同一份文档跑两次会得到两种样子——与本模块文档字符串自称的幂等相抵（F-68）。
+    """
+    run.font.color.rgb = RGBColor(0x9C, 0x65, 0x00)
+    shade_paragraph(paragraph)
 
 
 def shade_paragraph(paragraph, fill: str = "FFF4CE") -> None:
@@ -169,7 +194,7 @@ def build() -> None:
         note = doc.paragraphs[marker_index + 1]
         scope = doc.paragraphs[marker_index + 2]
         replace_paragraph_text(heading, MARKER, bold=True, size=14)
-        heading.runs[0].font.color.rgb = RGBColor(0x1F, 0x4E, 0x78)
+        style_marker_heading(heading.runs[0], heading)
         replace_paragraph_text(note, NOTE)
         replace_paragraph_text(scope, SCOPE, bold=True)
         props = doc.core_properties
@@ -178,7 +203,7 @@ def build() -> None:
         OUTPUT.parent.mkdir(parents=True, exist_ok=True)
         temp_output = OUTPUT.with_suffix(".tmp.docx")
         doc.save(temp_output)
-        sanitize_docx_package(temp_output)
+        sanitize_docx_package(temp_output, package_timestamp=PACKAGE_TIMESTAMP)
         os.replace(temp_output, OUTPUT)
         print(OUTPUT)
         return
@@ -193,8 +218,7 @@ def build() -> None:
     set_cjk_font(run)
     run.bold = True
     run.font.size = Pt(14)
-    run.font.color.rgb = RGBColor(0x9C, 0x65, 0x00)
-    shade_paragraph(heading)
+    style_marker_heading(run, heading)
 
     note = first.insert_paragraph_before()
     note.paragraph_format.space_after = Pt(4)
@@ -222,7 +246,7 @@ def build() -> None:
     OUTPUT.parent.mkdir(parents=True, exist_ok=True)
     temp_output = OUTPUT.with_suffix(".tmp.docx")
     doc.save(temp_output)
-    sanitize_docx_package(temp_output)
+    sanitize_docx_package(temp_output, package_timestamp=PACKAGE_TIMESTAMP)
     os.replace(temp_output, OUTPUT)
     print(OUTPUT)
 

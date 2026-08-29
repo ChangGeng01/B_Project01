@@ -145,13 +145,14 @@ check_manifest() {
 		hash=${line%% *}
 		rel=${line#* }
 		rel=${rel# }
+		# 取反匹配：`[0-9a-f]*` 只约束第一个字符，`aZZZ…` 能过（F-68）。
 		case $hash in
-		[0-9a-f]*) ;;
-		*)
+		*[!0-9a-f]*)
 			mismatch "$MANIFEST 中的哈希不是小写十六进制：$hash"
 			bad=$((bad + 1))
 			continue
 			;;
+		*) ;;
 		esac
 		if [ ${#hash} != 64 ]; then
 			mismatch "$MANIFEST 中的哈希不是 64 位：$hash"
@@ -209,9 +210,13 @@ check_signature() {
 		key=$RELEASE_DIR/$PUBLIC_KEY
 		source_label="包内公钥"
 		printf '注意    未给 --key，用的是包内公钥。包内公钥无法自证，其指纹必须另行带外核对：\n'
-		if [ -r "$key" ]; then
+		if [ -r "$key" ] && [ -n "$SHA_CMD" ]; then
 			printf '        %s\n' "$(openssl pkey -pubin -in "$key" -outform DER 2>/dev/null |
 				$SHA_CMD 2>/dev/null | awk '{print $1}')"
+		else
+			# SHA_CMD 为空时原来照常印出一行空指纹，而带外核对这一步正是靠
+			# 这行文字承载的——印空行等于把「未做出」显示成「已给出」（F-68）。
+			uncovered "缺 SHA-256 命令或读不到包内公钥，指纹无从计算，带外核对这一步未做出"
 		fi
 	fi
 	if [ ! -r "$RELEASE_DIR/$SIGNATURE" ] || [ ! -r "$key" ]; then

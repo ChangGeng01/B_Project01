@@ -1,7 +1,10 @@
 #!/usr/bin/env bash
 # F-57：HISTORICAL_LINUX_RESEARCH_ONLY；不得作为当前 P340/Windows 容量或发布证据。
 # 连接预算枚举核对（D-11，判据 E-10、DA-06）。
-# 输出八进程的连接枚举，并与规格第 7.7 章（口径落 02 计划 §4.5 表）逐项比对：
+# 输出八进程的连接枚举并逐项比对。**口径更正（F-68）**：下面 spec_rows 是规格第 7.7 章
+# （口径落 02 计划 §4.5 表）的**冻结转抄**，不是运行时从文档读取；因此「与规格一致」这一条
+# 由文档评审承担，本脚本只判 budget.rs 的池规模声明与该转抄表相符。原头注称「与规格逐项
+# 比对」，而比对两侧都是本文件内的字面量，那条是恒真判据。外部化留给 G0 生成式再基线。
 #   一、八进程的池归属与规模逐行等于规格表；
 #   二、常驻连接合计等于 42；
 #   三、ep-adapter-db-pg 的 STANDARD_POOL_SPECS 声明与规格表逐池一致；
@@ -57,6 +60,8 @@ check_enum_and_sum() {
 	local sum=0 proc spec resident
 	while read -r proc spec resident; do
 		printf '枚举    %-22s %-28s 常驻 %s\n' "${proc}" "${spec}" "${resident}"
+		# 本分支只在 spec_rows 改为外部来源后才可达：当前取值全是上面 heredoc 里的
+		# 十进制字面量，恒不进入。保留为将来外部化的守卫（F-68 登记）。
 		case ${resident} in
 		'' | *[!0-9]*)
 			mismatch "${proc} 的常驻连接数 ${resident} 不是非负整数"

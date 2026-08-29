@@ -115,7 +115,12 @@ while IFS=$'\t' read -r stage id kind argv status; do
             *)
                 checked_xtask="$checked_xtask $sub"
                 rc=0
-                (cd "$REPO_ROOT" && cargo xtask "$sub" >/dev/null 2>&1) || rc=$?
+                # 带上登记表里的全部参数再跑。只取首词元会让
+                # `e2e --profile=t0` 实跑成 `cargo xtask e2e`，那是一次缺必填选项的
+                # 用法错误（退出码 2），既非 70 也就被静默放行——本表宣称的
+                # 「真跑一次」于是名不副实（F-68）。
+                read -r -a sub_args <<<"$argv"
+                (cd "$REPO_ROOT" && cargo xtask "${sub_args[@]}" >/dev/null 2>&1) || rc=$?
                 if [[ $status == undelivered && $rc -ne 70 ]]; then
                     note_mismatch "$label 登记为未交付，但 cargo xtask $sub 退出码为 $rc 而不是 70"
                 elif [[ $status == delivered && $rc -eq 70 ]]; then

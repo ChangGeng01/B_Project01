@@ -2,10 +2,11 @@
 # 按 pipeline-stages.tsv 逐阶段执行 D-07 的 11 个阶段，并把各命令的退出码归类。
 #
 # 这个脚本是 ADR-0005 决定二所指的聚合入口 `cargo xtask ci` 的临时替身：
-# `cargo xtask ci` 目前不被 xtask 受理（未知子命令走参数错误，退出码 2），
-# 在它交付之前，流水线需要一个不在 YAML 里表达判定逻辑的调度点。它只做
-# 退出码归类与汇总，不含任何门禁判定；`cargo xtask ci` 一旦交付，本脚本连同
-# 登记表一并作废，workflow 改调那一条命令即可。
+# `cargo xtask ci` **已交付**（xtask/src/ci.rs，`cargo xtask` 用法行已列出 ci），
+# workflow 默认调它；本脚本保留为备用调度器，读同一份登记表，只在需要绕开 Rust
+# 入口时启用，两者都不作废。它只做退出码归类与汇总，不含任何门禁判定。
+# （F-68 更正：原注逐字称「目前不被 xtask 受理」与「一旦交付本脚本连同登记表一并作废」，
+# 两句都已被现实取代——实测 `cargo xtask ci` 受理且 ci.yml 第 52-53 行称二者互为备用。）
 #
 # 退出码归类，四类互不合并：
 #   0  该命令通过
@@ -94,6 +95,9 @@ while IFS=$'\t' read -r stage id kind argv status; do
 
     # 登记表说已交付而工具报未交付，是登记表本身失真，按不符计。
     if [[ $status == delivered && $rc -eq $EXIT_UNDELIVERED ]]; then
+        # 该行已在上面的 EXIT_UNDELIVERED 分支计过一次未交付，此处改判为不符时
+        # 必须把那一次退回，否则一条命令会在汇总行里同时算进两类（F-68）。
+        n_undelivered=$((n_undelivered - 1))
         n_fail=$((n_fail + 1))
         verdict="登记为已交付却报未交付，登记表失真"
     fi
@@ -118,5 +122,6 @@ if [[ $n_undelivered -gt 0 ]]; then
     echo "结论：$n_undelivered 条门禁本阶段未交付，D-07 的「返回 0」尚不成立。" >&2
     exit "$EXIT_UNDELIVERED"
 fi
-echo "结论：11 个阶段全绿。"
+# 不写死 11：只跑了一部分登记表时（负样例与排障都会这么跑）这句会变成假话。
+echo "结论：本次执行的 $((n_pass + n_undelivered + n_undecidable + n_fail)) 条命令与登记表一致。"
 exit 0

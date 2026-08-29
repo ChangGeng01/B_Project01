@@ -606,7 +606,7 @@ Run: `cargo test -p ep-platform-release --test carrier_contract -- --nocapture`
 
 Run: `cargo test -p ep-foundation --test f57_foundation_wire -- --nocapture && cargo test -p ep-xtask --test f57_registry --test f57_cli -- --nocapture && cargo test -p ep-platform-delivery-registry --test registry --test migration_closure -- --nocapture`
 
-Expected: FAIL because the foundation wire/schema root, `xtask/src/f57/registry.rs`, and `DeliveryRegistryV1` do not exist.
+Expected: FAIL because the foundation wire/schema root, `xtask/src/f57/registry.rs`, and `DeliveryRegistryV1` do not exist. **F-68 注**：包目录尚未建立时，`cargo test -p ep-platform-delivery-registry` 报的是 `package not found`（workspace 成员靠 `crates/platform/*` glob 收纳），不是测试失败——RED 语义以 Step 1 已建 crate 骨架为前提；先建骨架再跑，才是本步要的那个红。
 
 - [ ] **Step 3: Implement strict parsing and profile derivation.**
 

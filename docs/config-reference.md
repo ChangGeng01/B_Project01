@@ -1,6 +1,6 @@
 # 配置参考
 
-> **F-57 总体开发状态（2026-08-23）：`READY_NOT_AUTHORIZED`；本文件生成式配置登记仍为 `REGISTRY_PENDING_REBASELINE` / `NOT_IMPLEMENTED`。** 下文 328/337 旧闭集、固定九进程、AI 例外、`NONE` 病毒扫描和任何可能把客户数据写到 `C:\ProgramData`/系统 SSD 的路径，不再是完整现行配置。只有用户另行明确授权后，才可依据 [F-57](superpowers/specs/2026-08-23-f57-governed-automation-fabric-design.md) 和本节部署清单规则从 G0 开始实现并再基线；~~当前不得执行开发~~——开发授权已于 2026-08-27 由使用方授予（逐字指令「需要 完全 可即刻开发 状态 最谨慎」，留证 00c F-65）；状态机节点名依 converged §7 保持至 G0_BOOTSTRAP_GREEN；自 G0 起可实现并再基线。
+> **F-57 总体开发状态（2026-08-23）：`READY_NOT_AUTHORIZED`；本文件的**文件分类**为 `CURRENT_SUBJECT_INPUT`（权威登记 `:100`）；其中的**生成式配置登记内容**仍待按 F-57 再基线，`registry_state=REGISTRY_PENDING_REBASELINE`、`implementation_state=NOT_IMPLEMENTED`。（F-68 消歧：原句易被读成文件分类是 `REGISTRY_PENDING_REBASELINE`，与登记表冲突。）** 下文 328/337 旧闭集、固定九进程、AI 例外、`NONE` 病毒扫描和任何可能把客户数据写到 `C:\ProgramData`/系统 SSD 的路径，不再是完整现行配置。只有用户另行明确授权后，才可依据 [F-57](superpowers/specs/2026-08-23-f57-governed-automation-fabric-design.md) 和本节部署清单规则从 G0 开始实现并再基线；~~当前不得执行开发~~——开发授权已于 2026-08-27 由使用方授予（逐字指令「需要 完全 可即刻开发 状态 最谨慎」，留证 00c F-65）；状态机节点名依 converged §7 保持至 G0_BOOTSTRAP_GREEN；自 G0 起可实现并再基线。
 
 ## F-57 不可覆盖的部署清单
 

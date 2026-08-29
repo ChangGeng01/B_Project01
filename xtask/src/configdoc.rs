@@ -1,4 +1,4 @@
-//! `xtask configdoc` —— 登记文件与代码的一致性，共三段判据。
+//! `xtask configdoc` —— 登记文件与代码的一致性，共四段判据（第三段单据类型码走 `--check-doc-type-codes` 独立入口）。
 //!
 //! 一、配置键。退出条件 9：全部配置键在 `docs/config-reference.md` 中有条目，代码与文档
 //!     逐键一致。代码侧由 `crates/platform/runtime/src/config/sections.rs` 的分段结构体与
@@ -192,6 +192,17 @@ fn removed_keys(doc: &str) -> Vec<String> {
         .lines()
         .map(str::trim)
         .filter(|l| l.starts_with("- `"))
+        // 已证实的读取缺陷（00c F-68 结论三登记，暂不改行为）：本行只取每条 bullet 的
+        // 第一个反引号词元，而第 6 节有三条 bullet 一行列多个键（`config-reference.md`
+        // 的 admission 五键、notify/portal 三键、ops 三键），其余 8 个键从未被本判据读到。
+        // 正确读法是取首个「：」之前的全部词元——「：」之后的是取代它的现行键，不得取。
+        // 不当轮改行为的理由：这 8 个键里有 5 个今天已被「代码里有、文档没登记」那一向报过，
+        // 另 3 个（portal.core_api.base_url、ops.crosscheck_statement_timeout_ms、
+        // ops.crosscheck.timeout_seconds）根本不在代码里，两向都不会报——改本读法对它们也无增益，
+        // 改后是重复计数而非新发现；且 `config-reference.md` 第 6 节逐字写明
+        // 「『已随裁定删除』指文档登记面，代码侧的移除随同批实现裁定」，
+        // 照本判据的措辞把它们报成「不得再引入」与该逐字相抵。按文档先行，
+        // 先定这批键在代码侧的去留口径，再同批改本读取规则与措辞。
         .filter_map(|l| l.split('`').nth(1))
         .map(str::to_string)
         .collect()
@@ -768,17 +779,53 @@ mod negative_samples {
         assert_eq!(dup, vec![("a".to_string(), 2)]);
     }
 
-    /// 单据类型码：本阶段只判该节存在，逐项比对整条推迟且单列打印。
+    /// 单据类型码：登记表已有 43 行，按本文件 `run_doc_type_codes` 自陈的谓词
+    /// 「该表出现第一行即自动生效，不以阶段号为触发谓词」，比对已经生效。
+    /// 代码侧常量表尚未建立，故现行真值是「判定未做出」而不是「推迟」，更不是通过。
     #[test]
-    fn doc_type_codes_section_exists_and_comparison_is_deferred() {
+    fn doc_type_codes_comparison_is_active_and_uncovered() {
         let r = run_doc_type_codes(&repo_root());
         assert!(r.problems.is_empty(), "{:#?}", r.problems);
-        assert_eq!(r.deferred.len(), 1, "推迟段必须单列一条");
+        assert!(r.deferred.is_empty(), "登记表已有行，不得再落进推迟段");
+        assert_eq!(r.uncovered.len(), 1, "{:#?}", r.uncovered);
+        assert!(
+            r.uncovered[0].contains("比对做不了"),
+            "未覆盖必须写出取不到的是什么"
+        );
+        assert_eq!(
+            r.outcome(),
+            Outcome::Uncovered,
+            "未覆盖不得判 Clean：常量表建起来之前这一段一律不算通过"
+        );
+    }
+
+    /// 推迟分支不因上面那条改断言而失去覆盖：在临时根目录里放一份登记表为空的
+    /// 数据字典，`run_doc_type_codes` 必须真的走进推迟分支——只断言取行结果为空
+    /// 是不够的，那只证明了触发条件成立，没证明分支被走到。
+    #[test]
+    fn deferred_branch_is_still_reachable_on_an_empty_table() {
+        let root = std::env::temp_dir().join(format!(
+            "ep-configdoc-deferred-branch-{}",
+            std::process::id()
+        ));
+        fs::create_dir_all(root.join("docs")).expect("建临时 docs 目录");
+        fs::write(
+            root.join(DICT_DOC),
+            format!("{DICT_SECTION}\n\n{DICT_TABLE}\n\n（本合成样例的登记表为空）\n"),
+        )
+        .expect("写合成数据字典");
+
+        let r = run_doc_type_codes(&root);
+        assert!(r.problems.is_empty(), "{:#?}", r.problems);
+        assert_eq!(r.deferred.len(), 1, "登记表为空时必须落进推迟段");
         assert!(
             r.deferred[0].contains("出现第一行"),
-            "必须写出可观测的触发谓词"
+            "推迟项必须写出可观测的触发谓词：{}",
+            r.deferred[0]
         );
-        assert_eq!(r.outcome(), Outcome::Clean);
+        assert_eq!(r.compared, 0);
+
+        fs::remove_dir_all(&root).ok();
     }
 
     /// 负样例断言该节存在这条规则本身：标题被改掉即报。
@@ -786,13 +833,37 @@ mod negative_samples {
     fn negative_a_missing_doc_type_section_fails() {
         let doc = fs::read_to_string(repo_root().join(DICT_DOC)).expect("读得到数据字典");
         assert!(doc.contains(DICT_SECTION) && doc.contains(DICT_TABLE));
-        assert!(dict_type_codes(&doc).is_empty(), "阶段 1 登记条数为 0");
-        // 登记表出现一行时，取行与形态判定都要生效。
+        // 登记表已装入 43 个值（data-dictionary.md 第 5.1 节），比对因此已生效。
+        let codes = dict_type_codes(&doc);
+        assert_eq!(codes.len(), 43, "5.1 登记表应为 43 行：{codes:#?}");
+        assert!(duplicates(&codes).is_empty(), "类型码全局唯一");
+        // 再加一行时取行判定仍生效，新行必须被取到。
         let with_row = doc.replace(
             DICT_TABLE,
-            &format!("{DICT_TABLE}\n\n| 类型码 | 名称 |\n|---|---|\n| SO | 销售订单 |\n"),
+            &format!("{DICT_TABLE}\n\n| 类型码 | 名称 |\n|---|---|\n| ZZZ | 合成样例 |\n"),
         );
-        assert_eq!(dict_type_codes(&with_row), vec!["SO"]);
+        let after = dict_type_codes(&with_row);
+        assert_eq!(after.len(), 44, "新增行必须被取到");
+        assert!(after.contains(&"ZZZ".to_string()));
+        // 标题被改掉时该节存在这条规则本身要报——这是本测试名字所指的那条规则。
+        // 只断言 `String::replace` 生效是空洞的，要真跑 run_doc_type_codes 看它报不报。
+        let root = std::env::temp_dir().join(format!(
+            "ep-configdoc-missing-section-{}",
+            std::process::id()
+        ));
+        fs::create_dir_all(root.join("docs")).expect("建临时 docs 目录");
+        fs::write(
+            root.join(DICT_DOC),
+            doc.replace(DICT_SECTION, "## 已改名的小节"),
+        )
+        .expect("写合成数据字典");
+        let r = run_doc_type_codes(&root);
+        assert!(
+            r.problems.iter().any(|p| p.contains(DICT_SECTION)),
+            "小节标题被改掉必须报出来：{:#?}",
+            r.problems
+        );
+        fs::remove_dir_all(&root).ok();
         assert!(is_type_code("PINV") && !is_type_code("So") && !is_type_code("S"));
     }
 }
