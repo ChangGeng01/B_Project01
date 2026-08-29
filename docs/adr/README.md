@@ -29,7 +29,7 @@
 | [ADR-0002](ADR-0002-toolchain-freeze.md) | 工具链版本冻结 | 已接受 | 阶段 1 计划第 13 节假设一 |
 | [ADR-0003](ADR-0003-database-collation.md) | 数据库默认排序固定为 libc/C 字节序 | 已接受 | 阶段 1 计划第 13 节新增决定二 |
 | [ADR-0004](ADR-0004-musl-static-linking.md) | 历史 Linux musl/scratch 构建决定（已由 Windows 原生部署取代） | 已取代 | 阶段 1 计划第 13 节新增决定七、F-51 |
-| [ADR-0005](ADR-0005-ci-platform.md) | Forgejo + Woodpecker Windows agent；现行由 F-57 Rust command family 唯一判定，平台只作薄适配 | 部分被 ADR-0022 与 F-57 现行流水线取代 | 阶段 1 计划第 13 节新增决定八、F-51 |
+| [ADR-0005](ADR-0005-ci-platform.md) | ~~Forgejo + Woodpecker~~ Windows agent；平台已由 ADR-0027 收敛为 GitHub Actions 加自托管执行器；现行由 F-57 Rust command family 唯一判定，平台只作薄适配 | 部分被 ADR-0022 与 F-57 现行流水线取代 | 阶段 1 计划第 13 节新增决定八、F-51 |
 | [ADR-0006](ADR-0006-domain-invariant-property-tests.md) | 五组领域不变量属性测试的挂载点 | 阶段挂载表已被 ADR-0026 取代；五组不变量义务仍接受 | 阶段 1 计划第 9 节领域属性测试一段 |
 | [ADR-0007](ADR-0007-file-secret-provider-interim.md) | `FileSecretProvider` 为阶段 1 临时实现；生产终态为 `KmsSecretProvider` | 已取代 | 阶段 1 计划第 8 节末段、阶段 2 §4.3a |
 | [ADR-0008](ADR-0008-five-named-pools-budget-exit-78.md) | 历史五具名连接池与启动预算求和校验违例退 78 | 已被 ADR-0018 取代 | 阶段 2 计划第 7.2 节与裁定 C-04 |
@@ -50,8 +50,9 @@
 | [ADR-0023](ADR-0023-f57-provider-manifest-resource-grant.md) | F-57 Provider Manifest 与 Resource Grant | 已接受 | F-57 provider、MCP、能力包权限与 carrier 契约 |
 | [ADR-0024](ADR-0024-f57-backup-key-envelope.md) | F-57 BackupKeyEnvelopeV1 | 已接受 | F-57 每备份集 recovery-only 密钥信封契约 |
 | [ADR-0025](ADR-0025-f57-capability-graph-and-feature-first-boundaries.md) | F-57 单一能力图与 feature-first 边界 | 已接受 | F-57 2026-08-24 架构收敛修订 |
-| [ADR-0026](ADR-0026-f57-domain-invariant-property-test-ownership.md) | F-57 五组领域不变量属性测试的承接 | 已接受 | 窄取代 ADR-0006 的阶段挂载表；五组义务本身不变，承接改挂 requirement→owner-task 映射；两组挂载点为 `UNRESOLVED`，待使用方裁定 |
+| [ADR-0026](ADR-0026-f57-domain-invariant-property-test-ownership.md) | F-57 五组领域不变量属性测试的承接 | 已接受 | 窄取代 ADR-0006 的阶段挂载表；五组义务本身不变，承接改挂 requirement→owner-task 映射；两组挂载点已由 F-69 增行关闭 |
+| [ADR-0027](ADR-0027-ci-platform-github-only.md) | CI 平台收敛为 GitHub Actions 单一平台 | 已接受 | 窄取代 ADR-0005 决定一；执行器一律自托管，制品与签名材料不出网；托管 runner 不用 |
 
-ADR-0026 窄取代 ADR-0006 的阶段挂载表（两列都失效：承接阶段指向永不退出的旧十四阶段，挂载点 crate 指向 ADR-0025 逐字禁止新增业务规则的 facade），**五组强制不变量义务本身继续有效**；本目录现为 26 篇。
+ADR-0026 窄取代 ADR-0006 的阶段挂载表（两列都失效：承接阶段指向永不退出的旧十四阶段，挂载点 crate 指向 ADR-0025 逐字禁止新增业务规则的 facade），**五组强制不变量义务本身继续有效**；本目录现为 27 篇。
 
 阶段 1 退出条件 18 要求本目录至少含工具链冻结、collation 选型、部署构建决定、CI 平台选型、新增 crate 五篇，即上表的 ADR-0002、ADR-0003、ADR-0004、ADR-0005 与 ADR-0001。ADR-0004 仅保留 Linux 方案的历史追溯，现行构建与部署以 F-51 的 Windows 原生决定及 ADR-0022 的 F-57 多 lane 流水线为准，不得把 musl/scratch 当作当前退出条件。ADR-0006 与 ADR-0007 是阶段 1 计划正文另行点名要求写入 ADR 的两项，一并在本阶段登记。ADR-0008 至 ADR-0012 五篇由阶段 2 任务 #14 登记：0010、0012 分别是基线外新增约定与依赖能力面变更，0008 只保留当时五池决定的历史追溯；ADR-0009 的数据库元数据/exact-ref/cache/readback 部分仍有效，但单一 wrapped DEK 已由 ADR-0020 取代。ADR-0013 至 ADR-0017 五篇由阶段 2 任务 #17 按 D-13/E-12 点名补齐：0013 与 0016 对应基线外偏离（实施期偏离登记第一条、偏离项第一条），0014、0015、0017 对应 §12 新增决定四、假设三与新增决定五；其中 0014 的 EPC1 仍只覆盖字段、附件和归档，备份改用 ADR-0021 EPB1，0015 的现行契约固定为完整 32 字节且无宽度配置。F-57 新增 ADR-0019 至 ADR-0024：0019 让进程数成为部署细节并要求逐硬件/代实测连接预算，同时保留 `ep-platform-runtime` 和 `integration-gateway` 零边界；0020 冻结 operational/recovery 双 recipient DEK；0021 冻结独立 EPB1 备份信封；0022 冻结 Windows Server 2022、Apple、Android 与签名聚合四 lane；0023 冻结 provider/carrier manifest、调用级最小 `ResourceGrantV1` 与通用 XML 禁用边界；0024 在 ADR-0021 之上冻结每 backup set 的 recovery-only `BackupKeyEnvelopeV1`、三份加密 share 与跨洁净主机恢复。**ADR-0025** 冻结 F-57 单一能力图与 feature-first 边界，窄取代旧计划中「每个业务域默认拆成 contract／domain／application 三个顶层 crate」的物理结构（本篇原未列入本叙述段，而同文件表格与根 `README.md` 均已收录、`docs/adr/` 实数 25 篇，F-59 补）。历史 `37 + 10 + 5 = 52` 只作测量种子。

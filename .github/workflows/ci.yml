@@ -1,11 +1,13 @@
 # D-07 流水线的调度文件。
 #
-# 待裁定：ADR-0005 已接受的决定一是「CI 平台取内网自建 Forgejo 加 Woodpecker」，
-# 本文件是 GitHub Actions 形态，与该 ADR 不一致。原因是本轮可写路径被限定在
-# `.github/` 之下。冲突原记于 docs/ci-pipeline.md 旧第 7 节（两条可选处置：
-# 迁 .woodpecker/ 或修订 ADR-0005），该节已在 F-50…F-57 批次的整篇重写中被删，
-# 现登记于 00c F-67；ADR 一侧不动。该待裁定自始无决策归属与期限，F-67 已登记为开放项。无论最终取哪一条，要改的都只有本文件——判定逻辑全在
-# xtask 与 .github/ci/pipeline-stages.tsv 里，一行不动。
+# 平台已定：CI 单一取 GitHub Actions，执行器一律自托管（ADR-0027，使用方 2026-08-30 裁定）。
+# 该决定窄取代 ADR-0005 决定一的「内网自建 Forgejo 加 Woodpecker」；ADR-0005 的薄适配器、
+# Rust 唯一判定与 Authenticode 门禁三条继续有效。
+#
+# 自托管是这条决定的要害：编排面在 GitHub，而离线依赖仓库、制品与签名材料全部留在自有
+# runner 上，不出网。**托管 runner 一律不用**——用它会把这三样带出网。
+#
+# 判定逻辑一行都不在本文件里：真值全在 xtask 与 .github/ci/pipeline-stages.tsv。
 #
 # 本文件不表达任何门禁判定逻辑，这是 ADR-0005 决定二的要求。它只做三件事：
 # 准备环境、跑本机可验的两条自检、把 11 个阶段交给一个调度点执行。

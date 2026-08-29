@@ -1,6 +1,6 @@
 # ADR-0005 CI 默认取 Forgejo、Woodpecker 与 Windows agent
 
-- 状态：部分被 ADR-0022 及 F-57 现行流水线取代；旧 `cargo xtask ci` 字面入口已被 F-57 Rust-owned command family 取代，仅私有自建默认、薄适配器、Rust 唯一判定与 Authenticode 意图继续接受
+- 状态：部分被 ADR-0022、**ADR-0027** 及 F-57 现行流水线取代；**决定一（Forgejo＋Woodpecker）已由 ADR-0027 取代为 GitHub Actions 单一平台加自托管执行器**；旧 `cargo xtask ci` 字面入口已被 F-57 Rust-owned command family 取代，仅私有自建默认、薄适配器、Rust 唯一判定与 Authenticode 意图继续接受
 - 取代说明：[ADR-0022](ADR-0022-f57-multi-lane-ci-and-windows-2022-authority.md) 取代本文单 Windows runner 与 Windows Server 2019 复核要求，现行 Windows 权威只接受 Windows Server 2022 并聚合 Apple/Android lane
 - 出处：阶段 1 计划第 13 节新增决定八、裁定 F-08 Windows/CI 最终冻结
 - 该取值不进入产品制品

@@ -75,7 +75,7 @@ Adapter crates may remain technology-first because they isolate providers. Exist
 
 ### 2.1 Exact feature-owner registry
 
-`FeatureOwnerIdV1` is a closed, registry-resolved identifier, not a display label or database-schema guess. G0 creates `docs/f57-feature-owner-registry.v1.tsv` from the following exact 17-row set with header `feature_owner_id\tcrate_root\tdatabase_schema\trepository_module\tauthoritative_fact_scope`. Rows are UTF-8/LF, sorted by `feature_owner_id`, byte-unique, and exact-joined by the CapabilityGraph, architecture gate, generated DTO manifest, repository registration, business contract, and Fresh-PG ownership checks. Sharing a physical schema never permits sharing a fact or repository writer.
+`FeatureOwnerIdV1` is a closed, registry-resolved identifier, not a display label or database-schema guess. G0 creates `docs/f57-feature-owner-registry.v1.tsv` from the following exact 18-row set（F-69：由 17 行增至 18，新增 `inventory-costing`；成因见 00c F-69） with header `feature_owner_id\tcrate_root\tdatabase_schema\trepository_module\tauthoritative_fact_scope`. Rows are UTF-8/LF, sorted by `feature_owner_id`, byte-unique, and exact-joined by the CapabilityGraph, architecture gate, generated DTO manifest, repository registration, business contract, and Fresh-PG ownership checks. Sharing a physical schema never permits sharing a fact or repository writer.
 
 | `feature_owner_id` | Crate root | DB schema | Repository module | Sole authoritative scope |
 |---|---|---|---|---|
@@ -83,6 +83,7 @@ Adapter crates may remain technology-first because they isolate providers. Exist
 | `cpq` | `crates/features/cpq` | `cpq` | `cpq::quote_repository` | quote/version/customer-acceptance facts |
 | `crm` | `crates/features/crm` | `crm` | `crm::crm_repository` | opportunity/follow-up facts and authorized customer-360 projection definitions |
 | `customer-master` | `crates/features/customer-master` | `mdm` | `mdm::customer_repository` | customer/supplier/product/unit/warehouse/price master facts |
+| `inventory-costing` | `crates/features/inventory-costing` | `inventory` | `inventory::costing_repository` | inventory value and cost-layer facts: moving-weighted-average unit price and its recomputation, and price-variance splitting. Quantity/batch/serial facts remain solely owned by `inventory-fulfilment`; sharing the `inventory` schema never permits sharing a fact or repository writer |
 | `inventory-fulfilment` | `crates/features/inventory-fulfilment` | `inventory` | `inventory::fulfilment_repository` | receipt/delivery/return and quantity/batch/serial facts |
 | `operating-ledger` | `crates/features/operating-ledger` | `ledger` | `ledger::operating_ledger_repository` | internal operating entries, mappings, trial balance, and operating periods |
 | `payable-cash` | `crates/features/payable-cash` | `finance` | `finance::payable_cash_repository` | payable, supplier-payment allocation, and reversal facts |
