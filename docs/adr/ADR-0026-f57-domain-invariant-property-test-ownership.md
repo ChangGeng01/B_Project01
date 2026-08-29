@@ -14,7 +14,7 @@ ADR-0006 :19—25 用一张三列表把五组强制不变量指派给「阶段 9
 
 这四个 crate 今天仍在树上且包名与 ADR-0006 逐字相同（`crates/domain/{ledger,inventory,finance,costing}/Cargo.toml` 的 `name = "ep-domain-*"`），每个 `src/lib.rs` 只有 6 行骨架注释；`crates/features/` 尚不存在。因此这不是一处「已经作废的历史文字」，而是一份仍能被照着执行、执行了就会违反 ADR-0025 的现行指令。
 
-义务本身没有问题。五组不变量的来源是 2026-07-19 总体设计 §17.2「领域属性测试」（:1342—1345）在测试类型清单中的独立一项，其五组内容由 ADR-0006 :9 逐字固定为借贷平衡、库存守恒、核销守恒、移动加权平均单价重算、价差拆分。属性测试作为测试类型在现行权威中仍然在册：收敛主计划 :11461 的 `L0_DEVELOPER` 行逐字含 touched unit/property tests。要修的只有承接。
+义务本身没有问题。五组不变量的来源是 2026-07-19 总体设计 §17.2「领域属性测试」（:1342—1345）在测试类型清单中的独立一项，其五组内容由 ADR-0006 :9 逐字固定为借贷平衡、库存守恒、核销守恒、移动加权平均单价重算、价差拆分。属性测试作为测试类型在现行权威中仍然在册：收敛主计划的 `L0_DEVELOPER` 行（F-73：原写 `:11461`，实位 `:11462`）逐字含 touched unit/property tests。要修的只有承接。
 
 ## 决定
 
@@ -32,7 +32,7 @@ ADR-0006 :19—25 的表自本篇起不再是任何交付的依据。任何计�
 
 - 需求行与 CapabilityOwner 取 [F-57 需求追踪矩阵](../superpowers/reviews/2026-08-23-f57-requirements-traceability.md)（§1.1 权威顺序第 4 位）；
 - `owner_task`／`activation_task`／TestID 取 [`docs/f57-task-ownership.seed.tsv`](../f57-task-ownership.seed.tsv)（§1.1 权威顺序第 15 位），该 seed 的表头逐字为 `requirement_id owner_task activation_task test_id test_target_path test_symbol evidence_id evidence_schema platform_lane`；
-- 交付波次取收敛主计划 :11247 的 delivery-profile 行，其逐字内容为 `| F57-13, F57-14, F57-15, F57-17, F57-18, F57-20, F57-21, F57-22, F57-23 | G5_INTEGRATION |`。
+- 交付波次取收敛主计划的 delivery-profile 行（F-73：原写 `:11247`，实位 `:11248`，F-69 插行后右移一位；改按逐字内容为键），其逐字内容为 `| F57-13, F57-14, F57-15, F57-17, F57-18, F57-20, F57-21, F57-22, F57-23 | G5_INTEGRATION |`。
 
 | 不变量组 | F-57 承接需求行 | CapabilityOwner | owner_task / activation_task | TestID |
 |---|---|---|---|---|
@@ -77,13 +77,24 @@ ADR-0006 :19—25 的表自本篇起不再是任何交付的依据。任何计�
 
 ### 五、挂载点解析规则与转绿判据
 
-挂载点不再由本篇写死一个 crate 名，改为一条可机械求值的解析式：某组不变量的属性测试，落在其 CapabilityOwner 对应 `FeatureOwnerIdV1` 行的 `crate_root` 内部（ADR-0025 :17 的 `public`/`domain`/`application`/测试模块结构中的测试模块），不得落在该行之外。据 §2.1 现表，前三组解析为：
+挂载点不再由本篇写死一个 crate 名，改为一条可机械求值的解析式：某组不变量的属性测试，落在下表为该组解析出的 `FeatureOwnerIdV1` 行的 `crate_root` 内部（**F-73 更正**：原写「其 CapabilityOwner 对应 `FeatureOwnerIdV1` 行」，但 CapabilityOwner 取值如 `inventory`／`costing` 并不是 `FeatureOwnerIdV1` 的成员，且 `inventory` 在 F-69 后同时是两行的 DB schema——该表述取不到唯一值，「可机械求值」不成立。映射以本节下表为准）（ADR-0025 :17 的 `public`/`domain`/`application`/测试模块结构中的测试模块），不得落在该行之外。据 §2.1 现表（F-73 后为 18 行），五组全部解析如下。
+**本表按 `feature_owner_id` 名引用 §2.1，不写行号**——F-69 在 §2.1 插入一行后，
+本表原有的四处行号引用全部右移一位、其中一处正指向那一新增行，而路径前缀检查比对的是名字不是行号，
+错了不会当场报错。名字是闭集成员、增删行不会漂移，行号会。
 
 | 不变量组 | 解析后的 `feature_owner_id` | `crate_root` |
 |---|---|---|
-| 会计借贷平衡 | `operating-ledger` | `crates/features/operating-ledger`（:87） |
-| 库存数量与金额守恒 | `inventory-fulfilment` | `crates/features/inventory-fulfilment`（:86） |
-| 应收应付核销守恒 | 客户侧 `receivable-cash`、供应商侧 `payable-cash` 各一组，不合并 | `crates/features/receivable-cash`（:94）、`crates/features/payable-cash`（:88） |
+| 会计借贷平衡 | `operating-ledger` | `crates/features/operating-ledger` |
+| 库存**数量**守恒 | `inventory-fulfilment` | `crates/features/inventory-fulfilment` |
+| 库存**金额**守恒 | `inventory-costing` | `crates/features/inventory-costing` |
+| 应收应付核销守恒 | 客户侧 `receivable-cash`、供应商侧 `payable-cash` 各一处，不合并 | `crates/features/receivable-cash`、`crates/features/payable-cash` |
+| 移动加权平均单价重算 | `inventory-costing` | `crates/features/inventory-costing` |
+| 价差拆分 | `inventory-costing` | `crates/features/inventory-costing` |
+
+**「库存数量与金额守恒」这一组的挂载点一分为二**（F-73）：F-69 把金额与成本层事实划给
+`inventory-costing` 之后，该组的金额一半若仍挂 `inventory-fulfilment`，正是本篇第四条理由二
+自己判定要拦的越界。**这与第一条不冲突**——五组枚举不变，变的是其中一组落到两个 owner，
+与核销守恒落到两处同理。
 
 核销守恒**在挂载点上落到两处**而不是一处，是因为矩阵 :184 的 CapabilityOwner `finance` 在 §2.1 中被 :88 与 :94 两行分别拥有，且两行共用 `finance` 物理 schema 的事实不构成共享写者。**这是挂载点的一分为二，不是把不变量拆成两组**——第一条「一组不减、一组不合并、不新增第六组」仍然成立，五组枚举以 ADR-0006 为唯一源。**该拆分的依据是本篇对 §2.1 的解析，没有任何文件逐字写过它**（F-68 标注）。
 
@@ -100,7 +111,7 @@ ADR-0006 :19—25 的表自本篇起不再是任何交付的依据。任何计�
 
 把承接钉在 requirement→owner-task 映射而不是另选一组新阶段号，是因为 seed 是 §1.1 第 15 位的具名权威、有固定表头、有 185 行一一对应、并被 registry snapshot 摘要保护；阶段号在 F-57 之后没有任何一份现行文件为其背书。代价是本 ADR 的表从此依赖 seed：seed 若改行，本表须同批改，且第五条判据 1 会在不同步时立即失败——这正是把维护成本换成可当场报错的判据。
 
-把挂载点写成解析式而不是写死 crate 名，是因为 ADR-0006 的老毛病恰恰是写死了一列名字，而名字所依附的物理结构被 ADR-0025 换掉了。代价是解析式依赖 §2.1 的 17 行 registry，registry 增删行会改变解析结果；换来的好处是 registry 改动会自动传导，不需要再立一篇取代 ADR。
+把挂载点写成解析式而不是写死 crate 名，是因为 ADR-0006 的老毛病恰恰是写死了一列名字，而名字所依附的物理结构被 ADR-0025 换掉了。代价是解析式依赖 §2.1 的 18 行 registry（F-73：原写 17），registry 增删行会改变解析结果；换来的好处是 registry 改动会自动传导，不需要再立一篇取代 ADR。
 
 初稿把后两组诚实标成 `UNRESOLVED` 而不是就近挂到 `inventory-fulfilment`，代价是这两组在使用方裁定前无法开工；该代价已由 F-69 的裁定消解（新增 `inventory-costing` 行，两组可即刻开工）。当初不就近安置的理由仍然成立：把库存金额与价差事实塞进一个 authoritative scope 逐字不含它们的 feature owner，会制造一处「错了不会当场报错」的越界——scope 检查会通过，因为没人声明过这个事实归谁，而这正是本仓判据要拦的第三类缺陷。
 
@@ -124,5 +135,5 @@ ADR-0006 :19—25 的表自本篇起不再是任何交付的依据。任何计�
 - [`docs/f57-task-ownership.seed.tsv`](../f57-task-ownership.seed.tsv) 中上述九个 `requirement_id` 行的 `owner_task`/`activation_task`/`test_id` 字段；
 - [F-57 收敛实施主计划](../superpowers/plans/2026-08-24-f57-converged-program.md) §2.1 的 `FeatureOwnerIdV1` **18 行** registry（F-69 增行） 与 `docs/f57-feature-owner-registry.v1.tsv` 的生成；
 - [ADR-0025](ADR-0025-f57-capability-graph-and-feature-first-boundaries.md) 第七条的 touched-feature 渐进迁移与 facade 删除证据；
-- `crates/domain/{ledger,inventory,finance,costing}` 四个 facade crate 的边界，与 `crates/features/{operating-ledger,inventory-fulfilment,receivable-cash,payable-cash}` 的测试模块；
+- `crates/domain/{ledger,inventory,finance,costing}` 四个 facade crate 的边界，与 `crates/features/{operating-ledger,inventory-fulfilment,inventory-costing,receivable-cash,payable-cash}` 的测试模块；
 - `cargo xtask archcheck` 的层位判定与 L0 lane 的 touched unit/property tests 选择。

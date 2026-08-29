@@ -50,7 +50,8 @@
 | 客户投诉、服务请求、工单、设备、服务权益和服务关闭 | `service-cycle`；CRM/门户只是登记渠道 |
 | 销售订单、商业快照、交付确认和退换货 | `sales-order` |
 | 采购需求、RFQ、供应商报价版本、评估和授标 | `procurement` |
-| 库存数量、金额、批次和序列事实 | `inventory-fulfilment` |
+| 库存数量、批次和序列事实 | `inventory-fulfilment` |
+| 库存**金额**与成本层事实（移动加权平均单价及其重算、价差拆分） | `inventory-costing` |
 | 安装执行和现场技术证据 | `service-cycle`；由 INSTALLATION 工单承载 |
 | 项目、任务、里程碑、项目风险和项目关闭 | `project-cycle`；项目只引用 `sales-order` 交付与 `service-cycle` 安装证据 |
 | 企业现金/银行结算账户主档、应收、客户收款、核销、客户侧资金冲正 | `receivable-cash`；账户标识只保存加密 handle/blind reference 与授权展示用末四位，`payable-cash` 只能引用 |
@@ -64,7 +65,7 @@
 | 客户门户 allowlist 和裁剪投影定义 | `portal-experience`；客户主档只由 `customer-master` 拥有 |
 | 指标、报表、看板和打印定义及血缘 | `reporting`；来源事实仍由各业务 owner 拥有 |
 
-跨域能力只能调用公开命令、读取授权投影或消费已提交事实，不得直接更新其他 owner 的表。共享 `invoice`、`finance` 或 `portal` 物理 schema 不产生共享 writer；每张受保护表必须 exact-map 到上表一个 feature owner 和一个 repository module。
+跨域能力只能调用公开命令、读取授权投影或消费已提交事实，不得直接更新其他 owner 的表。共享 `invoice`、`finance`、`portal` 或 `inventory` 物理 schema 不产生共享 writer（F-73 补 `inventory`：`inventory-fulfilment` 与 `inventory-costing` 自 F-69 起共用它）；每张受保护表必须 exact-map 到上表一个 feature owner 和一个 repository module。
 
 ## 1. 全域执行不变量
 

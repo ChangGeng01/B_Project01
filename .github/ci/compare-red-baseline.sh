@@ -62,7 +62,11 @@ measure_gate() {
     # 退出码非 0 时必须读到汇总行，否则判定取不到——不得当作 0。
     # 不用 `| head -1`／`grep -q`：pipefail 下游提前退出会给上游 SIGPIPE，
     # 整条管道返回 141，判定会被误当成「读不到」。一律用 herestring 加 `|| true`。
-    count=$(grep -oE '^(不符|不一致)（[0-9]+ 处）' <<<"$out" | grep -oE '[0-9]+' || true)
+    # 三种汇总行都要认：configdoc/codecheck/eventcatalog 印「不符（N 处）」、
+    # errorcodes 印「不一致（N 处）」、archcheck 印「违反明细（N 处）」（xtask/src/main.rs）。
+    # 少认一种就会把该面的回归判成「未覆盖」而不是「新回归」——退出码 3 不是 2，
+    # 读结论的人会以为只是没测到（F-73 补 archcheck 一种）。
+    count=$(grep -oE '(不符|不一致|违反明细)（[0-9]+ 处）' <<<"$out" | grep -oE '[0-9]+' || true)
     count=${count%%$'\n'*}
     if [[ -z $count ]]; then
         echo "$rc -"
@@ -113,6 +117,16 @@ while IFS=$'\t' read -r gate expect_exit expect_count _note; do
         read -r got_exit got_count <<<"$(measure_gate "$gate")"
     fi
 
+    # 表里的期望值必须是数字。写成非数字时 `[[ -gt ]]` 会报语法错并让两个分支都取假，
+    # 直接落到 else 打印「与基线一致」——静默假绿。尤其 `-` 正是本脚本自己用来表示
+    # 「计数读不到」的记号，误粘进表里概率不低（F-73）。
+    if ! [[ $expect_exit =~ ^[0-9]+$ && $expect_count =~ ^[0-9]+$ ]]; then
+        printf '%-14s %-10s %-10s %s\n' "$gate" "${expect_exit}/${expect_count}" "-" \
+            "未覆盖：基线表该行的期望值不是数字，判定未做出"
+        uncovered=$((uncovered + 1))
+        continue
+    fi
+
     checked=$((checked + 1))
 
     if [[ $got_count == "-" ]]; then
@@ -124,11 +138,13 @@ while IFS=$'\t' read -r gate expect_exit expect_count _note; do
 
     # 退出码集合无序（0 通过 / 1 不符 / 3 判定未做出 / 70 未交付），不得用大小比较：
     # `-gt` 抓得到 1→3，却抓不到 3→1（未覆盖恶化成确凿不符）。只判是否与登记相同。
-    if [[ $got_count -gt $expect_count || $got_exit -ne $expect_exit ]]; then
+    # 退出码不同分两种：比登记更差是回归，比登记更好（如门禁被真正修绿）是收窄。
+    # 只判「不等」会把修绿也报成新回归（F-73）。
+    if [[ $got_count -gt $expect_count || ($got_exit -ne $expect_exit && $got_exit -gt $expect_exit) ]]; then
         printf '%-14s %-10s %-10s %s\n' "$gate" "${expect_exit}/${expect_count}" "${got_exit}/${got_count}" \
             "**新回归**：退出码 ${got_exit}（登记 ${expect_exit}）／计数 ${got_count}（登记 ${expect_count}）"
         regressions=$((regressions + 1))
-    elif [[ $got_count -lt $expect_count ]]; then
+    elif [[ $got_count -lt $expect_count || $got_exit -lt $expect_exit ]]; then
         printf '%-14s %-10s %-10s %s\n' "$gate" "${expect_exit}/${expect_count}" "${got_exit}/${got_count}" \
             "收窄 $((expect_count - got_count)) 处：须更新基线表并留证"
         narrowed=$((narrowed + 1))
@@ -136,7 +152,7 @@ while IFS=$'\t' read -r gate expect_exit expect_count _note; do
         printf '%-14s %-10s %-10s %s\n' "$gate" "${expect_exit}/${expect_count}" "${got_exit}/${got_count}" \
             "与基线一致"
     fi
-done <"$BASELINE"
+done < <(cat "$BASELINE"; echo)
 
 if [[ $checked -eq 0 ]]; then
     echo "未覆盖：基线表 $BASELINE 里一行都没读到，判定未做出。" >&2

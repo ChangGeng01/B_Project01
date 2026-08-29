@@ -38,10 +38,15 @@ alter system set wal_level = replica;
 
 -- 复制槽的本机事务日志保留上限：等于附录 A.3 连续归档本机保留子项，不得高于。
 -- 按 R-07，该取值做成单一变量；实测回填由归档阶段执行，回填只改本行。
--- F-71 更正：此前取 '350GB'，与上一行自己写的「等于附录 A.3 连续归档本机保留子项，
--- 不得高于」相抵——A.3 的 ④a 连续归档本机保留为 40 GiB，容量模型里没有任何一行
--- 给 350GB 留位。按 PostgreSQL 的单位约定 GB = 2^30，'40GB' 即 40 GiB，与 ④a 相等。
-alter system set max_slot_wal_keep_size = '40GB';
+-- F-73 更正：F-72 曾把本行标成「待裁定」并称与上一行相抵，那是**出处记错**——
+-- 上一行指名的附录 A.3 逐字是「连续归档本机保留约 **350 GB**」，本行取 '350GB' 与它一致，
+-- 与 `config-reference.md` 的「同值由部署自检与 PostgreSQL 参数读回保证」（`archive.wal_spool_max_gb`
+-- ＝350）也一致。**三处本来就是一致的，F-72 虚构了冲突。**
+--
+-- 真实存在的差额比那轻，且属容量账不属本行取值：00c 为 P340 单盘重算的容量表把
+-- 「④a 连续归档本机保留」记为 40 GiB，而本行按 A.3 取 350 GB——**P340 容量表里没有
+-- 任何一行给这 350 GB 留位**。该差额登记在 00c F-73，本行不改。
+alter system set max_slot_wal_keep_size = '350GB';
 alter system set wal_keep_size = 0;
 
 -- 预加载扩展：语句级观测依赖 pg_stat_statements。

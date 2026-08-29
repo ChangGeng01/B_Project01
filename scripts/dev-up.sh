@@ -92,7 +92,12 @@ prepare_state() {
 		# 不用 `tr … | head -c 32`：head 取满即退出，tr 收到 SIGPIPE 返回 141，
 		# `set -o pipefail` 把整条管道判非零，`set -e` 于是在首次运行当场中止
 		# （141 也不在本脚本第 13-18 行声明的退出码集合内）。改为先取够再截。
-		LC_ALL=C head -c 512 /dev/urandom | LC_ALL=C tr -dc 'a-zA-Z0-9' | cut -c1-32 >"$pw"
+		# 不用 `tr … | head -c 32`：head 取满即退出，tr 收到 SIGPIPE 返回 141，
+		# `set -o pipefail` 把整条管道判非零，`set -e` 于是在首次运行当场中止。
+		# 也不用 `| cut -c1-32`：cut 按行处理会补一个行尾换行，口令文件会变成 33 字节，
+		# 而消费方按整文件内容当口令读（F-73 更正 F-68 的这一处）。
+		pwval=$(LC_ALL=C head -c 512 /dev/urandom | LC_ALL=C tr -dc 'a-zA-Z0-9')
+		printf '%.32s' "$pwval" >"$pw"
 		chmod 0600 "$pw"
 		printf '已生成    开发机数据库超级用户口令 %s\n' "$pw"
 	fi

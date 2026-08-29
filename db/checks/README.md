@@ -20,7 +20,7 @@
 | 09 | `09_sql_hygiene.sql` | 无 current_date、全外键 RESTRICT、跨 schema 外键复合形式 |
 | 10 | `10_baseline_indexes.sql` | 基线索引齐备 |
 | 11 | `11_sensitive_field_encryption.sql` | 敏感字段加密分支的物理列集（A-28） |
-| 12 | `12_collation_conformance.sql` | 排序规则一致性（ICU zh-Hans-CN） |
+| 12 | `12_collation_conformance.sql` | 排序规则一致性（`libc` / `C`，ADR-0003；F-72 更正，本行曾写「ICU zh-Hans-CN」） |
 | 13 | `13_unpoliced_registry.sql` | 未受策略表登记逐行一致 |
 | — | `append_only_consistency.sql` | 仅追加登记与触发器双向一致（B-02） |
 
