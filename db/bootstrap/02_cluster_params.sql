@@ -38,7 +38,10 @@ alter system set wal_level = replica;
 
 -- 复制槽的本机事务日志保留上限：等于附录 A.3 连续归档本机保留子项，不得高于。
 -- 按 R-07，该取值做成单一变量；实测回填由归档阶段执行，回填只改本行。
-alter system set max_slot_wal_keep_size = '350GB';
+-- F-71 更正：此前取 '350GB'，与上一行自己写的「等于附录 A.3 连续归档本机保留子项，
+-- 不得高于」相抵——A.3 的 ④a 连续归档本机保留为 40 GiB，容量模型里没有任何一行
+-- 给 350GB 留位。按 PostgreSQL 的单位约定 GB = 2^30，'40GB' 即 40 GiB，与 ④a 相等。
+alter system set max_slot_wal_keep_size = '40GB';
 alter system set wal_keep_size = 0;
 
 -- 预加载扩展：语句级观测依赖 pg_stat_statements。

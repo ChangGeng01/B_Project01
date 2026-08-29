@@ -2,10 +2,18 @@
 -- 集群引导第 1 步，共 5 步。执行顺序：00 → 01 → 02 → 03 → 04，见本目录 README.md。
 --
 -- 承载内容：建库、库级会话默认值、库上 PUBLIC 权限的回收、public schema 的处置。
--- 取值唯一出处是阶段 2 计划第 3.1 节；建库的排序规则提供者取 ICU 且 locale 取
--- zh-Hans-CN，是阶段 1 新增决定二的落地，本阶段只执行不改其取值。
--- LC_COLLATE 与 LC_CTYPE 取 C 只作语法兜底（PostgreSQL 16 在 LOCALE_PROVIDER icu 下
--- 仍要求给出两者且必须以 template0 为模板），字符串比较与排序一律由 ICU 承担；
+-- 取值唯一出处是 ADR-0003：`LOCALE_PROVIDER libc`、`LC_COLLATE 'C'`、`LC_CTYPE 'C'`，
+-- 默认排序严格按 UTF-8 字节值。本文件是该决定的落地物，不得反向覆盖它。
+--
+-- 为什么不是 ICU（F-71 更正，本行以上曾写 `locale_provider icu icu_locale 'zh-Hans-CN'`）：
+-- B-tree 索引的物理顺序由建库时的 collation 决定。ICU 或 glibc 升级会改变比较规则，
+-- 已建索引随即静默失效——表现是**查询漏行而不是报错**，与「升级回退后数据一致性零差异」
+-- 直接冲突。C 排序只按字节比较，不引用任何外部 collation 版本，因此不受升级影响；
+-- 首版也因此不要求 PostgreSQL 构建带 ICU。裁定 00c 逐字：旧 `LOCALE_PROVIDER icu`、
+-- `ICU_LOCALE 'zh-Hans-CN'`「只作历史证据，**不得实现**」。
+--
+-- 代价是明码标价的：中文按字节序而不是拼音序，档案列表的中文排序不合阅读习惯。
+-- 需要中文阅读序的列表由应用层生成并持久化显式 `sort_key` 列承担，不改库级 collation。
 -- LC_CTYPE 'C' 的代价是 upper()/lower() 对非 ASCII 不做大小写映射，本系统不依赖该映射。
 --
 -- 为什么排在第 1 步：后续四步的对象要么建在本库内，要么以本库为授权范围；
@@ -21,8 +29,8 @@
 -- 建库：仅当 ep 库尚不存在时，查询返回一条 CREATE DATABASE 语句交由 \gexec 执行。
 -- 该语句必须独占会话、以 template0 为模板，不得放入 DO 块或多语句事务。
 select format(
-         'create database %I encoding %L locale_provider icu icu_locale %L lc_collate %L lc_ctype %L template %I',
-         'ep', 'UTF8', 'zh-Hans-CN', 'C', 'C', 'template0')
+         'create database %I encoding %L locale_provider libc lc_collate %L lc_ctype %L template %I',
+         'ep', 'UTF8', 'C', 'C', 'template0')
 where not exists (select 1 from pg_database where datname = 'ep')
 \gexec
 

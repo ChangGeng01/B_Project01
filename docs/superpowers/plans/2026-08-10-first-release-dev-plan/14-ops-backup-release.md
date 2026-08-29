@@ -380,7 +380,7 @@ attestation 与窗口。部署配置缺任一身份、三个身份不互斥、�
 
 暂停阈值。落点判为 Unwritable 起，若在 EP__ARCHIVE__SUSPEND_AFTER_MINUTES 内未恢复，则通道由 SlotInvalidated 转 Suspended。取值 30 分钟，是两个 15 分钟写出周期，理由是短于两个周期的不可写属正常抖动，不应立即宣布无恢复点。
 
-边界条件。落点 media_type 为 None 时判定不执行，直接开 OFFSITE_SINK_NOT_CONFIGURED 窗口且该窗口不可抑制；media_type 为 Offline 时探针仍执行但结果不用于 RPO 判定，该部署的 RPO 依据固定为 DegradedToMediaRotation。落点不可写的背压形态由复制槽堆积改为本机 WAL 暂存目录堆积，理由是 pg_receivewal 以本地落盘为准推进确认位点，不把位点确认压到落点写出成功之后；暂存占用达到 EP__ARCHIVE__WAL_SPOOL_MAX_GB 即判归档链断裂并走第 4.2 节的 SlotInvalidated 分支。该改动对单机形态是净收益：pg_wal 不再因落点不可写而增长，数据库因复制槽滞留失去写入能力这条路径被移除，而落点未收到的事务日志在整机失效时本就不可用，RPO 口径不变。
+边界条件。落点 media_type 为 None 时判定不执行，直接开 OFFSITE_SINK_NOT_CONFIGURED 窗口且该窗口不可抑制；media_type 为 Offline 时探针仍执行但结果不用于 RPO 判定，该部署的 RPO 依据固定为 DegradedToMediaRotation。落点不可写的背压形态由复制槽堆积改为本机 WAL 暂存目录堆积，理由是 pg_receivewal 以本地落盘为准推进确认位点，不把位点确认压到落点写出成功之后；暂存占用达到 EP__ARCHIVE__WAL_SPOOL_MAX_GB 即判归档链断裂并走第 4.2 节的 SlotInvalidated 分支。该改动对单机形态是净收益：pg_wal 不再因落点不可写而增长，数据库因复制槽滞留失去写入能力这条路径被移除〔**F-71 注：本句的净收益结论在 F-57 下不再成立**。F-57 的冻结 GUC 向量另外要求 `archive_mode=on`，而 `archive_mode=on` 下 WAL 段在归档成功之前不被回收——「pg_wal 因落点不可写而增长」这条路径被装了回来，且 `max_slot_wal_keep_size` 只约束复制槽保留、不约束归档失败导致的滞留，两者不是一回事。现行的兜底不再是本段所述机制，而是平台自身的 `free_space_min_bytes` 阻断门。见 00c F-71〕，而落点未收到的事务日志在整机失效时本就不可用，RPO 口径不变。
 
 #### 4.4 附件正文写出点水位推进算法
 
