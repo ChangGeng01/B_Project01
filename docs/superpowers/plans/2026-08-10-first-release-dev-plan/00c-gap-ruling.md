@@ -7297,6 +7297,62 @@ F-51 关闭 00e 实测的 46 条真实待拍板事项，并对 `U-C-06` 作技�
 2. `configdoc --check-doc-type-codes` 在阶段 1 只校验文档结构、重复与阶段 1 可构造夹具；阶段 3a 常量表交付后才启用逐值比对。阶段 1 的 SBOM 负例使用当期工作区可构造的同名测试夹具证明检测器有效；`ep-bench`、`ep-release-gate` 等未来包在其加入工作区的阶段再纳入真实包断言。
 3. 附录丙 22 条已全部由 F-01、F-03、F-04、F-05、F-52 与本 F-54 关闭：G-01 归 F-03/G-01，G-02 至 G-06 归 F-01，H-01 归 F-04/F-52，H-02 至 H-09 归 F-05，I-01 至 I-07 归本节。现行未决为 0，历史严重度不得再解释为开发阻断。
 
+### F-79　第二批：域分离判据改诚实，`--all-targets` 混用十四处修完
+
+承 F-78，本批完成 F-77 合并顺序的第 3、4 项。
+
+#### 结论一　`--all-targets` 与 `--test <NAME>` 混用——**实测证实，且实际是十四处不是三处**
+
+**先验证断言本身**，不照抄报告：
+
+- 单给 `cargo test -p ep-xtask --test no_such_test_target` → cargo 逐字 `error: no test target named …`，正确报错。
+- 加上 `--all-targets` → **跑完全部 143 个用例，对缺失目标一声不吭**。
+
+断言成立：`--all-targets` 在场时 `--test <NAME>` 的窄化被**静默丢弃**。
+后果是这些步骤名义上「验证某个具名测试目标」，实际变成「跑全部目标」——
+**测试名写错或文件根本没建，命令照样按整包结果给退出码**。而它们是多处 RED/GREEN 判据的唯一执行体。
+
+报告说三处，**实扫是十四处**（g0-bootstrap 12、ctc01 2，含两种参数顺序）。
+
+**修法不是删一边。** 删 `--all-targets` 会丢掉 lib/bin 单测，删 `--test` 会丢掉目标存在性检查——
+两种都在减覆盖。采用普适规则：**拆成两条，窄的在前、宽的在后**：
+
+```
+cargo test -p X --locked --test A --test B -- --nocapture && cargo test -p X --all-targets --locked -- --nocapture
+```
+
+窄的那条缺目标即快速失败，宽的那条保住全覆盖。**实测确认修复生效**：
+改后的窄命令对尚未创建的 `f57_levels` 逐字报 `error: no test target named f57_levels` ——正是被吞掉的那个信号。
+
+顺带一提：同一个门禁块的 `:4356` 本来就是不带 `--all-targets` 的纯 `--test` 写法，
+**作者知道正确形态**，只有混用的那些坏了。
+
+#### 结论二　域分离判据：30 条不等式里只有 20 条算得出来，已改为「算不出的一律报未覆盖且未覆盖即阻断」
+
+判据逐字要求 `E={PRODUCTION,CONTINUOUS,ROTATION_A,ROTATION_B}` × `D={FAILURE,ADMINISTRATION,CREDENTIAL,CUSTODY,LOCATION}`
+共 20 个 domain ID、「five groups of six, exactly 30 pairwise inequalities」。
+而 `custody_domain_id` 与 `physical_location_id` **只存在于离线介质两个结构体**上，
+即只有 `ROTATION_A`／`ROTATION_B` 有；`PRODUCTION` 与 `CONTINUOUS` 侧各只声明三个域，
+`StorageSafeguardReadbackV1` 更是连一个 PRODUCTION 侧 observed domain 都没有。
+
+实算：topology 侧 `3 域 × 6 对 = 18`，加 A–B 的 CUSTODY／LOCATION 各一 = **20/30**；
+活取 readback 侧 `3 域 × 3 对 = 9`，加 A–B 两项 = **11/30**。
+
+**算不出的那 10 条，恰恰就是「备份目标与生产不在同一房间、不在同一保管人名下」的那些**——
+而同一段落两句之后逐字写着「overlapping custody roster or same physical location is a required negative and
+**blocks production**」。也就是说：**判据要求证明的事，正好是结构体不提供取值的那件事。**
+
+**本卷不发明签名变更**（加字段要走「设计修订加协调改动每一份消费计划」那条规矩），
+改的是判据的诚实度——就地写明可算的是哪 20／11 条，并规定：
+**算不出的一律报未覆盖，未覆盖即阻断；不得把「取不到操作数」当成「已满足」，也不得自行加宽
+`deny_unknown_fields` 的严格根。** 这样它就从「可以被静默实现成恒真」变成「不补字段就一直红」。
+
+**未做到的**：那两个字段仍未加到 PRODUCTION／CONTINUOUS 侧。该签名变更**登记为开放项**，属使用方裁定面。
+
+#### 验证
+
+`archcheck` 0、阶段表自检 0；本批只动计划文本与判据措辞，未动代码，故全量测试与基线不受影响。
+
 ### F-78　「全面开始」第一批：安全三条与库级 CONNECT 已修并加测试
 
 使用方逐字「全面开始」。按 F-77 结论给出的合并顺序动手，本批完成第 1、2 项。

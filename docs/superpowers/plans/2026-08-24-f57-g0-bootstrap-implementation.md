@@ -943,9 +943,9 @@ Create `verify.rs` here as the closed dispatcher shell used by the parser: it re
 
 - [ ] **Step 4: Run tests and verify GREEN.**
 
-Run: `cargo test -p ep-platform-release --test carrier_contract --all-targets --locked -- --nocapture`
+Run: `cargo test -p ep-platform-release --locked --test carrier_contract -- --nocapture && cargo test -p ep-platform-release --all-targets --locked -- --nocapture`
 
-Run: `cargo test -p ep-foundation --test f57_foundation_wire -- --nocapture && cargo test -p ep-xtask --test f57_registry --test f57_cli --all-targets --locked -- --nocapture && cargo test -p ep-platform-delivery-registry --test registry --test migration_closure --all-targets --locked -- --nocapture`
+Run: `cargo test -p ep-foundation --test f57_foundation_wire -- --nocapture && cargo test -p ep-xtask --locked --test f57_registry --test f57_cli -- --nocapture && cargo test -p ep-xtask --all-targets --locked -- --nocapture && cargo test -p ep-platform-delivery-registry --locked --test registry --test migration_closure -- --nocapture && cargo test -p ep-platform-delivery-registry --all-targets --locked -- --nocapture`
 
 Expected: PASS with the exact six recipe wires compiled from `carrier_contract.rs`, uppercase/case/unknown/extra/branch parser negatives, exit `2` for invalid syntax and `70/F57_CARRIER_NOT_DELIVERED` for all six known recipes; the exact 36 foundation definitions, strict UUID aliases, complete identifier/closed registries, typed result/Fresh-PG refs, ten principal wires, seven delivery profiles, 276 TestIDs, three data classifications, complete client wire sets, one zero-import schema root/direct-import DAG, typed distinct-reviewer golden, 185 rows, and zero duplicate or unmapped values.
 
@@ -2596,7 +2596,7 @@ fn powershell_trust_policy_descriptor_and_fixed_executor_are_closed() {
 
 - [ ] **Step 2: Run narrow tests and verify RED.**
 
-Run: `cargo test -p ep-platform-release --all-targets --locked --test generation --test generation_approval -- --nocapture`
+Run: `cargo test -p ep-platform-release --locked --test generation --test generation_approval -- --nocapture && cargo test -p ep-platform-release --all-targets --locked -- --nocapture`
 
 Expected: FAIL because generation, reverse-plan, participant, generation-approval, and signed artifact-signer registry modules do not exist.
 
@@ -3631,7 +3631,7 @@ On Windows Server 2022 this task also owns the one immutable production service 
 
 - [ ] **Step 4: Run all state/topology tests.**
 
-Run: `cargo test -p ep-platform-release --all-targets --locked --test generation --test generation_approval -- --nocapture`
+Run: `cargo test -p ep-platform-release --locked --test generation --test generation_approval -- --nocapture && cargo test -p ep-platform-release --all-targets --locked -- --nocapture`
 
 Expected: PASS for the foundation-only three-root generation-schema edge; exact signed-manifest/signed-reverse-plan/plain-ACK media and `13/9/14` fields; exact purpose/item/action/retention wires; two payload-not-alias/single-envelope shapes; strict plain ACK whose `participant_apply_readback_ref` exact-loads the same-attempt successful apply readback and whose `acknowledged_at_unix_ms` follows that readback and no later than OBSERVED commit and no CMS/envelope; the separate foundation-only approval-registry schema with one signed seven-field payload and exact three five-field rows; product-pinned bootstrap plus the one storage-policy digest pin/fixed DATA_HDD path; exact SPKI/DN/media/current-validity rows and adjacent/ambient/old/wildcard/default/self-root negatives; generic-proof → registry-configured `VerifiedGenerationManifestV1` construction and generic/wrong-registry/89-row-registry substitution negatives; complete-envelope digest equality through the domain wrapper; reverse item/source and action/target/retention invariants; exactly one graph item/ref and one projection item/ref; generation-1 null predecessor and later exact immediately prior durable-OBSERVED predecessor; canonical graph-derived participants/item sets; ACK mismatch/time/restart negatives; zero G0 production approval-registry/generation/reverse-plan/ACK signer/store call site; every allowed/forbidden state edge; the four exact artifact-pin retention wires, lease live-at boundaries, persistent-reference release shape, strict storage-bootstrap/root-binding bytes, and no database reclamation policy in G0.
 
@@ -4300,13 +4300,13 @@ Deterministic aggregates—client validation/artifact set, offline schema manife
 
 Run: `cargo test -p ep-platform-gate-journal-contract --all-targets --locked -- --nocapture`
 
-Run: `cargo test -p ep-xtask --all-targets --locked --test f57_levels --test f57_fresh_pg --test f57_run_journal --test f57_client_conformance_dispatch -- --nocapture`
+Run: `cargo test -p ep-xtask --locked --test f57_levels --test f57_fresh_pg --test f57_run_journal --test f57_client_conformance_dispatch -- --nocapture && cargo test -p ep-xtask --all-targets --locked -- --nocapture`
 
 Expected: PASS, including exact active-session/source-registry equality before the first journal signature, row/runner-bound authorized broker signing and missing/session-drift/unavailable-role failure before output; plus the neutral production-linkable journal owner, all thirteen reserved delta variants, exact seven P340 kinds/two helper nominals/five event field sets, foundation-only schema edge, storage-root wire, transition/byte goldens, and `NOT_DELIVERED` semantic guards.
 
-Run: `cargo test -p ep-platform-runtime --all-targets --locked --test evidence_object_store_port --test evidence_input_store_port -- --nocapture`
+Run: `cargo test -p ep-platform-runtime --locked --test evidence_object_store_port --test evidence_input_store_port -- --nocapture && cargo test -p ep-platform-runtime --all-targets --locked -- --nocapture`
 
-Run: `cargo test -p ep-adapter-file --all-targets --locked --test evidence_object_store --test evidence_input_store --test gate_run_journal_store --test authority_storage_bootstrap_archive -- --nocapture`
+Run: `cargo test -p ep-adapter-file --locked --test evidence_object_store --test evidence_input_store --test gate_run_journal_store --test authority_storage_bootstrap_archive -- --nocapture && cargo test -p ep-adapter-file --all-targets --locked -- --nocapture`
 
 Run: `cargo xtask f57 evidence-bindings generate --check`
 
@@ -4355,11 +4355,11 @@ cargo xtask sqlcheck
 cargo xtask f57 graph generate --check
 cargo test -p ep-platform-capability-graph --all-targets
 cargo test -p ep-foundation --test signature
-cargo test -p ep-platform-release --all-targets --locked --test generation --test generation_approval
+cargo test -p ep-platform-release --locked --test generation && cargo test -p ep-platform-release --all-targets --locked--test generation_approval
 cargo test -p ep-platform-gate-journal-contract --all-targets --locked
-cargo test -p ep-platform-runtime --all-targets --locked --test topology --test evidence_object_store_port --test evidence_input_store_port
-cargo test -p ep-adapter-file --all-targets --locked --test evidence_object_store --test evidence_input_store --test gate_run_journal_store --test authority_storage_bootstrap_archive
-cargo test -p ep-xtask --all-targets --locked --test f57_registry --test f57_architecture --test f57_levels --test f57_fresh_pg --test f57_run_journal --test f57_client_conformance_dispatch
+cargo test -p ep-platform-runtime --locked --test topology --test evidence_object_store_port && cargo test -p ep-platform-runtime --all-targets --locked--test evidence_input_store_port
+cargo test -p ep-adapter-file --locked --test evidence_object_store --test evidence_input_store --test gate_run_journal_store && cargo test -p ep-adapter-file --all-targets --locked--test authority_storage_bootstrap_archive
+cargo test -p ep-xtask --locked --test f57_registry --test f57_architecture --test f57_levels --test f57_fresh_pg --test f57_run_journal && cargo test -p ep-xtask --all-targets --locked--test f57_client_conformance_dispatch
 cargo xtask f57 evidence-bindings generate --check
 cargo check --workspace --all-targets --locked
 cargo xtask f57 evidence verify --receipt target/f57/evidence/g0/bootstrap-receipt.v1.json --bundle-root target/f57/evidence --expect-gate G0_BOOTSTRAP_GREEN

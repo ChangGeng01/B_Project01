@@ -159,7 +159,7 @@ Run: `npm --prefix clients/control-center run build`
 
 Expected: PASS with a deterministic static asset manifest.
 
-Run: `cargo test -p core-server -p ep-adapter-db-pg -p ep-testkit --all-targets --locked --test f57_minimum_control_center --test f57_control_contract_projection -- --nocapture`
+Run: `cargo test -p core-server -p ep-adapter-db-pg -p ep-testkit --locked --test f57_minimum_control_center --test f57_control_contract_projection -- --nocapture && cargo test -p core-server -p ep-adapter-db-pg -p ep-testkit --all-targets --locked -- --nocapture`
 
 Expected: PASS.
 
@@ -290,7 +290,7 @@ Run: `npm --prefix clients/workbench run build`
 
 Expected: PASS.
 
-Run: `cargo test -p core-server -p ep-adapter-db-pg -p ep-xtask -p ep-testkit --all-targets --locked --test f57_windows_workbench_online --test f57_employee_contract_projection --test f57_g3_client_shell_gate -- --nocapture`
+Run: `cargo test -p core-server -p ep-adapter-db-pg -p ep-xtask -p ep-testkit --locked --test f57_windows_workbench_online --test f57_employee_contract_projection --test f57_g3_client_shell_gate -- --nocapture && cargo test -p core-server -p ep-adapter-db-pg -p ep-xtask -p ep-testkit --all-targets --locked -- --nocapture`
 
 Expected: PASS on the Windows Server 2022 G3 runner.
 
