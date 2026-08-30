@@ -7297,6 +7297,92 @@ F-51 关闭 00e 实测的 46 条真实待拍板事项，并对 `U-C-06` 作技�
 2. `configdoc --check-doc-type-codes` 在阶段 1 只校验文档结构、重复与阶段 1 可构造夹具；阶段 3a 常量表交付后才启用逐值比对。阶段 1 的 SBOM 负例使用当期工作区可构造的同名测试夹具证明检测器有效；`ep-bench`、`ep-release-gate` 等未来包在其加入工作区的阶段再纳入真实包断言。
 3. 附录丙 22 条已全部由 F-01、F-03、F-04、F-05、F-52 与本 F-54 关闭：G-01 归 F-03/G-01，G-02 至 G-06 归 F-01，H-01 归 F-04/F-52，H-02 至 H-09 归 F-05，I-01 至 I-07 归本节。现行未决为 0，历史严重度不得再解释为开发阻断。
 
+### F-77　F-57 计划与契约全量逐段精读：报出 97 条，对抗验证判真 36 条
+
+对五份 F-57 计划与两份契约（合 **36487 行**）分 26 段作**首次逐句**精读，
+每条发现由独立一路按「默认驳回」核实。**报出 97 条，判真 36 条，驳回 61 条（63%）**。
+按类：取不到的取值 11、跨文件矛盾 8、错了不会当场报错 8、恒真的判据 3、内部矛盾 3、闭集算不平 2、恒假的触发 1。
+
+至此三波全量精读合计：**报出 225 条，判真 88 条**（规格与 PRD 21、Rust 与 db 31、本波 36）。
+
+#### 甲　三条是本卷自己近期裁定的直接后果，已当批修
+
+1. **主计划 Tech Stack 逐字仍写「GitHub Actions **or an equivalent thin self-hosted orchestrator**」**，
+   与 F-69 落的 ADR-0027 决定一正面冲突。同一份计划第 18 行又把 `.github/workflows/ci.yml` 的
+   `windows-f57-release-precommit` 钉成 exact mandatory job——照第 9 行去搭第二套编排面，
+   做出来的东西按 ADR-0027 直接不合法。**这是落 ADR-0027 时漏扫的活指令，不是历史叙述。已删该尾句。**
+2. **ADR-0022 决定一至今逐字规定「私有、自托管 Forgejo + Woodpecker 继续作为可替换的默认 CI 平台」。**
+   落 ADR-0027 时**只扫了 ADR-0005，没想到 ADR-0022 也载有同一条决定**。已标为被 ADR-0027 取代，
+   其后果段「Forgejo/Woodpecker 仍可替换」一句同步失效。
+3. **ADR-0027 不在 §1.1 的恰 25 份 precedence 清单内**——它与 ADR-0005／ADR-0022 一样只经
+   `docs/adr/*` 行取得 `CURRENT_SUBJECT` 效力。已在 ADR-0027 补写效力来源，说明取代成立但不改 §1.1 清单。
+
+另有一条同源但未修：**Task 8 交付 17 个 feature owner，而现行注册表已是 18 行，
+`crates/features/inventory-costing` 全程无落地任务**——F-73 已登记，本波独立复现。
+
+#### 乙　「取不到的取值」十一条，最重的三条
+
+- **域分离判据要求 4 实体 × 5 域共 20 个 domain ID、30 条两两不等式**，
+  而 `PRODUCTION` 与 `CONTINUOUS` 两个实体的结构体里**根本没有 CUSTODY／LOCATION 字段**
+  （`custody_domain_id`／`physical_location_id` 全仓只存在于离线介质两处）。
+  topology 侧最多算出 **20/30**，活取 readback 侧只有 **11/30**。实现方三条路都错：
+  当恒真跳过则「备份目标与生产同机房／同保管人」这条**最要命的勒索软件场景直接失效**而 P340 生产启用仍绿灯；
+  硬要求 20 个 nonempty 则 `deny_unknown_fields` 的结构体永远构造不出来，恒假；
+  私自加字段则与「签名变更须设计修订并协调改动每一份消费计划」冲突。
+- **主计划自称「全部子计划共用的确切名字」的接口表里，`BackupSetIdV1` 与 `BackupCheckpointContextV1`
+  从未在本文件定义**——定义只在子计划里。照主计划实现的人拿不到
+  `BackupCheckpointContextV1` 的 variant 集合，只能自己发明，而 `PACKAGE_MAINTENANCE` 分支
+  所需的两个 ref 无处安放。
+- **`F57EvidenceSignerBrokerReadinessStateV1::Held` 是全仓孤儿**：无任何产生条件、无任何判据消费；
+  三处定义 readiness 的正文都只给两个值。写 collector 的不知何时置 `HELD`，写 verifier 的只能二选一——
+  一个把合法闭集值判死，一个把语义未定义的值放行。
+
+#### 丙　恒真的判据三条
+
+- 「**禁止用户 tablespace**」在 17-field install readback 里**没有任何观测字段**，
+  只能拿投影自己的 desired 布尔跟自己比。
+- **boot-security 的「已批准启动项」与「观察到的启动项」同出一份 payload**，等式判据没有可失败的输入。
+- **HDD 水位的 `maximum_used_bytes = total_bytes - minimum_free_bytes` 是定理**，
+  而它被要求写一个「一步之外失败」的 golden——**造不出来**。
+
+#### 丁　「错了不会当场报错」八条中最普遍的一类：`--all-targets` 与 `--test <NAME>` 混用
+
+**三处独立命中同一形态**（Task 14 Step 2、G0 完工闸门、CTC-01 Task 1/2）：
+cargo 在 `--all-targets` 存在时**静默丢弃** `--test <NAME>` 的窄化，
+于是「验证这一个测试目标」变成「跑全部目标」，**测试名写错或文件根本没建也照样 exit 0**。
+这类命令是多处 RED/GREEN 判据的唯一执行体，写错不会有任何信号。
+
+同族其余：签名的 72 小时时序证据里 `sample_interval_seconds` **没有任何判据把它钉到 policy 的 60**；
+延续服务运行读回的 `service_state` 是**自由 String** 而同段自己规定「拒绝任意 SCM 字符串」；
+`f57_release_dependency_dag` 的「精确」依赖断言**漏掉了本任务唯一强调「不接受传递依赖」的那条边**；
+Task 4 必然把 `ep-platform-runtime` 的单测打红，**而它声明的验证命令一条都跑不到那里**。
+
+#### 戊　跨文件矛盾与闭集，其余
+
+- **备份密文块的 `nonce: [u8; 24]` 与 ADR-0021 逐字规定的 12 字节 AES-GCM nonce 直接冲突。**
+- **恢复认证状态机被本卷放宽**，允许了超出契约的两类跃迁。
+- **Task 1 往 `ep-foundation` 新开四个顶层模块，却没动 `foundation-module-registry` 的比对对象**
+  ——与 F-76 甲组的 `frozen.rs` 同病同源。
+- 判据引用**现行代码里不存在的枚举取值** `ProcessKind::ExtensionHost`（真实变体是 `PluginHost`）。
+- **Employee 路由闭集自相矛盾**：全局约束与 Interfaces 说 17，测试断言写 16，seed 实测 17 行。
+- **G1-01 的 Files 清单要求 Modify 一个三个任务之后才由 G1-04 创建的文件。**
+- **Task 6 Step 2 要求某命令报 RED，而 Task 1 已把同一条命令冻成 GREEN**，且 Task 6 不碰它——恒假的触发。
+- P340 政策字段名与主计划冻结的结构体字段名不一致；`SecurityIncidentErrorV1` 缺 serde derive
+  而散文断言它有线格式；recovery-tool 的 slot 操作在两处用两个互不相认的封闭 wire 名；
+  §5.3 Demand 状态表 `CLOSED` 的允许后继漏了 `AWARDED`；
+  §1.1 指向的两个 Envelope 类型全仓不存在；Control 400 断言用了整仓不存在的错误码；
+  `CTC01_CARRIERS` 把私有 String newtype 当枚举用，四个变体与 `const` 都取不到。
+
+#### 结论　除甲组三条外一律未改
+
+理由同 F-76：**乙丙丁戊各条要么是契约签名变更（须协调改动每一份消费计划），
+要么是改判据本身（须文档先行）**，都不是可以顺手改的。甲组三条例外——它们是本卷自己上一批漏的，属补完。
+
+#### 三波合计的未做完
+
+- 被驳回的 **61＋29＋47＝137 条**未逐条复核驳回理由是否成立；只采信判真的 88 条。
+- 88 条里**已修 4 条**（本波甲组三条＋F-75 的 `data-dictionary` 半改），**其余 84 条全部待使用方定优先级**。
+
 ### F-76　Rust 代码与 db 首次全量审计：报出 60 条，对抗验证判真 31 条
 
 对 337 个 `.rs`（68260 行）与 `db/` 115 个文件（4545 行）分 10 域作**首次全量审计**，

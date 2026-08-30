@@ -11,7 +11,7 @@ F-57 同时交付 Windows Server 权威节点、Windows/macOS/iOS/Android Workbe
 
 ## 决定
 
-一、私有、自托管 Forgejo + Woodpecker 继续作为可替换的默认 CI 平台。平台配置只准备环境、注入批准的 secret 引用并调用 Rust-owned 命令；阶段、顺序、退出码、证据 schema 与最终 verdict 继续由 Rust 工具唯一拥有。
+一、~~私有、自托管 Forgejo + Woodpecker 继续作为可替换的默认 CI 平台。~~ **已由 [ADR-0027](ADR-0027-ci-platform-github-only.md) 取代（F-77）**：CI 平台单一取 GitHub Actions，执行器一律自托管；本条其余部分（平台只准备环境、注入批准的 secret、不承载业务判定）继续有效。平台配置只准备环境、注入批准的 secret 引用并调用 Rust-owned 命令；阶段、顺序、退出码、证据 schema 与最终 verdict 继续由 Rust 工具唯一拥有。
 
 二、现行 CI 精确包含四条签名 lane：
 
@@ -34,7 +34,7 @@ Windows Server 2022 evidence runner 与客户生产 Authority 是两个故障域
 
 ## 后果
 
-正面：每个平台都有原生证据，发布结论只有一个；Forgejo/Woodpecker 仍可替换且不承载业务判定。
+正面：每个平台都有原生证据，发布结论只有一个；编排面不承载业务判定（F-77：原句「Forgejo/Woodpecker 仍可替换」随决定一被 ADR-0027 取代而失效）。
 
 代价：发布必须协调四条 lane 的签名、时效与代际，任一 lane 缺失都会失败关闭；Windows Server 2022 runner 和 Apple runner 成为必要研发基础设施。
 

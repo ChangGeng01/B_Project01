@@ -6,7 +6,7 @@
 
 **Architecture:** One Windows Server authority owns commands, data, policy, generations, automation, and evidence; every other surface is a non-authoritative client or governed provider. One canonical plain `CapabilityGraphV1`, authenticated by the exact verified generation reference rather than by a standalone CMS envelope, generates protocol, authorization, UI, package, provider, Excel/MCP, test, and documentation projections, while feature-first bounded contexts own business state and communicate only through typed public commands and committed facts.
 
-**Tech Stack:** Rust 2021/MSVC, PostgreSQL 16, SQLx, native Windows Server 2022 services, Tauri 2 with a Flutter + Rust fallback decision gate, HTTPS, PowerShell, Windows CNG/TPM/BitLocker/Service SID/Job Object/DACL, GitHub Actions or an equivalent thin self-hosted orchestrator.
+**Tech Stack:** Rust 2021/MSVC, PostgreSQL 16, SQLx, native Windows Server 2022 services, Tauri 2 with a Flutter + Rust fallback decision gate, HTTPS, PowerShell, Windows CNG/TPM/BitLocker/Service SID/Job Object/DACL, GitHub Actions on self-hosted runners only (ADR-0027; F-77 removed the trailing "or an equivalent thin self-hosted orchestrator", which ADR-0027 decision 1 forbids).
 
 **Spec:** `docs/superpowers/specs/2026-08-23-f57-governed-automation-fabric-design.md`
 
