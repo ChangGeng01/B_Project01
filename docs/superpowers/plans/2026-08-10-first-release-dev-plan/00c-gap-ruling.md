@@ -7297,6 +7297,65 @@ F-51 关闭 00e 实测的 46 条真实待拍板事项，并对 `U-C-06` 作技�
 2. `configdoc --check-doc-type-codes` 在阶段 1 只校验文档结构、重复与阶段 1 可构造夹具；阶段 3a 常量表交付后才启用逐值比对。阶段 1 的 SBOM 负例使用当期工作区可构造的同名测试夹具证明检测器有效；`ep-bench`、`ep-release-gate` 等未来包在其加入工作区的阶段再纳入真实包断言。
 3. 附录丙 22 条已全部由 F-01、F-03、F-04、F-05、F-52 与本 F-54 关闭：G-01 归 F-03/G-01，G-02 至 G-06 归 F-01，H-01 归 F-04/F-52，H-02 至 H-09 归 F-05，I-01 至 I-07 归本节。现行未决为 0，历史严重度不得再解释为开发阻断。
 
+### F-82　第五批：连接池 `after_release` 的恒假断言——五具名池曾退化成「每事务一次建连」
+
+承 F-81。本批处置 F-76 丁组的头条，并连带修掉同一假前提的第二处。
+
+#### 结论一　假前提写在注释里，实现照着注释写，于是恒假
+
+`pool.rs` 的 `after_release` 逐字：
+
+> 断言无未结束事务：事务外 `transaction_isolation` **取值是 `read uncommitted`**；不成立即丢弃连接。
+
+**该前提对 PostgreSQL 不成立。** `transaction_isolation` 由 `XactIsoLevel` 支撑，**事务内外都取
+`default_transaction_isolation`**；而 `db/bootstrap/00_database.sql:40` 逐字
+`alter database ep set default_transaction_isolation = 'read committed'`。
+于是 `Ok(level == "read uncommitted")` **恒为 `Ok(false)`**。
+
+sqlx 对 `after_release` 返回 `Ok(false)` 的处置是**关闭连接、不回池**。后果：
+**Rw20／Ro10／Worker5／Ops2 五具名池全部退化成「每事务一次建连」**——
+每个事务都要一次 TCP 握手、SCRAM 认证与 `after_connect` 的整套 SET，
+`max_lifetime`／`idle_timeout` 与规模表全部失效，连接建立速率成为吞吐上限。
+**在单块机械盘、并发上限 10 的这台机器上，这是真实的吞吐杀手。**
+
+**这条在任何测试里都看不见**：`FakeConn::in_transaction` 直接返回自己的 `in_tx` 标志，
+活库用例又用显式 `close()` 绕开了本回调。审计方给出的实跑证据是
+「一次建表加四次 transact 出现 **5 个不同 backend PID**，每个 session time 都在毫秒级」。
+
+**修法不是把判据取反**——取反同样是靠一个巧合成立的等式。改为**无条件 `rollback`**：
+事务外 PostgreSQL 只发一条「there is no transaction in progress」警告并成功，事务内则真正回滚。
+**意图（不把未结束事务归还进池）因此总是达成，而不是靠一个恒假的判据。**
+
+#### 结论二　同一假前提的第二处，且它零调用点
+
+`conn.rs` 的 `in_transaction` 是同一前提的取反写法 `Ok(level != "read uncommitted")`，**恒返 `true`**。
+实测 `grep '\.in_transaction()'` 全仓**命中 0**——它是个从未被调用、却带着假前提的 trait 方法。
+已换成 `now() <> statement_timestamp()` 探针（显式事务里 `now()` 固定在 BEGIN、`statement_timestamp()` 逐语句推进），
+并**如实写明它的已知边界**：显式事务的第一条语句上两者相等，此时返回 `false`；
+归还前的场景已至少执行过一条语句，不落在该边界内。
+
+#### 结论三　连带三处，每一处都记
+
+修 `after_release` 移走了 `is_allowed` 在 F-81 之前的唯一「生产」调用点（那处正是被换掉的恒真自检），
+于是 `-D warnings` 报死代码。处置过程本身值得记：
+
+1. 先用 `#[expect(dead_code)]` 而非 `#[allow]`——**真出现调用点时该属性会自己报错要求移除**。
+2. 但测试构建里它**确实被用到**，`expect` 于是「未被满足」而报错——**这正是 `expect` 比 `allow` 诚实的地方**，
+   它当场告诉我「这个函数在某个配置下不是死的」。已改为 `#[cfg_attr(not(test), expect(...))]`。
+3. `pool.rs` 的 `Row` 导入随判据移除而不再使用，一并删。
+
+#### 一处工具自证
+
+改坏测试编译的那一刻，`compare-red-baseline.sh` 逐字输出
+「**1 个判定面的实测取不到，判定未做出，不得视为无回归**」并退出 3，**而不是蒙混成「无新回归」**。
+这是 F-68 造它、F-73 修掉它三条假绿路径之后，它在真实故障上的第一次自证。
+
+#### 验证
+
+真全量 **1115/3/5 不变**；六道门禁 2 绿 4 红、两道 CI 自检 0/0、基线对照逐面相等——**无新回归**。
+本批改的是连接归还路径，**其正确性未经真实 PostgreSQL 验证**；转绿判据是接上真库后复跑审计方那个用例，
+确认一次建表加四次 transact 只出现**一个** backend PID。
+
 ### F-81　第四批：F-76 丙组「门禁自己是恒真判据」——四条已修，一条判假，一条未定位
 
 承 F-80。丙组是**改判定面本身**，按文档先行：先定判据该长什么样，再改实现。

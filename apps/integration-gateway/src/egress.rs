@@ -10,6 +10,19 @@ use ep_platform_runtime::config::{BreakerCfg, EgressTarget};
 
 /// 白名单判定。取值必须整段相等，不做后缀匹配：
 /// 后缀匹配会让 `evil-example.com` 命中 `example.com`。
+/// 运行期的出网目标匹配：**精确字符串相等，没有任何规范化**。
+///
+/// F-82：本函数今天只被测试调用——出网路径本体尚未实现，`rehearse` 在 F-81 之前
+/// 曾是它唯一的「生产」调用点，而那处是拿白名单问它自己的恒真判据，已被换掉。
+/// 用 `expect` 而不是 `allow`：真出现调用点时该属性会自己报错要求移除，
+/// 不会像 `allow` 那样一直挂着。
+#[cfg_attr(
+    not(test),
+    expect(
+        dead_code,
+        reason = "出网路径本体未实现；本函数是其匹配语义的唯一定义处，由测试钉住"
+    )
+)]
 pub fn is_allowed(allowlist: &[EgressTarget], target: &str) -> bool {
     allowlist.iter().any(|t| t.as_str() == target)
 }

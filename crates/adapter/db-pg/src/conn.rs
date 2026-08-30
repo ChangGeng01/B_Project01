@@ -142,8 +142,20 @@ pub trait DbConn: Send {
 
     async fn rollback(&mut self) -> Result<(), PgError>;
 
-    /// 是否处于未结束事务中。连接归还前的断言依据：
-    /// 事务外 `transaction_isolation` 的取值为 `read uncommitted`。
+    /// 是否处于未结束事务中。
+    ///
+    /// F-82 更正：原注称「事务外 `transaction_isolation` 的取值为 `read uncommitted`」，
+    /// **该前提对 PostgreSQL 不成立**（事务内外都取 `default_transaction_isolation`，
+    /// 本库设为 `read committed`），据它写的实现恒返 `true`。
+    ///
+    /// 现行探针是 `now() <> statement_timestamp()`：显式事务里 `now()`
+    /// （＝`transaction_timestamp()`）固定在 BEGIN 时刻，而 `statement_timestamp()`
+    /// 逐语句推进，故第二条及其后的语句上两者不等；事务外每条语句自成隐式事务，
+    /// 两者相等。**已知边界：显式事务的第一条语句上两者相等，此时返回 `false`。**
+    /// 归还前的场景已至少执行过一条语句，不落在该边界内。
+    ///
+    /// 本方法当前**全仓零调用点**（`grep '\.in_transaction()'` 命中 0）；
+    /// 连接归还的实际保障已由 `pool.rs` 的无条件 `rollback` 承担。
     async fn in_transaction(&mut self) -> Result<bool, PgError>;
 }
 
@@ -326,12 +338,11 @@ impl DbConn for SqlxConn {
 
     async fn in_transaction(&mut self) -> Result<bool, PgError> {
         use sqlx::Row;
-        let row = sqlx::query("select current_setting('transaction_isolation')")
+        let row = sqlx::query("select now() <> statement_timestamp()")
             .fetch_one(self.inner.as_mut())
             .await
             .map_err(to_pg_error)?;
-        let level: String = row.try_get(0).map_err(to_pg_error)?;
-        Ok(level != "read uncommitted")
+        row.try_get::<bool, _>(0).map_err(to_pg_error)
     }
 }
 

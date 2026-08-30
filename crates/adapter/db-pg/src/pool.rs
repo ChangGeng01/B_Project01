@@ -14,7 +14,7 @@ use std::sync::{Arc, OnceLock};
 use std::time::Duration;
 
 use sqlx::postgres::PgPoolOptions;
-use sqlx::{Pool, Postgres, Row};
+use sqlx::{Pool, Postgres};
 
 use crate::budget::{PoolKind, PoolSpec};
 use crate::metrics::DbMetrics;
@@ -153,13 +153,24 @@ impl PgPools {
                                 .execute(&mut *conn)
                                 .await?;
                         }
-                        // 断言无未结束事务：事务外 transaction_isolation
-                        // 取值是 read uncommitted；不成立即丢弃连接。
-                        let row = sqlx::query("select current_setting('transaction_isolation')")
-                            .fetch_one(&mut *conn)
-                            .await?;
-                        let level: String = row.try_get(0)?;
-                        Ok(level == "read uncommitted")
+                        // 保证不把未结束事务归还进池：无条件 rollback。
+                        //
+                        // F-82 更正：原判据是「事务外 `transaction_isolation` 取值为
+                        // `read uncommitted`，不成立即丢弃连接」。**该前提对 PostgreSQL 不成立**
+                        // ——`transaction_isolation` 由 `XactIsoLevel` 支撑，事务内外都取
+                        // `default_transaction_isolation`，而 `db/bootstrap/00_database.sql`
+                        // 逐字 `alter database ep set default_transaction_isolation = 'read committed'`。
+                        // 于是该式恒为 `Ok(false)`，sqlx 对 `Ok(false)` 的处置是**关闭连接、不回池**，
+                        // 五具名池因此退化成「每事务一次建连」：每个事务都要一次 TCP 握手、
+                        // SCRAM 认证与 after_connect 的整套 SET，`max_lifetime`／`idle_timeout`
+                        // 与规模表全部失效。这条在任何测试里都不可见——`FakeConn` 直接返回
+                        // 自己的 `in_tx` 标志，活库用例又用显式 `close()` 绕开了本回调。
+                        //
+                        // 改为无条件 `rollback`：事务外 PostgreSQL 只发一条
+                        // 「there is no transaction in progress」警告并成功，事务内则真正回滚。
+                        // 意图（不把未结束事务归还进池）因此**总是**达成，而不是靠一个恒假的判据。
+                        sqlx::query("rollback").execute(&mut *conn).await?;
+                        Ok(true)
                     })
                 })
                 .connect_lazy_with(options);
