@@ -68,6 +68,17 @@ begin
     v_le_no := v_le_no + 1;
     v_checksum_src := 'authz_config_version=1;legal_entity=' || v_le.id::text;
 
+    -- 逐法人设置行级安全上下文。platform_authz.roles 与
+    -- platform_authz.role_permission_grants 都经 platform_core.attach_table_guards
+    -- 挂了 apply_le_rls，即 `force row level security` 加策略
+    -- `legal_entity_id = nullif(current_setting('app.legal_entity_id', true), '')::uuid`。
+    -- FORCE 之下连表属主也受策略约束：不设该变量时 current_setting 返回空串、
+    -- nullif 得 NULL，WITH CHECK 恒不成立，下面每一条 insert 都会被拒。
+    -- 本迁移今天不失败只是因为全新引导时法人表为空、本循环体一次也不执行；
+    -- 任何「法人先存在」的顺序（升级、重装、datagen 先行）都会让它在迁移窗口内硬失败。
+    -- 第三个实参取 true：只在本事务内生效，迁移事务结束即失效（F-80）。
+    perform set_config('app.legal_entity_id', v_le.id::text, true);
+
     for i in 1..7 loop
       v_role_id := ('00000000-0000-7000-8000-0000000004'
         || lpad(to_hex(v_le_no * 16 + i), 2, '0'))::uuid;

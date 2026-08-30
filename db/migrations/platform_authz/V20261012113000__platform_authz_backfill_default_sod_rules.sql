@@ -31,6 +31,16 @@ begin
     select id from platform_core.legal_entities order by entity_no asc
   loop
     v_le_no := v_le_no + 1;
+
+    -- 逐法人设置行级安全上下文。platform_authz.sod_rules 经
+    -- platform_core.attach_table_guards 挂了 apply_le_rls，即 `force row level
+    -- security` 加策略 `legal_entity_id = nullif(current_setting('app.legal_entity_id',
+    -- true), '')::uuid`。FORCE 之下连表属主也受策略约束：不设该变量时
+    -- current_setting 返回空串、nullif 得 NULL，WITH CHECK 恒不成立，下面的
+    -- insert 会被拒。本迁移今天不失败只是因为全新引导时法人表为空、循环体一次
+    -- 也不执行。第三个实参取 true：只在本事务内生效（F-80，与 112500 同批同病）。
+    perform set_config('app.legal_entity_id', v_le.id::text, true);
+
     for i in 1..11 loop
       insert into platform_authz.sod_rules
         (id, legal_entity_id, rule_code, rule_kind, left_ref, right_ref,

@@ -251,6 +251,16 @@ fn decode_row(row: sqlx::postgres::PgRow) -> Result<Vec<DbValue>, sqlx::Error> {
             "INT8" => row
                 .try_get::<Option<i64>, _>(idx)?
                 .map_or(DbValue::Null, DbValue::Int64),
+            // int4/int2 必须各有分支：落到 decode_text_column 会以 ColumnDecode 失败，
+            // 而 ColumnDecode 不是 Database 错误、`sqlstate` 为 None，最终被映射成
+            // `PLATFORM.SYSTEM.INTERNAL_ERROR`，看不出真实原因。两者都归一到 Int64，
+            // 调用方拿到的仍是同一个变体（F-80）。
+            "INT4" => row
+                .try_get::<Option<i32>, _>(idx)?
+                .map_or(DbValue::Null, |v| DbValue::Int64(i64::from(v))),
+            "INT2" => row
+                .try_get::<Option<i16>, _>(idx)?
+                .map_or(DbValue::Null, |v| DbValue::Int64(i64::from(v))),
             "BOOL" => row
                 .try_get::<Option<bool>, _>(idx)?
                 .map_or(DbValue::Null, DbValue::Bool),

@@ -36,8 +36,11 @@ const SQLSTATE_UNIQUE_VIOLATION: &str = "23505";
 /// 九个绑定参数覆盖其余必填列。
 const OPEN_STMT: &str = "insert into platform_ops.degradation_windows \
      (id, kind, subject, scope_key, scope_legal_entity_id, scope_accounting_period_id, \
-      basis, closing_condition, is_suppressible) \
-     values ($1, $2, $3, $4, $5, $6, $7, $8, $9)";
+      basis, closing_condition, is_suppressible, opened_at) \
+     values ($1, $2, $3, $4, $5, $6, $7, $8, $9, now())";
+// opened_at 不可省：DDL 是 `opened_at timestamptz not null` 且无默认值（closed_at 有
+// `default 'infinity'`，opened_at 没有），漏列即 23502。降级窗口是「端口未装配时不得
+// 静默成功」的唯一登记机制，开窗恒失败会让本该被记录的降级变成一个内部错误（F-80）。
 
 /// 关窗语句。定位五元组逐列可比（空值用 IS NOT DISTINCT FROM），
 /// 只改活动条目；影响行数为零即窗口已关，按幂等约定不报错。

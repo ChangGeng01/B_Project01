@@ -142,7 +142,10 @@ const INSERT_VERSION_STMT: &str = "insert into platform_authz.authz_config_versi
 
 /// 规范校验和：七张配置表按固定序聚合为文本后取 SHA-256 十六进制。
 /// 版本推进写入与快照载入复核共用本语句（snapshot_query 同 crate 复用）。
-pub(crate) const CHECKSUM_STMT: &str = "select encode(digest( \
+// digest 必须带 schema 限定：迁移逐字 `create extension if not exists pgcrypto
+// schema platform_core`，而 public schema 已在引导第一步被删除，应用角色的
+// search_path 里没有 platform_core，裸 `digest(` 会以 42883 失败（F-80）。
+pub(crate) const CHECKSUM_STMT: &str = "select encode(platform_core.digest( \
      'authz_config;legal_entity=' || $1::text \
      || coalesce((select string_agg(';role=' || code || ':' || is_portal_role::text \
              || ':' || coalesce(duty_class, ''), '' order by code) \

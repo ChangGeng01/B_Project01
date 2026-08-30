@@ -7297,6 +7297,59 @@ F-51 关闭 00e 实测的 46 条真实待拍板事项，并对 `U-C-06` 作技�
 2. `configdoc --check-doc-type-codes` 在阶段 1 只校验文档结构、重复与阶段 1 可构造夹具；阶段 3a 常量表交付后才启用逐值比对。阶段 1 的 SBOM 负例使用当期工作区可构造的同名测试夹具证明检测器有效；`ep-bench`、`ep-release-gate` 等未来包在其加入工作区的阶段再纳入真实包断言。
 3. 附录丙 22 条已全部由 F-01、F-03、F-04、F-05、F-52 与本 F-54 关闭：G-01 归 F-03/G-01，G-02 至 G-06 归 F-01，H-01 归 F-04/F-52，H-02 至 H-09 归 F-05，I-01 至 I-07 归本节。现行未决为 0，历史严重度不得再解释为开发阻断。
 
+### F-80　第三批：F-76 甲组「接上真库必然失败」六类已修，一条留待活库定论
+
+承 F-79。本机没有 PostgreSQL 16，**不能实跑**，故每条都以代码与 DDL 逐字交叉核实，
+核不实的不改。六类已修、一条如实留。
+
+#### 已修六类，每条附核实链
+
+1. **`make_interval(mins => $5)` 绑 i64。** `make_interval` 的具名实参是 `int4`，绑参是 `i64`＝`int8`，
+   而 `int8→int4` 不是隐式转换，函数解析会以 42883 失败。**迁移窗口是结构变更的唯一放行闸**，
+   这条失败堵死整条运维路径而错误只说「数据库返回了未预期的错误」。已加 `$5::int`。
+2. **`decode_row` 缺 `INT4`／`INT2` 分支。** 只有 `INT8/BOOL/UUID/TIMESTAMPTZ/DATE` 有专用分支，
+   int4/int2 落到文本解码报 `ColumnDecode`；而 `ColumnDecode` 不是 Database 错误、`sqlstate` 为 `None`，
+   最终映射成 `PLATFORM.SYSTEM.INTERNAL_ERROR`，**看不出真实原因**。已补两个分支，都归一到 `Int64`。
+3. **`data_keys` 插入漏 `activated_at`。** DDL 逐字 `activated_at timestamptz not null`，**无默认值**
+   （同表 `retiring_at`／`retired_at`／`destroyed_at` 都是 `null`，只有它是 `not null`）。
+   漏列即 23502，**密钥域开通与轮换在真实库上必然失败**。已补 `activated_at` 取 `now()`，与硬编码的 `'ACTIVE'` 同批。
+4. **降级窗口漏 `opened_at`。** DDL 逐字 `opened_at timestamptz not null`，**无默认值**——
+   而紧邻的 `closed_at` 逐字有 `default 'infinity'`，**一个有一个没有，正是最容易看漏的形态**。
+   降级窗口是「端口未装配时不得静默成功」的唯一登记机制，开窗恒失败会让本该被记录的降级变成一个内部错误。已补。
+5. **`digest()` 未加 schema 限定。** 迁移逐字 `create extension if not exists pgcrypto **schema platform_core**`，
+   而 `public` 已在引导第一步删除。裸 `digest(` 依赖 `search_path`，应用角色的 `search_path` 里没有
+   `platform_core` → 42883。已改 `platform_core.digest(`；**反侧确认该 schema 的 `USAGE` 已授予**该模块角色，解析成立。
+6. **两条回填迁移向 FORCE RLS 表写入却不设 `app.legal_entity_id`。** 核实链走了四步：
+   `platform_authz.roles`／`role_permission_grants`／`sod_rules` 三张表都调
+   `platform_core.attach_table_guards`，该函数内逐字 `if v_has_le then perform apply_le_rls`，
+   而 `apply_le_rls` 逐字下 `force row level security` 加策略
+   `legal_entity_id = nullif(current_setting('app.legal_entity_id', true), '')::uuid`。
+   **FORCE 之下连表属主也受策略约束**：不设该变量时 `current_setting` 返回空串、`nullif` 得 NULL，
+   `WITH CHECK` 恒不成立，每一条 insert 都会被拒。
+   **今天不炸只因全新引导时法人表为空、循环体一次也不执行**；任何「法人先存在」的顺序都会硬失败。
+   两条（`112500` 与 `113000`）已各补 `perform set_config('app.legal_entity_id', v_le.id::text, true)`。
+
+#### 未修一条，理由是**没有活库就下不了定论**
+
+`DbValue::Null` 一律绑成 `Option::<String>::None`，即以 TEXT OID 下发空值。
+报告称落在 uuid/timestamptz/bytea/jsonb 列上被 42804 拒绝。**该结论我核不实**：
+PostgreSQL 对 `INSERT` 目标列走的是**赋值转换**，`text→uuid` 存在 I/O 转换，赋值上下文下可能被接受；
+而 `WHERE id = $1` 这类**比较**上下文需要隐式转换，那里确实会失败。
+两种上下文结论相反，**本机无 PG16 无从判定**。已登记，转绿判据是：接上真库后分别构造
+「INSERT 空值到 uuid 列」与「以空值比较 uuid 列」两个用例，按实测结果决定是否需要给 `DbValue` 加类型化空值变体。
+
+#### 一处方法记录
+
+反查同类时用了一个粗筛（「插入这些 schema 且提及 `legal_entity_id` 但不设 `set_config`」），
+捞出 8 个候选。**逐个核实后只有 1 个成立**：另两个 backfill 的目标表
+（`user_accounts`、`unpoliced_table_registry`）**根本没有 `legal_entity_id` 列**，
+不满足 `v_has_le`，因而不受 le-RLS 约束。粗筛用来定位可以，**不能用来定性**。
+
+#### 验证
+
+`sqlcheck` 0、`archcheck` 0；真全量 **1113/3/5 不变**；六道门禁 2 绿 4 红；基线对照逐面相等——**无新回归**。
+本批改的是 SQL 语句与迁移，**其正确性只由代码与 DDL 的逐字交叉核实支撑，未经真实 PostgreSQL 执行**。
+
 ### F-79　第二批：域分离判据改诚实，`--all-targets` 混用十四处修完
 
 承 F-78，本批完成 F-77 合并顺序的第 3、4 项。

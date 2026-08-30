@@ -35,7 +35,10 @@ const LATEST_OPEN_STMT: &str = "select id from platform_core.migration_windows \
 
 const INSERT_WINDOW_STMT: &str = "insert into platform_core.migration_windows \
      (id, state, approval_ref, reason, opened_by, opened_at, expires_at) \
-     values ($1, 'OPEN', $2, $3, $4, now(), now() + make_interval(mins => $5))";
+     values ($1, 'OPEN', $2, $3, $4, now(), now() + make_interval(mins => $5::int))";  // ::int 不可省：绑参是 i64＝int8，
+                                             // 而 make_interval 的具名实参是 int4，
+                                             // int8→int4 不是隐式转换，函数解析会以
+                                             // 42883「函数不存在」失败（F-80）
 
 const GET_WINDOW_STMT: &str = "select id, state from platform_core.migration_windows where id = $1";
 

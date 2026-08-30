@@ -106,8 +106,12 @@ const INSERT_DOMAIN_STMT: &str = "insert into platform_core.key_domains \
 
 const INSERT_KEY_STMT: &str = "insert into platform_core.data_keys \
      (id, legal_entity_id, key_domain_id, purpose, security_level_scope, version, \
-      algorithm, wrapped_key, wrap_kek_version, state) \
-     values ($1, $2, $3, $4, $5, $6, $7, decode($8, 'hex'), $9, 'ACTIVE')";
+      algorithm, wrapped_key, wrap_kek_version, state, activated_at) \
+     values ($1, $2, $3, $4, $5, $6, $7, decode($8, 'hex'), $9, 'ACTIVE', now())";
+// activated_at 不可省：DDL 是 `activated_at timestamptz not null` 且无默认值，
+// 漏列即 23502，密钥域开通与轮换在真实库上必然失败；而单测走进程内注册表，
+// 不碰真实列约束，本地与 CI 全绿（F-80）。state 已硬编码为 'ACTIVE'，
+// 故 activated_at 取 now() 与之同批。
 
 const ACTIVATE_DOMAIN_STMT: &str = "update platform_core.key_domains \
      set state = 'ACTIVE', provisioned_at = now(), \
