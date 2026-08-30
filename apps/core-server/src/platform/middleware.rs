@@ -216,6 +216,11 @@ pub async fn authenticate(
     mut req: Request,
     next: Next,
 ) -> Response {
+    // 先剥再判：`x-ep-*` 头面只由 apply_principal 在核验成功后注入，
+    // 客户端送进来的一律是伪造。不剥的话，任何走到 next.run 而未经
+    // apply_principal 的路径（系统豁免、PRE_AUTH 未携带令牌、认证面
+    // 未装配）都会把伪造头原样交给处理器的 extract_context（F-78）。
+    strip_injected_identity_headers(&mut req);
     let path = req.uri().path().to_string();
     if is_exempt(&path) {
         return next.run(req).await;
@@ -248,6 +253,32 @@ pub async fn authenticate(
     }
 }
 
+/// PRE_AUTH 白名单里**仍然要求携带令牌**的路径。
+///
+/// 白名单本身只表示「豁免 `X-Legal-Entity-Id` 与幂等守卫」；是否豁免
+/// `Authorization` 是另一件事，必须逐条列明，不能与前者共用一个布尔量。
+fn requires_authenticated_caller(path: &str) -> bool {
+    path == "/api/v1/platform/identity/me/legal-entities"
+}
+
+/// 剥离客户端可能伪造的全部身份头面。
+///
+/// 这五个头名与 `apply_principal` 注入的一一对应；那里加一个，这里必须
+/// 同批加一个，否则新加的那个就是一条新的伪造通道。
+fn strip_injected_identity_headers(req: &mut Request) {
+    const INJECTED: [&str; 5] = [
+        "x-ep-user-id",
+        "x-ep-legal-entity-id",
+        "x-ep-session-id",
+        "x-ep-duty-classes",
+        "x-ep-roles",
+    ];
+    let headers = req.headers_mut();
+    for name in INJECTED {
+        headers.remove(name);
+    }
+}
+
 enum PreAuthOutcome {
     Proceed,
     Reject(Response),
@@ -267,8 +298,8 @@ async fn pre_auth_entry(
     req: &mut Request,
     trace: &str,
 ) -> PreAuthOutcome {
-    let path = req.uri().path();
-    if path != "/api/v1/platform/identity/me/legal-entities" {
+    let path_owned = req.uri().path().to_string();
+    if path_owned != "/api/v1/platform/identity/me/legal-entities" {
         let login = take_login_name(req).await;
         if !authn
             .limiter
@@ -287,6 +318,16 @@ async fn pre_auth_entry(
         }
     }
     let Some(token) = bearer_of(req) else {
+        // 无令牌时只有真正的登录前端点可以放行。`me/legal-entities`
+        // 进白名单的本意是豁免 `X-Legal-Entity-Id`（此时调用方还不知道
+        // 自己属哪个法人），**不是**豁免 `Authorization`——注释自己称它
+        // 是「已登录形态」。用同一个布尔量豁免两件事，会让它变成匿名端点
+        // （F-78）。
+        if requires_authenticated_caller(path_owned.as_str()) {
+            return PreAuthOutcome::Reject(
+                api_err(state, PLATFORM_AUTHN_CREDENTIAL_INVALID, trace).into_response(),
+            );
+        }
         return PreAuthOutcome::Proceed;
     };
     let input = verify_input_of(req, token);
@@ -686,6 +727,94 @@ mod tests {
         assert!(!limiter.allow(None, "10.9.9.9", now));
         let later = now + Duration::from_secs(RATE_WINDOW_SECONDS + 1);
         assert!(limiter.allow(None, "10.9.9.9", later));
+    }
+
+    /// 伪造的 `x-ep-*` 必须在最外层被剥掉。
+    ///
+    /// 反例是这条修复的全部理由：不剥的话，任何走到 `next.run` 而未经
+    /// `apply_principal` 的路径都会把客户端送来的身份头原样交给处理器。
+    #[test]
+    fn injected_identity_headers_are_stripped_from_inbound_requests() {
+        let mut req = Request::builder()
+            .uri("/api/v1/platform/identity/me/legal-entities")
+            .header("x-ep-user-id", "00000000-0000-7000-8000-000000000009")
+            .header("x-ep-legal-entity-id", "00000000-0000-7000-8000-00000000000a")
+            .header("x-ep-session-id", "forged")
+            .header("x-ep-duty-classes", "SECURITY")
+            .header("x-ep-roles", "SYSTEM")
+            .header("x-client", "ops")
+            .body(Body::empty())
+            .expect("构造请求");
+
+        strip_injected_identity_headers(&mut req);
+
+        for name in [
+            "x-ep-user-id",
+            "x-ep-legal-entity-id",
+            "x-ep-session-id",
+            "x-ep-duty-classes",
+            "x-ep-roles",
+        ] {
+            assert!(
+                req.headers().get(name).is_none(),
+                "{name} 未被剥离，伪造头可直达处理器"
+            );
+        }
+        // 非身份头不受影响。
+        assert_eq!(
+            req.headers().get("x-client").map(|v| v.as_bytes()),
+            Some(&b"ops"[..])
+        );
+    }
+
+    /// 剥离清单必须与 `apply_principal` 注入的头名逐一对应。
+    ///
+    /// 那边加一个这边不加，新加的那个就是一条新的伪造通道；此断言让
+    /// 这种漏改当场红。
+    #[test]
+    fn strip_list_covers_every_header_apply_principal_injects() {
+        let src = include_str!("middleware.rs");
+        let injected: std::collections::BTreeSet<&str> = src
+            .lines()
+            .filter_map(|l| l.trim().strip_prefix("insert(headers, \""))
+            .filter_map(|r| r.split('"').next())
+            .collect();
+        let stripped: std::collections::BTreeSet<&str> = [
+            "x-ep-user-id",
+            "x-ep-legal-entity-id",
+            "x-ep-session-id",
+            "x-ep-duty-classes",
+            "x-ep-roles",
+        ]
+        .into_iter()
+        .collect();
+        assert!(
+            !injected.is_empty(),
+            "取不到 apply_principal 的注入头名，判定未做出"
+        );
+        assert!(
+            injected.is_subset(&stripped),
+            "apply_principal 注入了未被剥离的头：{:?}",
+            injected.difference(&stripped).collect::<Vec<_>>()
+        );
+    }
+
+    /// 白名单里的 `me/legal-entities` 仍要求携带令牌。
+    #[test]
+    fn legal_entities_is_whitelisted_but_still_requires_a_token() {
+        assert!(is_pre_auth("/api/v1/platform/identity/me/legal-entities"));
+        assert!(requires_authenticated_caller(
+            "/api/v1/platform/identity/me/legal-entities"
+        ));
+        // 真正的登录前三段不要求令牌。
+        for p in [
+            "/api/v1/platform/sessions/actions/sign-in",
+            "/api/v1/platform/sessions/actions/complete-mfa",
+            "/api/v1/platform/portal/sessions/actions/sign-in",
+        ] {
+            assert!(is_pre_auth(p));
+            assert!(!requires_authenticated_caller(p), "{p} 不应要求令牌");
+        }
     }
 
     #[test]

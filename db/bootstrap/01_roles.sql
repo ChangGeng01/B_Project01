@@ -110,8 +110,16 @@ begin
   end loop;
 end $$;
 
--- 2) ep_ops_ro：观察复制与集群统计所需的最小只读成员资格。
+-- 2) 四个运行期角色的库级 CONNECT。
+--    00 已 REVOKE ALL FROM PUBLIC，CONNECT 必须逐个显式授予，否则这些账号根本连不进库
+--    ——引导脚本、全部迁移与十三项 check 仍会全绿、退出码 0，失败只在应用第一次建连时
+--    以「握手阶段被拒」的形态出现，而 db 侧没有任何一项判据看得见它（F-78 补；
+--    上一版只给 ep_migrator 授了 CONNECT，四个运行期角色全部遗漏）。
+--    ep_breakglass 尤其不能漏：它存在的全部意义就是别的路都断了时还能进去。
+grant connect on database ep to ep_app_rw, ep_analyst_ro, ep_ops_ro, ep_breakglass;
+
+-- 3) ep_ops_ro：观察复制与集群统计所需的最小只读成员资格。
 grant pg_read_all_stats to ep_ops_ro;
 
--- 3) 复制角色：无业务表权限，且不得连接业务库，仅复制连接（配合 04_pg_hba.fragment）。
+-- 4) 复制角色：无业务表权限，且不得连接业务库，仅复制连接（配合 04_pg_hba.fragment）。
 revoke connect on database ep from ep_archiver, ep_backuper;

@@ -205,7 +205,7 @@ pub fn policies_from_cfg(auth: &AuthCfg) -> IdentityPolicies {
             origins: auth.webauthn.origins.clone(),
         },
         x509: X509Policy {
-            trust_anchor_ref: auth.x509.trust_anchor_ref.clone(),
+            trust_anchor_ref: auth.x509.trust_anchor_ref.as_str().to_string(),
         },
         breakglass: BreakglassPolicy {
             max_session_seconds: u64::from(auth.breakglass.max_session_seconds),

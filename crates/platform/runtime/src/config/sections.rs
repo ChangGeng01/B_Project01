@@ -547,13 +547,14 @@ pub struct AuthWebauthnCfg {
 #[derive(Clone, Deserialize, Debug)]
 #[serde(deny_unknown_fields, default)]
 pub struct AuthX509Cfg {
-    pub trust_anchor_ref: String,
+    pub trust_anchor_ref: SecretRef,
 }
 
 impl Default for AuthX509Cfg {
     fn default() -> Self {
         Self {
-            trust_anchor_ref: "secret://pki/client_ca#1".to_string(),
+            trust_anchor_ref: SecretRef::parse("secret://pki/client_ca#1")
+                .expect("内置默认必须自洽"),
         }
     }
 }
@@ -883,7 +884,7 @@ mod tests {
         assert_eq!(a.totp.skew_steps, 1);
         assert!(a.webauthn.rp_id.is_empty(), "RP_ID 无默认，必填");
         assert!(a.webauthn.origins.is_empty(), "ORIGINS 无默认，必填");
-        assert_eq!(a.x509.trust_anchor_ref, "secret://pki/client_ca#1");
+        assert_eq!(a.x509.trust_anchor_ref.as_str(), "secret://pki/client_ca#1");
         assert_eq!(a.breakglass.max_session_seconds, 28_800);
         assert_eq!(a.breakglass.idle_rotation_days, 365);
         assert!(toml::from_str::<AuthCfg>("[password]\nmin_len = 1\n").is_err());

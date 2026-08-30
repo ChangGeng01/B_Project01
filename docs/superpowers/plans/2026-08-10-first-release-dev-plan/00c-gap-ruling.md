@@ -7297,6 +7297,64 @@ F-51 关闭 00e 实测的 46 条真实待拍板事项，并对 `U-C-06` 作技�
 2. `configdoc --check-doc-type-codes` 在阶段 1 只校验文档结构、重复与阶段 1 可构造夹具；阶段 3a 常量表交付后才启用逐值比对。阶段 1 的 SBOM 负例使用当期工作区可构造的同名测试夹具证明检测器有效；`ep-bench`、`ep-release-gate` 等未来包在其加入工作区的阶段再纳入真实包断言。
 3. 附录丙 22 条已全部由 F-01、F-03、F-04、F-05、F-52 与本 F-54 关闭：G-01 归 F-03/G-01，G-02 至 G-06 归 F-01，H-01 归 F-04/F-52，H-02 至 H-09 归 F-05，I-01 至 I-07 归本节。现行未决为 0，历史严重度不得再解释为开发阻断。
 
+### F-78　「全面开始」第一批：安全三条与库级 CONNECT 已修并加测试
+
+使用方逐字「全面开始」。按 F-77 结论给出的合并顺序动手，本批完成第 1、2 项。
+
+#### 结论一　匿名端点已关闭，且伪造头面的通道被整条切断
+
+`GET /api/v1/platform/identity/me/legal-entities` 在 `PRE_AUTH_ENDPOINTS` 闭集内，
+而 `pre_auth_entry` 逐字 `let Some(token) = bearer_of(req) else { return PreAuthOutcome::Proceed; }`
+——**没带令牌就直接放行**，请求随即进入处理器。同时实测确认：
+**入站的 `x-ep-*` 头面在全仓从不剥离**（`grep` 命中 0），处理器的 `extract_context` 照单全收。
+两者相加即：带上 `X-Client` 与自造的五个 `x-ep-*` 头、**不带 `Authorization`**，可读任意用户的授权法人清单。
+
+**成因是一个布尔量豁免了两件不同的事。** 白名单的本意（注释与 `identity.rs:369` 都写了）是
+**豁免 `X-Legal-Entity-Id`**——调用方此刻还不知道自己属哪个法人；而它同时豁免了 `Authorization`。
+注释自己称 `me/legal-entities` 是「**已登录形态**」，即它从来就该带令牌。
+
+两处已修：
+
+1. **最外层无条件剥离全部 `x-ep-*`**。这一条比第 2 条更根本——它对**每一条**走到 `next.run`
+   而未经 `apply_principal` 的路径都生效，包括系统豁免路径与「认证面未装配」路径。
+2. **`requires_authenticated_caller` 把两种豁免拆开**：白名单仍豁免法人头与幂等守卫，
+   但 `me/legal-entities` 无令牌一律拒（`PLATFORM.AUTHN.CREDENTIAL_INVALID`），
+   真正的登录前三段不受影响。
+
+**加了三条测试**，其中一条值得单说：它用 `include_str!` 读本文件源码，抽出 `apply_principal`
+实际注入的全部头名，断言其为剥离清单的子集——**`apply_principal` 那边加一个头而这边漏改，测试当场红**。
+该测试带「抽不到注入头名即判未做出」的守卫，不是恒真判据。
+
+#### 结论二　四个运行期角色从未被授予库级 `CONNECT`
+
+`01_roles.sql` 只给 `ep_migrator` 授了 `connect`，`ep_app_rw`／`ep_analyst_ro`／`ep_ops_ro`／
+`ep_breakglass` 四个**授予次数实测为 0**。`00_database.sql` 已 `revoke all on database ep from public`，
+所以这四个账号**根本连不进库**——而引导脚本、全部迁移与十三项 check 仍会全绿、退出码 0，
+失败只在应用第一次建连时以「握手阶段被拒」出现，**db 侧没有任何一项判据看得见它**。
+
+尤其致命的是 `ep_breakglass`：它存在的全部意义就是别的路都断了时还能进去。
+
+**成因就在同一段注释里**：`:95` 逐字写着「00 已 REVOKE ALL FROM PUBLIC，CONNECT 必须显式授予，
+否则迁移账号连不进库」——**作者知道这条规则，却只把它用在了 `ep_migrator` 一个角色上**。
+
+#### 结论三　`auth.x509.trust_anchor_ref` 由裸 `String` 改为 `SecretRef`
+
+同一个配置结构体里 `password_ref` 与 `pin_ref` 都是 `SecretRef`，**只有它是裸 `String`**，
+于是绕过了 `SecretRef::parse` 那条被代码注释逐字称为「**明文口令写进配置的唯一防线**」的 parser：
+在该字段上写明文私钥口令、写空串、写 `https://` 都不会被拒。
+`config-reference` 把它登记为 `SecretRef` 类型，并逐字禁止「退化为普通 `String`」。已改，装配侧取 `as_str()`。
+
+#### 验证
+
+真全量由 **1110/3/5 变为 1113/3/5**（净增本批三条测试，失败数不变）；
+六道门禁 2 绿 4 红、两道 CI 自检 0/0、基线对照逐面相等——**无新回归**。
+
+#### 本批未做到的
+
+- 第 3 项（域分离判据）与第 4 项（`--all-targets` 三处）未动，下批做。
+- `crates/platform/identity` 的 `X509Policy.trust_anchor_ref` 仍是 `String`——该 crate 不依赖 runtime，
+  取不到 `SecretRef`。边界已在配置层收紧，内部类型留待该 crate 自己的契约批次。
+
 ### F-77　F-57 计划与契约全量逐段精读：报出 97 条，对抗验证判真 36 条
 
 对五份 F-57 计划与两份契约（合 **36487 行**）分 26 段作**首次逐句**精读，
