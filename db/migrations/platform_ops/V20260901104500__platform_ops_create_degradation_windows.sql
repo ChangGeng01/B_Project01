@@ -8,6 +8,14 @@
 --   ux_degradation_windows_kind_scope_closed 建在 kind、subject、scope_legal_entity_id、
 --     scope_accounting_period_id 与 closed_at 五者上，保证同一 kind 与同一 subject
 --     在同一法人与会计期间作用域下至多一条活动条目；
+--     **必须带 NULLS NOT DISTINCT（F-81）**：PostgreSQL 的唯一约束默认把 NULL 视作
+--     互不相等，而 subject 与两个 scope 列都可空，三个 kind 初值
+--     （OFFSITE_SINK_NOT_CONFIGURED / WRITER_NOT_IN_SERVICE / PORT_NOT_IMPLEMENTED）
+--     又都是部署级、无法人无会计期间的窗口，正常写法就是 scope 两列取 NULL——
+--     不带该修饰时本约束**在它本该生效的全部取值组合上完全不生效**：同一个端口
+--     未实现窗口每触发一次就多一行活动记录，gauge 随之虚高，close() 又按
+--     `is not distinct from` 一次关掉全部同类行，台账既不去重也不可对账，
+--     行数随请求量无界增长。closed_at 非空且有 default 'infinity'，不受影响。
 --   ck_degradation_windows_open_order 要求 closed_at 晚于 opened_at。
 -- subject 为阶段 2 新建的可空列，承载开窗对象的完整类型名（端口名或平台能力名），
 -- 使同一 kind 下的多个对象可同时开窗。两个 scope 列只作标注不作策略判据。
@@ -54,7 +62,8 @@ begin
         constraint ck_degradation_windows_closing_condition_len check (length(closing_condition) <= 2000),
         constraint ck_degradation_windows_open_order check (closed_at > opened_at),
         constraint ux_degradation_windows_kind_scope_closed
-          unique (kind, subject, scope_legal_entity_id, scope_accounting_period_id, closed_at)
+          unique nulls not distinct
+            (kind, subject, scope_legal_entity_id, scope_accounting_period_id, closed_at)
       )';
   end if;
 end $$;

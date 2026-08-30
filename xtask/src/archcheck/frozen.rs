@@ -15,7 +15,26 @@ fn violation(package: &str, detail: impl Into<String>) -> Violation {
     }
 }
 
-/// 冻结项的期望数量。取值出处为技术基线第 1.4 节。
+/// 冻结项的期望数量。
+///
+/// **F-81 如实登记：这张表今天没有现行权威可依。** 原注称「取值出处为技术基线
+/// 第 1.4 节」，而该文件（`00b-technical-baseline.md`）横幅逐字为
+/// `SUPERSEDED_DO_NOT_EXECUTE`；同款要求所在的 `01-engineering-baseline.md` 是
+/// `HISTORICAL_DO_NOT_EXECUTE`，`f51-development-readiness-freeze.md` 是
+/// `PARTIALLY_SUPERSEDED`；而 F-57 现行文件里 `system_purpose`／`SystemPurpose`
+/// 命中 0，也没有任何一处规定 `SecurityContext` 的字段数。
+///
+/// 也就是说：**下面每个数今天都只是「代码现状的转抄」，不是「权威的转抄」**。
+/// 同目录的 `foundation-module-registry` 已经把这个反模式写在自己的注释里
+/// （逐字「早先的实现只比对下面这个常量却声称权威在基线，等于两个都在工具里、
+/// 文档改了工具不知道」），本项至今是那种写法。
+///
+/// 顺带证明这些数确实不能照旧基线取：旧基线同段把 `ClientKind` 冻结为八个变体
+/// （含 `ServerAdmin`／`Mcp`），而代码与本表都是 6——若照旧基线改，会一次改错两处。
+///
+/// 转绿路径：G0 生成式再基线为这些闭集建立现行权威后，本表改为从该权威读取，
+/// 而不是继续在工具里写死。在那之前本项只能证明「代码没有自我漂移」，
+/// **不能证明「代码与权威一致」**——读它的结论时必须按这个射程读。
 const EXPECTED: [(&str, &str, usize); 8] = [
     ("id/marker.rs", "跨模块引用标记类型", 22),
     (

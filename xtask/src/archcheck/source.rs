@@ -107,7 +107,13 @@ pub fn unwired_absent(root: &Path) -> Vec<Violation> {
     found
 }
 
-/// 前缀后必须紧跟大写字母或行末，避免把 `Noop` 之外的词误判。
+/// 前缀后必须是大写字母、非标识符字符或行末，避免把 `Noopy` 这类词误判。
+///
+/// F-81 更正：原判据只认「大写字母或行末」，于是最典型的占位实现名——
+/// 裸名 `pub struct Noop;`、`Box::new(Stub {})`、`Fake,`、`Dummy)`——因为后面跟的
+/// 是 `;` `{` `,` `)` 而**全部漏判**，archcheck 一声不响判「unwired-absent 通过」。
+/// 该规则的全部理由就是禁止在两个 wiring 目录注入这四种前缀的实现，漏掉裸名
+/// 等于漏掉它要拦的主要形态。
 fn contains_ident_with_prefix(line: &str, prefix: &str) -> bool {
     let bytes = line.as_bytes();
     let mut from = 0;
@@ -115,7 +121,9 @@ fn contains_ident_with_prefix(line: &str, prefix: &str) -> bool {
         let at = from + rel;
         let before_ok = at == 0 || !is_ident_byte(bytes[at - 1]);
         let after = at + prefix.len();
-        let after_ok = after >= bytes.len() || bytes[after].is_ascii_uppercase();
+        let after_ok = after >= bytes.len()
+            || bytes[after].is_ascii_uppercase()
+            || !is_ident_byte(bytes[after]);
         if before_ok && after_ok {
             return true;
         }
@@ -337,6 +345,13 @@ mod negative_samples {
             "Noop"
         ));
         assert!(contains_ident_with_prefix("use crate::StubLedger;", "Stub"));
+        // F-81：裸名是占位实现最典型的形态，四种收尾都必须抓到。
+        assert!(contains_ident_with_prefix("pub struct Noop;", "Noop"));
+        assert!(contains_ident_with_prefix("Box::new(Stub {})", "Stub"));
+        assert!(contains_ident_with_prefix("    Fake,", "Fake"));
+        assert!(contains_ident_with_prefix("wire(Dummy)", "Dummy"));
+        // 词内小写续写仍不算，否则会把 Noopy 之类误判。
+        assert!(!contains_ident_with_prefix("let x = Noopy;", "Noop"));
         // 词内出现不算：Restub 的 Stub 前面是标识符字符。
         assert!(!contains_ident_with_prefix("let restubbed = 1;", "Stub"));
         // 前缀后必须跟大写：noopy 不是实现类型。

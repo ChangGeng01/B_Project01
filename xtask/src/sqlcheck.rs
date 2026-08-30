@@ -20,7 +20,7 @@ use std::path::{Path, PathBuf};
 
 /// 规则清单。左列是规则号，右列是判据一句话。
 /// SQL-001 至 SQL-011 判迁移文件，SQL-020 与 SQL-021 判引导目录，SQL-030 判迁移目录整体。
-pub const RULES: [(&str, &str); 14] = [
+pub const RULES: [(&str, &str); 15] = [
     (
         "SQL-001",
         "业务 schema 上禁止 DELETE 语句，只放行 platform_msg 与 platform_ops",
@@ -50,6 +50,10 @@ pub const RULES: [(&str, &str); 14] = [
         "迁移单一职责：一个文件创建的对象只属一个 schema，且等于所在目录名",
     ),
     ("SQL-011", "迁移版本号全局唯一且严格递增"),
+    (
+        "SQL-030",
+        "ci_probe 不进生产迁移目录",
+    ),
     ("SQL-020", "引导脚本中不得出现口令字面量"),
     ("SQL-021", "引导目录中不得出现约定之外的文件名"),
     (
@@ -136,15 +140,29 @@ pub fn run(root: &Path) -> Report {
     let mut checked: Vec<&'static str> = Vec::new();
     let migrations = sql_files(&root.join(MIGRATIONS));
     if migrations.is_empty() {
-        // RULES 的前 11 条与 SQL-030 判迁移文件；没有迁移文件就是这 12 条一律未覆盖。
-        for (id, what) in RULES.iter().take(11).chain([&RULES[12], &RULES[13]]) {
+        // RULES 的前 12 条（SQL-001..SQL-011 与 SQL-030）与末条 SQL-031 判迁移文件；
+        // 没有迁移文件就是这 13 条一律未覆盖。
+        //
+        // F-81 更正三处：其一，SQL-030 原先根本不在 RULES 里（只作字面量出现在
+        // `checked.push` 与 `line_rule` 中），因此它**永远不会**出现在未覆盖名单上——
+        // 迁移目录为空时该规则从三态报告里整条蒸发，读报告的人看不出它没跑。
+        // 其二，原式 `chain([&RULES[12], &RULES[13]])` 取的是 SQL-021 与 SQL-031，
+        // 而 SQL-021 判的是**引导目录**、下面 :182 另有分支处置，于是同一条规则
+        // 会同时出现在「已判定」与「判定未做出」两栏——两栏按 main.rs 的纪律
+        // 「互不合并、任何一件不得被读成另一件」。其三，索引写死在 chain 里，
+        // RULES 增删条目即静默指错；改为按取值语义取，不按下标。
+        for (id, what) in RULES
+            .iter()
+            .take(12)
+            .chain(RULES.iter().filter(|(id, _)| *id == "SQL-031"))
+        {
             uncovered.push(format!(
                 "{id} 未覆盖：{MIGRATIONS} 下没有任何 .sql 文件，判据「{what}」本次无被测输入"
             ));
         }
     } else {
-        checked.extend(RULES.iter().take(11).map(|(id, _)| *id));
-        checked.push("SQL-030");
+        // take(12) 已含 SQL-030，不再另推字面量（原写法是 SQL-030 缺席 RULES 的根源）。
+        checked.extend(RULES.iter().take(12).map(|(id, _)| *id));
         let mut versions: BTreeMap<u64, Vec<String>> = BTreeMap::new();
         for path in &migrations {
             let rel = relative(root, path);
