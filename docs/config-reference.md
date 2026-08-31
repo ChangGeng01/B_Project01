@@ -47,7 +47,7 @@ Windows pagefile、WER dump、服务 dump、恶意文件 quarantine 和包含业
 
 ## 2. 登记表
 
-下表是首版全部 **326 个配置登记族**（F-83：原 328，删去 `ops.metrics_listen` 与 `ops.health_listen` 两族——ops-agent 的两个监听地址本已由 `http.bind_addr` 与 `metrics.bind_addr` 加第 3 节的按进程固定值登记，这两个键是第二套登记且无优先级、无相等性校验，实际生效的是先绑定的那个、另一个静默失效；代码侧对这两个键名零命中，删后与代码一致）：每个表格登记行计 1 个族，其中 `db.timeout.<池>.*` 的 3 个占位族分别展开 `rw|ro|worker|ops` 四值，因此生成供代码逐键比对的具体点分键共 **337 个**（`328 - 3 + 3×4`）。阶段 1–14 的现行配置表已在 F-54 做环境变量引用与点分键全量对账，F-55 追加 16 个本地 AI/MCP 登记族。迁移期望清单属于签名 PE 的编译期事实，不登记运行期配置键；明确作废的别名与只表示前缀的通配写法也不计入上述口径。
+下表是首版全部 **326 个配置登记族**（F-84：原 328，删去 `ops.metrics_listen` 与 `ops.health_listen` 两族——ops-agent 的两个监听地址本已由 `http.bind_addr` 与 `metrics.bind_addr` 加第 3 节的按进程固定值登记，这两个键是第二套登记且无优先级、无相等性校验，实际生效的是先绑定的那个、另一个静默失效；代码侧对这两个键名零命中，删后与代码一致）：每个表格登记行计 1 个族，其中 `db.timeout.<池>.*` 的 3 个占位族分别展开 `rw|ro|worker|ops` 四值，因此生成供代码逐键比对的具体点分键共 **337 个**（`328 - 3 + 3×4`）。阶段 1–14 的现行配置表已在 F-54 做环境变量引用与点分键全量对账，F-55 追加 16 个本地 AI/MCP 登记族。迁移期望清单属于签名 PE 的编译期事实，不登记运行期配置键；明确作废的别名与只表示前缀的通配写法也不计入上述口径。
 
 ### 2.1 HTTP
 
@@ -136,7 +136,7 @@ integration-gateway 的运行期数据库能力固定为零：没有 `ep_app_rw`
 
 `db.pool.*` 的 `20/10/5/2` 与 `db.budget.*` 的 `37/10/52`（另含 5 个安全余量）只记录 ADR-0018 旧四池拓扑的历史默认/测量种子，不是 F-57 的不可变产品真值，也不能直接形成生产放行值。依 [ADR-0019](adr/ADR-0019-f57-runtime-topology-and-measured-connection-budget.md)，Task 1 必须先登记签名 deployment/config generation 的连接消费者 exact set，拒绝未知或重复消费者，再按真实硬件、拓扑和并发负载重测常驻、临时/迁移/恢复与不可分配安全储备并签发容量证书；硬件、拓扑或代改变即重测。启动与迁移开窗分别按该代已认证预算校验，超限以退出码 78 拒绝。迁移预期版本清单与摘要由 `migration_manifest` 在构建期嵌入签名 PE；运行期只有数据库中的实际历史可读，不提供路径、环境变量或命令行参数覆盖期望值。
 
-`ep-data-migrate` 的目标入口也不是运行期配置键。生产签名部署清单 schema v1 必须含唯一 `employee_api_origin`，值只能是无路径、查询与片段的 HTTPS origin；工具经第三方反向代理调用公开迁移 API，并校验证书链、SAN 主机名与清单 host。回环/localhost、直连 core-server:8080、命名管道、重定向、系统代理及命令行/迁移模板覆盖均拒绝。迁移块最多 1000 行且规范化 JSON 请求体最多 524288 字节，含 HTTP 封套的完整请求仍不得超过 `http.max_body_bytes=1048576`；本段不增加配置键；**路由级 body 例外只有一条**（F-83 补）：文件分块上传的原始分块 PUT 路由，其 `application/octet-stream` 体上限取 `platform.file.part_bytes`，`http.max_body_bytes` 只约束 JSON 封套路由。不设这条例外时，分片 8 MiB 会在首个分块即被 1 MiB 的全局body 闸门拒绝，`platform.file.*` 一整组键随之取不到。
+`ep-data-migrate` 的目标入口也不是运行期配置键。生产签名部署清单 schema v1 必须含唯一 `employee_api_origin`，值只能是无路径、查询与片段的 HTTPS origin；工具经第三方反向代理调用公开迁移 API，并校验证书链、SAN 主机名与清单 host。回环/localhost、直连 core-server:8080、命名管道、重定向、系统代理及命令行/迁移模板覆盖均拒绝。迁移块最多 1000 行且规范化 JSON 请求体最多 524288 字节，含 HTTP 封套的完整请求仍不得超过 `http.max_body_bytes=1048576`；本段不增加配置键；**路由级 body 例外只有一条**（F-84 补）：文件分块上传的原始分块 PUT 路由，其 `application/octet-stream` 体上限取 `platform.file.part_bytes`，`http.max_body_bytes` 只约束 JSON 封套路由。不设这条例外时，分片 8 MiB 会在首个分块即被 1 MiB 的全局body 闸门拒绝，`platform.file.*` 一整组键随之取不到。
 
 ### 2.5 日志、指标与追踪
 

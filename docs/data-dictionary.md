@@ -140,7 +140,7 @@
 
 本 schema 承载密钥域、数据密钥、敏感字段清单、仅追加登记、迁移窗口与未受行级策略表登记六类平台元数据，以及按裁定 A-04 归入的集团、组织、部门、岗位与部门层级闭包五张组织架构表（阶段 2，共十三张，含表六附带的单例锁表），阶段 3 的 `module_registrations`、`license_grants`、`feature_flags` 三张部署级表与影响面评估两张法人表，以及阶段 4 任务 #20 交付的九张身份主体表，共二十七张。凡不带 `legal_entity_id` 的表一律登记在 `unpoliced_table_registry`，由 `db/checks/13` 强制：阶段 2 登记八行；阶段 3 的上述三张部署级表随 `V20261013093300` 登记；阶段 4 九张身份主体表与 `platform_authz.permission_items/object_scope_bindings` 由第 29 号回填迁移一次写入。阶段 3 两张影响面表均带法人并 ENABLE、FORCE RLS，不进该登记表。
 
-表定义类别说明：本 schema **除 §6.21 `breakglass_activations` 为单据类外**，其余各表均非单据类也非会计相关类（F-83 补例外：该表逐字自称单据类，且确有 `doc_no` 类型码 `BGA` 与七态 `status`，正合本文件对单据类表的附加列约定）；`legal_entities`、`enterprise_groups`、`organizations`、`departments`、`positions` 为档案类（自带 `code`、`is_active`、`deactivated_at` 或按表形态略去停用两列），其余为登记/台账/机制类，不适用四类附加列约定，各自的登记口径在下表逐列写明。
+表定义类别说明：本 schema **除 §6.21 `breakglass_activations` 为单据类外**，其余各表均非单据类也非会计相关类（F-84 补例外：该表逐字自称单据类，且确有 `doc_no` 类型码 `BGA` 与七态 `status`，正合本文件对单据类表的附加列约定）；`legal_entities`、`enterprise_groups`、`organizations`、`departments`、`positions` 为档案类（自带 `code`、`is_active`、`deactivated_at` 或按表形态略去停用两列），其余为登记/台账/机制类，不适用四类附加列约定，各自的登记口径在下表逐列写明。
 
 ### 6.1 legal_entities（法人注册表，档案类）
 
