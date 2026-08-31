@@ -12,7 +12,7 @@
 -- 可重复执行形态：ALTER SYSTEM 覆盖同值即幂等。多数取值需重启生效，
 -- 安装器在本文件执行完毕后触发一次实例重启。
 
--- 连接预算：应用侧五池常驻合计 42、峰值上限 52；
+-- 连接预算：应用侧四池常驻合计 37、峰值上限 52；
 -- 64 = 52（下限假设）+ 12（超级用户预留与波动），其中超级用户预留固定 3。
 alter system set max_connections = 64;
 alter system set superuser_reserved_connections = 3;

@@ -42,7 +42,7 @@
 | PLATFORM.AUTHZ.NOT_FOUND_OR_DENIED | PERMISSION_DENIED | 404 | false | 记录不存在与无权访问已存在记录，同码同形态 | 阶段 4 |
 | PLATFORM.AUTHZ.OBJECT_FORBIDDEN | PERMISSION_DENIED | 403 | false | 对象已对当前主体可见但该动作被拒 | 阶段 4 |
 | PLATFORM.DB.MIGRATION_WINDOW_CLOSED | BUSINESS_CONFLICT | 409 | false | 未持有迁移窗口即执行在线变更 | 阶段 13b |
-| PLATFORM.SEQUENCE.TYPE_CODE_NOT_REGISTERED | VALIDATION | 400 | false | 取号时给出的类型码不在本节第 5 章的登记表内 | 阶段 3a |
+| PLATFORM.SEQUENCE.TYPE_CODE_NOT_REGISTERED | VALIDATION | 400 | false | 取号时给出的类型码不在 `docs/data-dictionary.md` 第 5 章单据类型码登记表内（F-83 更正：原指「本节第 5 章」，而本文件 §5 是「维护纪律」、无任何登记表） | 阶段 3a |
 | PLATFORM.LICENSE.RESTRICTED | BUSINESS_CONFLICT | 409 | false | 当前许可为受限运行，常规业务写入、普通业务审批、集成出站或新自动化任务不在 F-56 恢复/保留闭集内 | 阶段 3b（F-56）；全部受限写入口传播 |
 | PLATFORM.MODULE.TRANSITION_INVALID | BUSINESS_CONFLICT | 409 | false | 模块安装态状态机上的非法迁移，五条合法动作见 F-56 第 4.2 节 | 阶段 3b（F-56） |
 | PLATFORM.MODULE.LICENSE_REQUIRED | BUSINESS_CONFLICT | 409 | false | 当前有效已验签许可未覆盖目标模块与编译期依赖闭包，拒绝部署级 INSTALL、ENABLE、UPGRADE 或 ROLLBACK_VERSION；DISABLE 不使用本码 | 阶段 3b（F-56） |
@@ -104,7 +104,7 @@
 
 ### 2.1 阶段 1 独家登记的七条
 
-按裁定 C-24，下列七条一律由阶段 1 登记，阶段 3a 与阶段 4 不得重复登记；其中后五条在阶段 1 只登记不返回：
+按裁定 C-24，下列七条一律由阶段 1 登记，阶段 3a 与阶段 4 不得重复登记；其中后三条在阶段 1 只登记不返回（F-83 更正：原写「后五条」，而表体「返回方」列把 `IDEMPOTENCY.PAYLOAD_MISMATCH` 与 `CONCURRENCY.STALE_VERSION` 标为阶段 1——它们恰是阶段 1 幂等中间件与乐观锁的主返回码，散文与表体相抵，以表体为准）：
 
 1. `PLATFORM.IDEMPOTENCY.KEY_REQUIRED`
 2. `PLATFORM.CAPACITY.CONCURRENCY_LIMIT`
@@ -650,7 +650,7 @@
 
 ## 12. F-54 全局引用差集收口
 
-本段 **128 条**是对阶段 3、7、8、9、13 现行正文的 referenced-minus-registered 差集收口；加上此前 332 条，至本段为止的首版现行错误码总数为 **460 条**。阶段 9 在传播平台重新认证与自审码后，自有终态为 36 条（32 条本段既有码加 F-50 四码）；阶段 13 只保留 30 条具名新增码，旧“37 条”未具名配额撤销。已由 F-50 替代的 15 个旧码与已撤销的 `LEDGER.POSTING_TRIGGER_EVENT_TYPE.REGISTRY_MISMATCH` 不在本段，不得实现。
+本段 **128 条**是对阶段 3、7、8、9、13 现行正文的 referenced-minus-registered 差集收口；加上此前 332 条，至本段为止的首版现行错误码总数为 **460 条**。阶段 9 在传播平台重新认证与自审码后，自有终态为 36 条（32 条本段既有码加 F-50 四码）；阶段 13 只保留 31 条（F-83 更正：原写 30，实测表体「返回方＝阶段 13」为 31 行；且唯有 31 才与本段自报的 128 条闭合——30 会使本段总数只有 127）具名新增码，旧“37 条”未具名配额撤销。已由 F-50 替代的 15 个旧码与已撤销的 `LEDGER.POSTING_TRIGGER_EVENT_TYPE.REGISTRY_MISMATCH` 不在本段，不得实现。
 
 触发条件的完整业务谓词以“返回方”所列阶段正文为准；本表冻结其字面码、分类、HTTP、重试性与固定用户文案。CI 必须同时验证阶段正文/OpenAPI 引用差集为零、代码常量差集为零、每码恰有一条用户文案。
 

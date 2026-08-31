@@ -229,7 +229,7 @@ mdm.customers 客户档案，档案类。
 | credit_limit | numeric(18,2) | 是 | ck 大于等于 0 |
 | remark | text | 是 | ck 长度不超过 2000 |
 
-另有 ck_customers_identifier_present：unified_social_credit_code is not null or alternate_identifier is not null。索引：pk、ix_customers_legal_entity_id_created_at、ux_customers_legal_entity_id_code、ux_customers_legal_entity_id_unified_social_credit_code、ix_customers_legal_entity_id_name、ix_customers_legal_entity_id_name_pattern（带 text_pattern_ops 操作符类，用于列表的前缀 like）、ix_customers_legal_entity_id_status_is_active、ix_customers_legal_entity_id_owner_user_id。
+另有 ck_customers_identifier_present：unified_social_credit_code is not null or alternate_identifier is not null。索引：pk、ix_customers_legal_entity_id_created_at、ux_customers_legal_entity_id_code、ux_customers_legal_entity_id_unified_social_credit_code、ux_customers_legal_entity_id_alternate_identifier（F-83 补：PRD 逐字要求替代标识「法人内唯一」，而此前只有非空与长度 CHECK、无唯一索引；按同文件「唯一性一律以数据库唯一索引为最终强制点」的判据，没有索引即等于没有唯一性。该列可空，依 PostgreSQL 默认 NULLS DISTINCT，留空时互不冲突）、ix_customers_legal_entity_id_name、ix_customers_legal_entity_id_name_pattern（带 text_pattern_ops 操作符类，用于列表的前缀 like）、ix_customers_legal_entity_id_status_is_active、ix_customers_legal_entity_id_owner_user_id。
 
 mdm.customer_contacts 客户联系人。专有列：customer_id uuid 非空外键、person_name text 非空长度不超过 200、title text 可空、phone text 可空长度不超过 32、email text 可空长度不超过 320、is_default boolean 非空默认 false、default_slot uuid 可空、sort_no int 非空默认 0、is_active boolean 非空默认 true、deactivated_at timestamptz 可空。约束 ck_customer_contacts_default_slot：default_slot is not distinct from (case when is_default and is_active then customer_id else null end)。约束 ck_customer_contacts_reachable：phone is not null or email is not null。索引：pk、ix_customer_contacts_legal_entity_id_created_at、ix_customer_contacts_legal_entity_id_customer_id、ux_customer_contacts_legal_entity_id_default_slot、fk_customer_contacts_customers。
 
@@ -392,6 +392,7 @@ ep-domain-mdm 中的聚合根共六个：Customer、Supplier、Material、Produc
 |---|---|---|---|
 | 编码唯一，法人内跨全部状态 | 提交审批与应用生效两处 | 数据库唯一索引 ux_<table>_legal_entity_id_code | 唯一冲突映射为 MDM.<RESOURCE>.CODE_DUPLICATED，HTTP 409 |
 | 统一社会信用代码唯一 | 同上 | ux_<table>_legal_entity_id_unified_social_credit_code | MDM.<RESOURCE>.USCC_DUPLICATED |
+| 替代标识唯一（F-83 补） | 同上 | ux_customers_legal_entity_id_alternate_identifier | MDM.CUSTOMER.ALT_ID_DUPLICATED |
 | 名称重复，仅比对已生效启用记录 | 提交审批时 | 应用层查询，走 ix_<table>_legal_entity_id_name | 未确认时返回 MDM.<RESOURCE>.NAME_DUPLICATE_UNCONFIRMED，details 列出至多 20 条同名档案编码；确认后写入 change_requests.name_duplicate_note 并写审计 |
 | 引用存在且可用 | 提交审批与应用生效两处 | 同 schema 与单目标跨 schema 均由真实外键兜底；目标模块契约在同一事务内前置校验可引用状态与法人一致，`reauth_ref` 另校验证据主体 | MDM.<RESOURCE>.REFERENCE_UNAVAILABLE 或 PLATFORM.DB.LEGAL_ENTITY_MISMATCH，details 定位到字段 |
 
