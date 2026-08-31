@@ -298,5 +298,13 @@ fn build_router(
         ))
         .layer(from_fn_with_state(limit, sync_timeout))
         .layer(from_fn_with_state(gate, concurrency_gate))
+        // F-83：请求体上限。这是唯一被登记的入口保护，机器只有 32GB 内存。
+        // 原先 `http.max_body_bytes` 声明了却无人取用，实际生效的是 axum 的
+        // 2 MiB 隐含默认——比登记值还大。挂在最外层（catch_panic 之内），
+        // 使超限在进入任何 handler 与闸门之前即被拒。usize 化以适配 axum 接口；
+        // 该值来自 u64 配置，取饱和转换，避免 32 位平台上的截断。
+        .layer(axum::extract::DefaultBodyLimit::max(
+            usize::try_from(cfg.http.max_body_bytes).unwrap_or(usize::MAX),
+        ))
         .layer(from_fn_with_state(state.clone(), catch_panic))
 }

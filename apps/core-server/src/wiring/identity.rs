@@ -104,9 +104,13 @@ impl AuthzMetricsSink for ObsAuthzMetrics {
 
     fn observe_admission(&self, seconds: f64, admitted: bool, reason: &str) {
         let outcome = if admitted { "admitted" } else { "rejected" };
+        // F-83：直方图登记的标签是 `["outcome"]` 一个，此处原先多传了 reason，
+        // label_values 因标签数不符恒返 LabelSetMismatch 而被 let _ = 吞掉，
+        // 于是这条直方图 /metrics 上永远只有 HELP/TYPE 两行、零样本。
+        // reason 归 rejected_total 计数器承载，不进直方图标签。
         let _ = self.registry.observe(
             "ep_session_admission_queue_wait_seconds",
-            &[("outcome", outcome), ("reason", reason)],
+            &[("outcome", outcome)],
             seconds,
         );
         if !admitted {

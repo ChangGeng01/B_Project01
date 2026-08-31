@@ -41,8 +41,14 @@ const ROLE_GRANTS_STMT: &str = "select r.code, r.duty_class \
      where g.user_id = $1 \
      and g.effective_from <= CURRENT_DATE \
      and (g.effective_to is null or g.effective_to >= CURRENT_DATE) \
-     and r.lifecycle_state = 'ACTIVE' \
+     and r.lifecycle_state = 'EFFECTIVE' and r.is_active \
      order by r.code";
+// F-83 更正：原过滤是 `lifecycle_state = 'ACTIVE'`，而该列的 CHECK 只允许
+// DRAFT/PENDING_RELEASE/EFFECTIVE/SUPERSEDED/RETIRED 五态（数据字典 8.3 同款）——
+// 'ACTIVE' 根本不是合法取值，条件恒为空集：每个真实用户的 roles 与 duty_classes
+// 都是空集，ABAC/RBAC 与职责分离拿到的是「此人无任何角色」。方向是 fail-closed
+// （全拒），但等于身份域上线即全体不可用。生效态是 EFFECTIVE；is_active 是独立的
+// 停用开关（字典逐字「默认 true」），一并纳入。
 
 /// 第三支判据：所授角色是否挂六类高风险操作权限项之一。
 const HIGH_RISK_STMT: &str = "select 1 \
@@ -91,7 +97,7 @@ const DUTY_CLASSES_STMT: &str = "select distinct r.duty_class \
      where g.user_id = $1 \
      and g.effective_from <= CURRENT_DATE \
      and (g.effective_to is null or g.effective_to >= CURRENT_DATE) \
-     and r.lifecycle_state = 'ACTIVE' and r.duty_class is not null";
+     and r.lifecycle_state = 'EFFECTIVE' and r.is_active and r.duty_class is not null"; // F-83 同上
 
 /// 未结审批待办：未决、待重认证、审批中与已批未执行诸态。
 const OPEN_HIGH_RISK_STMT: &str = "select count(*)::int8 \
@@ -376,7 +382,9 @@ mod tests {
                 "生效窗以库侧今日比较：{stmt}"
             );
         }
-        assert!(ROLE_GRANTS_STMT.contains("r.lifecycle_state = 'ACTIVE'"));
+        // F-83：钉住合法取值。'ACTIVE' 不在该列的 CHECK 五态里，曾使本条件恒为空集。
+        assert!(ROLE_GRANTS_STMT.contains("r.lifecycle_state = 'EFFECTIVE'"));
+        assert!(!ROLE_GRANTS_STMT.contains("'ACTIVE'"), "'ACTIVE' 不是 lifecycle_state 的合法取值");
     }
 
     #[test]

@@ -52,6 +52,22 @@ fn route_of(req: &Request) -> String {
         .unwrap_or_else(|| "<unmatched>".to_string())
 }
 
+/// 从请求头取规范化的 X-Client 标签。缺失或不在 CLIENT_KINDS 闭集时回落 `ops`，
+/// 不引入闭集外的新标签取值。
+fn client_label(req: &Request) -> &'static str {
+    use super::headers::CLIENT_KINDS;
+    let raw = req
+        .headers()
+        .get("x-client")
+        .and_then(|v| v.to_str().ok())
+        .unwrap_or("");
+    CLIENT_KINDS
+        .iter()
+        .copied()
+        .find(|k| *k == raw)
+        .unwrap_or("ops")
+}
+
 fn status_class(status: StatusCode) -> &'static str {
     match status.as_u16() / 100 {
         2 => "2xx",
@@ -68,6 +84,9 @@ pub async fn observe(State(st): State<Arc<SystemState>>, req: Request, next: Nex
     let trace = ep_platform_obs::TraceContext::new();
     let trace_id = trace.trace_id().to_string();
     let route = route_of(&req);
+    // X-Client 在 req 被移动前取出。它已被 header_guard 强制校验为
+    // CLIENT_KINDS 六值之一，此处再兜一次：缺失或不在闭集则回落 ops，不臆造。
+    let client = client_label(&req);
     let response = next.run(req).await;
     let elapsed = started.elapsed();
 
@@ -87,8 +106,10 @@ pub async fn observe(State(st): State<Arc<SystemState>>, req: Request, next: Nex
         ("route", route.as_str()),
         ("method", method.as_str()),
         ("status_class", status_class(response.status())),
-        // 阶段 1 没有鉴权，客户端类型只能取本机运维口径，不臆造 X-Client。
-        ("client", "ops"),
+        // F-83：客户端类型取请求头 X-Client（已被 header_guard 校验为六值之一）。
+        // 原实现写死 "ops"，使登记的另外六个取值在时序库里永不出现、
+        // 「按端拆分」这一维恒为单值；而取值就在同一个请求头里。
+        ("client", client),
     ];
     if let Err(e) = st.metrics().observe(
         "ep_http_request_duration_seconds",

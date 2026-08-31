@@ -65,8 +65,14 @@ const PRE_AUTH_BODY_LIMIT: usize = 64 * 1024;
 const MW_REQUEST_ID: &str = "core-auth-mw";
 
 /// 登录前速率限制：登录名与来源地址两个维度各自一分钟滑窗计数，
-/// 任一维超限即拒。键取值空间受登录名长度与来源地址基数约束，
-/// 窗口到期整体翻篇，不做逐键清理。
+/// 任一维超限即拒。
+///
+/// F-83：键取自攻击者可控的登录名与 `X-Forwarded-For`，而这是唯一一个**不需要
+/// 凭据**就能触达的写路径。原实现只在键被再次访问到时重置其计数，过期后不再出现
+/// 的键**永久留在 map 里**——匿名调用方每换一个取值就永久新增一条（每条最坏
+/// 数十 KiB 键），进程内存单调涨，机器只有 32GB。现在每次 `allow` 顺带清掉两张表里
+/// 所有已过窗口的键，表的驻留量因此被一分钟内的**活跃**键数上界所限，而不是历史
+/// 全集。它本身就是防爆破用的，不能自己变成一条内存耗尽路径。
 pub struct PreAuthRateLimiter {
     inner: Mutex<RateWindow>,
 }
@@ -97,6 +103,9 @@ impl PreAuthRateLimiter {
             .inner
             .lock()
             .unwrap_or_else(|poisoned| poisoned.into_inner());
+        // 先清过期键，再计数：驻留量 = 当前窗口内的活跃键数，不随历史全集增长。
+        evict_expired(&mut w.addrs, now);
+        evict_expired(&mut w.logins, now);
         let addr_ok = bump(&mut w.addrs, source_addr, SOURCE_ADDR_WINDOW_MAX, now);
         let login_ok = match login_name {
             Some(name) => bump(&mut w.logins, name, LOGIN_NAME_WINDOW_MAX, now),
@@ -104,6 +113,13 @@ impl PreAuthRateLimiter {
         };
         addr_ok && login_ok
     }
+}
+
+/// 清掉所有已过滑窗的键。过期键的计数无论如何都会在下次访问时归零，
+/// 留着它们只占内存不改变判定，因此可以安全整体删除。
+fn evict_expired(map: &mut HashMap<String, WindowCount>, now: Instant) {
+    let window = Duration::from_secs(RATE_WINDOW_SECONDS);
+    map.retain(|_, w| now.duration_since(w.start) < window);
 }
 
 fn bump(map: &mut HashMap<String, WindowCount>, key: &str, max: u32, now: Instant) -> bool {
@@ -715,6 +731,28 @@ mod tests {
         assert!(!limiter.allow(Some("alice"), "10.0.0.2", now));
         // 另一登录名不受影响（地址维度仍在窗口内计数）。
         assert!(limiter.allow(Some("bob"), "10.0.0.3", now));
+    }
+
+    /// 过期键必须被清出，否则匿名调用方换键即可让内存单调涨。
+    #[test]
+    fn rate_limiter_evicts_expired_keys_instead_of_growing_unbounded() {
+        let limiter = PreAuthRateLimiter::new();
+        let t0 = Instant::now();
+        // 5000 个各不相同的来源地址，每个只出现一次。
+        for i in 0..5000 {
+            assert!(limiter.allow(None, &format!("10.0.{}.{}", i / 256, i % 256), t0));
+        }
+        {
+            let w = limiter.inner.lock().unwrap();
+            assert_eq!(w.addrs.len(), 5000, "同一窗口内的键都在");
+        }
+        // 越过窗口后再来一个键：一次 allow 就应把此前 5000 个过期键全清掉。
+        let later = t0 + Duration::from_secs(RATE_WINDOW_SECONDS + 1);
+        assert!(limiter.allow(None, "10.9.9.9", later));
+        {
+            let w = limiter.inner.lock().unwrap();
+            assert_eq!(w.addrs.len(), 1, "过期键必须被清出，只剩当前这一个");
+        }
     }
 
     #[test]

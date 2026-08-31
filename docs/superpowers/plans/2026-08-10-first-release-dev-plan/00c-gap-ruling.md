@@ -7297,6 +7297,59 @@ F-51 关闭 00e 实测的 46 条真实待拍板事项，并对 `U-C-06` 作技�
 2. `configdoc --check-doc-type-codes` 在阶段 1 只校验文档结构、重复与阶段 1 可构造夹具；阶段 3a 常量表交付后才启用逐值比对。阶段 1 的 SBOM 负例使用当期工作区可构造的同名测试夹具证明检测器有效；`ep-bench`、`ep-release-gate` 等未来包在其加入工作区的阶段再纳入真实包断言。
 3. 附录丙 22 条已全部由 F-01、F-03、F-04、F-05、F-52 与本 F-54 关闭：G-01 归 F-03/G-01，G-02 至 G-06 归 F-01，H-01 归 F-04/F-52，H-02 至 H-09 归 F-05，I-01 至 I-07 归本节。现行未决为 0，历史严重度不得再解释为开发阻断。
 
+### F-83　第六批：F-76 丁组其余＋乙组漏项——六条已修，四条判为「功能未实现非缺陷」
+
+承 F-82。本批把 F-76 丁组其余与乙组当初漏下的限流器一条一并处置。
+
+#### 甲　身份域上线即全体不可用——`lifecycle_state = 'ACTIVE'` 恒为空集
+
+`user_grants.rs` 的 `ROLE_GRANTS_STMT` 与 `DUTY_CLASSES_STMT` 都以 `r.lifecycle_state = 'ACTIVE'` 过滤，
+而该列的 CHECK 逐字只允许 `DRAFT／PENDING_RELEASE／EFFECTIVE／SUPERSEDED／RETIRED`（数据字典 8.3 同款），
+**`'ACTIVE'` 根本不是合法取值**。于是每个真实用户的 `roles` 与 `duty_classes` **恒为空集**——
+ABAC／RBAC 与职责分离拿到的是「此人无任何角色」。方向是 fail-closed（全拒），
+但等于身份域上线即全体不可用。回填迁移写入的正是 `'EFFECTIVE'`。
+已把三处（两条语句加一条钉错值的测试）改为 `= 'EFFECTIVE' and r.is_active`，
+并加断言 `!contains("'ACTIVE'")` 钉住。
+
+#### 乙　唯一无需凭据的内存耗尽路径——限流器只重置计数从不删键
+
+`PreAuthRateLimiter` 的两张 `HashMap` 键取自攻击者可控的登录名与 `X-Forwarded-For`，
+而 `bump` 只在键被**再次访问**时重置其计数，过期后不再出现的键**永久留在 map 里**。
+注释自己逐字写着「窗口到期整体翻篇，**不做逐键清理**」——那正是缺陷本身，不是免责。
+匿名调用方每换一个取值就永久新增一条，进程内存单调涨，而这是唯一一个**不需要凭据**就能触达的写路径，
+机器只有 32GB。已加 `evict_expired`：每次 `allow` 先清两张表里所有过窗口的键，
+驻留量因此被「当前窗口内的活跃键数」上界所限。**加了一条测试**：注入 5000 个各异的键，
+越窗后一次 `allow` 应把它们全清掉、只剩当前一个——修前该断言必失败。
+
+#### 丙　三条「指标登记了却收不到真值」
+
+1. **`ep_http_request_duration_seconds` 的 `client` 标签写死 `"ops"`。** 登记的另外六值在时序库里永不出现，
+   「按端拆分」这一维恒为单值；而取值就在同一个请求头 `X-Client` 里、且已被 `header_guard` 校验为六值之一。
+   已改为读该头，缺失或不在闭集回落 `ops`，不臆造闭集外的新标签。
+2. **`ep_session_admission_queue_wait_seconds` 直方图恒收不到样本。** 报告说得对，位置在 `wiring/identity.rs`：
+   它给这条直方图传了 **`[("outcome",…),("reason",…)]` 两个标签**，而 registry 登记的是 `["outcome"]` 一个
+   → `label_values` 因标签数不符恒返 `LabelSetMismatch`，被 `let _ =` 吞掉，`/metrics` 上永远只有 HELP/TYPE 两行。
+   （`wiring/authz.rs` 的同名实现是对的——只传一个 outcome。）已把 identity 侧改为单标签，`reason` 归计数器承载。
+3. **`http.max_body_bytes` 声明了却无人取用**——实际生效的是 axum 的 2 MiB 隐含默认，**比登记值还大**。
+   这是唯一被登记的入口保护，32GB 机器上必须真生效。已在 router 最外层（`catch_panic` 之内）挂
+   `DefaultBodyLimit::max(cfg.http.max_body_bytes)`，超限在进入任何 handler 与闸门之前即被拒。
+
+#### 丁　四条判为「功能未实现，非缺陷」，不在本批处置
+
+`debug_auto_off_minutes`、`metrics.enabled`、`sample_ratio`、`otlp_enabled`／`otlp_endpoint`
+五个键**非定义处命中全 0**——它们不是「接错了」，是**声明了但对应功能整块尚未实现**
+（调试自动关闭、指标开关、采样比率、OTLP 导出）。接线等于实现这些功能的运行期行为，
+属功能交付而非缺陷修复，超出「全面修复」的射程。**如实登记，不在本批动手**：
+`max_body_bytes` 之所以修，是因为它有明确的现成落点（axum 的 body limit 层）且是安全上限；
+其余四个各需要一整块行为实现。
+
+#### 验证
+
+真全量 **1115/3/5 → 1116/3/5**（净增本批两条测试）；六道门禁 2 绿 4 红、两道 CI 自检 0/0、
+基线对照逐面相等——**无新回归**。
+`lifecycle_state` 与 `client` 标签两条改的是数据库查询与请求头读取，**未经真实 PostgreSQL 与真实 HTTP 流量验证**；
+转绿判据分别是接真库后确认非空角色集、以及接真流量后确认 `client` 维出现多值。
+
 ### F-82　第五批：连接池 `after_release` 的恒假断言——五具名池曾退化成「每事务一次建连」
 
 承 F-81。本批处置 F-76 丁组的头条，并连带修掉同一假前提的第二处。
