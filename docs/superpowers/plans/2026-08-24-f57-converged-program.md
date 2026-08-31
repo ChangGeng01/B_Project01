@@ -1977,6 +1977,26 @@ pub struct OfflineMediaSafeguardReadbackV1 {
 }
 #[derive(Clone, Debug, Eq, PartialEq, serde::Deserialize, serde::Serialize)]
 #[serde(tag = "collection_kind", rename_all = "SCREAMING_SNAKE_CASE", deny_unknown_fields)]
+// F-85 补：以下两个类型在本节被引用四次却从未在本文件定义，定义只在
+// `2026-08-24-f57-expansion-release-implementation.md`。而本节自称
+// 「All child plans use these exact names」——照本文件实现的人拿不到
+// `BackupCheckpointContextV1` 的 variant 集合，只能自己发明一个，
+// 而 `PACKAGE_MAINTENANCE` 分支所需的两个 ref 就无处安放；
+// `BackupSetIdV1` 若被实现成裸 `String` 而非 `UuidV1` newtype，
+// 「`backup_set_id` is nonnil」的 nonnil 判据也没有可判的载体。
+// 两处定义与子计划逐字一致，本处只是把它们补进这份「唯一共享名字表」。
+pub struct BackupSetIdV1(UuidV1);
+
+pub enum BackupCheckpointContextV1 {
+    Scheduled {
+        schedule_identity_sha256: Sha256Digest,
+    },
+    PackageMaintenance {
+        maintenance_reservation_ref: ArtifactRefV1,
+        recovery_checkpoint_policy_ref: ArtifactRefV1,
+    },
+}
+
 pub enum StorageSafeguardCollectionBindingV1 {
     WindowsServiceInstall {
         candidate_run: CandidateRunIdentityV1,
@@ -6623,9 +6643,24 @@ pub enum F57EvidenceSignerProviderModeV1 {
     ExistingEnterpriseSignerV1,
 }
 #[serde(rename_all = "SCREAMING_SNAKE_CASE")]
+// F-85: `Held` currently has no producing condition and no consuming criterion
+// anywhere in the corpus. The three prose sites that define this readiness give
+// only two states -- `WAITING_FOR_DATA_HDD` before the DATA_HDD root is verified,
+// then `READY` -- and the `NOT_READY` they speak of is the pipe reply, not a value
+// of this enum. A collector author therefore cannot know when to emit `Held`, and
+// a verifier author is left choosing between `state == READY` (which rejects a
+// legal closed-set value) and `state != WAITING_FOR_DATA_HDD` (which lets a
+// semantically undefined value through into signed evidence).
+//
+// Until the emitting condition is specified, the verifier MUST treat `Held` as
+// undefined-and-blocking: it is neither ready nor a legal terminal state, and it
+// must never be folded into the ready branch. Do not delete the variant here --
+// removing a member of a `deny_unknown_fields` closed set is a signature change
+// that requires the coordinated edit every consuming plan demands.
 pub enum F57EvidenceSignerBrokerReadinessStateV1 {
     WaitingForDataHdd,
     Ready,
+    /// Undefined-and-blocking until its emitting condition is specified (F-85).
     Held,
 }
 #[serde(deny_unknown_fields)]
