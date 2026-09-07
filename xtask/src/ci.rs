@@ -6,9 +6,9 @@
 //! 表的门禁状态列互相核对——登记 delivered 却返回 70、或登记 undelivered 却不返回 70，
 //! 一律判不符；返回 3 记为存在不可判定项，不得当作通过；返回 0 记通过。
 //!
-//! 聚合退出码取最重的一类：不符 1 > 不可判定 3 > 其余 0。D-07 的登记表把 17 条门禁
-//! 全部登记为 delivered，因此「登记为 undelivered 且如实返回 70」本阶段没有实例；
-//! 该形态退出码与登记表一致、不计不符，聚合码中不单独升级，只在汇总里如实印出。
+//! 聚合退出码取最重的一类：不符 1 > 不可判定 3 > 未交付 70 > 全通过 0。
+//! D-07 的登记表当前把 19 条门禁全部登记为 delivered；若未来出现如实返回 70 的
+//! undelivered 行，它不计为登记失真，但也不得聚合为通过。
 //!
 //! `.github/ci/run-pipeline.sh` 保留为备用调度器：读同一份登记表，行为与本入口逐行
 //! 对等，只在需要排除 Rust 入口时启用。两处的退出码纪律同全仓一套：0 通过、1 违反、
@@ -232,15 +232,15 @@ impl Tally {
     }
 }
 
-/// 聚合退出码：有不符取 1，否则有不可判定取 3，否则 0。
-///
-/// 与 run-pipeline.sh 的差别只有一处：未交付不计聚合等级。D-07 的登记表 17 条全部
-/// 标 delivered，未交付形态本阶段不存在；将来若出现，其退出码与登记表一致即不升级。
+/// 聚合退出码：有不符取 1，否则有不可判定取 3，否则有未交付取 70，否则 0。
+/// 与 run-pipeline.sh 保持同一分类和优先级，避免同一登记表得到两个聚合结论。
 pub fn aggregate_exit(tally: &Tally) -> u8 {
     if tally.fail > 0 {
         1
     } else if tally.undecidable > 0 {
         3
+    } else if tally.undelivered > 0 {
+        70
     } else {
         0
     }
@@ -263,12 +263,18 @@ pub fn parse_args(args: &[String]) -> Result<Options, String> {
         if arg == "--dry-run" {
             opts.dry_run = true;
         } else if arg == "--stage" {
+            if opts.stage.is_some() {
+                return Err("--stage 只能出现一次".to_string());
+            }
             let value = args
                 .get(i + 1)
                 .ok_or_else(|| "--stage 后面缺阶段号".to_string())?;
             opts.stage = Some(parse_stage(value)?);
             i += 1;
         } else if let Some(value) = arg.strip_prefix("--stage=") {
+            if opts.stage.is_some() {
+                return Err("--stage 只能出现一次".to_string());
+            }
             opts.stage = Some(parse_stage(value)?);
         } else {
             return Err(format!("未知参数 {arg}"));
@@ -279,9 +285,13 @@ pub fn parse_args(args: &[String]) -> Result<Options, String> {
 }
 
 fn parse_stage(value: &str) -> Result<u32, String> {
-    value
+    let stage = value
         .parse()
-        .map_err(|_| format!("{value} 不是阶段号（须为正整数）"))
+        .map_err(|_| format!("{value} 不是阶段号（须为正整数）"))?;
+    if stage == 0 {
+        return Err(format!("{value} 不是阶段号（须为正整数）"));
+    }
+    Ok(stage)
 }
 
 /// 子命令入口。`args` 是已剥去 `ci` 本身的剩余参数。
@@ -400,15 +410,11 @@ fn summarize(tally: &Tally, lines: &[String]) -> ExitCode {
         3 => {
             eprintln!("结论：仍有不可判定项，按计划第 10 节退出条件 27，不得当作通过（退出码 3）。")
         }
-        _ => {
-            if tally.undelivered > 0 {
-                println!(
-                    "注：{} 条门禁本阶段未交付，退出码与登记表一致，未计入不符。",
-                    tally.undelivered
-                );
-            }
-            println!("结论：本次执行的全部命令与登记表一致。");
-        }
+        70 => eprintln!(
+            "结论：{} 条门禁本阶段未交付，D-07 的「返回 0」尚不成立（退出码 70）。",
+            tally.undelivered
+        ),
+        _ => println!("结论：本次执行的全部命令与登记表一致。"),
     }
     ExitCode::from(code)
 }
@@ -568,7 +574,11 @@ mod tests {
         assert_eq!(aggregate_exit(&t), 0, "空汇总不得报不符");
 
         t.undelivered = 2;
-        assert_eq!(aggregate_exit(&t), 0, "与登记表一致的未交付不升级聚合码");
+        assert_eq!(
+            aggregate_exit(&t),
+            70,
+            "与登记表一致的未交付仍不得聚合为通过"
+        );
 
         t.undecidable = 1;
         assert_eq!(aggregate_exit(&t), 3, "不可判定压过全通过");
@@ -626,5 +636,31 @@ mod tests {
         assert!(e.contains("缺阶段号"), "{e}");
         let e = parse_args(&["--stage=abc".to_string()]).unwrap_err();
         assert!(e.contains("不是阶段号"), "{e}");
+    }
+
+    #[test]
+    fn parse_args_rejects_zero_stage_in_both_documented_forms() {
+        for args in [
+            vec!["--stage".to_string(), "0".to_string()],
+            vec!["--stage=0".to_string()],
+        ] {
+            let error = parse_args(&args).expect_err("阶段号 0 必须是用法错误");
+            assert!(error.contains("正整数"), "{error}");
+        }
+    }
+
+    #[test]
+    fn parse_args_rejects_duplicate_stage_selectors() {
+        for args in [
+            vec![
+                "--stage".to_string(),
+                "3".to_string(),
+                "--stage=4".to_string(),
+            ],
+            vec!["--stage=3".to_string(), "--stage=3".to_string()],
+        ] {
+            let error = parse_args(&args).expect_err("重复 --stage 必须是用法错误");
+            assert!(error.contains("只能出现一次"), "{error}");
+        }
     }
 }

@@ -43,15 +43,89 @@ case "${1:-}" in
 esac
 
 if [[ ! -r $BASELINE ]]; then
-    echo "未覆盖：读不到基线表 $BASELINE，判定未做出，不得视为无回归。" >&2
+    echo "未覆盖：读不到基线表 ${BASELINE}，判定未做出，不得视为无回归。" >&2
     exit "$EXIT_UNCOVERED"
 fi
 
+# 基线表本身是证据，不是配置默认值。先完整校验，任何一条不可信都不得开始实测：
+# 否则半张表或一条伪造的 3/70 会把未测面悄悄折算成「没有新回归」。
+EXPECTED_GATES=(archcheck sqlcheck codecheck errorcodes configdoc eventcatalog cargo-test)
+EXPECT_EXIT=()
+EXPECT_COUNT=()
+SEEN=()
+
+reject_baseline() {
+    echo "未覆盖：基线表 ${BASELINE} $1，判定未做出，不得视为无回归。" >&2
+    exit "$EXIT_UNCOVERED"
+}
+
+line_number=0
+header_count=0
+while IFS= read -r line || [[ -n $line ]]; do
+    line_number=$((line_number + 1))
+    [[ -z ${line//[[:space:]]/} || $line == \#* ]] && continue
+
+    if [[ $line == $'gate\texpect_exit\texpect_count\tnote' ]]; then
+        header_count=$((header_count + 1))
+        [[ $header_count -eq 1 ]] || reject_baseline "第 ${line_number} 行表头重复出现"
+        continue
+    fi
+
+    tab_characters=${line//[^$'\t']/}
+    [[ ${#tab_characters} -eq 3 ]] || reject_baseline "第 ${line_number} 行格式不正确"
+    IFS=$'\t' read -r gate expect_exit expect_count _note <<<"$line"
+
+    gate_index=-1
+    for index in "${!EXPECTED_GATES[@]}"; do
+        if [[ $gate == "${EXPECTED_GATES[$index]}" ]]; then
+            gate_index=$index
+            break
+        fi
+    done
+    [[ $gate_index -ge 0 ]] || reject_baseline "第 ${line_number} 行含未知判定面 ${gate}"
+    [[ ${SEEN[$gate_index]:-0} -eq 0 ]] || reject_baseline "判定面 ${gate} 重复出现"
+
+    if ! [[ $expect_exit =~ ^[0-9]+$ && $expect_count =~ ^[0-9]+$ ]]; then
+        reject_baseline "判定面 ${gate} 的期望值不是数字"
+    fi
+    case "${expect_exit}/${expect_count}" in
+        0/0 | 1/[1-9]*) ;;
+        *) reject_baseline "判定面 ${gate} 的出口/计数不是已测得状态（只接受 0/0 或 1/正计数）" ;;
+    esac
+
+    SEEN[$gate_index]=1
+    EXPECT_EXIT[$gate_index]=$expect_exit
+    EXPECT_COUNT[$gate_index]=$expect_count
+done <"$BASELINE"
+
+[[ $header_count -eq 1 ]] || reject_baseline "缺少必需表头 gate/expect_exit/expect_count/note"
+
+for index in "${!EXPECTED_GATES[@]}"; do
+    [[ ${SEEN[$index]:-0} -eq 1 ]] || reject_baseline "缺少必需判定面 ${EXPECTED_GATES[$index]}"
+done
+
+# 两个正整数字符串的大小关系。避免把外部表中的数喂给 shell 算术；长度相同时
+# 的字典序就是十进制数值序。
+compare_counts() {
+    local left=$1 right=$2
+    if [[ ${#left} -lt ${#right} ]]; then
+        printf 'less\n'
+    elif [[ ${#left} -gt ${#right} ]]; then
+        printf 'greater\n'
+    elif [[ $left < $right ]]; then
+        printf 'less\n'
+    elif [[ $left > $right ]]; then
+        printf 'greater\n'
+    else
+        printf 'equal\n'
+    fi
+}
+
 # 实测一道 xtask 判定面，回显「退出码 计数」；计数取不到时回显「退出码 -」。
 measure_gate() {
-    local gate=$1 out rc count
+    local gate=$1 out rc count summary_lines summary_count
     set +e
-    out=$(cd "$REPO_ROOT" && cargo run -q -p ep-xtask -- "$gate" 2>&1 </dev/null)
+    out=$(cd "$REPO_ROOT" && cargo run -q --locked --offline -p ep-xtask -- "$gate" 2>&1 </dev/null)
     rc=$?
     set -e
     # 退出码 0 的面没有不符行，计数即 0。
@@ -66,12 +140,16 @@ measure_gate() {
     # errorcodes 印「不一致（N 处）」、archcheck 印「违反明细（N 处）」（xtask/src/main.rs）。
     # 少认一种就会把该面的回归判成「未覆盖」而不是「新回归」——退出码 3 不是 2，
     # 读结论的人会以为只是没测到（F-73 补 archcheck 一种）。
-    count=$(grep -oE '(不符|不一致|违反明细)（[0-9]+ 处）' <<<"$out" | grep -oE '[0-9]+' || true)
-    count=${count%%$'\n'*}
-    if [[ -z $count ]]; then
+    # 只接受工具自己的整行汇总，且必须恰有一行。若违规明细或被测文档中
+    # 恰好含有“ 不符（N 处）”字样，不能让它抢在真实汇总前面伪造计数；
+    # 多个候选同样是歧义证据，失败关闭。
+    summary_lines=$(grep -E '^(不符|不一致|违反明细)（[0-9]+ 处）：$' <<<"$out" || true)
+    summary_count=$(awk 'NF { n += 1 } END { print n + 0 }' <<<"$summary_lines")
+    if [[ $summary_count -ne 1 ]]; then
         echo "$rc -"
         return
     fi
+    count=$(grep -oE '[0-9]+' <<<"$summary_lines")
     echo "$rc $count"
 }
 
@@ -79,9 +157,22 @@ measure_gate() {
 measure_tests() {
     local out rc count
     set +e
-    out=$(cd "$REPO_ROOT" && cargo test -q --workspace --no-fail-fast 2>&1 </dev/null)
+    out=$(cd "$REPO_ROOT" && cargo test -q --workspace --locked --offline --no-fail-fast 2>&1 </dev/null)
     rc=$?
     set -e
+    # cargo test 的原始退出码也是证据的一部分：只有「正常通过」0 和
+    # 「测试失败」101 允许归一，未交付/不可判定/进程异常绝不可借一行测试汇总
+    # 伪装成已测红。
+    case $rc in
+        0 | 101) ;;
+        *) echo "$rc -"; return ;;
+    esac
+    # Cargo 的编译失败与测试失败都可能使用 101。只凭后面残留的一行
+    # `N failed` 归一会把不完整的构建当成一次可比测试结果，故显式失败关闭。
+    if grep -q 'error: could not compile' <<<"$out"; then
+        echo "$rc compile-failed"
+        return
+    fi
     # 同上：herestring，不用 `printf | grep -q`。
     if ! grep -q '^test result' <<<"$out"; then
         echo "$rc -"
@@ -90,8 +181,13 @@ measure_tests() {
     count=$(grep -oE '[0-9]+ failed' <<<"$out" | grep -oE '[0-9]+' |
         awk '{s += $1} END {print s + 0}' || true)
     [[ -z $count ]] && count=0
-    # 一个失败都没有时 cargo 退出 0；此处把退出码归一到「有失败即 1」，与基线表同口径。
-    if [[ $count -gt 0 ]]; then echo "1 $count"; else echo "0 0"; fi
+    # 只接受可测的二元组合；例如 rc=0 却带失败数，或 rc=101 却没有失败数，
+    # 都是被截断/伪造的证据，保持原始退出码让主循环判为未覆盖。
+    case "$rc/$count" in
+        0/0) echo "0 0" ;;
+        101/[1-9]*) echo "1 $count" ;;
+        *) echo "$rc -" ;;
+    esac
 }
 
 regressions=0
@@ -102,9 +198,10 @@ checked=0
 printf '%-14s %-10s %-10s %s\n' "判定面" "基线" "实测" "结论"
 printf -- '---------------------------------------------------------------\n'
 
-while IFS=$'\t' read -r gate expect_exit expect_count _note; do
-    [[ -z $gate || $gate == \#* || $gate == "gate" ]] && continue
-
+for index in "${!EXPECTED_GATES[@]}"; do
+    gate=${EXPECTED_GATES[$index]}
+    expect_exit=${EXPECT_EXIT[$index]}
+    expect_count=${EXPECT_COUNT[$index]}
     if [[ $gate == "cargo-test" ]]; then
         if [[ $GATES_ONLY -eq 1 ]]; then
             printf '%-14s %-10s %-10s %s\n' "$gate" "${expect_exit}/${expect_count}" "跳过" \
@@ -117,42 +214,78 @@ while IFS=$'\t' read -r gate expect_exit expect_count _note; do
         read -r got_exit got_count <<<"$(measure_gate "$gate")"
     fi
 
-    # 表里的期望值必须是数字。写成非数字时 `[[ -gt ]]` 会报语法错并让两个分支都取假，
-    # 直接落到 else 打印「与基线一致」——静默假绿。尤其 `-` 正是本脚本自己用来表示
-    # 「计数读不到」的记号，误粘进表里概率不低（F-73）。
-    if ! [[ $expect_exit =~ ^[0-9]+$ && $expect_count =~ ^[0-9]+$ ]]; then
-        printf '%-14s %-10s %-10s %s\n' "$gate" "${expect_exit}/${expect_count}" "-" \
-            "未覆盖：基线表该行的期望值不是数字，判定未做出"
+    checked=$((checked + 1))
+
+    if [[ $gate == "cargo-test" && $got_count == "compile-failed" ]]; then
+        printf '%-14s %-10s %-10s %s\n' "$gate" "${expect_exit}/${expect_count}" "${got_exit}/?" \
+            "未覆盖：cargo-test 输出含编译失败，测试结果不是完整可比证据"
         uncovered=$((uncovered + 1))
         continue
     fi
 
-    checked=$((checked + 1))
+    # 实测出口没有顺序：只有 0（通过）和 1（不符）可与已登记测量相比较。
+    # 3/70/其他值都表示这次判定没有拿到可用证据，不能因数字恰好较大/较小而
+    # 被误报为回归或收窄。
+    if [[ $got_exit != 0 && $got_exit != 1 ]]; then
+        if [[ $gate == "cargo-test" ]]; then
+            detail="未覆盖：cargo-test 原始退出码 ${got_exit} 不可归一，判定未做出"
+        else
+            detail="未覆盖：实测退出码 ${got_exit} 不属于可比状态，判定未做出"
+        fi
+        printf '%-14s %-10s %-10s %s\n' "$gate" "${expect_exit}/${expect_count}" "${got_exit}/?" \
+            "$detail"
+        uncovered=$((uncovered + 1))
+        continue
+    fi
 
-    if [[ $got_count == "-" ]]; then
+    if [[ $got_count == "-" || ! $got_count =~ ^[0-9]+$ ]]; then
         printf '%-14s %-10s %-10s %s\n' "$gate" "${expect_exit}/${expect_count}" "${got_exit}/?" \
             "未覆盖：退出码 ${got_exit} 但读不到计数，判定未做出"
         uncovered=$((uncovered + 1))
         continue
     fi
 
-    # 退出码集合无序（0 通过 / 1 不符 / 3 判定未做出 / 70 未交付），不得用大小比较：
-    # `-gt` 抓得到 1→3，却抓不到 3→1（未覆盖恶化成确凿不符）。只判是否与登记相同。
-    # 退出码不同分两种：比登记更差是回归，比登记更好（如门禁被真正修绿）是收窄。
-    # 只判「不等」会把修绿也报成新回归（F-73）。
-    if [[ $got_count -gt $expect_count || ($got_exit -ne $expect_exit && $got_exit -gt $expect_exit) ]]; then
+    if [[ $got_exit == 0 && $got_count != 0 ]]; then
         printf '%-14s %-10s %-10s %s\n' "$gate" "${expect_exit}/${expect_count}" "${got_exit}/${got_count}" \
-            "**新回归**：退出码 ${got_exit}（登记 ${expect_exit}）／计数 ${got_count}（登记 ${expect_count}）"
-        regressions=$((regressions + 1))
-    elif [[ $got_count -lt $expect_count || $got_exit -lt $expect_exit ]]; then
-        printf '%-14s %-10s %-10s %s\n' "$gate" "${expect_exit}/${expect_count}" "${got_exit}/${got_count}" \
-            "收窄 $((expect_count - got_count)) 处：须更新基线表并留证"
-        narrowed=$((narrowed + 1))
-    else
-        printf '%-14s %-10s %-10s %s\n' "$gate" "${expect_exit}/${expect_count}" "${got_exit}/${got_count}" \
-            "与基线一致"
+            "未覆盖：实测通过却带有非零计数，判定未做出"
+        uncovered=$((uncovered + 1))
+        continue
     fi
-done < <(cat "$BASELINE"; echo)
+    if [[ $got_exit == 1 && ! $got_count =~ ^[1-9][0-9]*$ ]]; then
+        printf '%-14s %-10s %-10s %s\n' "$gate" "${expect_exit}/${expect_count}" "${got_exit}/${got_count}" \
+            "未覆盖：实测不符却没有正计数，判定未做出"
+        uncovered=$((uncovered + 1))
+        continue
+    fi
+
+    if [[ $expect_exit == 1 && $got_exit == 0 ]]; then
+        printf '%-14s %-10s %-10s %s\n' "$gate" "${expect_exit}/${expect_count}" "${got_exit}/${got_count}" \
+            "收窄：退出状态由不符转为通过，须更新基线表并留证"
+        narrowed=$((narrowed + 1))
+    elif [[ $expect_exit == 0 && $got_exit == 1 ]]; then
+        printf '%-14s %-10s %-10s %s\n' "$gate" "${expect_exit}/${expect_count}" "${got_exit}/${got_count}" \
+            "**新回归**：退出状态由通过变为不符／计数 ${got_count}（登记 ${expect_count}）"
+        regressions=$((regressions + 1))
+    else
+        relation=$(compare_counts "$got_count" "$expect_count")
+        case $relation in
+            greater)
+                printf '%-14s %-10s %-10s %s\n' "$gate" "${expect_exit}/${expect_count}" "${got_exit}/${got_count}" \
+                    "**新回归**：不符计数 ${got_count}（登记 ${expect_count}）"
+                regressions=$((regressions + 1))
+                ;;
+            less)
+                printf '%-14s %-10s %-10s %s\n' "$gate" "${expect_exit}/${expect_count}" "${got_exit}/${got_count}" \
+                    "收窄：不符计数 ${got_count}（登记 ${expect_count}），须更新基线表并留证"
+                narrowed=$((narrowed + 1))
+                ;;
+            equal)
+                printf '%-14s %-10s %-10s %s\n' "$gate" "${expect_exit}/${expect_count}" "${got_exit}/${got_count}" \
+                    "与基线一致"
+                ;;
+        esac
+    fi
+done
 
 if [[ $checked -eq 0 ]]; then
     echo "未覆盖：基线表 $BASELINE 里一行都没读到，判定未做出。" >&2
@@ -160,13 +293,13 @@ if [[ $checked -eq 0 ]]; then
 fi
 
 echo
-if [[ $regressions -gt 0 ]]; then
-    echo "结论：${regressions} 个判定面比基线更红——这些是本次改动引入的，与登记红无关。" >&2
-    exit "$EXIT_REGRESSION"
-fi
 if [[ $uncovered -gt 0 ]]; then
     echo "结论：${uncovered} 个判定面的实测取不到，判定未做出，不得视为无回归。" >&2
     exit "$EXIT_UNCOVERED"
+fi
+if [[ $regressions -gt 0 ]]; then
+    echo "结论：${regressions} 个判定面比基线更红——这些是本次改动引入的，与登记红无关。" >&2
+    exit "$EXIT_REGRESSION"
 fi
 if [[ $narrowed -gt 0 ]]; then
     echo "结论：无新回归；${narrowed} 个判定面已收窄，请更新 known-red-baseline.tsv 并留证。"

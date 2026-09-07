@@ -16,7 +16,7 @@ cargo xtask f57 gate g0|g1|g2|g3|g4|g5|g6 ...
 cargo xtask f57 evidence verify ...
 ```
 
-GitHub Actions、Forgejo/Woodpecker 或其他自建平台不得复制测试选择、Requirement 状态、签名、证据有效期和最终判绿逻辑。更换调度平台只允许替换薄适配器。
+现行调度平台只有 GitHub Actions，执行器一律自托管；Forgejo/Woodpecker 只属于已被 ADR-0027 取代的历史决定，不是备用平台。GitHub Actions 的 YAML 不得复制测试选择、Requirement 状态、签名、证据有效期和最终判绿逻辑；未来若更换平台，必须先另立取代 ADR，且仍只允许替换薄适配器。
 
 `windows-f57-release-precommit` 薄适配器只能调用一个精确入口：
 
@@ -27,6 +27,12 @@ cargo xtask f57 verify --level l1 --profile windows-f57-release-precommit
 该入口由 `ep-xtask` 内版本化、冻结的 `WindowsF57ReleasePrecommitPlanV1` 解析并执行本文件 §7.1 的完整内部命令转录；YAML、PowerShell 与调度平台不得复制、删减或重排该转录。这样“外部只有一个 Rust 入口”和“内部必须跑完明确命令集合”是同一契约的两层，不是两套入口。
 
 当前仓库尚未交付该命令族；此时请求 F-57 分层证据必须返回 `NOT_DELIVERED`/退出码 70，不能回退使用旧 Linux、25-task 或 11-stage 聚合冒充现行结果。
+
+现存 D-07 Linux 自托管 workflow 也不能冒充 L1：它所在 runner 持有本地离线材料，因此只接受受保护
+默认分支 `main` 的 push，且 checkout 不保留凭据；不接受人工触发、PR、fork、feature branch
+或 tag。PR/L1 自动验证必须另行交付一次性、无密钥、无制品、无内网权限的隔离 runner，并由仓外
+runner-group 白名单与分支保护共同约束。在该执行器和本节命令族交付前，PR/L1 状态保持
+`NOT_DELIVERED`，不得为了“有 CI”而把不可信 ref 放到敏感自托管节点执行。
 
 ## 2. 四层证据
 
@@ -185,18 +191,18 @@ cargo xtask f57 verify --level l1 --profile windows-f57-release-precommit
 
 ```powershell
 cargo xtask f57 graph generate --check
-cargo run -p authority-kernel-abi-gen --locked -- --check
-cargo test -p ep-platform-powershell-trust -p powershell-trust-tool --all-targets --locked
-cargo test -p ep-platform-release -p ep-platform-runtime -p ep-platform-package -p ep-platform-backup -p ep-platform-generation-activation -p ep-platform-tenancy -p ep-platform-ups-contract -p ep-adapter-ups-windows -p ep-authority-kernel -p ep-adapter-file -p ep-adapter-db-pg -p core-server -p recovery-tool -p ep-xtask -p ep-testkit -p ep-release-gate --all-targets --locked
-cargo build -p core-server -p ep-authority-kernel -p ep-adapter-ups-windows -p recovery-tool --release --locked
-cargo test -p core-server --test windows_service_process_dispatch --test authority_kernel_loader_composition --test authority_kernel_abi_binding --locked -- --nocapture
-cargo test -p ep-authority-kernel --test abi_compatibility --test abi_export_and_layout --test windows_service_dynamic_readback --test package_maintenance_composition --test final_installed_generation_composition --test production_activation_composition --test production_admission_gate_composition --test power_shutdown_continuation_composition --locked -- --nocapture
-cargo test -p ep-platform-backup -p ep-adapter-backup -p evidence-signing-broker -p backup-writer -p backup-checkpoint-signer -p data-volume-unlock-broker -p backup-target -p recovery-tool -p pg-passphrase-helper --all-targets --locked -- --nocapture
-cargo test -p ep-xtask --test f57_release_carrier --test f57_windows_runtime_deployment --locked -- --nocapture
-cargo test -p ep-testkit --test f57_final_candidate --test f57_final_installed_generation --test f57_package_maintenance_production --test f57_production_activation --test f57_production_generation_admission --test f57_production_admission_execution_lease --test f57_production_admission_bypass --test f57_production_admission_races --test f57_windows_runtime_deployment --test f57_windows_recovery_security --test f57_postgres16_recovery --test f57_postgres16_windows_install --test f57_backup_storage_safeguard --test f57_backup_topology_signing_trust --test f57_backup_checkpoint_transition --test f57_release_gate_unit --test f57_release_dependency_dag --test f57_ups_adapter_contract --test f57_ups_command_reconciliation --locked -- --nocapture
+cargo run -p authority-kernel-abi-gen --locked --offline -- --check
+cargo test -p ep-platform-powershell-trust -p powershell-trust-tool --all-targets --locked --offline
+cargo test -p ep-platform-release -p ep-platform-runtime -p ep-platform-package -p ep-platform-backup -p ep-platform-generation-activation -p ep-platform-tenancy -p ep-platform-ups-contract -p ep-adapter-ups-windows -p ep-authority-kernel -p ep-adapter-file -p ep-adapter-db-pg -p core-server -p recovery-tool -p ep-xtask -p ep-testkit -p ep-release-gate --all-targets --locked --offline
+cargo build -p core-server -p ep-authority-kernel -p ep-adapter-ups-windows -p recovery-tool --release --locked --offline
+cargo test -p core-server --test windows_service_process_dispatch --test authority_kernel_loader_composition --test authority_kernel_abi_binding --locked --offline -- --nocapture
+cargo test -p ep-authority-kernel --test abi_compatibility --test abi_export_and_layout --test windows_service_dynamic_readback --test package_maintenance_composition --test final_installed_generation_composition --test production_activation_composition --test production_admission_gate_composition --test power_shutdown_continuation_composition --locked --offline -- --nocapture
+cargo test -p ep-platform-backup -p ep-adapter-backup -p evidence-signing-broker -p backup-writer -p backup-checkpoint-signer -p data-volume-unlock-broker -p backup-target -p recovery-tool -p pg-passphrase-helper --all-targets --locked --offline -- --nocapture
+cargo test -p ep-xtask --test f57_release_carrier --test f57_windows_runtime_deployment --locked --offline -- --nocapture
+cargo test -p ep-testkit --test f57_final_candidate --test f57_final_installed_generation --test f57_package_maintenance_production --test f57_production_activation --test f57_production_generation_admission --test f57_production_admission_execution_lease --test f57_production_admission_bypass --test f57_production_admission_races --test f57_windows_runtime_deployment --test f57_windows_recovery_security --test f57_postgres16_recovery --test f57_postgres16_windows_install --test f57_backup_storage_safeguard --test f57_backup_topology_signing_trust --test f57_backup_checkpoint_transition --test f57_release_gate_unit --test f57_release_dependency_dag --test f57_ups_adapter_contract --test f57_ups_command_reconciliation --locked --offline -- --nocapture
 ```
 
-ABI 检查只能调用 master 定义的唯一命令 `cargo run -p authority-kernel-abi-gen --locked -- --check`；它必须对 `apps/core-server/src/kernel/abi.rs`、`include/ep_authority_kernel_api_v1.h` 与 `crates/platform/authority-kernel/ep-authority-kernel.def` 做零 diff 验证。随后在锁定 MSVC x64 下重读 PE export table：只能有一个 named、non-forwarded export `ep_authority_kernel_get_api_v1`，不能有第二个 named export 或 unnamed ordinal-only export；ABI version/size/offset 必须为 `1/48/[0,4,8,16,24,32,40]`，C round-trip、section protection、held-file identity 与 generated import allowlist 都必须通过。手改任一生成文件、generator 漂移、额外/forwarded export 或只编译未检查 PE 都失败。
+ABI 检查只能调用 master 定义的唯一命令 `cargo run -p authority-kernel-abi-gen --locked --offline -- --check`；它必须对 `apps/core-server/src/kernel/abi.rs`、`include/ep_authority_kernel_api_v1.h` 与 `crates/platform/authority-kernel/ep-authority-kernel.def` 做零 diff 验证。随后在锁定 MSVC x64 下重读 PE export table：只能有一个 named、non-forwarded export `ep_authority_kernel_get_api_v1`，不能有第二个 named export 或 unnamed ordinal-only export；ABI version/size/offset 必须为 `1/48/[0,4,8,16,24,32,40]`，C round-trip、section protection、held-file identity 与 generated import allowlist 都必须通过。手改任一生成文件、generator 漂移、额外/forwarded export 或只编译未检查 PE 都失败。
 
 该 job 必须在真实 Windows 进程中验证精确五个 Authority launcher-role 服务向量：ordinary Authority、dormant continuation、control broker、raw signer facade 与 journal signer facade；同时覆盖 `CreateProcessW`、`StartServiceCtrlDispatcherW`、Service SID/token readback、Authority 角色端点 nonce challenge、无 activation 的 continuation 零副作用退出，以及少/多/未知服务向量的负例。这里的五个服务不是整机清单：EnterprisePlatform-owned 固定清单精确为九个 SCM 服务，即这五个 Authority 服务、`EPF57EvidenceSignerBroker` 与 backup writer/checkpoint signer/data-volume-unlock broker 三个 component service；完整生产主机另必须含固定 `ep-postgres16` 与 runtime-deployment closure 中不别名的 `ACTIVE/WINDOWS_SERVICE` 行，所以基数是 `10 + active_additional_windows_service_count`。系统/第三方服务不计入该等式，未知 `EP*|EnterprisePlatform`-owned 行必须失败。
 
@@ -278,7 +284,7 @@ L3 不再发明一套含义重叠的十项 carrier 名称；它只精确连接�
 | `WINDOWS_SERVICE_INSTALL` | 按 closure 安装/激活每个 ACTIVE `WINDOWS_SERVICE\|JOB_OBJECT_WORKER\|IN_PROCESS\|WASM_SANDBOX\|HYPER_V_CONTAINER` 行并生成一一对应正读回，对每个 DEFERRED_DISABLED 行生成全零 absence readback；另安装并启动五个 Authority launcher-role 服务、固定 G0 evidence-signer broker、backup-writer/checkpoint-signer/data-volume-unlock-broker 三个 component service，按 fixed S4U action/account/token/SDDL/IPC/allowlist 注册但不后台运行 `\EnterprisePlatform\F57\RecoveryToolV1`，安装但不后台启动 passphrase-helper，证明 P340 未安装 target agent；同时取得九个 product SCM 行、完整 `10 + active_additional_windows_service_count` host inventory、quoted ImagePath/argv、SCM/Service SID、Scheduled Task、`0x00120183` pipe client DACL/second-instance denial、组件能力、持有映像、Authority `service_role` challenge、三服务独立 `component_id` challenge、PUBLIC_KEY/locator/WMI restricted-token readback、Job Object、CNG/TPM、BitLocker、W32Time。现有 `install-services.ps1` 还须按 artifact-set 内的 contract 安装 exact `ep-postgres16` demand-start/no-recovery 虚拟账户服务，并在 DATA_HDD 解锁前证明零 PostgreSQL 进程、启动后产出 signed 22-field install evidence 所认证的 strict `Postgres16WindowsInstallReadbackV1`；`downgrade_allowed=false`、`.control`/SBOM 扩展 exact-set、九路径投影/读回双射、关键 GUC/HBA/ident canonical vectors/effective byte equality、严格 loopback、TLS/SCRAM、checksums/durability、归档与无 tablespace/reparse/ambient override 全部通过，旧 build/lock、顺序/大小写/缺多/重复、路径碰撞或 effective 漂移全部失败 |
 | `POSTGRES16_PITR` | PostgreSQL 16 流式备份/PITR、同一 write barrier 下覆盖 signed storage manifest 全部已启用 DATA_HDD authority class/root 的 `AuthorityRecoveryCutManifestV1`、checkpoint/cut digest binding 和两块不同离线介质 readback；cut 必须 exact-load active-config current-head `BackupTopologyV1`。APPEND_ONLY 与 A/B 两个既有 subordinate leaf 分别携带相同的当前 `StorageSafeguardReadbackV1` ref，三者与 cut 的 topology ref、PITR attempt/checkpoint exact-join；safeguard 的 target/support refs typed-load正确 tag/signature/quorum/projection，A/B transition sequence/predecessor/hash 闭合，checkpoint ref 等于 PITR binding，expiry 公式与 current head 有效。外层 16 字段及 18/17/30 registry 不变。只恢复 PostgreSQL/附件子集、复用旧 safeguard、target/quota/permission/partial/history 未知、容量不等式失败、A/B 含恢复材料或未物理断开均不能 PASS |
 | `BACKUP_RESTORE_CERTIFICATION` | 同一物理尝试内严格 1/2/3 三阶段洁净恢复；三次分别从同一个 checkpoint/full recovery cut exact-restore 并逐行验证全部 authority class/root，覆盖备份投毒、最近备份/单块介质不可用、分域密钥、轮换、对账与 admission reopen gate；缺/多/重复/cross-barrier/cross-cut row 都失败 |
-| `P340_RELEASE72_HOUR` | P340/i5-10500/32GiB、≥240GB SSD runtime、≥1TB CMR HDD data、15+3+2+1 会话、11+5+2+2 动作、重报表/自动化/备份/审计重叠、4321 个一分钟样本、25 个完整指标、十个 nested + 七个 supporting 签名 readback、72 小时 |
+| `P340_RELEASE72_HOUR` | P340/i5-10500/32GiB、≥240GB SSD runtime、DATA_HDD raw ≥2,000,000,000,000 bytes；NTFS 以 1,589,137,899,520 bytes 为名义 floor，并须 checked 满足 `volume_total_bytes>=max(1,589,137,899,520,1,481,763,717,120+107,374,182,400+measured_unclassifiable_filesystem_allocation_bytes)`；现有 1TB 档 `production_eligible=false`；九桶 exact-set bytes=`161061273600,64424509440,42949672960,375809638400,375809638400,375809638400,25769803776,8589934592,51539607552`，十四容量类/十四 selector 只 total-unique 覆盖产品管理 `data_root` 对象与登记 VSS extent，checked-sum 1,481,763,717,120 + 不可借 107,374,182,400；60GiB 桶按 `20+2+2+1+1+34` GiB 闭合，backup-staging=25,769,803,776，writer spool 默认 268,435,456、允许 `67,108,864..=2,147,483,648`、生产 hard max 2,147,483,648；初始输入和所有 4321 样本 exact-match map digest、完整 bucket/class usage、实测 NTFS/BitLocker metadata scalar、`used=sum(class)+metadata`、动态卷门，且 unknown/duplicate/cross-bucket/`unclassified_allocation_bytes` 全为零；metadata catch-all class、未知普通卷对象与 arithmetic overflow 负例必须失败；live WAL 700GiB hard envelope、archive-failure/total-live 300/650GiB hold 与 350/700GiB hard、≤30s 采样且峰值速率×(采样+关停)<50GiB；15+3+2+1 会话、11+5+2+2 动作、重报表/自动化/备份/审计重叠、25 个完整指标、十个 nested + 七个 supporting 签名 readback、72 小时 |
 | `POWER_SHUTDOWN` | 最高安全档只接受候选绑定 `SIGNED_VENDOR_ADAPTER`；Windows standard carrier 的 UNKNOWN 与零控制能力只能形成不足证据。必须验证 manifest/binary/service SID/config generation/transport/credential security、实际 UPS 自检/通信与已签 P340 供电路径、900 秒阈值、typed outlet-cycle command/ACK 的同 ID 同 digest byte-identical query/adopt、不同 digest conflict、UNKNOWN 禁止重发、唯一 owner-token 关机调用、1074→13→6006→UPS off/on→12→6005、Authority recovery proof、双卷 clean、BIOS `POWER_ON` 自动来电启动、永久服务休眠/清 activation 及前后 distinct boot ID |
 
 每个 recipe 先由 Rust 签一个含 exact typed inputs/outputs 的 staging plan，fsync `TEST_STARTED` 后才复制 plan/input 并调用固定 AllSigned 脚本。G6 的第一条命令先验证并归档 Stage-14 部署信任链与 `SignedF57AuthorityStorageManifestV1`，把 manifest ref、DATA_HDD volume identity、data-root digest 和派生 release-evidence-root digest 固化进 journal header；所有后续命令与恢复重入逐字匹配该 `VERIFIED_DATA_HDD_ROOT`。P340 冻结后以 Residency/geometry/同一 volume tuple 把它升级为 `CERTIFIED_DATA_HDD`，证书必须反向绑定同一 tuple，不能让前置步骤消费未来证书。Service 只接收从同一 terminal `WindowsAuthorityArtifactSetV1` 展开的 plan-bound signed artifact set、authority manifest 和 MSI 三项固定 path/media 输入，并要求 raw 的 set/MSI/runtime-deployment-closure/runtime-deployment-readback/component refs 精确回指该来源；P340 只接收 policy/input manifest；Power 只接收同一 terminal P340 链的 UPS identity/policy。前五个脚本只 create-new 写 raw；Rust 验证完整 cardinality 后签 completion/result。只有 `BACKUP_RESTORE_CERTIFICATION` 使用 1/2/3 三次有序物理恢复：三次都 exact-load 同一 `AuthorityRecoveryCutManifestV1` 与 checkpoint，逐行恢复/验证完整 authority-class exact-set；run 1/2 只写对应 raw，run 3 后才可 completion，部分三阶段 raw 只能 UNKNOWN，绝不重跑已开始的物理阶段。
@@ -418,18 +424,25 @@ NO_PRODUCTION_GENERATION_ADMISSION
 
 计数**减少**（收窄）不是错误，但必须更新基线表并留证——放着不动会让该表变成恒真的挡箭牌。
 
-2026-08-29 首次实测的基线为：`archcheck` 与 `sqlcheck` 绿；`codecheck` 2 处、
-`errorcodes` 12 处、`configdoc` 313 处、`eventcatalog` 117 处、`cargo test` **3 个失败**（原写 5，F-68 同批把两条陈旧断言修正后收窄到 3；此句一度停在改前值，是同批自犯的半改，已更正）。
-其中 `errorcodes` 与 `configdoc` 两数与 00c F-58 登记的 13 与 312 不同，差额成因已在 F-68 登记。
+2026-09-01 fresh 实测的现行基线为：`archcheck` 与 `sqlcheck` 绿；`codecheck` 2 处、
+`errorcodes` 12 处、`configdoc` **304** 处、`eventcatalog` 117 处、`cargo test` **3 个诚实红**。
+`configdoc` 的 304 精确分解为：配置键两向 246（代码多 5／文档多 241）、已删除键命中 0、
+指标 58（文档多 55／代码多 3）、路由 0；当前实测已同步到基线，未把门禁改绿。
+独立 `configdoc --check-doc-type-codes` 仍返回 3：43 条文档类型码、0 条代码常量、1 项未覆盖。
+2026-08-29 的 313 与 F-58 的 312 仅保留为历史测量，不再是当前比较真值。
 
-该工具自身的负样例是 `.github/ci/tests/run-negative.sh` 的 N11–N15 与对照组 P4，
-证明它的 `0` 不是恒真、非零也不是恒非零。
+该工具自身的负样例是 `.github/ci/tests/run-negative.sh` 的 N11–N33 与对照组 P4/P4b，
+覆盖不完整基线、不可比较退出码、Cargo 编译失败与确定性代理边界，证明它的 `0`
+不是恒真、非零也不是恒非零。
 
 ## 附A　当前执行阶段表（真值镜像，F-65 还原）
 
 > 本表 11 条数据行由 F-65 自 `a98cacc` 版逐字还原（表头亦还原为原文）。**它与 `.github/ci/pipeline-stages.tsv` 是一对互检真值**——
 > `verify-pipeline-commands.sh` 逐行比对两者，本文件此前的整篇重写删掉了此表，使该自检落入退出码 3（未覆盖，「判定未做出，不得视为通过」）。
-> 本表描述**当前实际执行**的 11 阶段流水线（`.github/` 在 F-50…F-57 批次改动为 0 行，仍按此运行）；
+> 本表描述**当前实际执行**的 11 阶段、19 条命令流水线（`.github/` 在 F-50…F-57 批次改动为 0 行，仍按此运行）；
+> 其中阶段 5 执行 `scripts/tests/dev-controls-negative.sh`，只证明 Unix 开发控制脚本的口令、模式与卷保留语义；它不执行 `.ps1`，不构成 PowerShell 5.1 或 Windows Server 实机证据。
+> `verify-pipeline-commands.sh` 是无副作用的可用性预检：它通过 `cargo --list` 核对 Cargo 首子命令、通过 xtask 用法核对子命令，并检查依赖解析行的 `--locked --offline`，但不执行登记的 19 条命令。参数语义、门禁结果和 `delivered` 状态只由随后执行 `cargo xtask ci` 的完整流水线证明；预检通过不得表述为全门禁通过。
+> 本地开发控制当前只支持保留命名卷的停止操作。`dev-down.sh`／`dev-down.ps1 --purge` 在卷与状态根的来源绑定实现交付前固定失败关闭，在任何容器引擎访问前返回非零；不得把它当作可用的清卷步骤。
 > 上文各节与 ADR-0022 描述的 F-57 多 lane 形态是**已批准目标（APPROVED_TARGET），尚未在 `.github/` 落地**；其生效须与真值表、脚本及 `.github/` 同批更新——**此为本注的要求，非 ADR-0022 载文**（F-65 复核注：初稿把该要求误归 ADR-0022 名下，经提交前对抗验证更正）。
 
 | 阶段 | id | 名称 | 出处 |
@@ -438,8 +451,8 @@ NO_PRODUCTION_GENERATION_ADMISSION
 | 2 | `build` | 全工作区发布构建 | 退出条件 1 |
 | 3 | `archcheck` | 结构与依赖方向门禁 | 退出条件 2、3、21、26、27 |
 | 4 | `sqlcheck` | SQL 静态检查 | 退出条件 5、11 |
-| 5 | `codecheck` | 代码静态检查 | 退出条件 9 的代码侧、`#[ignore]` 存活判定 |
-| 6 | `registry-docs` | 登记文件与代码一致性 | 退出条件 7、8、9、23、24 |
+| 5 | `codecheck` | 代码静态检查与 Unix 开发控制负例 | 退出条件 9 的代码侧、`#[ignore]` 存活判定；Unix 脚本行为回归 |
+| 6 | `registry-docs` | 登记文件与代码一致性（含独立类型码入口） | 退出条件 7、8、9、23、24 |
 | 7 | `supply-chain` | 供应链门禁与制品签名 | 计划第 11 节指名本阶段；退出条件 14、15 |
 | 8 | `reproducible-build` | 可复现构建两次比对 | 计划第 12.1 节 R-03 指名本阶段；退出条件 13 |
 | 9 | `test-coverage` | 测试分层与覆盖率分档 | 退出条件 6、12、22 |

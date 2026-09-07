@@ -3,10 +3,12 @@
 - 状态：已接受
 - 出处：使用方 2026-08-30 逐字裁定「1 只在 github」，关闭 00c F-67 结论三第 3 条登记的 ADR-0005 平台冲突
 - 效力来源（F-77 补）：本篇**不在** F-57 总体设计 §1.1 的恰 25 份 precedence 清单内，与 ADR-0005／ADR-0022 一样只经权威登记的 `docs/adr/*` 行取得 `CURRENT_SUBJECT` 效力；该行逐字「反向覆盖 F-57；冲突 ADR 必须另立取代 ADR」，故本篇对 ADR-0005／ADR-0022 决定一的取代成立，但不改变 §1.1 清单本身。**同批已把 ADR-0022 决定一标为被本篇取代**——F-67／F-69 落 ADR-0027 时只扫了 ADR-0005，漏了 ADR-0022 也载有同一条决定。
-- 取代范围：只取代 [ADR-0005](ADR-0005-ci-platform.md) **决定一**（「默认 CI 平台取内网自建 Forgejo 加 Woodpecker」）
-  与决定三中「Woodpecker 配置」的字面指称。ADR-0005 的其余决定——薄适配器原则、Rust 唯一判定入口、
-  Authenticode 生产门禁与开发签名不得发布——**继续有效**，本篇不触碰。
-  [ADR-0022](ADR-0022-f57-multi-lane-ci-and-windows-2022-authority.md) 对 ADR-0005 的既有取代范围不变。
+- 取代范围：取代 [ADR-0005](ADR-0005-ci-platform.md) **决定一**（「默认 CI 平台取内网自建 Forgejo 加 Woodpecker」）
+  与决定三中「Woodpecker 配置」的字面指称，并取代
+  [ADR-0022](ADR-0022-f57-multi-lane-ci-and-windows-2022-authority.md) **决定一中同一 Forgejo/Woodpecker 默认平台选择**。
+  ADR-0005 的薄适配器原则、Rust 唯一判定入口、Authenticode 生产门禁与开发签名不得发布继续有效；
+  ADR-0022 的四条签名 lane、Windows Server 2022 权威和签名聚合契约继续有效。本篇只收敛编排平台，
+  不改变 ADR-0022 对 ADR-0005 的其他既有取代范围。
 
 ## 背景
 
@@ -29,6 +31,12 @@ ADR-0005 决定一选内网自建 Forgejo 加 Woodpecker，理由逐字是「产
    的原始理由直接冲突；本篇只改平台，不改那条理由。
 4. 薄适配器原则不变：YAML 只准备环境、选择 runner、注入已批准的 secret 引用并调用现行判定入口，
    **不在 YAML 里表达任何门禁判定**。判定的唯一真值仍是 Rust 侧入口与 `.github/ci/pipeline-stages.tsv`。
+5. **持有离线依赖、制品或签名材料的自托管 runner 不执行不可信 ref。** 现行 D-07 workflow 只接受
+   默认分支 `main` 的 push，不提供人工触发，且 checkout 不保留写凭据；`pull_request`、fork、
+   任意 feature branch 和 tag 均不得进入该 runner。PR/L1 若要自动执行，必须另用一次性、无密钥、无制品、
+   无内网权限且只挂只读离线缓存的隔离 runner。GitHub 分支保护、runner group 仓库白名单和执行器重置策略
+   是仓外强制前置；YAML 内的条件不能替代这些控制。发布/签名 lane 还必须按 ADR-0022 使用 protected ref、
+   protected Environment 审批和 exact candidate SHA，生产 P340 不兼任 CI runner。
 
 ## 理由
 
@@ -55,10 +63,13 @@ ADR-0005 决定一选内网自建 Forgejo 加 Woodpecker，理由逐字是「产
 4. **自托管 runner 的存在性仍是外部前置**：本仓查不到任何 runner 注册或预备痕迹
    （`.github/`、`deploy/`、`scripts/` 下命中 0）。本篇选定平台，不解决执行器是否已就位；
    该前置属发布门禁面，不阻塞开发启动。
+5. 当前仓库尚无隔离的 PR/L1 runner，故删除敏感 D-07 workflow 的 `pull_request` 触发是失败关闭，
+   不是把 PR 门禁声明为已通过。只有独立 runner 与 F-57 L1 command family 一并交付后才能恢复自动 PR 验证。
 
 ## 影响范围
 
 - [ADR-0005](ADR-0005-ci-platform.md) 决定一与决定三的「Woodpecker 配置」字面；
+- [ADR-0022](ADR-0022-f57-multi-lane-ci-and-windows-2022-authority.md) 决定一的 Forgejo/Woodpecker 默认平台选择；
 - `.github/workflows/ci.yml` 头部注记与 `runs-on` 取值；
 - `docs/adr/README.md` 记录表的 ADR-0005 行与本篇新行；
 - 00c F-67 结论三第 3 条登记的开放项（本篇关闭它）。

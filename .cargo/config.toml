@@ -1,4 +1,4 @@
 # `cargo xtask <子命令>` 的别名。技术基线第 13 节新增决定八要求全部门禁
-# 收敛到一个入口，没有这个别名就只能写 `cargo run -p ep-xtask --`。
+# 收敛到一个入口，没有这个别名就只能重复写 locked/offline 的 `cargo run … --`。
 [alias]
-xtask = "run --quiet --package ep-xtask --"
+xtask = "run --quiet --locked --offline --package ep-xtask --"

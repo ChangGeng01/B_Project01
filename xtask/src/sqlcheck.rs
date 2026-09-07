@@ -50,10 +50,7 @@ pub const RULES: [(&str, &str); 15] = [
         "迁移单一职责：一个文件创建的对象只属一个 schema，且等于所在目录名",
     ),
     ("SQL-011", "迁移版本号全局唯一且严格递增"),
-    (
-        "SQL-030",
-        "ci_probe 不进生产迁移目录",
-    ),
+    ("SQL-030", "ci_probe 不进生产迁移目录"),
     ("SQL-020", "引导脚本中不得出现口令字面量"),
     ("SQL-021", "引导目录中不得出现约定之外的文件名"),
     (
@@ -1345,6 +1342,65 @@ create table sales.sales_orders (
         );
         // 注释里的口令同样要被剥掉再判，不能因为在注释里就漏判或误判。
         assert!(scan_bootstrap("db/bootstrap/01_roles.sql", "-- password 'x'").is_empty());
+    }
+
+    #[test]
+    fn frozen_cluster_parameter_mirror_is_executable_but_nonproduction() {
+        let source = include_str!("../../db/bootstrap/02_cluster_params.sql");
+        let source_lower = source.to_ascii_lowercase();
+        for boundary in [
+            "只用于开发、测试和人工验证",
+            "生产环境\n-- 禁止执行",
+            "postgresql.auto.conf\n-- 不存在或为空",
+        ] {
+            assert!(
+                source_lower.contains(boundary),
+                "non-production boundary is missing from cluster parameter mirror: {boundary}"
+            );
+        }
+        let readme = include_str!("../../db/bootstrap/README.md").to_ascii_lowercase();
+        assert!(readme.contains("g6 windows 生产路径"));
+        assert!(readme.contains("g6 生产安装器不执行 `02_cluster_params.sql`"));
+        assert!(readme.contains("`postgresql.auto.conf` 必须不存在或为空"));
+
+        let executable = strip_comments(source)
+            .into_iter()
+            .map(|(_, line)| line)
+            .collect::<Vec<_>>()
+            .join("\n")
+            .to_ascii_lowercase();
+
+        for statement in [
+            "alter system set max_connections = 64;",
+            "alter system set reserved_connections = 4;",
+            "alter system set superuser_reserved_connections = 3;",
+            "alter system set wal_sync_method = 'fsync_writethrough';",
+            "alter system set effective_io_concurrency = 0;",
+            "alter system set huge_pages = off;",
+        ] {
+            assert!(
+                executable.lines().any(|line| line.trim() == statement),
+                "frozen parameter mirror is missing executable SQL: {statement}"
+            );
+        }
+        assert!(
+            !executable.contains("ep-pending"),
+            "the cluster parameter mirror must never regress to an executable pending marker"
+        );
+
+        let roles = include_str!("../../db/bootstrap/01_roles.sql");
+        let executable_roles = strip_comments(roles)
+            .into_iter()
+            .map(|(_, line)| line)
+            .collect::<Vec<_>>()
+            .join("\n")
+            .to_ascii_lowercase();
+        assert!(
+            executable_roles
+                .lines()
+                .any(|line| line.trim() == "grant pg_use_reserved_connections to ep_migrator;"),
+            "migration reserve is unusable unless the migrator receives the matching built-in role"
+        );
     }
 
     #[test]

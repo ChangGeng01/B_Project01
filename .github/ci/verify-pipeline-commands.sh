@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
-# 判定 CI 流水线登记表引用的每一条命令在本机是否真的存在且可执行，并判定
-# 登记表自身与 docs/ci-pipeline.md 的阶段表逐行相等。
+# 判定 CI 流水线登记表引用的每条命令入口是否存在，并判定登记表自身与
+# docs/ci-pipeline.md 的阶段表逐行相等。这里是无副作用预检：不执行登记命令；
+# 参数、运行结果与登记状态由后续完整流水线验证。
 #
 # 退出码沿用 scripts/verify-resource-limits.sh 已有的一套，不另立第二套：
 #   0  全部就位
@@ -21,6 +22,7 @@ REPO_ROOT=$(cd "$SELF_DIR/../.." && pwd)
 # 两处替代路径只为负样例存在：不设时取仓库内的真实登记表与真实文档。
 ROSTER=${EP_CI_ROSTER:-$SELF_DIR/pipeline-stages.tsv}
 DOC=${EP_CI_DOC:-$REPO_ROOT/docs/ci-pipeline.md}
+WORKFLOW=${EP_CI_WORKFLOW:-$REPO_ROOT/.github/workflows/ci.yml}
 
 # D-07 把阶段数定死为 11，计数漂移在本项目已复发多次，此处做成可机检的。
 STAGE_COUNT_EXPECTED=11
@@ -49,8 +51,20 @@ if [[ -z $rows ]]; then
     exit "$EXIT_UNCOVERED"
 fi
 
-# ---- 二、取 xtask 实际受理的子命令表 ---------------------------------------
+# ---- 二、取 Cargo 与 xtask 实际受理的子命令表 -------------------------------
 # 不把子命令表抄一份在本脚本里：抄一份就会与工具漂移，这里直接读工具自己的用法行。
+
+cargo_subcommands=""
+cargo_list=$(cd "$REPO_ROOT" && cargo --list 2>&1) || {
+    note_uncovered "cargo --list 执行失败，全部 cargo 类命令的首子命令可用性判定未做出"
+    cargo_list=""
+}
+if [[ -n $cargo_list ]]; then
+    cargo_subcommands=$(sed -n 's/^[[:space:]]\{1,\}\([[:alnum:]_-]\{1,\}\)[[:space:]].*/\1/p' <<<"$cargo_list")
+fi
+if [[ -z $cargo_subcommands ]]; then
+    note_uncovered "读不出 cargo --list 的子命令表，全部 cargo 类命令的首子命令可用性判定未做出"
+fi
 
 xtask_subcommands=""
 xtask_usage=$(cd "$REPO_ROOT" && cargo xtask 2>&1 || true)
@@ -65,8 +79,7 @@ fi
 
 # ---- 三、逐行判定 ----------------------------------------------------------
 
-stage_ids=""     # 「阶段号 空格 阶段 id」去重后的清单，用于与文档比对
-checked_xtask="" # 已核对过状态的 xtask 子命令，避免重复执行
+stage_ids="" # 「阶段号 空格 阶段 id」去重后的清单，用于与文档比对
 
 while IFS=$'\t' read -r stage id kind argv status; do
     [[ -z ${stage:-} ]] && continue
@@ -89,9 +102,24 @@ while IFS=$'\t' read -r stage id kind argv status; do
 
     case $kind in
     cargo)
-        if ! command -v cargo >/dev/null 2>&1; then
-            note_mismatch "${label}：本机没有可执行的 cargo"
+        read -r -a cargo_args <<<"$argv"
+        sub=${cargo_args[0]:-}
+        if [[ -z $sub ]]; then
+            note_mismatch "${label}：缺少 cargo 首子命令"
+        elif [[ -n $cargo_subcommands ]] && ! grep -qx -- "$sub" <<<"$cargo_subcommands"; then
+            note_mismatch "${label}：cargo 不受理首子命令 $sub"
         fi
+
+        # 会解析工作区依赖的命令在登记表中必须逐条写明双重约束。fmt/list/help
+        # 不解析依赖，按契约豁免；不能用 workflow 环境变量代替命令级证据。
+        case $sub in
+            fmt | list | --list | help) ;;
+            *)
+                if [[ " $argv " != *" --locked "* || " $argv " != *" --offline "* ]]; then
+                    note_mismatch "${label}：依赖解析型 cargo 命令缺 --locked/--offline"
+                fi
+                ;;
+        esac
         ;;
     script)
         rel=${argv%% *}
@@ -108,26 +136,6 @@ while IFS=$'\t' read -r stage id kind argv status; do
             : # 子命令表读不到，已在上面记过一次未覆盖，不重复记
         elif ! printf '%s\n' "$xtask_subcommands" | grep -qx "$sub"; then
             note_mismatch "${label}：cargo xtask 不受理子命令 $sub"
-        else
-            # 核对门禁状态：真跑一次，看工具是否如登记表所称。
-            case " $checked_xtask " in
-            *" $sub "*) ;;
-            *)
-                checked_xtask="$checked_xtask $sub"
-                rc=0
-                # 带上登记表里的全部参数再跑。只取首词元会让
-                # `e2e --profile=t0` 实跑成 `cargo xtask e2e`，那是一次缺必填选项的
-                # 用法错误（退出码 2），既非 70 也就被静默放行——本表宣称的
-                # 「真跑一次」于是名不副实（F-68）。
-                read -r -a sub_args <<<"$argv"
-                (cd "$REPO_ROOT" && cargo xtask "${sub_args[@]}" >/dev/null 2>&1) || rc=$?
-                if [[ $status == undelivered && $rc -ne 70 ]]; then
-                    note_mismatch "$label 登记为未交付，但 cargo xtask $sub 退出码为 $rc 而不是 70"
-                elif [[ $status == delivered && $rc -eq 70 ]]; then
-                    note_mismatch "$label 登记为已交付，但 cargo xtask $sub 报未交付（70）"
-                fi
-                ;;
-            esac
         fi
         ;;
     *)
@@ -162,7 +170,41 @@ else
     fi
 fi
 
-# ---- 六、结论 --------------------------------------------------------------
+# ---- 六、敏感自托管 workflow 的触发边界 ------------------------------------
+
+if [[ ! -r $WORKFLOW ]]; then
+    note_uncovered "workflow $WORKFLOW 读不到，main-only 触发边界判定未做出"
+else
+    workflow_triggers=$(awk '
+        /^"on":$/ { in_on=1; next }
+        in_on && /^[^[:space:]]/ { in_on=0 }
+        in_on && /^  [[:alnum:]_-]+:/ {
+            line=$0
+            sub(/^  /, "", line)
+            sub(/:.*/, "", line)
+            print line
+        }
+    ' "$WORKFLOW")
+    workflow_branches=$(awk '
+        /^  push:$/ { in_push=1; next }
+        in_push && /^  [[:alnum:]_-]+:/ { in_push=0 }
+        in_push && /^      - / {
+            line=$0
+            sub(/^      - /, "", line)
+            print line
+        }
+    ' "$WORKFLOW")
+    job_level_if=$(awk '
+        /^  pipeline:$/ { in_pipeline=1; next }
+        in_pipeline && /^  [[:alnum:]_-]+:/ { in_pipeline=0 }
+        in_pipeline && /^    if:/ { print; exit }
+    ' "$WORKFLOW")
+    if [[ $workflow_triggers != push || $workflow_branches != main || -n $job_level_if ]]; then
+        note_mismatch "workflow $WORKFLOW 只允许 main push，且唯一 job 不得用 if 跳过"
+    fi
+fi
+
+# ---- 七、结论 --------------------------------------------------------------
 # 「不符」压过「未覆盖」：有确凿的不符时报 2，只有读不到时报 3，两者都无才是 0。
 
 if [[ $mismatch -gt 0 ]]; then
@@ -173,5 +215,5 @@ if [[ $uncovered -gt 0 ]]; then
     echo "结论：未覆盖 $uncovered 处，判定未做出，不得视为通过。" >&2
     exit "$EXIT_UNCOVERED"
 fi
-echo "登记表 $stage_count 个阶段引用的全部命令在本机存在且可执行，与文档阶段表逐行相等。"
+echo "登记表 $stage_count 个阶段引用的全部命令入口在本机可用、Cargo 解析约束完整，与文档阶段表逐行相等；登记命令尚未执行。"
 exit "$EXIT_OK"

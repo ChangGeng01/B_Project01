@@ -43,6 +43,26 @@ const SUBCOMMANDS: [&str; 12] = [
 
 /// 未实现的子命令退出码。与「参数错误」的 2 区分，避免误读为通过。
 const EXIT_NOT_DELIVERED: u8 = 70;
+const CONFIGDOC_TYPE_CODE_FLAG: &str = "--check-doc-type-codes";
+const CONFIGDOC_USAGE: &str = "用法: cargo xtask configdoc [--check-doc-type-codes]";
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum ConfigdocMode {
+    Default,
+    DocTypeCodes,
+}
+
+fn parse_configdoc_args(args: &[String]) -> Result<ConfigdocMode, String> {
+    match args {
+        [] => Ok(ConfigdocMode::Default),
+        [flag] if flag == CONFIGDOC_TYPE_CODE_FLAG => Ok(ConfigdocMode::DocTypeCodes),
+        [unknown] => Err(format!("未知参数 {unknown}")),
+        many if many.iter().all(|arg| arg == CONFIGDOC_TYPE_CODE_FLAG) => {
+            Err(format!("{CONFIGDOC_TYPE_CODE_FLAG} 只能出现一次"))
+        }
+        many => Err(format!("未知参数 {}", many.join(" "))),
+    }
+}
 
 fn workspace_root() -> PathBuf {
     // xtask 的 CARGO_MANIFEST_DIR 是 <root>/xtask。
@@ -72,10 +92,16 @@ fn main() -> ExitCode {
         "eventcatalog" => report(cmd, eventcatalog::run(&workspace_root())),
         "configdoc" => {
             let root = workspace_root();
-            if args.iter().any(|a| a == "--check-doc-type-codes") {
-                report(cmd, configdoc::run_doc_type_codes(&root))
-            } else {
-                report(cmd, configdoc::run(&root))
+            match parse_configdoc_args(&args[1..]) {
+                Ok(ConfigdocMode::Default) => report(cmd, configdoc::run(&root)),
+                Ok(ConfigdocMode::DocTypeCodes) => {
+                    report(cmd, configdoc::run_doc_type_codes(&root))
+                }
+                Err(error) => {
+                    eprintln!("{error}");
+                    eprintln!("{CONFIGDOC_USAGE}");
+                    ExitCode::from(2)
+                }
             }
         }
         "coverage" => report(cmd, coverage::run(&workspace_root())),
@@ -274,5 +300,29 @@ fn run_archcheck() -> ExitCode {
             eprintln!("\narchcheck 未通过（退出码 1）。");
             ExitCode::from(1)
         }
+    }
+}
+
+#[cfg(test)]
+mod cli_tests {
+    use super::*;
+
+    fn strings(values: &[&str]) -> Vec<String> {
+        values.iter().map(|value| (*value).to_string()).collect()
+    }
+
+    #[test]
+    fn configdoc_arguments_are_an_exact_closed_set() {
+        assert_eq!(parse_configdoc_args(&[]), Ok(ConfigdocMode::Default));
+        assert_eq!(
+            parse_configdoc_args(&strings(&[CONFIGDOC_TYPE_CODE_FLAG])),
+            Ok(ConfigdocMode::DocTypeCodes)
+        );
+        assert!(parse_configdoc_args(&strings(&["--unknown"])).is_err());
+        assert!(parse_configdoc_args(&strings(&[
+            CONFIGDOC_TYPE_CODE_FLAG,
+            CONFIGDOC_TYPE_CODE_FLAG
+        ]))
+        .is_err());
     }
 }

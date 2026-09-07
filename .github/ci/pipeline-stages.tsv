@@ -1,4 +1,4 @@
-# CI 流水线登记表。D-07 的 11 个阶段与其逐条命令，制表符分隔，五列。
+# CI 流水线登记表。D-07 的 11 个阶段、19 条命令，制表符分隔，五列。
 #
 # 这张表是流水线的唯一真值：.github/workflows/ci.yml 与 .github/ci/run-pipeline.sh
 # 都只读它，不各自复述一遍命令；docs/ci-pipeline.md 的阶段表与本表由
@@ -11,8 +11,8 @@
 #     script —— 仓库内的脚本，参数首词元即相对仓库根的路径
 #   门禁状态 status ∈ {delivered, undelivered}
 #     undelivered 表示该门禁本阶段未交付、工具必然以退出码 70 明示未交付。
-#     这一列不是备注：verify-pipeline-commands.sh 会真跑 xtask 子命令核对，
-#     标 undelivered 却不返回 70、或标 delivered 却返回 70，一律判不符。
+#     这一列不是备注：调度器会按实际退出码核对；预检只验证命令可用性，
+#     不提前执行可能有副作用的登记命令。
 #
 # 阶段 7 与阶段 8 的落位由计划 01-engineering-baseline.md 第 11 节（第 17.4 章一行
 # 指名「流水线阶段 7 与 8」）与第 12.1 节 R-03（原文「CI 阶段 8 强制两次构建比对」）
@@ -24,10 +24,12 @@
 4	sqlcheck	xtask	sqlcheck	delivered
 5	codecheck	xtask	codecheck	delivered
 5	codecheck	cargo	fmt -- --check	delivered
-5	codecheck	cargo	clippy --workspace --locked	delivered
+5	codecheck	cargo	clippy --workspace --locked --offline	delivered
+5	codecheck	script	scripts/tests/dev-controls-negative.sh	delivered
 6	registry-docs	xtask	errorcodes	delivered
 6	registry-docs	xtask	eventcatalog	delivered
 6	registry-docs	xtask	configdoc	delivered
+6	registry-docs	xtask	configdoc --check-doc-type-codes	delivered
 7	supply-chain	xtask	sbom	delivered
 7	supply-chain	xtask	sign	delivered
 8	reproducible-build	xtask	reproduce	delivered

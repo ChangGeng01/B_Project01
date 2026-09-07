@@ -162,7 +162,8 @@ fn check_config_keys(
         }
     }
 
-    // 已删除的两个键不得再引入，出处是 config-reference 第 6 节。
+    // 第 6 节全部已删除键不得再引入；同一 bullet 可登记多个旧键。
+    // 明写“未裁定前不得视为已作废”的过渡项不属于这个防复活集合。
     for removed in removed_keys(&doc) {
         if code_keys.iter().any(|k| key_matches(&removed, k)) {
             problems.push(format!("配置键 {removed} 已随裁定删除，任何阶段不得再引入"));
@@ -188,24 +189,26 @@ fn removed_keys(doc: &str) -> Vec<String> {
         return Vec::new();
     };
     let section = section.split("\n## ").next().unwrap_or(section);
-    section
-        .lines()
-        .map(str::trim)
-        .filter(|l| l.starts_with("- `"))
-        // 已证实的读取缺陷（00c F-68 结论三登记，暂不改行为）：本行只取每条 bullet 的
-        // 第一个反引号词元，而第 6 节有三条 bullet 一行列多个键（`config-reference.md`
-        // 的 admission 五键、notify/portal 三键、ops 三键），其余 8 个键从未被本判据读到。
-        // 正确读法是取首个「：」之前的全部词元——「：」之后的是取代它的现行键，不得取。
-        // 不当轮改行为的理由：这 8 个键里有 5 个今天已被「代码里有、文档没登记」那一向报过，
-        // 另 3 个（portal.core_api.base_url、ops.crosscheck_statement_timeout_ms、
-        // ops.crosscheck.timeout_seconds）根本不在代码里，两向都不会报——改本读法对它们也无增益，
-        // 改后是重复计数而非新发现；且 `config-reference.md` 第 6 节逐字写明
-        // 「『已随裁定删除』指文档登记面，代码侧的移除随同批实现裁定」，
-        // 照本判据的措辞把它们报成「不得再引入」与该逐字相抵。按文档先行，
-        // 先定这批键在代码侧的去留口径，再同批改本读取规则与措辞。
-        .filter_map(|l| l.split('`').nth(1))
-        .map(str::to_string)
-        .collect()
+    let mut out = Vec::new();
+    for line in section.lines().map(str::trim) {
+        if !line.starts_with("- `") || line.contains("未裁定前不得视为已作废") {
+            continue;
+        }
+        // 冒号左侧只列旧键；右侧会列替代它的现行键，绝不能一起判成已删除。
+        let old_side = line
+            .split_once('：')
+            .map_or(line, |(before, _replacement)| before);
+        let mut parts = old_side.split('`');
+        while let Some(_outside) = parts.next() {
+            let Some(candidate) = parts.next() else {
+                break;
+            };
+            if candidate.contains('.') && !candidate.contains(char::is_whitespace) {
+                out.push(candidate.to_string());
+            }
+        }
+    }
+    out
 }
 
 /// 文档键与代码键比对。文档键里形如 `<池>` 的段是通配段，匹配任意一段。
@@ -765,6 +768,48 @@ mod negative_samples {
             vec!["http.bind_addr"]
         );
         assert!(doc_config_keys("| core-server | 8080 |").is_empty());
+    }
+
+    /// 已删除键防复活必须读取一条 bullet 里的全部旧键，但不能把冒号右侧的
+    /// 替代键或明示待裁定的过渡键误判为已删除。
+    #[test]
+    fn removed_key_roster_reads_every_old_key_and_excludes_replacements() {
+        let doc = r#"
+## 6. 已删除、不得再引入的键
+
+- `old.one`、`old.two`、`old.three`：由 `current.replacement` 取代。
+- `pending.one`、`pending.two`：未裁定前不得视为已作废。
+
+## 7. 当前状态
+"#;
+        assert_eq!(removed_keys(doc), vec!["old.one", "old.two", "old.three"]);
+
+        let repository_doc =
+            fs::read_to_string(repo_root().join(CONFIG_DOC)).expect("读得到配置参考");
+        let removed = removed_keys(&repository_doc);
+        for expected in [
+            "portal.core_api.base_url",
+            "portal.upstream_base_url",
+            "ops.crosscheck_statement_timeout_ms",
+            "ops.crosscheck.timeout_seconds",
+        ] {
+            assert!(
+                removed.iter().any(|actual| actual == expected),
+                "同一 bullet 的后续已删除键也必须进入防复活集合：{expected}"
+            );
+        }
+        assert!(
+            !removed
+                .iter()
+                .any(|key| key == "portal.rate_limit.requests_per_minute"),
+            "冒号右侧的现行替代键不得误判为已删除"
+        );
+        assert!(
+            !removed
+                .iter()
+                .any(|key| key == "admission.max_concurrent_users"),
+            "文档明示待裁定的过渡键不得被重复计为已删除"
+        );
     }
 
     /// 负样例断言指标名比对这条规则本身：两侧各改一处，两个方向都要报。

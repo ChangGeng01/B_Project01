@@ -74,32 +74,33 @@ while IFS=$'\t' read -r stage id kind argv status; do
     rc=0
     "${cmdline[@]}" || rc=$?
 
-    case $rc in
-    0)
-        n_pass=$((n_pass + 1))
-        verdict="通过"
-        ;;
-    "$EXIT_UNDELIVERED")
-        n_undelivered=$((n_undelivered + 1))
-        verdict="本阶段未交付"
-        ;;
-    "$EXIT_UNDECIDABLE")
-        n_undecidable=$((n_undecidable + 1))
-        verdict="存在不可判定项"
-        ;;
-    *)
-        n_fail=$((n_fail + 1))
-        verdict="不符（退出码 ${rc}）"
-        ;;
-    esac
-
-    # 登记表说已交付而工具报未交付，是登记表本身失真，按不符计。
+    # 先核对登记状态，再解释普通退出码；否则一条标 undelivered 却返回 0 的命令
+    # 会先被累计成通过，并让备用调度器与 Rust 聚合入口得出相反结论。
     if [[ $status == delivered && $rc -eq $EXIT_UNDELIVERED ]]; then
-        # 该行已在上面的 EXIT_UNDELIVERED 分支计过一次未交付，此处改判为不符时
-        # 必须把那一次退回，否则一条命令会在汇总行里同时算进两类（F-68）。
-        n_undelivered=$((n_undelivered - 1))
         n_fail=$((n_fail + 1))
         verdict="登记为已交付却报未交付，登记表失真"
+    elif [[ $status == undelivered && $rc -ne $EXIT_UNDELIVERED ]]; then
+        n_fail=$((n_fail + 1))
+        verdict="登记为未交付却返回 ${rc}，登记表失真"
+    else
+        case $rc in
+        0)
+            n_pass=$((n_pass + 1))
+            verdict="通过"
+            ;;
+        "$EXIT_UNDELIVERED")
+            n_undelivered=$((n_undelivered + 1))
+            verdict="本阶段未交付"
+            ;;
+        "$EXIT_UNDECIDABLE")
+            n_undecidable=$((n_undecidable + 1))
+            verdict="存在不可判定项"
+            ;;
+        *)
+            n_fail=$((n_fail + 1))
+            verdict="不符（退出码 ${rc}）"
+            ;;
+        esac
     fi
 
     summary+="  阶段 $stage $id  ${cmdline[*]}  →  $verdict"$'\n'

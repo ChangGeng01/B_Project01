@@ -1,6 +1,6 @@
 # F-51 开发就绪冻结：附录乙全量收口与技术口径
 
-> **F-57 现行状态（2026-08-23）：`PARTIALLY_SUPERSEDED`。** 本文未冲突的业务默认值继续可引用；固定 RoleCode/岗位只能作为种子模板，不再是授权和任务分配权威。临时授权、委托、动态作用域、权限解释/模拟、能力派工、F-57 配置代和硬件/存储规则以 [F-57](2026-08-23-f57-governed-automation-fabric-design.md) 为准。本文旧“可直接开发”结论只描述 F-57 之前的快照。
+> **F-57/ADR-0027 现行状态（2026-08-30）：`PARTIALLY_SUPERSEDED`。** 本文未冲突的业务默认值继续可引用；固定 RoleCode/岗位只能作为种子模板，不再是授权和任务分配权威。临时授权、委托、动态作用域、权限解释/模拟、能力派工、F-57 配置代和硬件/存储规则以 [F-57](2026-08-23-f57-governed-automation-fabric-design.md) 为准；CI 编排平台及本地 D-07 触发边界以 [ADR-0027](../../adr/ADR-0027-ci-platform-github-only.md) 为准。本文旧“可直接开发”结论只描述 F-57 之前的快照，Forgejo/Woodpecker 选择仅是已取代的历史记录。
 
 > 裁定日期：2026-08-21
 > 状态：**已批准并完成权威回写，文档可直接开发；本轮未启动新的业务功能实现，既有骨架与早期迁移不作为完整实现或认证证据**
@@ -9,7 +9,7 @@
 
 ## 1. 权威关系与使用规则
 
-1. 本文是 47 项的唯一详细现行依据；`00d-pending-decisions.md` 与 `00e-appendix-b-full-sweep.md` 仅保留为历史审计快照。
+1. 本文是 47 项业务取值的唯一详细现行依据；CI 平台选择不在该效力内，唯一现行依据是 ADR-0027 的 GitHub Actions-only 决定。`00d-pending-decisions.md` 与 `00e-appendix-b-full-sweep.md` 仅保留为历史审计快照。
 2. `00c-gap-ruling.md` 的 F-51 是本文的权威登记与快速索引；两者冲突时，以本文逐项正文为准，并立即修正索引。
 3. F-51 不改判 F-50。发票、核销、退款/返款、资金冲正、进项/销项行模型、号码登记、历史余额与门户发票上传受理仍以 F-50 设计和实施计划为唯一依据。
 4. 本文中的“出厂值”是首版默认值；只有明确写为“可配置”的项才允许经签名配置发布通道修改。安全边界、固定状态机、会计类别、唯一性范围与跨模块属主不得由普通管理员改写。
@@ -336,7 +336,7 @@ Chrome、Edge 支持当前及前两个稳定大版本，Safari 支持当前及�
 2. **Windows 原生部署；Hyper-V 仅有 F-55 插件窄例外。** 首版产品服务端与依赖直接运行在认证过的 Windows Server 主机上，不得把整个平台放入 Hyper-V 客户机，也不得借虚拟机恢复已删除的 Linux/cgroup 或资源隔离语义。后续最高裁定 F-55 §4.5 仅允许 `LOCAL_WINDOWS_HYPERV_CONTAINER` 为单次受控 MCP 插件调用建立短命 Hyper-V-isolated utility VM；它不承载产品服务、数据库或客户主数据卷，不能类推为第二套部署形态。
 3. **阶段 13a 执行薄 PoC。** 在 iOS 与 Android 真机按规格切栈触发项进行早期验证；薄 PoC 可以作出“切离 Tauri”的否定结论，但不能单独证明 Tauri 全表通过。完整无障碍与全能力矩阵仍由阶段 13 后续全表验收承担。
 4. **生产制品使用 Authenticode。** Windows 生产 EXE、DLL、MSI 与升级包必须由客户或交付主体认可的 Authenticode 身份签名并在安装/升级前验证；内部 ECDSA 配置/许可证签名不能替代它。
-5. **CI 唯一入口为 `cargo xtask ci`。** 内网平台固定 Forgejo + Woodpecker，Windows 构建 agent 执行该入口；不得让 `.github` 脚本成为第二套权威流水线。
+5. **CI 判定必须由 Rust-owned 入口唯一持有。** 本行原有 Forgejo + Woodpecker 平台选择已被 ADR-0027 明确取代；现行编排平台只允许 GitHub Actions，不保留前者作为默认或备用。现存敏感 D-07 自托管 workflow 只接受 `main` push；平台 YAML 与 `.github` 脚本不得复制或成为第二套门禁判定权威。F-57 现行 command family 尚未交付的部分继续返回 `NOT_DELIVERED`，不得由旧 `cargo xtask ci` 冒充。
 6. **GRNI 使用 procure 追加效果回写。** `procure` 建立仅追加 GRNI 效果事实，金额使用正数加 `INCREASE/DECREASE` 方向；收货、采购退货、进项发票受理和进项红字按实际会计期间追加效果。阶段 10 经 `ep_contract_procure::GrniEffectWritebackPort` 在同一事务回写，`GrniSubledgerBalanceQuery` 只读 procure 自有表并按截至期间累计，不跨读 invoice schema、不以当前 `invoiced_quantity` 倒推历史。
 7. **内部对账系统上下文。** `SecurityContext` 固定新增第 20 字段 `system_purpose: Option<SystemPurpose>`，枚举固定为 `SystemPurpose { General, Reconciliation }`。系统构造器签名为 `SecurityContext::system(legal_entity_id, request_id, trace_id, purpose)`，其中 `purpose` 写入 `Some(purpose)`；人工上下文固定为 `None`。不新增 `ReconContext`，不增加 `with_*` 权限变换方法。`SystemPurpose::Reconciliation` 除定义处外只允许在 `crates/platform/recon/src/executor.rs` 构造，由 `reconciliation-context-confined` archcheck 断言；job-worker 只调用 `ReconExecutor::run`，不得自行构造对账上下文。对象越权统一返回 `PLATFORM.AUTHZ.OBJECT_FORBIDDEN`。戊-11 据此关闭。
 8. **F-50 范围保持完整。** F-50 的 **45** 项验收、32 条错误码（F-50 设计 §11 实数 45 条、序号 1–45 连续；本行原写 44，与 00c 同批更正，F-62；按本文 §1 冲突规则本行为权威，故此处必改）、行级发票、中央号码登记、显式核销效果、`effective_open`、历史追加切片、门户头行上传与受理回写均在首版范围内；F-51 不得用“低成本”理由删减其中任何一项。

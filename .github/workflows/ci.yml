@@ -12,16 +12,26 @@
 # 本文件不表达任何门禁判定逻辑，这是 ADR-0005 决定二的要求。它只做三件事：
 # 准备环境、跑本机可验的两条自检、把 11 个阶段交给一个调度点执行。
 #
-# 全部步骤离线：不装任何工具，不拉任何依赖，Cargo 一律 `--locked --offline`，
-# 依赖来自执行器预置的 CARGO_HOME。
+# GitHub 的源码编排以及取得下方按完整 commit 固定的 checkout action 是唯一网络例外。
+# checkout 完成后，构建、测试、Cargo 依赖、工具、制品与签名材料全部离线；不安装工具，
+# Cargo 一律 `--locked --offline`，依赖来自执行器预置的 CARGO_HOME。
+#
+# 这台自托管 runner 持有本地离线材料，绝不执行 PR/fork/任意分支可修改的代码。本 workflow
+# 只接受 origin 默认分支 main 的 push；main 的分支保护、runner group
+# 仓库白名单和执行器重置策略是仓外必需前置。PR 验证须另用一次性、无密钥、无制品、无内网
+# 权限的隔离 runner；该 L1 adapter 当前尚未交付，不能借本 job 顶替。
 
 name: ci
 
 # 加引号是因为 YAML 1.1 会把裸 on 读成布尔真，加了引号解析器两边一致。
 "on":
   push:
-  pull_request:
-  workflow_dispatch:
+    branches:
+      - main
+
+# 即使仓库默认权限日后被放宽，本 job 的 GITHUB_TOKEN 也只能读源码。
+permissions:
+  contents: read
 
 env:
   # 离线依赖仓库由执行器镜像预置在此路径；缺失时阶段 1 立即失败，不回落到公网。
@@ -35,10 +45,14 @@ jobs:
     timeout-minutes: 60
     steps:
       - name: 取源码
-        uses: actions/checkout@v4
+        # actions/checkout v4.2.2；升级必须经供应链审阅并更新完整 commit SHA。
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          # 后续执行的是仓库代码；不得把 checkout 凭据留在 .git/config 供其读取或复用。
+          persist-credentials: false
 
-      # 登记表是流水线的唯一真值。它自己先要是对的：引用的命令必须存在且可执行，
-      # 门禁状态列必须与工具实际行为相符，阶段表必须与文档逐行相等。
+      # 登记表是流水线的唯一真值。它自己先要是对的：引用的命令入口必须可用，
+      # 首子命令必须可用、依赖解析调用必须 locked/offline，阶段表必须与文档逐行相等。
       - name: 自检 流水线登记表
         run: bash .github/ci/verify-pipeline-commands.sh
 
@@ -46,7 +60,7 @@ jobs:
       - name: 自检 判定件负样例
         run: bash .github/ci/tests/run-negative.sh
 
-      # 11 个阶段的执行。登记表内 17 条门禁全部登记为已交付，无未交付门禁。
+      # 11 个阶段的执行。登记表内 19 条门禁全部登记为已交付，无未交付门禁。
       # 未交付与不可判定的步骤一律不写 `|| true`，也不折算成通过；各退出码由
       # `cargo xtask ci` 按类归入汇总，全局退出码取最重的一类。
       #
