@@ -16,12 +16,6 @@ mod migration;
 mod sensitive;
 mod windows;
 
-#[cfg(test)]
-pub(crate) mod reauth_handler_tests {
-    pub(crate) use super::key_domain::rotate_key_domain;
-    pub(crate) use super::windows::open_window;
-}
-
 use std::sync::Arc;
 
 use axum::http::{HeaderMap, StatusCode};
@@ -266,3 +260,9 @@ const _: fn() = || {
     fn assert_send_sync<T: Send + Sync>() {}
     assert_send_sync::<PlatformState>();
 };
+
+#[cfg(test)]
+pub(crate) mod reauth_handler_tests {
+    pub(crate) use super::key_domain::rotate_key_domain;
+    pub(crate) use super::windows::open_window;
+}
