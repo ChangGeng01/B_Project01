@@ -104,14 +104,19 @@ async fn serve(
     match ipc.bind() {
         Ok(listener) => {
             let signal = serving.signal();
+            let on_failure = serving.critical_failure_handler("integration-gateway IPC 服务端");
             logger.log(
                 Level::Info,
                 LogFields::msg("startup", format!("IPC 监听 {}", ipc.path().display())),
             );
             serving.spawn_critical("integration-gateway IPC 服务端", async move {
-                ipc.serve(listener, async move {
-                    signal.wait().await;
-                })
+                ipc.serve(
+                    listener,
+                    async move {
+                        signal.wait().await;
+                    },
+                    on_failure,
+                )
                 .await;
             });
         }

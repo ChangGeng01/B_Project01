@@ -93,6 +93,26 @@ pub struct IpcServer {
     methods: MethodTable,
 }
 
+// The protocol loop owns the listener; this private seam lets lifecycle tests
+// inject accept failures without changing platform security gates or OS state.
+#[async_trait::async_trait]
+trait ConnectionListener: Send {
+    type Stream: AsyncRead + AsyncWrite + Unpin + Send + 'static;
+    async fn accept(&mut self) -> std::io::Result<Self::Stream>;
+    fn cleanup(&self);
+}
+
+#[async_trait::async_trait]
+impl ConnectionListener for IpcListener {
+    type Stream = crate::transport::IpcStream;
+    async fn accept(&mut self) -> std::io::Result<Self::Stream> {
+        IpcListener::accept(self).await
+    }
+    fn cleanup(&self) {
+        IpcListener::cleanup(self);
+    }
+}
+
 #[derive(Debug)]
 pub enum ServerError {
     Bind { path: PathBuf, detail: String },
@@ -141,8 +161,24 @@ impl IpcServer {
 
     /// 接受连接直到 `shutdown` 完成，然后等待已接受连接排空。
     /// 外层排空期限到达后丢弃本 future，JoinSet 会取消所有在途连接。
-    pub async fn serve<F>(self, mut listener: IpcListener, shutdown: F)
-    where
+    pub async fn serve<F>(
+        self,
+        listener: IpcListener,
+        shutdown: F,
+        on_failure: impl FnOnce(String) + Send,
+    ) where
+        F: std::future::Future<Output = ()> + Send,
+    {
+        self.serve_connections(listener, shutdown, on_failure).await;
+    }
+
+    async fn serve_connections<L, F>(
+        self,
+        mut listener: L,
+        shutdown: F,
+        on_failure: impl FnOnce(String) + Send,
+    ) where
+        L: ConnectionListener,
         F: std::future::Future<Output = ()> + Send,
     {
         let methods = Arc::new(self.methods);
@@ -159,10 +195,12 @@ impl IpcServer {
                         let methods = methods.clone();
                         connections.spawn(async move { serve_conn(stream, methods, max).await });
                     }
-                    // 单次 accept 失败不拖垮服务端，但也不静默：交给调用方的日志
-                    // 看不到这条，于是这里把它作为连接级事实吞掉是不行的——
-                    // 因此以错误帧的形式无法表达时，只能中止 accept 循环。
-                    Err(_) => break,
+                    // 必须在等待在途连接前报告失败，否则 idle 连接会把外层
+                    // Internal 停机与排空期限一起无限延迟。
+                    Err(error) => {
+                        on_failure(error.to_string());
+                        break;
+                    },
                 },
             }
         }
@@ -207,6 +245,81 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    struct FailingListener {
+        stream: Option<tokio::io::DuplexStream>,
+        fail: Arc<tokio::sync::Notify>,
+    }
+
+    #[async_trait::async_trait]
+    impl ConnectionListener for FailingListener {
+        type Stream = tokio::io::DuplexStream;
+        async fn accept(&mut self) -> std::io::Result<Self::Stream> {
+            if let Some(stream) = self.stream.take() {
+                return Ok(stream);
+            }
+            self.fail.notified().await;
+            Err(std::io::Error::other("injected accept failure"))
+        }
+        fn cleanup(&self) {}
+    }
+
+    #[tokio::test]
+    async fn accept_failure_notifies_owner_before_draining_idle_connection() {
+        use tokio::io::AsyncReadExt;
+        let (mut client, stream) = tokio::io::duplex(1024);
+        let fail = Arc::new(tokio::sync::Notify::new());
+        let listener = FailingListener {
+            stream: Some(stream),
+            fail: fail.clone(),
+        };
+        let (failed_tx, failed_rx) = tokio::sync::oneshot::channel();
+        let server = IpcServer::new("unused-test-listener", 1024, table());
+        let mut serving =
+            Box::pin(
+                server.serve_connections(listener, std::future::pending(), move |detail| {
+                    let _ = failed_tx.send(detail);
+                }),
+            );
+        // Drive acceptance before asking the next accept to fail. The idle
+        // stream is a real framed connection waiting for its first request.
+        std::future::poll_fn(|cx| {
+            use std::future::Future;
+            assert!(serving.as_mut().poll(cx).is_pending());
+            std::task::Poll::Ready(())
+        })
+        .await;
+        fail.notify_one();
+        let failure = tokio::select! {
+            detail = tokio::time::timeout(std::time::Duration::from_millis(100), failed_rx) => detail,
+            _ = &mut serving => panic!("accepted connection must remain owned during drain"),
+        };
+        assert_eq!(
+            failure
+                .expect("listener failure must reach the owner promptly")
+                .unwrap(),
+            "injected accept failure"
+        );
+        let start = std::time::Instant::now();
+        assert!(
+            tokio::time::timeout(std::time::Duration::from_millis(30), &mut serving)
+                .await
+                .is_err()
+        );
+        assert!(start.elapsed() >= std::time::Duration::from_millis(30));
+        drop(serving); // the owner's bounded drain deadline expires
+        let mut byte = [0];
+        assert_eq!(
+            tokio::time::timeout(
+                std::time::Duration::from_millis(100),
+                client.read(&mut byte)
+            )
+            .await
+            .unwrap()
+            .unwrap(),
+            0
+        );
+    }
 
     // Host transport is only a harness for the shared connection lifecycle;
     // these tests do not provide Windows DACL/token or runtime authority.
@@ -258,9 +371,13 @@ mod tests {
         );
         let listener = server.bind().unwrap();
         let (tx, rx) = tokio::sync::oneshot::channel();
-        let handle = tokio::spawn(server.serve(listener, async {
-            let _ = rx.await;
-        }));
+        let handle = tokio::spawn(server.serve(
+            listener,
+            async {
+                let _ = rx.await;
+            },
+            |detail| panic!("unexpected listener failure: {detail}"),
+        ));
         let client = crate::client::IpcClient::new(&path, 1024, std::time::Duration::from_secs(2));
         let request = tokio::spawn(async move { client.call("blocked", Value::Null).await });
         tokio::time::timeout(std::time::Duration::from_secs(1), method.entered.notified())
@@ -377,9 +494,13 @@ mod tests {
         let (tx, rx) = tokio::sync::oneshot::channel::<()>();
         let handle = tokio::spawn(async move {
             server
-                .serve(listener, async move {
-                    let _ = rx.await;
-                })
+                .serve(
+                    listener,
+                    async move {
+                        let _ = rx.await;
+                    },
+                    |detail| panic!("unexpected listener failure: {detail}"),
+                )
                 .await;
         });
         tx.send(()).unwrap();

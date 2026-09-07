@@ -21,14 +21,21 @@ pub struct Shutdown {
     rx: watch::Receiver<Option<StopReason>>,
 }
 
+#[derive(Clone)]
 pub struct ShutdownTrigger {
     tx: watch::Sender<Option<StopReason>>,
 }
 
 impl ShutdownTrigger {
     pub fn fire(&self, reason: StopReason) {
-        // 接收端全部退出时发送失败，此时无人需要被通知，忽略即可。
-        let _ = self.tx.send(Some(reason));
+        // 首个停机原因决定本次排空；后续任务正常退出不能把它改写为 Internal。
+        self.tx.send_if_modified(|current| {
+            if current.is_some() {
+                return false;
+            }
+            *current = Some(reason);
+            true
+        });
     }
 }
 
@@ -38,6 +45,10 @@ pub fn channel() -> (ShutdownTrigger, Shutdown) {
 }
 
 impl Shutdown {
+    pub(crate) fn is_requested(&self) -> bool {
+        self.rx.borrow().is_some()
+    }
+
     /// 等到停机信号。已经触发过则立即返回。
     pub async fn wait(mut self) -> StopReason {
         if let Some(r) = *self.rx.borrow_and_update() {
@@ -116,6 +127,14 @@ pub fn drain_limit(shutdown_drain_ms: u32) -> Duration {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[tokio::test]
+    async fn first_shutdown_reason_is_not_overwritten_during_drain() {
+        let (trigger, shutdown) = channel();
+        trigger.fire(StopReason::Sigterm);
+        trigger.fire(StopReason::Internal);
+        assert_eq!(shutdown.wait().await, StopReason::Sigterm);
+    }
 
     #[tokio::test]
     async fn every_waiter_sees_the_signal() {

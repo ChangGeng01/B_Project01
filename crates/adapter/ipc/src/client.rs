@@ -146,9 +146,13 @@ mod tests {
         let (tx, rx) = tokio::sync::oneshot::channel::<()>();
         let handle = tokio::spawn(async move {
             server
-                .serve(listener, async move {
-                    let _ = rx.await;
-                })
+                .serve(
+                    listener,
+                    async move {
+                        let _ = rx.await;
+                    },
+                    |detail| panic!("unexpected listener failure: {detail}"),
+                )
                 .await;
         });
         body(path).await;

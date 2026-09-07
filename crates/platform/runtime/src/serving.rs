@@ -53,6 +53,26 @@ impl Serving {
         self.signal.clone()
     }
 
+    /// 监听者在排空连接前报告不可恢复故障，立即启动进程的有界排空。
+    pub fn critical_failure_handler(
+        &self,
+        name: impl Into<String>,
+    ) -> impl FnOnce(String) + Send + 'static {
+        let name = name.into();
+        let failure = self.critical_failure.clone();
+        let trigger = self.trigger.clone();
+        move |detail| {
+            let mut first_failure = failure
+                .lock()
+                .unwrap_or_else(|poisoned| poisoned.into_inner());
+            if first_failure.is_none() {
+                *first_failure = Some(format!("关键任务 {name} 失败：{detail}"));
+            }
+            drop(first_failure);
+            trigger.fire(StopReason::Internal);
+        }
+    }
+
     /// 起一个 HTTP 服务端。绑定失败在这里就记下，`wait_and_drain` 会据此
     /// 以非零码退出——半个进程起来了却宣称就绪，比起不来更糟。
     pub async fn spawn_http(&mut self, addr: SocketAddr, router: Router, logger: &JsonLogger) {
@@ -93,6 +113,7 @@ impl Serving {
         let trigger = self.trigger.clone();
         let name = name.into();
         let failure = self.critical_failure.clone();
+        let signal = self.signal.clone();
         let (ack, initial_poll) = oneshot::channel();
         self.initial_polls.push(initial_poll);
         self.tasks.spawn(async move {
@@ -113,6 +134,12 @@ impl Serving {
                 }
             })
             .await;
+            if outcome.is_ok() && signal.is_requested() {
+                if let Some(ack) = ack.take() {
+                    let _ = ack.send(false);
+                }
+                return;
+            }
             let detail = match outcome {
                 Ok(()) => format!("关键任务 {name} 提前结束"),
                 Err(()) => format!("关键任务 {name} panic"),
@@ -414,6 +441,89 @@ mod tests {
                 .is_err(),
             "普通后台任务完成不得伪装成关键服务故障"
         );
+    }
+
+    #[tokio::test]
+    async fn normal_critical_shutdown_keeps_original_reason_without_failure() {
+        let mut serving = Serving::new();
+        let signal = serving.signal();
+        serving.spawn_critical("listener", async move {
+            signal.wait().await;
+        });
+        assert!(serving.startup_succeeded().await);
+        serving.trigger.fire(StopReason::Sigterm);
+        while serving.tasks.join_next().await.is_some() {}
+        assert_eq!(serving.signal().wait().await, StopReason::Sigterm);
+        assert!(serving.critical_failure.lock().unwrap().is_none());
+    }
+
+    #[tokio::test]
+    async fn listener_failure_report_starts_shutdown_before_task_finishes() {
+        use crate::lifecycle::Lifecycle;
+        use crate::selfcheck::{Outcome, SelfCheckReport};
+        use crate::{BuildInfo, ProcessKind};
+        struct OnDrop(Option<oneshot::Sender<()>>);
+        impl Drop for OnDrop {
+            fn drop(&mut self) {
+                if let Some(tx) = self.0.take() {
+                    let _ = tx.send(());
+                }
+            }
+        }
+        let logger = Arc::new(JsonLogger::new("core-server", "test", Level::Info));
+        let mut lifecycle = Lifecycle::new(ProcessKind::CoreServer);
+        for event in [Event::Start, Event::ConfigLoaded, Event::AllPassed] {
+            lifecycle.fire(event).unwrap();
+        }
+        let state = SystemState::new(
+            ProcessKind::CoreServer,
+            BuildInfo::current(),
+            lifecycle,
+            SelfCheckReport {
+                process: "core-server",
+                version: "test".into(),
+                items: vec![],
+                overall: Outcome::Passed,
+            },
+            Arc::new(ep_platform_obs::MetricsRegistry::new()),
+            logger.clone(),
+        );
+        let mut serving = Serving::new();
+        let report_failure = serving.critical_failure_handler("IPC listener");
+        let (dropped_tx, mut dropped_rx) = oneshot::channel();
+        serving.spawn_critical("IPC listener", async move {
+            let _guard = OnDrop(Some(dropped_tx));
+            report_failure("accept failed".into());
+            std::future::pending::<()>().await;
+        });
+        let reason = tokio::time::timeout(
+            std::time::Duration::from_millis(100),
+            serving.signal().wait(),
+        )
+        .await
+        .unwrap();
+        assert_eq!(reason, StopReason::Internal);
+        assert!(!serving.startup_succeeded().await);
+        assert!(serving
+            .critical_failure
+            .lock()
+            .unwrap()
+            .as_ref()
+            .unwrap()
+            .contains("accept failed"));
+        assert!(matches!(
+            dropped_rx.try_recv(),
+            Err(oneshot::error::TryRecvError::Empty)
+        ));
+        let start = std::time::Instant::now();
+        assert_eq!(
+            serving.wait_and_drain(&state, &logger, 30).await,
+            ExitCode::from(EXIT_PANIC)
+        );
+        assert!(start.elapsed() >= std::time::Duration::from_millis(30));
+        dropped_rx
+            .await
+            .expect("内部监听失败仍须在排空期限结束后取消在途任务");
     }
 
     #[tokio::test]

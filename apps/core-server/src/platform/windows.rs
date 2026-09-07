@@ -7,12 +7,12 @@
 
 use std::sync::Arc;
 
-use axum::extract::State;
+use axum::extract::{Extension, State};
 use axum::http::HeaderMap;
 use axum::response::{IntoResponse, Response};
 use axum::Json;
 use ep_foundation::capability::{ActionClass, CapabilityDomain};
-use ep_foundation::security::context::DutyClass;
+use ep_foundation::security::context::{DutyClass, SecurityContext};
 use ep_platform_runtime::http::{ApiError, Envelope};
 use ep_platform_tenancy::capability as cap;
 use serde::Deserialize;
@@ -51,13 +51,18 @@ pub struct OpenWindowBody {
 
 pub async fn open_window(
     State(state): State<Arc<PlatformState>>,
+    security_context: Option<Extension<SecurityContext>>,
     headers: HeaderMap,
     Json(body): Json<OpenWindowBody>,
 ) -> Response {
     let trace = trace_of(&headers);
     let out: Result<Response, ApiError> = async {
-        let ctx = extract_context(&headers, &state.system, &[DutyClass::System])?;
-        require_reauth_token(&headers, &state.system)?;
+        let ctx = extract_context(
+            security_context.as_deref(),
+            &state.system,
+            &[DutyClass::System],
+        )?;
+        require_reauth_token(&headers, &state.system, &ctx.trace_id)?;
         let db = state
             .db
             .clone()
@@ -121,13 +126,18 @@ pub struct CloseWindowBody {
 
 pub async fn close_window(
     State(state): State<Arc<PlatformState>>,
+    security_context: Option<Extension<SecurityContext>>,
     headers: HeaderMap,
     Json(body): Json<CloseWindowBody>,
 ) -> Response {
     let trace = trace_of(&headers);
     let out: Result<Response, ApiError> = async {
-        let ctx = extract_context(&headers, &state.system, &[DutyClass::System])?;
-        require_reauth_token(&headers, &state.system)?;
+        let ctx = extract_context(
+            security_context.as_deref(),
+            &state.system,
+            &[DutyClass::System],
+        )?;
+        require_reauth_token(&headers, &state.system, &ctx.trace_id)?;
         let db = state
             .db
             .clone()

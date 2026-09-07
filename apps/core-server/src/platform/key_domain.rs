@@ -6,7 +6,7 @@
 
 use std::sync::Arc;
 
-use axum::extract::{Path, Query, State};
+use axum::extract::{Extension, Path, Query, State};
 use axum::http::HeaderMap;
 use axum::response::{IntoResponse, Response};
 use axum::Json;
@@ -19,7 +19,7 @@ use ep_foundation::error::codes::{
 };
 use ep_foundation::error::AppError;
 use ep_foundation::port::kms::{KeyPurpose, KeyRef};
-use ep_foundation::security::context::DutyClass;
+use ep_foundation::security::context::{DutyClass, SecurityContext};
 use ep_platform_runtime::http::{ApiError, Envelope};
 use ep_platform_tenancy::capability as cap;
 use serde::Deserialize;
@@ -111,12 +111,17 @@ pub struct ListParams {
 
 pub async fn list_key_domains(
     State(state): State<Arc<PlatformState>>,
+    security_context: Option<Extension<SecurityContext>>,
     headers: HeaderMap,
     Query(params): Query<ListParams>,
 ) -> Response {
     let trace = trace_of(&headers);
     let out: Result<Response, ApiError> = async {
-        let ctx = extract_context(&headers, &state.system, &[DutyClass::Security])?;
+        let ctx = extract_context(
+            security_context.as_deref(),
+            &state.system,
+            &[DutyClass::Security],
+        )?;
         let db = state
             .db
             .clone()
@@ -171,12 +176,17 @@ pub async fn list_key_domains(
 
 pub async fn get_key_domain(
     State(state): State<Arc<PlatformState>>,
+    security_context: Option<Extension<SecurityContext>>,
     headers: HeaderMap,
     Path(id): Path<Uuid>,
 ) -> Response {
     let trace = trace_of(&headers);
     let out: Result<Response, ApiError> = async {
-        let ctx = extract_context(&headers, &state.system, &[DutyClass::Security])?;
+        let ctx = extract_context(
+            security_context.as_deref(),
+            &state.system,
+            &[DutyClass::Security],
+        )?;
         let db = state
             .db
             .clone()
@@ -229,12 +239,17 @@ pub struct ProvisionBody {
 
 pub async fn provision_key_domain(
     State(state): State<Arc<PlatformState>>,
+    security_context: Option<Extension<SecurityContext>>,
     headers: HeaderMap,
     Json(body): Json<ProvisionBody>,
 ) -> Response {
     let trace = trace_of(&headers);
     let out: Result<Response, ApiError> = async {
-        let ctx = extract_context(&headers, &state.system, &[DutyClass::Security])?;
+        let ctx = extract_context(
+            security_context.as_deref(),
+            &state.system,
+            &[DutyClass::Security],
+        )?;
         let db = state
             .db
             .clone()
@@ -357,14 +372,19 @@ pub struct RotateBody {
 
 pub async fn rotate_key_domain(
     State(state): State<Arc<PlatformState>>,
+    security_context: Option<Extension<SecurityContext>>,
     headers: HeaderMap,
     Path(id): Path<Uuid>,
     Json(body): Json<RotateBody>,
 ) -> Response {
     let trace = trace_of(&headers);
     let out: Result<Response, ApiError> = async {
-        let ctx = extract_context(&headers, &state.system, &[DutyClass::Security])?;
-        require_reauth_token(&headers, &state.system)?;
+        let ctx = extract_context(
+            security_context.as_deref(),
+            &state.system,
+            &[DutyClass::Security],
+        )?;
+        require_reauth_token(&headers, &state.system, &ctx.trace_id)?;
         let db = state
             .db
             .clone()
@@ -474,11 +494,16 @@ pub async fn rotate_key_domain(
 
 pub async fn plan_destroy_key_domain(
     State(state): State<Arc<PlatformState>>,
+    security_context: Option<Extension<SecurityContext>>,
     headers: HeaderMap,
     Path(_id): Path<Uuid>,
 ) -> Result<Response, ApiError> {
-    let ctx = extract_context(&headers, &state.system, &[DutyClass::Security])?;
-    require_reauth_token(&headers, &state.system)?;
+    let ctx = extract_context(
+        security_context.as_deref(),
+        &state.system,
+        &[DutyClass::Security],
+    )?;
+    require_reauth_token(&headers, &state.system, &ctx.trace_id)?;
     let _ = ctx;
     // 双人审批判定经端口调用阶段 4；端口未装配时集成层不得出具凭据，
     // 按 02 计划 A-05 一律 403 OBJECT_FORBIDDEN。
@@ -493,13 +518,18 @@ pub async fn plan_destroy_key_domain(
 
 pub async fn cancel_destroy_key_domain(
     State(state): State<Arc<PlatformState>>,
+    security_context: Option<Extension<SecurityContext>>,
     headers: HeaderMap,
     Path(id): Path<Uuid>,
 ) -> Response {
     let trace = trace_of(&headers);
     let out: Result<Response, ApiError> = async {
-        let ctx = extract_context(&headers, &state.system, &[DutyClass::Security])?;
-        require_reauth_token(&headers, &state.system)?;
+        let ctx = extract_context(
+            security_context.as_deref(),
+            &state.system,
+            &[DutyClass::Security],
+        )?;
+        require_reauth_token(&headers, &state.system, &ctx.trace_id)?;
         let db = state
             .db
             .clone()
