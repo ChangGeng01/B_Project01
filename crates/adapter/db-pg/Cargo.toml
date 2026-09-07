@@ -24,11 +24,12 @@ ep-platform-outbox.workspace = true
 # platform_authz/user_grants.rs。
 ep-platform-identity.workspace = true
 ep-platform-authz.workspace = true
+ep-platform-runtime.workspace = true
 async-trait.workspace = true
 uuid.workspace = true
 chrono.workspace = true
 # 阶段 4 任务 #23：授权配置写入/快照载入对策略条件 jsonb 的序列化面。
 serde_json.workspace = true
-# 阶段 2 任务 #11：sqlx 承接五具名池与会话语义；tokio 供退避 sleep 与测试用运行时。
+# sqlx 承接四具名池与会话语义；tokio 供退避 sleep 与测试用运行时。
 sqlx.workspace = true
 tokio.workspace = true

@@ -1,11 +1,11 @@
 //! ep-adapter-db-pg — 首版唯一交付并认证的 PostgreSQL 16 实现。
 //!
 //! 含 RLS 会话变量注入与清除、流复制以外的全部 SQL。
-//! 驱动为 sqlx（runtime-tokio）：五具名池与会话语义全部走 sqlx，
+//! 驱动为 sqlx（runtime-tokio）：四具名池与会话语义全部走 sqlx，
 //! 历史迁移的数据库通道由 tools/migrate 侧的 refinery 承担，不在本 crate。
 //!
 //! 模块分工：
-//! - [`budget`]：五具名池种类与连接预算（C-04 四类型之三）；
+//! - [`budget`]：四具名池种类与连接预算（C-04 四类型之三）；
 //! - [`conn`]：连接抽象、SQLSTATE 分类与错误码映射、金额写前断言；
 //! - [`fake`]：纯逻辑测试用假连接；
 //! - [`foundation_check`]：启动自检五项中 SQL 四项的取数实现；
@@ -13,7 +13,7 @@
 //! - [`platform_msg`]：`platform_msg` schema 的仓储（阶段 3a 幂等键存储）；
 //! - [`platform_ops`]：`platform_ops` schema 的仓储（降级窗口台账）；
 //! - [`metrics`]：指标出口 trait（注册表在 ep-platform-obs，桥接归装配侧）；
-//! - [`pool`]：五具名池构建与 after_connect/after_release 钩子；
+//! - [`pool`]：四具名池构建与 after_connect/after_release 钩子；
 //! - [`retry`]：事务重试策略与判定（C-04 四类型之一）；
 //! - [`session`]：四条 RLS 会话变量（C-04 四类型之一）；
 //! - [`tx`]：`PgTx`/`PgSnapshot`/`PgUnitOfWork` 真实事务接通。
@@ -32,7 +32,7 @@ pub mod retry;
 pub mod session;
 pub mod tx;
 
-pub use budget::{BudgetViolation, ConnectionBudget, PoolKind, PoolSpec};
+pub use budget::{BudgetViolation, ConnectionBudget, PoolKind, PoolOwner, PoolSpec};
 pub use conn::{DbConn, DbValue, PgError};
 pub use foundation_check::{
     CheckMigrationRow, CheckRlsState, CheckRolePrivileges, CheckServerSettings, CheckTableRls,
@@ -62,7 +62,10 @@ pub use platform_core::tenancy::{
 pub use platform_core::windows::{OpenedWindow, PgMigrationWindowStore};
 pub use platform_msg::idempotency::PgIdempotencyStore;
 pub use platform_ops::PgDegradationLedger;
-pub use pool::{register_process_name, PgPools, PoolBuildCfg, PoolTimeouts, RoResourceLimits};
+pub use pool::{
+    PgPools, PoolBuildCfg, PoolCredential, PoolTimeouts, RoResourceLimits,
+    POOL_GAUGE_REFRESH_INTERVAL,
+};
 pub use retry::RetryPolicy;
-pub use session::SessionContext;
+pub use session::{SessionContext, SESSION_VARS, SET_SESSION_VAR_STMT};
 pub use tx::{PgSnapshot, PgTx, PgUnitOfWork};

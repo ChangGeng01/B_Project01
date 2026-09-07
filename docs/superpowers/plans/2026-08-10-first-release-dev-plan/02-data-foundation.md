@@ -84,14 +84,14 @@
 |---|---|---|
 | `ep_app_rw` | LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION NOBYPASSRLS NOINHERIT | 全部 schema 的 SELECT、INSERT、UPDATE；默认权限不含 DELETE，DELETE 仅对技术基线第 3.6 节封闭清理白名单逐表授权，禁止 schema 级 DELETE；无 DDL、无角色管理、无策略管理 |
 | `ep_analyst_ro` | LOGIN NOSUPERUSER NOBYPASSRLS | 全部 schema 的 SELECT；不授予 `pg_read_all_stats`，复制会话与复制槽的观察落在 `ep_ops_ro` 与阶段 14 的保留量采样 |
-| `ep_ops_ro` | LOGIN NOSUPERUSER NOBYPASSRLS | 只对 `platform_ops` 的视图授 SELECT，加 `pg_read_all_stats` |
-| `ep_migrator` | LOGIN NOSUPERUSER NOCREATEROLE | `CREATE ON DATABASE ep`，并被授予全部 `ep_mod_*` 角色成员资格；只在迁移窗口内启用 |
+| `ep_ops_ro` | LOGIN NOSUPERUSER NOBYPASSRLS | 对 `platform_ops` 的视图授 SELECT，加 `pg_read_all_stats`；唯一跨 schema 例外为 `USAGE ON SCHEMA platform_core` 与 `SELECT ON platform_core.schema_history`，只供 ops-agent Blocking 启动探针读取非业务迁移元数据，不授 `platform_core` 其他表、业务数据、写权或 CREATE |
+| `ep_migrator` | LOGIN NOSUPERUSER NOCREATEROLE | `CREATE ON DATABASE ep`，被授予 PostgreSQL 16 内置 `pg_use_reserved_connections` 与全部 `ep_mod_*` 角色成员资格；只在迁移窗口内启用 |
 | `ep_breakglass` | LOGIN NOSUPERUSER，`NOLOGIN` 为常态，启用时 `ALTER ROLE ... LOGIN VALID UNTIL` | 单次不超过 8 小时，用后轮换 |
 | `ep_archiver` | LOGIN REPLICATION NOSUPERUSER NOBYPASSRLS | 无任何业务表权限；`REVOKE CONNECT ON DATABASE ep`；只能建复制连接 |
 | `ep_backuper` | LOGIN REPLICATION NOSUPERUSER NOBYPASSRLS | 同上 |
 | `ep_mod_<module>` × 24 | NOLOGIN | 各 schema 与其对象的属主，仅归属与 DDL 边界 |
 
-`db/bootstrap/02_cluster_params.sql` 的首版唯一值如下：`max_connections = 64`（常驻与峰值连接预算上限为 52，另留 12 个管理与波动余量，`superuser_reserved_connections = 3`）；`max_wal_senders = 4`；`max_replication_slots = 3`；`wal_level = replica`；`max_slot_wal_keep_size = '350GB'`（等于附录 A.3 连续归档本机保留子项，不得高于）；`wal_keep_size = 0`；`shared_preload_libraries = 'pg_stat_statements'`；`lock_timeout = 0`，由各池覆盖；`wal_sync_method = 'fsync_writethrough'`；`effective_io_concurrency = 0`；`huge_pages = off`。PostgreSQL 16 官方可靠性说明明确 Windows 默认 `open_datasync` 在启用磁盘写缓存时不安全，而 `fsync_writethrough` 会强制穿透磁盘写缓存；本项目选择最高安全档，不允许启动脚本按机器自动改回 `open_datasync`、`fsync` 或 `fdatasync`。`effective_io_concurrency` 首版固定为 0，避免把依赖 `posix_fadvise` 的平台差异带入生产；`huge_pages` 首版关闭，避免引入“锁定内存中的页”额外权限。认证期仍须在目标 Windows Server 2022 上运行 `pg_test_fsync`、断电恢复演练与附录 A.4 性能测试并记录代价；该测试只形成发布证据，结果不再改变首版配置。若 `fsync_writethrough` 不可用或性能无法满足已冻结通过线，认证判失败并停止发布，必须通过新的书面裁定修改承诺与配置，开发者不得现场选择替代值。
+`db/bootstrap/02_cluster_params.sql` 的首版唯一值如下：`max_connections = 64`（四池常驻 37、临时 10、应用安全储备 5，应用峰值预算为 52；`reserved_connections = 4`、`superuser_reserved_connections = 3`，所以普通连接容量是 57，应用峰值后准确剩余 `64-4-3-52=5` 个普通槽；这个服务端残余 5 与峰值 52 内部的应用安全储备 5 是两个不同预算。F57 签名 provider graph 的两槽 margin 另由其完整 consumer exact-set 与权限级预算实测，不得从本种子推导）；`max_wal_senders = 4`；`max_replication_slots = 3`；`wal_level = replica`；`max_slot_wal_keep_size = '350GB'`（等于附录 A.3 连续归档本机保留子项，不得高于）；`wal_keep_size = 0`；`shared_preload_libraries = 'pg_stat_statements'`；`lock_timeout = 0`，由各池覆盖；`wal_sync_method = 'fsync_writethrough'`；`effective_io_concurrency = 0`；`huge_pages = off`。该 SQL 以 `ALTER SYSTEM` 承载开发、测试和人工验证的可执行镜像，**不是生产安装器输入**。G6 Windows 生产安装器必须从签名配置投影生成精确 `postgresql.conf`，同时核对精确文件字节与解析后的有效值，并要求 `postgresql.auto.conf` 不存在或为空且没有任何有效覆盖；生产执行本 SQL、遗留 `ALTER SYSTEM` 覆盖、ambient include 或投影/有效值不一致均拒绝安装或启动。PostgreSQL 16 官方可靠性说明明确 Windows 默认 `open_datasync` 在启用磁盘写缓存时不安全，而 `fsync_writethrough` 会强制穿透磁盘写缓存；本项目选择最高安全档，不允许启动脚本按机器自动改回 `open_datasync`、`fsync` 或 `fdatasync`。`effective_io_concurrency` 首版固定为 0，避免把依赖 `posix_fadvise` 的平台差异带入生产；`huge_pages` 首版关闭，避免引入“锁定内存中的页”额外权限。认证期仍须在目标 Windows Server 2022 上运行 `pg_test_fsync`、断电恢复演练与附录 A.4 性能测试并记录代价；该测试只形成发布证据，结果不再改变首版配置。若 `fsync_writethrough` 不可用或性能无法满足已冻结通过线，认证判失败并停止发布，必须通过新的书面裁定修改承诺与配置，开发者不得现场选择替代值。
 
 `db/bootstrap/03_role_defaults.sql`：按角色固化超时。`ALTER ROLE ep_app_rw SET statement_timeout='10s'`、`lock_timeout='3s'`、`idle_in_transaction_session_timeout='15s'`；`ep_analyst_ro` 取 `statement_timeout='60s'`、`work_mem='64MB'`、`temp_file_limit='2GB'`；`ep_ops_ro` 取 `5s`；`ep_migrator` 取 `statement_timeout='30min'`、`lock_timeout='5s'`。角色级取值是兜底，池级 `after_connect` 再设一次，两处一致由集成测试断言。
 
@@ -903,7 +903,7 @@ P-05 会话变量任意写入序列后，清除操作使四条变量全为空串
 
 引导与迁移：IT-01 引导脚本可重复执行且幂等；IT-02 24 个 schema 建成、属主正确、`public` 已删除；IT-03 迁移全量执行后 `platform_core.schema_history` 版本齐备；IT-04 迁移重复执行无变更；IT-05 每个迁移文件含 `-- rollback:` 段（静态加执行双重）；IT-06 `CREATE INDEX CONCURRENTLY` 走非事务执行器并正确写历史，中途失败留下的无效索引被检出；IT-07 迁移窗口关闭时 `apply` 被拒；IT-08 迁移会话的 `lock_timeout` 与 `statement_timeout` 实际生效。
 
-角色与权限：IT-09 `ep_app_rw` 非 SUPERUSER、非 BYPASSRLS、无 DDL、无角色管理、无策略管理；IT-10 `ep_app_rw` 在业务 schema 上执行 DELETE 报权限错；IT-11 `ep_analyst_ro` 写入被拒且受 RLS 约束；IT-12 `ep_ops_ro` 只能读运维视图；IT-13 `ep_archiver` 与 `ep_backuper` 对任意业务表 SELECT 被拒、DDL 被拒、`CONNECT ON DATABASE ep` 被拒；IT-14 两个复制角色从非本机地址连接被拒（容器内以第二网络地址验证）。
+角色与权限：IT-09 `ep_app_rw` 非 SUPERUSER、非 BYPASSRLS、无 DDL、无角色管理、无策略管理；IT-10 `ep_app_rw` 在业务 schema 上执行 DELETE 报权限错；IT-11 `ep_analyst_ro` 写入被拒且受 RLS 约束；IT-12 `ep_ops_ro` 只能读 `platform_ops` 运维视图，外加唯一精确例外 `platform_core.schema_history`，并证明其读取 `platform_core` 其他表、任意业务表及任何写入均被拒；IT-13 `ep_archiver` 与 `ep_backuper` 对任意业务表 SELECT 被拒、DDL 被拒、`CONNECT ON DATABASE ep` 被拒；IT-14 两个复制角色从非本机地址连接被拒（容器内以第二网络地址验证）。
 
 RLS：IT-16 策略文本与模板全等；IT-17 会话变量缺失时读为 0 行、写违反 `with_check`；IT-18 连接归还后复用不残留上下文；IT-19 `force row level security` 对表属主同样生效；IT-20 跨法人写入被 `with_check` 拒绝；IT-21 跨法人聚合查询在单一法人会话下只返回本法人合计。
 

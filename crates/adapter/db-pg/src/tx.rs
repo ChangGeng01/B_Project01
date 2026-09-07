@@ -20,11 +20,11 @@
 //!
 //! `transact` 单次的四步：取连接 → 按 SecurityContext 写四条会话变量 →
 //! 开事务执行闭包 → 提交或回滚，归还前清除会话变量。端口签名的执行体是
-//! `FnOnce`，不可重复调用，因此重试不发生在 trait 方法内部：
-//! 需要重试语义的调用方使用固有方法 [`PgUnitOfWork::transact_retrying`]，
-//! 它接受一个每次尝试产出全新执行体的工厂。单次 `transact` 遇到可重试
-//! 错误时按「重试已用尽」形态返回 `PLATFORM.DB.SERIALIZATION_RETRY_EXHAUSTED`；
-//! 执行体一旦置位 side_effect_marker，无论剩余次数一律不重试。
+//! `FnOnce`，不可重复调用，因此重试不发生在 trait 方法内部。当前也没有
+//! 能携带类型化幂等证明的生产调用方；保留的固有方法
+//! [`PgUnitOfWork::transact_retrying`] 暂时同样只执行一次并失败关闭。
+//! 重试策略判定保留给未来引入不可伪造的类型化证明后使用，不能把未置位
+//! side-effect marker 当作重试授权。
 
 use std::sync::{Arc, Mutex};
 use std::time::Instant;
@@ -37,9 +37,9 @@ use ep_foundation::security::SecurityContext;
 use ep_foundation::Id;
 
 use crate::budget::PoolKind;
-use crate::conn::{DbConn, DbErrorClass, DbValue, PgError, SqlxConn};
+use crate::conn::{DbConn, DbValue, PgError, SqlxConn};
 use crate::metrics::{statement_kind, DbMetrics};
-use crate::retry::{decide_retry, RetryDecision, RetryPolicy};
+use crate::retry::RetryPolicy;
 use crate::session::SessionContext;
 
 /// 事务句柄。拥有连接抽象（`Box<dyn DbConn>`）而不是借用：
@@ -51,16 +51,17 @@ pub struct PgTx {
     pub(crate) conn: Option<Box<dyn DbConn>>,
     pub(crate) pool_label: &'static str,
     pub(crate) metrics: Arc<dyn DbMetrics>,
-    /// side_effect_marker：执行体在产生任何外部可见副作用后置位，
-    /// 置位后本事务不再参与重试。
+    /// 遗留 side-effect marker：保留给现有执行体与未来策略判定测试；
+    /// 未置位绝不构成幂等证明或重试授权。
     pub(crate) side_effect: bool,
-    /// 最近一次连接层错误的副本，供 run_once 做重试判定与指标标签。
+    /// 最近一次连接层错误的副本，供 crate 内需要保存 PostgreSQL
+    /// 原始诊断信息的适配器读取。
     pub(crate) last_pg_error: Option<PgError>,
 }
 
 impl PgTx {
-    /// 置位副作用标记。执行体在写出任何对其他观察者可见的内容
-    /// （审计事件、外发通知等）之后必须调用。
+    /// 置位遗留副作用标记。执行体仍可记录外部可见副作用，但当前公共
+    /// 工厂入口无论此值如何都只执行一次。
     pub fn mark_side_effect(&mut self) {
         self.side_effect = true;
     }
@@ -220,23 +221,15 @@ enum ConnSource {
     Fixed(Mutex<Vec<Box<dyn DbConn>>>),
 }
 
-/// 单次尝试的失败详情：除对外的 AppError 外，保留重试判定所需的
-/// SQLSTATE 与副作用标记。
+/// 单次尝试的失败详情。当前公共入口失败关闭，不携带可被误当作
+/// 重试授权的 SQLSTATE 或布尔标记。
 struct AttemptFailure {
     app: AppError,
-    sqlstate: Option<String>,
-    side_effect: bool,
-    retryable: bool,
 }
 
 impl AttemptFailure {
     fn plain(app: AppError) -> Self {
-        Self {
-            app,
-            sqlstate: None,
-            side_effect: false,
-            retryable: false,
-        }
+        Self { app }
     }
 }
 
@@ -305,11 +298,34 @@ impl PgUnitOfWork {
     }
 
     fn release(&self, conn: Box<dyn DbConn>) {
-        // Pool 来源下 drop 即归还（after_release 钩子再清一遍会话变量并
-        // 断言无未结束事务）；Fixed 来源放回队列供下一次尝试复用。
+        // Pool 来源下 drop 即归还（after_release 钩子先 ROLLBACK 再清空
+        // 会话变量，任一步失败即丢连接）；Fixed 来源放回队列复用。
         if let ConnSource::Fixed(list) = &self.source {
             unlock(list).push(conn);
         }
+    }
+
+    /// 唯一连接收尾出口：无条件先 rollback，再清 session GUC。
+    /// 只有进入收尾前仍可复用且两步都成功时，Fixed 连接才可重排队；
+    /// Pool 连接则由 drop 后的 after_release 再做同序防线。
+    async fn cleanup_connection(
+        &self,
+        mut conn: Box<dyn DbConn>,
+        reusable_if_clean: bool,
+    ) -> Result<(), AppError> {
+        let rollback = conn.rollback().await.map_err(PgError::into_app_error);
+        let clear = SessionContext::clear(conn.as_mut()).await;
+        let cleanup = match (rollback, clear) {
+            (Ok(()), Ok(())) => Ok(()),
+            (Err(error), _) | (Ok(()), Err(error)) => Err(error),
+        };
+
+        if reusable_if_clean && cleanup.is_ok() {
+            self.release(conn);
+        } else {
+            drop(conn);
+        }
+        cleanup
     }
 
     #[cfg(test)]
@@ -328,19 +344,13 @@ impl PgUnitOfWork {
         // 第二步：按 SecurityContext 写四条会话变量。
         let sc = SessionContext::from_security(ctx);
         if let Err(app) = sc.apply(conn.as_mut()).await {
-            self.release(conn);
+            let _ = self.cleanup_connection(conn, false).await;
             return Err(AttemptFailure::plain(app));
         }
         // 第三步：开事务执行闭包。
         if let Err(pg) = conn.begin(IsolationKind::ReadCommitted, false).await {
-            let _ = SessionContext::clear(conn.as_mut()).await;
-            self.release(conn);
-            return Err(AttemptFailure {
-                retryable: pg.is_retryable(),
-                sqlstate: pg.sqlstate.clone(),
-                side_effect: false,
-                app: pg.into_app_error(),
-            });
+            let _ = self.cleanup_connection(conn, false).await;
+            return Err(AttemptFailure::plain(pg.into_app_error()));
         }
         let mut pg_tx = PgTx {
             tx_id: TxId(uuid::Uuid::now_v7()),
@@ -353,78 +363,46 @@ impl PgUnitOfWork {
             last_pg_error: None,
         };
         let outcome = body(&mut pg_tx).await;
-        let side_effect = pg_tx.side_effect;
-        let mut body_pg_error = pg_tx.last_pg_error.clone();
-        // 第四步：提交或回滚，归还前清除。
+        // 第四步：提交结果确定后进入唯一清理出口。正文失败不覆盖其业务错误；
+        // commit 成功后的清理失败则不能伪装为完整成功。
         let mut conn = pg_tx.conn.take().expect("连接只在 run_once 内被取回一次");
-        let result: Result<T, AppError> = match outcome {
+        match outcome {
             Ok(v) => match conn.commit().await {
-                Ok(()) => Ok(v),
+                Ok(()) => self
+                    .cleanup_connection(conn, true)
+                    .await
+                    .map(|()| v)
+                    .map_err(AttemptFailure::plain),
                 Err(pg) => {
-                    body_pg_error = Some(pg.clone());
-                    Err(pg.into_app_error())
+                    let app = pg.into_app_error();
+                    let _ = self.cleanup_connection(conn, false).await;
+                    Err(AttemptFailure::plain(app))
                 }
             },
             Err(e) => {
-                let _ = conn.rollback().await;
-                Err(e)
+                let _ = self.cleanup_connection(conn, true).await;
+                Err(AttemptFailure::plain(e))
             }
-        };
-        let _ = SessionContext::clear(conn.as_mut()).await;
-        self.release(conn);
-        match result {
-            Ok(v) => Ok(v),
-            Err(app) => Err(AttemptFailure {
-                retryable: body_pg_error.as_ref().is_some_and(PgError::is_retryable),
-                sqlstate: body_pg_error.and_then(|e| e.sqlstate),
-                side_effect,
-                app,
-            }),
         }
     }
 
-    /// 带重试的事务执行。`make_body` 是执行体工厂：每次尝试产出一个
-    /// 全新的 `FnOnce` 闭包。可重试错误（40001/40P01）按策略退避重试，
-    /// 每次重试进 `ep_db_tx_retries_total`（pool + sqlstate 标签）；
-    /// side_effect_marker 置位或次数用尽时返回
-    /// `PLATFORM.DB.SERIALIZATION_RETRY_EXHAUSTED`（错误码由单次执行映射）。
+    /// 兼容保留的事务工厂入口。目前没有类型化幂等证明，因此无论 SQLSTATE
+    /// 或旧 side-effect marker 状态如何，都只取一次执行体并执行一次。
+    /// 未来只有引入不可由普通调用方布尔声称的证明类型后，才可在新 API 上
+    /// 接回 [`RetryPolicy`] 的退避判定。
     pub async fn transact_retrying<T, M, F>(
         &self,
         ctx: &SecurityContext,
-        mut make_body: M,
+        make_body: M,
     ) -> Result<T, AppError>
     where
         T: Send + 'static,
-        M: FnMut() -> F + Send,
+        M: FnOnce() -> F + Send,
         F: for<'t> FnOnce(&'t mut dyn Tx) -> BoxFuture<'t, Result<T, AppError>> + Send + 'static,
     {
-        let mut failures = 0usize;
-        loop {
-            let failure = match self.run_once(ctx, make_body()).await {
-                Ok(v) => return Ok(v),
-                Err(f) => f,
-            };
-            failures += 1;
-            let class = match failure.retryable {
-                true => DbErrorClass::Retryable,
-                false => DbErrorClass::Other,
-            };
-            let sqlstate = failure.sqlstate.as_deref();
-            match decide_retry(&self.policy, class, sqlstate, failure.side_effect, failures) {
-                RetryDecision::Retry(backoff) => {
-                    let label = match sqlstate {
-                        Some("40001") => "40001",
-                        Some("40P01") => "40P01",
-                        _ => "other",
-                    };
-                    self.metrics.tx_retry(self.pool_label, label);
-                    tokio::time::sleep(backoff).await;
-                }
-                RetryDecision::Exhausted
-                | RetryDecision::SideEffectMarked
-                | RetryDecision::NotRetryable => return Err(failure.app),
-            }
-        }
+        self.run_once(ctx, make_body())
+            .await
+            .map_err(|failure| failure.app)
     }
 
     /// 以既有快照号执行一次快照读：另取连接，开 REPEATABLE READ 只读
@@ -438,13 +416,15 @@ impl PgUnitOfWork {
     ) -> Result<Vec<Vec<DbValue>>, AppError> {
         let mut conn = self.acquire().await?;
         let sc = SessionContext::from_security(ctx);
-        sc.apply(conn.as_mut()).await?;
+        if let Err(app) = sc.apply(conn.as_mut()).await {
+            let _ = self.cleanup_connection(conn, false).await;
+            return Err(app);
+        }
         if let Err(pg) = conn
             .begin(IsolationKind::RepeatableReadSnapshot, true)
             .await
         {
-            let _ = SessionContext::clear(conn.as_mut()).await;
-            self.release(conn);
+            let _ = self.cleanup_connection(conn, false).await;
             return Err(pg.into_app_error());
         }
         // 快照号来自 pg_export_snapshot，取值形如 00000003-00000001-1；
@@ -454,9 +434,7 @@ impl PgUnitOfWork {
             snapshot_id.replace('\'', "''")
         );
         if let Err(pg) = conn.execute(&stmt, &[]).await {
-            let _ = conn.rollback().await;
-            let _ = SessionContext::clear(conn.as_mut()).await;
-            self.release(conn);
+            let _ = self.cleanup_connection(conn, true).await;
             return Err(pg.into_app_error());
         }
         let started = Instant::now();
@@ -466,11 +444,11 @@ impl PgUnitOfWork {
             statement_kind(sql),
             started.elapsed().as_secs_f64(),
         );
-        // 只读事务以 rollback 收尾同样干净，避免占用 idle_in_tx 预算。
-        let _ = conn.rollback().await;
-        let _ = SessionContext::clear(conn.as_mut()).await;
-        self.release(conn);
-        rows.map_err(PgError::into_app_error)
+        let cleanup = self.cleanup_connection(conn, true).await;
+        match rows {
+            Ok(rows) => cleanup.map(|()| rows),
+            Err(pg) => Err(pg.into_app_error()),
+        }
     }
 
     #[cfg(test)]
@@ -505,30 +483,28 @@ impl UnitOfWork for PgUnitOfWork {
     {
         let mut conn = self.acquire().await?;
         let sc = SessionContext::from_security(ctx);
-        sc.apply(conn.as_mut()).await?;
+        if let Err(app) = sc.apply(conn.as_mut()).await {
+            let _ = self.cleanup_connection(conn, false).await;
+            return Err(app);
+        }
         if let Err(pg) = conn
             .begin(IsolationKind::RepeatableReadSnapshot, true)
             .await
         {
-            let _ = SessionContext::clear(conn.as_mut()).await;
-            self.release(conn);
+            let _ = self.cleanup_connection(conn, false).await;
             return Err(pg.into_app_error());
         }
         let rows = match conn.query("select pg_export_snapshot()", &[]).await {
             Ok(r) => r,
             Err(pg) => {
-                let _ = conn.rollback().await;
-                let _ = SessionContext::clear(conn.as_mut()).await;
-                self.release(conn);
+                let _ = self.cleanup_connection(conn, true).await;
                 return Err(pg.into_app_error());
             }
         };
         let snapshot_id = match rows.first().and_then(|r| r.first()) {
             Some(DbValue::Text(s)) => s.clone(),
             _ => {
-                let _ = conn.rollback().await;
-                let _ = SessionContext::clear(conn.as_mut()).await;
-                self.release(conn);
+                let _ = self.cleanup_connection(conn, true).await;
                 return Err(AppError::new(
                     PLATFORM_SYSTEM_INTERNAL_ERROR,
                     "数据库未返回可用的快照标识",
@@ -544,22 +520,30 @@ impl UnitOfWork for PgUnitOfWork {
             metrics: self.metrics.clone(),
         };
         let outcome = body(&snapshot).await;
-        // 收尾：先取出连接（锁卫在 await 前释放），成功提交、失败回滚，
-        // 随后清除会话变量并归还。
-        let conn_opt = snapshot.lock().take();
-        if let Some(mut conn) = conn_opt {
-            match &outcome {
-                Ok(_) => {
-                    let _ = conn.commit().await;
+        // 收尾：先取出连接（锁卫在 await 前释放），再使用同一个清理出口。
+        let Some(mut conn) = snapshot.lock().take() else {
+            return match outcome {
+                Ok(_) => Err(AppError::new(
+                    PLATFORM_SYSTEM_INTERNAL_ERROR,
+                    "快照连接在收尾前丢失",
+                )),
+                Err(body_error) => Err(body_error),
+            };
+        };
+        match outcome {
+            Ok(value) => match conn.commit().await {
+                Ok(()) => self.cleanup_connection(conn, true).await.map(|()| value),
+                Err(commit_error) => {
+                    let app = commit_error.into_app_error();
+                    let _ = self.cleanup_connection(conn, false).await;
+                    Err(app)
                 }
-                Err(_) => {
-                    let _ = conn.rollback().await;
-                }
+            },
+            Err(body_error) => {
+                let _ = self.cleanup_connection(conn, true).await;
+                Err(body_error)
             }
-            let _ = SessionContext::clear(conn.as_mut()).await;
-            self.release(conn);
         }
-        outcome
     }
 }
 
@@ -604,6 +588,30 @@ mod tests {
             constraint: None,
             column: None,
         }
+    }
+
+    fn connection_failure(message: &str) -> PgError {
+        PgError {
+            sqlstate: None,
+            message: message.to_string(),
+            constraint: None,
+            column: None,
+        }
+    }
+
+    fn observed_kinds(ops: &Mutex<Vec<FakeOp>>) -> Vec<&'static str> {
+        ops.lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .iter()
+            .map(|op| match op {
+                FakeOp::Execute(sql, _) if sql == crate::session::SET_SESSION_VAR_STMT => "setvar",
+                FakeOp::Query(_, _) => "query",
+                FakeOp::Begin { .. } => "begin",
+                FakeOp::Commit => "commit",
+                FakeOp::Rollback => "rollback",
+                _ => "execute",
+            })
+            .collect()
     }
 
     /// 冻结签名的可实现性与可调用性：`transact` 能在闭包里拿到 `&mut dyn Tx`。
@@ -711,6 +719,64 @@ mod tests {
         assert_eq!(uow.fixed_conn_count(), 1, "失败也要归还连接");
     }
 
+    #[tokio::test]
+    async fn partial_session_application_is_rolled_back_cleared_and_discarded() {
+        let observed = Arc::new(Mutex::new(Vec::new()));
+        let mut conn = FakeConn::new();
+        conn.observe_ops(observed.clone());
+        conn.fail_session_execute(3, connection_failure("third session setter failed"));
+        let (uow, _) = uow_with(conn);
+
+        uow.transact(&ctx(), |_tx| Box::pin(async { Ok(()) }))
+            .await
+            .expect_err("部分会话写入失败必须失败关闭");
+
+        assert_eq!(uow.fixed_conn_count(), 0, "部分应用过的连接不得重排队");
+        assert_eq!(
+            observed_kinds(&observed),
+            ["setvar", "setvar", "setvar", "rollback", "setvar", "setvar", "setvar", "setvar"],
+            "部分应用失败后仍须先 rollback，再尝试清除全部四个 GUC"
+        );
+    }
+
+    #[tokio::test]
+    async fn transact_success_reports_clear_failure_and_discards_connection() {
+        let mut conn = FakeConn::new();
+        conn.fail_session_execute(5, connection_failure("first clear setter failed"));
+        let (uow, _) = uow_with(conn);
+
+        let err = uow
+            .transact(&ctx(), |_tx| Box::pin(async { Ok(()) }))
+            .await
+            .expect_err("commit 后清理失败不得伪装为完整成功");
+
+        assert_eq!(err.code, PLATFORM_SYSTEM_INTERNAL_ERROR);
+        assert_eq!(uow.fixed_conn_count(), 0, "清理失败的连接不得重排队");
+    }
+
+    #[tokio::test]
+    async fn transact_body_error_survives_rollback_failure_and_discards_connection() {
+        let mut conn = FakeConn::new();
+        conn.fail_rollback(connection_failure("rollback failed"));
+        let (uow, _) = uow_with(conn);
+
+        let err = uow
+            .transact(&ctx(), |_tx| {
+                Box::pin(async {
+                    Err::<(), AppError>(AppError::new(
+                        PLATFORM_DB_REFERENCED_ROW_MISSING,
+                        "body failed",
+                    ))
+                })
+            })
+            .await
+            .expect_err("正文错误应保留");
+
+        assert_eq!(err.code, PLATFORM_DB_REFERENCED_ROW_MISSING);
+        assert_eq!(err.message, "body failed");
+        assert_eq!(uow.fixed_conn_count(), 0, "rollback 失败的连接不得重排队");
+    }
+
     /// 23503 统一映射 REFERENCED_ROW_MISSING 且 details 带约束与列。
     #[tokio::test]
     async fn foreign_key_violation_maps_to_referenced_row_missing() {
@@ -737,8 +803,7 @@ mod tests {
         assert!(err.message.contains("ref_id"));
     }
 
-    /// side_effect_marker 置位后不重试：单次执行直接返
-    /// SERIALIZATION_RETRY_EXHAUSTED，执行体只跑一遍。
+    /// 遗留 marker 不改变失败关闭保障：执行体仍只跑一遍。
     #[tokio::test]
     async fn side_effect_marker_disables_retry() {
         let mut conn = FakeConn::new();
@@ -771,38 +836,42 @@ mod tests {
         );
     }
 
-    /// 40001 未置位：按策略重试直至成功，重试计数进指标。
+    /// 未携带类型化幂等证明的执行体属于未知工作；即使调用方没有置位旧的
+    /// side-effect marker，公开入口也不得自动再次调用工厂。
     #[tokio::test]
-    async fn retrying_succeeds_after_two_serialization_failures() {
+    async fn unmarked_unknown_work_is_single_attempt_fail_closed() {
         let mut conn = FakeConn::new();
         conn.fail_next(serialization_failure());
-        conn.fail_next(serialization_failure());
         let (uow, metrics) = uow_with(conn);
-        let attempt = Arc::new(std::sync::atomic::AtomicUsize::new(0));
-        let attempt_in = attempt.clone();
-        let ok = uow
+        let external_effects = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let external_effects_in = external_effects.clone();
+
+        let err = uow
             .transact_retrying(&ctx(), move || {
-                let attempt = attempt_in.clone();
+                let external_effects = external_effects_in.clone();
                 move |tx: &mut dyn Tx| {
-                    let attempt = attempt.clone();
-                    let fut = async move {
-                        attempt.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+                    let external_effects = external_effects.clone();
+                    Box::pin(async move {
+                        external_effects.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
                         let pg = tx.as_any_mut().downcast_mut::<PgTx>().unwrap();
-                        // 前两次尝试命中预置的 40001，第三次成功。
                         pg.execute("select 1", &[]).await?;
-                        Ok(attempt.load(std::sync::atomic::Ordering::SeqCst))
-                    };
-                    Box::pin(fut) as BoxFuture<'_, Result<usize, AppError>>
+                        Ok(())
+                    }) as BoxFuture<'_, Result<(), AppError>>
                 }
             })
             .await
-            .expect("第三次尝试应成功");
-        assert_eq!(ok, 3, "共执行三次");
-        let retries = metrics.retries.lock().unwrap();
-        assert_eq!(retries.len(), 2, "两次重试各记一次");
-        assert!(retries
-            .iter()
-            .all(|(pool, s)| *pool == "rw" && *s == "40001"));
+            .expect_err("未知工作第一次遇到 40001 后必须直接失败关闭");
+
+        assert_eq!(err.code, PLATFORM_DB_SERIALIZATION_RETRY_EXHAUSTED);
+        assert_eq!(
+            external_effects.load(std::sync::atomic::Ordering::SeqCst),
+            1,
+            "未证明幂等的外部工作不得自动执行第二次"
+        );
+        assert!(
+            metrics.retries.lock().unwrap().is_empty(),
+            "没有获准重试时不得记录实际重试"
+        );
     }
 
     /// 非重试 SQLSTATE（23503）在重试外壳下也直接返回，不重试。
@@ -884,6 +953,96 @@ mod tests {
             .await
             .expect("快照体应成功");
         assert_eq!(got, DbValue::Int64(7));
+    }
+
+    #[tokio::test]
+    async fn snapshot_read_reports_clear_failure_and_discards_connection() {
+        let mut conn = FakeConn::new();
+        conn.push_rows(vec![vec![DbValue::Int64(7)]]);
+        conn.fail_session_execute(5, connection_failure("snapshot read clear failed"));
+        let (uow, _) = uow_with(conn);
+
+        let err = uow
+            .snapshot_read(&ctx(), "snap-1", "select 7", &[])
+            .await
+            .expect_err("快照读取清理失败不得返回成功");
+
+        assert_eq!(err.code, PLATFORM_SYSTEM_INTERNAL_ERROR);
+        assert_eq!(uow.fixed_conn_count(), 0, "清理失败的快照读连接不得重排队");
+    }
+
+    #[tokio::test]
+    async fn snapshot_transact_reports_clear_failure_and_discards_connection() {
+        let mut conn = FakeConn::new();
+        conn.push_rows(vec![vec![DbValue::Text("snap-clear-fail".to_string())]]);
+        conn.fail_session_execute(5, connection_failure("snapshot owner clear failed"));
+        let (uow, _) = uow_with(conn);
+
+        let err = uow
+            .snapshot_transact(&ctx(), |_snap| Box::pin(async { Ok(()) }))
+            .await
+            .expect_err("快照拥有者清理失败不得返回成功");
+
+        assert_eq!(err.code, PLATFORM_SYSTEM_INTERNAL_ERROR);
+        assert_eq!(uow.fixed_conn_count(), 0, "清理失败的快照连接不得重排队");
+    }
+
+    #[tokio::test]
+    async fn snapshot_body_success_propagates_commit_failure_and_discards_the_connection() {
+        let mut conn = FakeConn::new();
+        conn.push_rows(vec![vec![DbValue::Text("snap-commit-fail".to_string())]]);
+        conn.fail_commit(PgError {
+            sqlstate: None,
+            message: "connection lost while committing snapshot".to_string(),
+            constraint: None,
+            column: None,
+        });
+        let (uow, _) = uow_with(conn);
+
+        let err = uow
+            .snapshot_transact(&ctx(), |_snap| Box::pin(async { Ok("body-ok") }))
+            .await
+            .expect_err("快照正文成功不得掩盖 commit 失败");
+
+        assert_eq!(err.code, PLATFORM_SYSTEM_INTERNAL_ERROR);
+        assert_eq!(
+            uow.fixed_conn_count(),
+            0,
+            "commit 失败后事务状态不确定，连接不得回到可复用队列"
+        );
+    }
+
+    #[tokio::test]
+    async fn snapshot_body_error_survives_rollback_failure_and_discards_the_connection() {
+        let mut conn = FakeConn::new();
+        conn.push_rows(vec![vec![DbValue::Text("snap-rollback-fail".to_string())]]);
+        conn.fail_rollback(PgError {
+            sqlstate: None,
+            message: "connection lost while rolling back snapshot".to_string(),
+            constraint: None,
+            column: None,
+        });
+        let (uow, _) = uow_with(conn);
+
+        let err = uow
+            .snapshot_transact(&ctx(), |_snap| {
+                Box::pin(async {
+                    Err::<(), AppError>(AppError::new(
+                        PLATFORM_DB_REFERENCED_ROW_MISSING,
+                        "snapshot body business error",
+                    ))
+                })
+            })
+            .await
+            .expect_err("正文失败应原样返回");
+
+        assert_eq!(err.code, PLATFORM_DB_REFERENCED_ROW_MISSING);
+        assert_eq!(err.message, "snapshot body business error");
+        assert_eq!(
+            uow.fixed_conn_count(),
+            0,
+            "rollback 失败后事务状态不确定，连接不得回到可复用队列"
+        );
     }
 
     /// 空的 `Arc<[RoleCode]>` 与系统上下文的固定填充。

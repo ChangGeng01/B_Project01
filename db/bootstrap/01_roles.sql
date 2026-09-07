@@ -62,7 +62,9 @@ end $$;
 alter role ep_app_rw login nosuperuser nocreatedb nocreaterole noreplication nobypassrls noinherit;
 -- 只读分析角色：不授予 pg_read_all_stats，复制会话与复制槽的观察落在 ep_ops_ro。
 alter role ep_analyst_ro login nosuperuser nobypassrls;
--- 运维只读角色：只对 platform_ops 的视图授 SELECT（视图出现时由对应迁移授予），加 pg_read_all_stats。
+-- 运维只读角色：只对 platform_ops 的视图授 SELECT（视图出现时由对应迁移授予），加
+-- pg_read_all_stats；唯一跨界例外是迁移授予 platform_core.schema_history 的只读权限，
+-- 供 ops-agent Blocking 启动探针核对非业务迁移元数据。
 alter role ep_ops_ro login nosuperuser nobypassrls;
 -- 迁移角色：只在迁移窗口内启用；CREATE ON DATABASE 与被授予全部 ep_mod_* 见下方权限边界。
 alter role ep_migrator login nosuperuser nocreaterole;
@@ -90,10 +92,12 @@ begin
 end $$;
 
 -- 三、权限边界。
--- 1) ep_migrator：库上的 CONNECT 与 CREATE（迁移建 schema 所需）与全部 ep_mod_* 成员资格
+-- 1) ep_migrator：库上的 CONNECT 与 CREATE（迁移建 schema 所需）、PostgreSQL 16
+--    `reserved_connections=4` 对应的 pg_use_reserved_connections，以及全部 ep_mod_* 成员资格
 --    （使迁移文件的 SET ROLE ep_mod_<schema> 与其属主归位成立）；只在迁移窗口内启用。
 --    00 已 REVOKE ALL FROM PUBLIC，CONNECT 必须显式授予，否则迁移账号连不进库。
 grant connect, create on database ep to ep_migrator;
+grant pg_use_reserved_connections to ep_migrator;
 do $$
 declare
   s text;

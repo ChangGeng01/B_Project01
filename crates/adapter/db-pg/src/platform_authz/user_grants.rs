@@ -384,7 +384,10 @@ mod tests {
         }
         // F-83：钉住合法取值。'ACTIVE' 不在该列的 CHECK 五态里，曾使本条件恒为空集。
         assert!(ROLE_GRANTS_STMT.contains("r.lifecycle_state = 'EFFECTIVE'"));
-        assert!(!ROLE_GRANTS_STMT.contains("'ACTIVE'"), "'ACTIVE' 不是 lifecycle_state 的合法取值");
+        assert!(
+            !ROLE_GRANTS_STMT.contains("'ACTIVE'"),
+            "'ACTIVE' 不是 lifecycle_state 的合法取值"
+        );
     }
 
     #[test]

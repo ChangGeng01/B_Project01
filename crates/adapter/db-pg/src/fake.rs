@@ -5,6 +5,7 @@
 //! `begin`/`commit`/`rollback` 只改自身的 `in_tx` 标志。
 
 use std::collections::VecDeque;
+use std::sync::{Arc, Mutex};
 
 use ep_foundation::port::tx::IsolationKind;
 
@@ -34,6 +35,15 @@ pub struct FakeConn {
     pub query_rows: VecDeque<Vec<Vec<DbValue>>>,
     /// execute 的固定影响行数。
     pub execute_affected: u64,
+    /// 下一次 commit/rollback 的独立故障；事务边界不与业务语句共用
+    /// `errors` 队列，避免会话变量语句或快照查询提前吞掉故障。
+    commit_error: Option<PgError>,
+    rollback_error: Option<PgError>,
+    /// 第几次（1 起）session-variable 写入失败一次，覆盖 apply 与 clear。
+    session_error: Option<(usize, PgError)>,
+    session_execute_count: usize,
+    /// 被丢弃的连接也可由测试观察其完整边界操作顺序。
+    op_observer: Option<Arc<Mutex<Vec<FakeOp>>>>,
     in_tx: bool,
 }
 
@@ -54,6 +64,33 @@ impl FakeConn {
         self.query_rows.push_back(rows);
     }
 
+    pub fn fail_commit(&mut self, err: PgError) {
+        self.commit_error = Some(err);
+    }
+
+    pub fn fail_rollback(&mut self, err: PgError) {
+        self.rollback_error = Some(err);
+    }
+
+    pub fn fail_session_execute(&mut self, call_number: usize, err: PgError) {
+        assert!(call_number > 0, "session 写入序号从 1 开始");
+        self.session_error = Some((call_number, err));
+    }
+
+    pub fn observe_ops(&mut self, observer: Arc<Mutex<Vec<FakeOp>>>) {
+        self.op_observer = Some(observer);
+    }
+
+    fn record(&mut self, op: FakeOp) {
+        if let Some(observer) = &self.op_observer {
+            observer
+                .lock()
+                .unwrap_or_else(|poisoned| poisoned.into_inner())
+                .push(op.clone());
+        }
+        self.ops.push(op);
+    }
+
     fn take_error(&mut self) -> Result<(), PgError> {
         match self.errors.pop_front() {
             Some(e) => Err(e),
@@ -65,23 +102,32 @@ impl FakeConn {
 #[async_trait::async_trait]
 impl DbConn for FakeConn {
     async fn execute(&mut self, sql: &str, params: &[DbValue]) -> Result<u64, PgError> {
-        if sql != SET_SESSION_VAR_STMT {
+        if sql == SET_SESSION_VAR_STMT {
+            self.session_execute_count += 1;
+            self.record(FakeOp::Execute(sql.to_string(), params.to_vec()));
+            if self
+                .session_error
+                .as_ref()
+                .is_some_and(|(call_number, _)| *call_number == self.session_execute_count)
+            {
+                let (_, error) = self.session_error.take().expect("刚刚确认存在故障");
+                return Err(error);
+            }
+        } else {
             self.take_error()?;
+            self.record(FakeOp::Execute(sql.to_string(), params.to_vec()));
         }
-        self.ops
-            .push(FakeOp::Execute(sql.to_string(), params.to_vec()));
         Ok(self.execute_affected)
     }
 
     async fn query(&mut self, sql: &str, params: &[DbValue]) -> Result<Vec<Vec<DbValue>>, PgError> {
         self.take_error()?;
-        self.ops
-            .push(FakeOp::Query(sql.to_string(), params.to_vec()));
+        self.record(FakeOp::Query(sql.to_string(), params.to_vec()));
         Ok(self.query_rows.pop_front().unwrap_or_default())
     }
 
     async fn begin(&mut self, isolation: IsolationKind, read_only: bool) -> Result<(), PgError> {
-        self.ops.push(FakeOp::Begin {
+        self.record(FakeOp::Begin {
             isolation,
             read_only,
         });
@@ -90,13 +136,19 @@ impl DbConn for FakeConn {
     }
 
     async fn commit(&mut self) -> Result<(), PgError> {
-        self.ops.push(FakeOp::Commit);
+        self.record(FakeOp::Commit);
+        if let Some(error) = self.commit_error.take() {
+            return Err(error);
+        }
         self.in_tx = false;
         Ok(())
     }
 
     async fn rollback(&mut self) -> Result<(), PgError> {
-        self.ops.push(FakeOp::Rollback);
+        self.record(FakeOp::Rollback);
+        if let Some(error) = self.rollback_error.take() {
+            return Err(error);
+        }
         self.in_tx = false;
         Ok(())
     }

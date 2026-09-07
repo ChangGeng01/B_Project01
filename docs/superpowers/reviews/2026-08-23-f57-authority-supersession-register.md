@@ -43,7 +43,7 @@
 | `docs/介绍/管理软件基本需求.docx` | `CURRENT_SUBJECT` | 客户原始业务需求来源；人员分类只作人物模板 | 作为技术架构、固定岗位授权或范围优先级裁定 |
 | `docs/介绍/企业一体化经营管理平台-产品介绍与功能大纲.docx` | `CURRENT_SUMMARY_NON_NORMATIVE` | 面向非技术读者的产品定位、业务术语和能力概览 | 作为规范、范围、接口、实现状态、性能/恢复承诺或验收证据；用介绍中的说法覆盖 F-57 |
 | `2026-08-23-f57-governed-automation-fabric-design.md` | `CURRENT` | 产品、架构、权限、自动化、能力包、双端、存储、硬件、安全、商业与 2026-08-24 收敛修订 | 把文档批准解释为产品开发已授权或旧计划仍可执行 |
-| `2026-08-23-f57-business-execution-contract.md` | `CURRENT_SUBJECT` | CRM、CPQ、合同、订单、采购、库存、财务、服务、项目、门户身份和业务闭环；新增 CTC-01 与 STANDARD/DROP_SHIP XOR | 扩大已批准范围，或覆盖总体信任、安全和阶段边界 |
+| `2026-08-23-f57-business-execution-contract.md` | `CURRENT_SUBJECT` | CRM、CPQ、合同、订单、采购、库存、财务、服务、项目、门户身份和业务闭环；CTC-01、STANDARD/DROP_SHIP XOR，以及 §14.6/§14.6.1 状态域与具名状态语义 token 注册表 | 扩大已批准范围，覆盖总体信任、安全和阶段边界，或从旧 PRD/阶段计划临场造 action/guard/invariant/reverse-trigger alias |
 | `2026-08-23-f57-client-lifecycle-security-contract.md` | `CURRENT_SUBJECT` | 员工 C/S API、渐进四端认证、终端 DLP、驻留/本地化、保留/支持/事件、便携导出和生产运营 exact 契约 | 把低档 Windows 切片说成四端、备份、UPS 或后继 LTSC 已实现/已认证 |
 | `2026-08-23-f57-requirements-traceability.md` | `CURRENT` | 原始 DOCX、PRD 与 F-57 的 **185 项闭集（174 个主需求 + 11 个阶段边界）** 的功能追踪 | 不代替详细领域规则 |
 | `docs/f57-task-ownership.seed.tsv` | `CURRENT_SUBJECT` | 185 个 RequirementID 到 owner task、activation task、稳定 TestID、测试目标/符号、EvidenceID、schema 和平台 lane 的逐项设计时绑定 | 把设计时绑定当作测试已存在、已运行或证据已通过；脱离追踪矩阵和实施计划修改 |
@@ -94,6 +94,7 @@
 | [ADR-0020](../../adr/ADR-0020-dual-recipient-data-key-recovery.md) | `CURRENT_SUBJECT` | data_keys operational/recovery 双 recipient 信封、`PIV_SHAMIR_2_OF_3_V1` 固定 2-of-3 离线恢复、数据库打开后的 exact-ref/readback | 恢复单一 wrapped DEK、2-of-2 或让日常服务调用 recovery |
 | [ADR-0021](../../adr/ADR-0021-epb1-backup-envelope.md) | `CURRENT_SUBJECT` | 独立 `EPB1` 备份信封、每 backup-set DEK、recovery-only 解密与 ciphertext evidence | 把 backup 塞入 ADR-0014 `EPC1` 或给 writer/target 历史解密能力 |
 | [ADR-0022](../../adr/ADR-0022-f57-multi-lane-ci-and-windows-2022-authority.md) | `CURRENT_SUBJECT` | Windows Server 2022、Apple、Android、签名聚合四 lane 与 Rust-owned verdict | 用单 Windows runner、Windows Server 2019 或任一单 lane 放行 |
+| [ADR-0027](../../adr/ADR-0027-ci-platform-github-only.md) | `CURRENT_SUBJECT` | GitHub Actions 是唯一 CI 编排平台；执行器一律自托管；薄适配器只调用 Rust-owned verdict | 恢复 Forgejo/Woodpecker 默认或备用平台、使用 GitHub 托管 runner，或在 YAML 复制判定逻辑 |
 | [ADR-0023](../../adr/ADR-0023-f57-provider-manifest-resource-grant.md) | `CURRENT_SUBJECT` | `ProviderManifestV1`、`ResourceGrantV1`、carrier、调用级权限交集、撤销/漂移和显式 XML codec 边界 | 以包级权限代替调用级 grant、引用未定义 `BC-2`、隐式启用 XML 或允许 provider 直连数据库 |
 | [ADR-0024](../../adr/ADR-0024-f57-backup-key-envelope.md) | `CURRENT_SUBJECT` | 每 backup set 独立 recovery-only `BackupKeyEnvelopeV1`、2-of-3 加密 share、轮换、撤销和洁净主机互操作 | 复用生产 operational recipient/token/custodian、把 backup writer 当恢复者或用 ADR-0020 代替备份域信封 |
 | [ADR-0025](../../adr/ADR-0025-f57-capability-graph-and-feature-first-boundaries.md) | `CURRENT_SUBJECT` | 单一 CapabilityGraph、feature-first crate 与 touched-feature 渐进迁移 | 未获开发授权时开始 crate 重排，或把逻辑层合并成无边界巨型 crate |
@@ -202,7 +203,7 @@
 | 备份密码信封 | F-57 勒索恢复 → ADR-0021 `EPB1`；ADR-0014 `EPC1` 只补 FIELD/ATTACHMENT/ARCHIVE |
 | 备份密钥恢复信封 | F-57 `SEC-016` → ADR-0024；ADR-0021 继续负责 EPB1 ciphertext envelope，ADR-0020 继续只负责在线数据 DEK |
 | Provider manifest 与最小资源授权 | F-57 `MCP-001`、`MCP-002`、`PKG-003` → ADR-0023；包 manifest 只给 ceiling，运行调用还必须取得 `ResourceGrantV1` |
-| 多平台 CI 与 Windows 权威 | F-57 → ADR-0022；ADR-0005 只补私有自建默认、薄适配器、Rust verdict 与 Authenticode 意图 |
+| 多平台 CI 与 Windows 权威 | F-57 → ADR-0022 的四 lane/Windows Server 2022 → ADR-0027 的 GitHub Actions 唯一平台；ADR-0005 只保留薄适配器、Rust verdict 与 Authenticode 意图 |
 | 需求到任务、测试和证据的逐项绑定 | F-57 需求追踪矩阵 → `docs/f57-task-ownership.seed.tsv` → F-57 实施计划；三者不证明实现或测试结果 |
 | 旧迁移到 F-57 聚合替代的逐项绑定 | `docs/migration-catalog.md` → `docs/f57-legacy-migration-disposition.seed.tsv` → F-57 实施计划 Task 1；三者不证明目录已重分类或 SQL 已创建/执行 |
 
@@ -213,7 +214,8 @@
 | ADR-0019 | 进程数为部署细节；连接消费者/预算按签名代和硬件 exact 登记、实测 | ADR-0001 的固定九进程/强制 `ai-inferer`；ADR-0018 的固定四池与 `37+10+5=52` 产品冻结值 | ADR-0001 的 `ep-platform-runtime` 共享库；ADR-0018 的 integration-gateway DB/KMS/platform-file/Outbox 全零边界 |
 | ADR-0020 | operational/recovery 双 recipient DEK，任一路径恢复同一 DEK，`PIV_SHAMIR_2_OF_3_V1` 固定 2-of-3 | ADR-0009 的单一 wrapped DEK 与“不需要另一套恢复协议”结论 | 数据库业务元数据真值，以及 DB open 后的 exact-ref、cache、readback 和 16-key matrix |
 | ADR-0021 | 独立 EPB1 backup envelope | ADR-0014 若被解释为覆盖 backup 的任何说法 | ADR-0014 的 FIELD/ATTACHMENT/ARCHIVE EPC1 与 exact-ref/AAD 规则 |
-| ADR-0022 | Windows Server 2022、Apple、Android、签名聚合四 lane | ADR-0005 的单 Windows runner 与 Windows Server 2019 证据要求 | 私有自建 Forgejo/Woodpecker 默认、薄 adapter、Rust-owned verdict 与 Authenticode 意图 |
+| ADR-0022 | Windows Server 2022、Apple、Android、签名聚合四 lane | ADR-0005 的单 Windows runner 与 Windows Server 2019 证据要求 | 薄 adapter、Rust-owned verdict 与 Authenticode 意图；其 Forgejo/Woodpecker 平台选择已由 ADR-0027 另行取代 |
+| ADR-0027 | GitHub Actions 单一编排平台、自托管 runner | ADR-0005 决定一与决定三的 Woodpecker 字面；ADR-0022 决定一的 Forgejo/Woodpecker 默认 | ADR-0022 的四 lane/Windows Server 2022；ADR-0005 的薄 adapter、Rust-owned verdict 与 Authenticode 意图 |
 | ADR-0023 | exact provider/carrier manifest、调用级 `ResourceGrantV1` 与显式 XML codec | 任何未定义 `BC-2` 容器门、包级宽权限可直接执行、隐式 XML 嗅探或 provider 直连数据库的旧解释 | F-55 的 MCP 隔离/审计意图与 F-56 的包签名信任链 |
 | ADR-0024 | 每 backup set 独立 recovery-only key envelope、加密 2-of-3 shares 与跨洁净主机互操作 | 任何复用 ADR-0020 operational recipient/token/custodian 或只凭 EPB1 ciphertext 便宣称可恢复的解释 | ADR-0021 的 EPB1 ciphertext 格式与每 set DEK；ADR-0020 的在线数据 DEK 双 recipient 信封 |
 
@@ -259,6 +261,26 @@
   `docs/error-codes.md` 登记。
 - **同步修订**：本表 `:68` 行计数 47→49、111→117；客户端契约 §1.1 exact-set 插行并「16 个」→「17 个」；
   业务契约 §14.3 清单插对并同步计数；G3/G4 计划全局约束 16→17。原 9 行消费闭集自此按「签发端点已落地」读。
+
+### RULING-F63-03：PURCHASE_ORDER_V1 三条反向边的语义 ID 必须进入唯一注册表
+
+- **背景**：PRD:1582 与阶段 7 计划分别给出已确认订单改单回到待供应商确认、已收货部分数量/单价不可改、
+  以及进项红字减少后已完成订单重开的业务含义；F-63 又确认部分收货态也必须走重新确认。只把这些句子改写成
+  `action_id`、`guard_ids`、`invariant_ids` 和 `reverse_fact_triggers` 而不登记 token，会使 G0 声称的
+  “每项引用 resolve exactly once”没有可解析目标。
+- **同类先例**：销售订单把 `CHANGE_APPROVAL` 审批状态、批准后的版本变更动作、版本快照事实和
+  `sales.sales_order.changed.v1` 通知事件分开；退出时回到进入审批前状态，已交付事实继续保留。采购订单沿用同一
+  “owner fact 先提交、typed guard/invariant 求值、状态 action 原子执行、通知事件另行投递”边界，不把四者压成
+  一个 catch-all 名称。
+- **裁决**：F-57 业务执行契约 §14.6.1 的
+  `business_state_semantic_symbol_registry_v1` 是这 12 个 token 的唯一含义权威，kind 闭集仅为
+  `ACTION|GUARD|INVARIANT|REVERSE_FACT_TRIGGER`。§14.6 的三条采购订单反向 transition 只可引用该表同行
+  kind，且引用 exact-set 必须等于 12 行 row-key exact-set；重复定义、孤儿行、错 kind、未登记 alias 或从 prose
+  猜 token 一律失败关闭。
+- **取代与保留**：§14.6/§14.6.1 的现行 transition 与 token 定义取代旧 PRD/阶段计划中可产生歧义的状态解释；
+  旧文只保留业务来源与追溯价值。`docs/f57-api-state-domains.seed.tsv` 仍是无这些 typed 列的历史导入快照，
+  不因本裁决回写。具体事实/事件 wire 仍由 owning capability 的 `FactDefinitionV1`/`EventDefinitionV1` 唯一绑定，
+  不能拿历史 `docs/event-catalog.md` 反向覆盖本语义注册表。
 
 ### RULING-AUTHORITY-01：旧索引止于 F-56
 
@@ -358,8 +380,8 @@
 ### RULING-POSTGRES-WIN-01：数据库版本已选定但 Windows 安装可由现场自由决定
 
 - **旧句**：只要使用 PostgreSQL 16、数据大致位于 HDD 即可，由安装员选择服务启动、WAL/temp/config/TLS 和监听方式。
-- **裁决**：package lock、服务、账户、启动/恢复、ACL、依赖、路径、有效配置、TLS、网络和 pre-HDD 零进程由 sole-owner 五 strict root 固定：19-field package lock、13-field install contract、4-field Event Log fixture、19-field coverage、17-field install readback；artifact set、scan contract 与 service-install evidence 逐层认证。`installed_files` 必须与 package/SBOM 逐文件双射并以完整向量摘要封口；V1 只允许 clean install 或相同 lock 的幂等接管，任意不同已有 build——更旧或更新——都只能进入后继签名维护升级。九路径 unresolved SDDL template 在账户/服务创建后由同一证据解析 numeric SID，live canonical DACL 逐项读回；四个独立 system identifier 值全部相等，并与 cut/restore exact-join；runtime 只接受 typed `RUNNING`。GUC 固定 `max_connections=64|reserved_connections=4|superuser_reserved_connections=3` 与 safety=2；每个 consumer 的 NORMAL/RESERVED/SUPERUSER 类、五条预算和 role attributes 均读回，应用不得占保留位。HBA 只证明 loopback `hostssl`+SCRAM，client `channel_binding=require`/协商由独立 authenticated probe 证明。`wal_sync_method=fsync_writethrough` 只是兼容性 pin；同文件 `fsync`/`fsync_writethrough` qualification 绑定卷/driver/cache，Task 15 再与 P340 UPS/write-cache/flush/power-cut exact-join才构成生产耐久性。Event Log coverage 必须闭合两个 provider registration、同 boot bookmark/record/time、零 clear/drop/gap、fixture ref/digest/complete execution 与零 token。
-- **实现后果**：不得新增 PostgreSQL installer/service-configuration PowerShell、独立 signer 或 backup component；已批准的 archive/PITR operational/test wrappers 保持 closed registry rows。现有 trusted installer 只解释已签 contract；different-lock build、installed-file/SBOM 差异、列表顺序/大小写/重复/缺多、ACL template/live mismatch、路径碰撞、identifier 漂移、非 RUNNING、64/4/3/2 或 privilege-class drift、HBA/client-probe 混淆、Event Log 证据缺失/截断/错配/token 命中、日志旁路、双 fsync qualification 或 Task-15 UPS/power-cut join 缺失/陈旧，均使 final-installed generation 不可达。
+- **裁决**：package lock、服务、账户、启动/恢复、ACL、依赖、路径、有效配置、TLS、网络和 pre-HDD 零进程由 sole-owner 五 strict root 固定：19-field package lock、13-field install contract、4-field Event Log fixture、19-field coverage、17-field install readback；artifact set、scan contract 与 service-install evidence 逐层认证。`installed_files` 必须与 package/SBOM 逐文件双射并以完整向量摘要封口；V1 只允许 clean install 或相同 lock 的幂等接管，任意不同已有 build——更旧或更新——都只能进入后继签名维护升级。九路径 unresolved SDDL template 在账户/服务创建后由同一证据解析 numeric SID，live canonical DACL 逐项读回；四个独立 system identifier 值全部相等，并与 cut/restore exact-join；runtime 只接受 typed `RUNNING`。GUC 固定 `max_connections=64|reserved_connections=4|superuser_reserved_connections=3`；当前应用峰值 52 后的普通槽残余准确为 `64-4-3-52=5`，与峰值内应用安全储备 5 分账。F57 provider consumer exact-set 仍须独立满足 safety=2 的五条分类不等式，该两槽不是 52 种子的服务端残余；每个 consumer 的 NORMAL/RESERVED/SUPERUSER 类和 role attributes 均读回，应用不得占保留位。HBA 只证明 loopback `hostssl`+SCRAM，client `channel_binding=require`/协商由独立 authenticated probe 证明。`wal_sync_method=fsync_writethrough` 只是兼容性 pin；同文件 `fsync`/`fsync_writethrough` qualification 绑定卷/driver/cache，Task 15 再与 P340 UPS/write-cache/flush/power-cut exact-join才构成生产耐久性。Event Log coverage 必须闭合两个 provider registration、同 boot bookmark/record/time、零 clear/drop/gap、fixture ref/digest/complete execution 与零 token。
+- **实现后果**：不得新增 PostgreSQL installer/service-configuration PowerShell、独立 signer 或 backup component；已批准的 archive/PITR operational/test wrappers 保持 closed registry rows。现有 trusted installer 只解释已签 contract；different-lock build、installed-file/SBOM 差异、列表顺序/大小写/重复/缺多、ACL template/live mismatch、路径碰撞、identifier 漂移、非 RUNNING、64/4/3 GUC、当前种子 `normal_capacity=57|application_peak=52|normal_residual=5`、F57 provider `safety=2` 分类预算或 privilege-class 任一漂移、HBA/client-probe 混淆、Event Log 证据缺失/截断/错配/token 命中、日志旁路、双 fsync qualification 或 Task-15 UPS/power-cut join 缺失/陈旧，均使 final-installed generation 不可达。
 
 ### RULING-BACKUP-SAFEGUARD-01：有异机目标和两块盘即可证明抗勒索
 

@@ -1,37 +1,30 @@
-//! 五具名池的构建与钩子。Rw20/Ro10/Worker5/Integ5/Ops2 的规模读配置，
+//! 全机四具名池的进程唯一分配、构建与钩子。
+//! Rw20/Ro10 只由 core-server 持有，Worker5 只由 job-worker 持有，
+//! Ops2 只由 ops-agent 持有；
 //! 连接建立后（after_connect）下发池级超时、只读资源限额、
 //! `application_name = '<process>/<pool>'` 与四条会话变量的空串初始化；
-//! 归还前（after_release）逐项设回空串并断言无未结束事务，断言不成立即
-//! 丢弃该连接（返回 false），不让带事务状态的连接回池。
+//! 归还前（after_release）先无条件 ROLLBACK，再逐项清空会话变量；
+//! 任一步失败由 sqlx 丢弃连接，不带污染状态回池。
 //!
 //! 超时取值的出处是阶段 1 计划第 7.2 节池表：Rw statement 10000、
 //! lock 3000、idle_in_tx 15000；Ro statement 60000 加 work_mem 64MB
 //! （temp_file_limit 2GB 为 SUSET 参数，改由引导侧角色默认值承接）；
-//! Worker 300000；Ops 5000；Integ 10000。
+//! Worker 300000；Ops 5000。
 
 use std::collections::HashMap;
-use std::sync::{Arc, OnceLock};
+use std::future::Future;
+use std::sync::Arc;
 use std::time::Duration;
 
 use sqlx::postgres::PgPoolOptions;
 use sqlx::{Pool, Postgres};
 
-use crate::budget::{PoolKind, PoolSpec};
+use crate::budget::{PoolKind, PoolOwner, PoolSpec};
 use crate::metrics::DbMetrics;
 use crate::session::{SESSION_VARS, SET_SESSION_VAR_STMT};
 
-/// 进程名登记位。`application_name` 的 `<process>` 段在装配时登记一次，
-/// 未登记取 "ep"。
-static PROCESS_NAME: OnceLock<&'static str> = OnceLock::new();
-
-pub fn register_process_name(name: &'static str) {
-    // 重复登记取首个：装配只该发生一次，后来者不改写既成事实。
-    let _ = PROCESS_NAME.set(name);
-}
-
-pub fn process_name() -> &'static str {
-    PROCESS_NAME.get().copied().unwrap_or("ep")
-}
+/// 池连接数 gauge 的统一刷新周期。短于常见抓取周期，避免长期暴露陈旧值。
+pub const POOL_GAUGE_REFRESH_INTERVAL: Duration = Duration::from_secs(5);
 
 /// 一个池的三项会话超时（毫秒）。
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
@@ -77,39 +70,108 @@ pub fn session_commands(
     cmds
 }
 
-/// 构建五池所需的全部取值。由装配侧从 EP__DB__* 配置段转换而来，
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+enum ReleaseCleanupStep {
+    Rollback,
+    Clear(&'static str),
+}
+
+const RELEASE_CLEANUP_STEPS: [ReleaseCleanupStep; 5] = [
+    ReleaseCleanupStep::Rollback,
+    ReleaseCleanupStep::Clear(SESSION_VARS[0]),
+    ReleaseCleanupStep::Clear(SESSION_VARS[1]),
+    ReleaseCleanupStep::Clear(SESSION_VARS[2]),
+    ReleaseCleanupStep::Clear(SESSION_VARS[3]),
+];
+
+fn release_cleanup_steps() -> &'static [ReleaseCleanupStep] {
+    &RELEASE_CLEANUP_STEPS
+}
+
+/// 单个具名池的数据库凭据。每个池必须显式提供其 consumer 的凭据；
+/// 是否共享数据库角色由受审角色/consumer registry 决定。
+///
+/// ```compile_fail
+/// use ep_adapter_db_pg::PoolCredential;
+/// use ep_platform_runtime::config::SecretString;
+/// let credential = PoolCredential {
+///     user: "ep_app_rw".into(),
+///     password: SecretString::new("sensitive"),
+/// };
+/// let copied = credential.clone();
+/// drop(copied);
+/// ```
+pub struct PoolCredential {
+    pub user: String,
+    pub password: ep_platform_runtime::config::SecretString,
+}
+
+impl std::fmt::Debug for PoolCredential {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("PoolCredential")
+            .field("user", &self.user)
+            .field("password", &"[REDACTED]")
+            .finish()
+    }
+}
+
+/// 构建四池所需的全部取值。由装配侧从 EP__DB__* 配置段转换而来，
 /// 本 crate 不依赖配置结构体。
-#[derive(Clone, Debug)]
+#[derive(Debug)]
 pub struct PoolBuildCfg {
     pub host: String,
     pub port: u16,
     pub database: String,
-    pub user: String,
-    pub password: String,
-    pub specs: [PoolSpec; 5],
+    /// 顺序与 [`PoolKind::ALL`] 一一对应；当前 owner 的每个池必须为 Some。
+    pub credentials: [Option<PoolCredential>; 4],
+    pub specs: [PoolSpec; 4],
     pub acquire_timeout: Duration,
     pub max_lifetime: Duration,
     pub idle_timeout: Duration,
     /// 顺序与 [`PoolKind::ALL`] 一一对应。
-    pub timeouts: [PoolTimeouts; 5],
+    pub timeouts: [PoolTimeouts; 4],
     pub ro_limits: RoResourceLimits,
     pub process_name: &'static str,
 }
 
-/// 五个具名池的持有者。一个进程一份，装配时建好后只读共享。
+/// 某一进程被唯一分配的具名池持有者。
 pub struct PgPools {
     pools: HashMap<PoolKind, Pool<Postgres>>,
-    specs: [PoolSpec; 5],
+    specs: [PoolSpec; 4],
+    owner: PoolOwner,
     metrics: Arc<dyn DbMetrics>,
 }
 
 impl PgPools {
-    /// 构建五池。连接不在这里预热，首用建立；钩子在建池时挂好。
-    pub fn build(cfg: &PoolBuildCfg, metrics: Arc<dyn DbMetrics>) -> Result<Self, sqlx::Error> {
+    /// 只构建 `owner` 持有的池。连接不在这里预热，首用建立；
+    /// 另一进程的池连 lazy handle 都不创建，避免全机预算被复制。
+    pub fn build(
+        cfg: &PoolBuildCfg,
+        owner: PoolOwner,
+        metrics: Arc<dyn DbMetrics>,
+    ) -> Result<Self, sqlx::Error> {
         let mut pools = HashMap::new();
         for (i, kind) in PoolKind::ALL.iter().enumerate() {
             let spec = cfg.specs[i];
-            debug_assert_eq!(spec.kind, *kind, "specs 顺序必须与 PoolKind::ALL 一致");
+            if spec.kind != *kind {
+                return Err(sqlx::Error::Configuration(Box::new(std::io::Error::new(
+                    std::io::ErrorKind::InvalidInput,
+                    format!(
+                        "池规格位置 {i} 应为 {}，实际为 {}",
+                        kind.label(),
+                        spec.kind.label()
+                    ),
+                ))));
+            }
+            if kind.owner() != owner {
+                continue;
+            }
+            let credential = cfg.credentials[i].as_ref().ok_or_else(|| {
+                sqlx::Error::Configuration(Box::new(std::io::Error::new(
+                    std::io::ErrorKind::InvalidInput,
+                    format!("池 {} 缺少独立凭据", kind.label()),
+                )))
+            })?;
             let timeouts = cfg.timeouts[i];
             let ro_limits = (*kind == PoolKind::Ro).then_some(cfg.ro_limits);
             let app_name = format!("{}/{}", cfg.process_name, kind.label());
@@ -119,8 +181,12 @@ impl PgPools {
                 .host(&cfg.host)
                 .port(cfg.port)
                 .database(&cfg.database)
-                .username(&cfg.user)
-                .password(&cfg.password);
+                .username(&credential.user)
+                // SQLx 的公开 builder 需要 `&str` 并在 PgConnectOptions 内持有一份
+                // 第三方 String 副本。此处是当前不可消除的复制边界：上游
+                // SecretString 与 PoolCredential 均不 Clone 且 drop 时 zeroize，
+                // 但不能据此宣称 SQLx 内部副本也得到 zeroize。
+                .password(credential.password.expose());
 
             let pool = PgPoolOptions::new()
                 .max_connections(u32::from(spec.max_connections))
@@ -145,31 +211,22 @@ impl PgPools {
                 })
                 .after_release(|conn, _meta| {
                     Box::pin(async move {
-                        // 归还前逐项设回空串，顺序与写入一致。
-                        for name in SESSION_VARS {
-                            sqlx::query(SET_SESSION_VAR_STMT)
-                                .bind(name)
-                                .bind("")
-                                .execute(&mut *conn)
-                                .await?;
+                        // 必须先结束任何遗留事务，再在 autocommit 状态清空 session GUC。
+                        // 反过来会让 rollback 撤销清空并恢复旧租户上下文。
+                        for step in release_cleanup_steps() {
+                            match *step {
+                                ReleaseCleanupStep::Rollback => {
+                                    sqlx::query("rollback").execute(&mut *conn).await?;
+                                }
+                                ReleaseCleanupStep::Clear(name) => {
+                                    sqlx::query(SET_SESSION_VAR_STMT)
+                                        .bind(name)
+                                        .bind("")
+                                        .execute(&mut *conn)
+                                        .await?;
+                                }
+                            }
                         }
-                        // 保证不把未结束事务归还进池：无条件 rollback。
-                        //
-                        // F-82 更正：原判据是「事务外 `transaction_isolation` 取值为
-                        // `read uncommitted`，不成立即丢弃连接」。**该前提对 PostgreSQL 不成立**
-                        // ——`transaction_isolation` 由 `XactIsoLevel` 支撑，事务内外都取
-                        // `default_transaction_isolation`，而 `db/bootstrap/00_database.sql`
-                        // 逐字 `alter database ep set default_transaction_isolation = 'read committed'`。
-                        // 于是该式恒为 `Ok(false)`，sqlx 对 `Ok(false)` 的处置是**关闭连接、不回池**，
-                        // 五具名池因此退化成「每事务一次建连」：每个事务都要一次 TCP 握手、
-                        // SCRAM 认证与 after_connect 的整套 SET，`max_lifetime`／`idle_timeout`
-                        // 与规模表全部失效。这条在任何测试里都不可见——`FakeConn` 直接返回
-                        // 自己的 `in_tx` 标志，活库用例又用显式 `close()` 绕开了本回调。
-                        //
-                        // 改为无条件 `rollback`：事务外 PostgreSQL 只发一条
-                        // 「there is no transaction in progress」警告并成功，事务内则真正回滚。
-                        // 意图（不把未结束事务归还进池）因此**总是**达成，而不是靠一个恒假的判据。
-                        sqlx::query("rollback").execute(&mut *conn).await?;
                         Ok(true)
                     })
                 })
@@ -179,15 +236,20 @@ impl PgPools {
         Ok(Self {
             pools,
             specs: cfg.specs,
+            owner,
             metrics,
         })
+    }
+
+    pub const fn owner(&self) -> PoolOwner {
+        self.owner
     }
 
     pub fn pool(&self, kind: PoolKind) -> Option<&Pool<Postgres>> {
         self.pools.get(&kind)
     }
 
-    pub fn specs(&self) -> &[PoolSpec; 5] {
+    pub fn specs(&self) -> &[PoolSpec; 4] {
         &self.specs
     }
 
@@ -196,15 +258,40 @@ impl PgPools {
         self.pools.get(&kind).map_or(0, |p| p.size())
     }
 
-    /// 把五池当前连接数刷进 gauge。装配侧在就绪探针与周期任务中调用。
+    /// 把当前进程实际持有的池连接数刷进 gauge。
     pub fn refresh_gauges(&self) {
         for kind in PoolKind::ALL {
-            self.metrics
-                .pool_connections(kind.label(), self.connection_count(kind));
+            if let Some(pool) = self.pools.get(&kind) {
+                self.metrics.pool_connections(kind.label(), pool.size());
+            }
         }
     }
 
-    /// 关闭五池，停机路径调用。
+    /// 立即发布一次池 gauge，随后按固定间隔刷新，直到停机 future 完成。
+    /// 零间隔不启动忙循环，但仍发布初始值并等待停机。
+    pub async fn refresh_gauges_until<F>(&self, interval: Duration, shutdown: F)
+    where
+        F: Future,
+    {
+        self.refresh_gauges();
+        if interval.is_zero() {
+            shutdown.await;
+            return;
+        }
+
+        let start = tokio::time::Instant::now() + interval;
+        let mut ticker = tokio::time::interval_at(start, interval);
+        ticker.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
+        tokio::pin!(shutdown);
+        loop {
+            tokio::select! {
+                _ = &mut shutdown => break,
+                _ = ticker.tick() => self.refresh_gauges(),
+            }
+        }
+    }
+
+    /// 关闭四池，停机路径调用。
     pub async fn close(&self) {
         for kind in PoolKind::ALL {
             if let Some(pool) = self.pools.get(&kind) {
@@ -217,6 +304,7 @@ impl PgPools {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::metrics::{NoopDbMetrics, RecordingDbMetrics};
 
     const RW: PoolTimeouts = PoolTimeouts {
         statement_ms: 10_000,
@@ -233,11 +321,6 @@ mod tests {
         lock_ms: 3_000,
         idle_in_tx_ms: 15_000,
     };
-    const INTEG: PoolTimeouts = PoolTimeouts {
-        statement_ms: 10_000,
-        lock_ms: 3_000,
-        idle_in_tx_ms: 15_000,
-    };
     const OPS: PoolTimeouts = PoolTimeouts {
         statement_ms: 5_000,
         lock_ms: 3_000,
@@ -247,6 +330,178 @@ mod tests {
         work_mem_kb: 65_536,
         temp_file_limit_kb: 2_097_152,
     };
+
+    fn lazy_build_cfg() -> PoolBuildCfg {
+        let credential = |user: &str| {
+            Some(PoolCredential {
+                user: user.to_string(),
+                password: ep_platform_runtime::config::SecretString::new("test-only"),
+            })
+        };
+        PoolBuildCfg {
+            host: "127.0.0.1".to_string(),
+            port: 5432,
+            database: "ep".to_string(),
+            credentials: [
+                credential("ep_app_rw"),
+                credential("ep_analyst_ro"),
+                credential("ep_app_rw"),
+                credential("ep_ops_ro"),
+            ],
+            specs: crate::budget::STANDARD_POOL_SPECS,
+            acquire_timeout: Duration::from_secs(1),
+            max_lifetime: Duration::from_secs(60),
+            idle_timeout: Duration::from_secs(30),
+            timeouts: [RW, RO, WORKER, OPS],
+            ro_limits: RO_LIMITS,
+            process_name: "test",
+        }
+    }
+
+    #[test]
+    fn credential_debug_is_redacted_including_parent_config() {
+        let credential = PoolCredential {
+            user: "ep_app_rw".into(),
+            password: ep_platform_runtime::config::SecretString::new("never-log-this-secret"),
+        };
+        let credential_debug = format!("{credential:?}");
+        assert!(credential_debug.contains("[REDACTED]"));
+        assert!(!credential_debug.contains("never-log-this-secret"));
+
+        let mut cfg = lazy_build_cfg();
+        cfg.credentials[0] = Some(credential);
+        assert!(!format!("{cfg:?}").contains("never-log-this-secret"));
+    }
+
+    #[test]
+    fn build_rejects_reordered_specs_in_release_semantics() {
+        let mut cfg = lazy_build_cfg();
+        cfg.specs.swap(0, 1);
+        let err = match PgPools::build(&cfg, PoolOwner::CoreServer, Arc::new(NoopDbMetrics)) {
+            Ok(_) => panic!("乱序规格必须普通失败，不能依赖 debug_assert"),
+            Err(err) => err,
+        };
+        assert!(err.to_string().contains("池规格位置 0"));
+    }
+
+    #[tokio::test]
+    async fn each_process_builds_only_its_disjoint_host_pool_subset() {
+        let cfg = lazy_build_cfg();
+        assert_eq!(
+            cfg.credentials[1].as_ref().map(|c| c.user.as_str()),
+            Some("ep_analyst_ro")
+        );
+        let core = PgPools::build(&cfg, PoolOwner::CoreServer, Arc::new(NoopDbMetrics))
+            .expect("惰性建池不连活库");
+        assert!(core.pool(PoolKind::Rw).is_some());
+        assert!(core.pool(PoolKind::Ro).is_some());
+        assert!(core.pool(PoolKind::Worker).is_none());
+        assert!(core.pool(PoolKind::Ops).is_none());
+
+        let worker = PgPools::build(&cfg, PoolOwner::JobWorker, Arc::new(NoopDbMetrics))
+            .expect("惰性建池不连活库");
+        assert!(worker.pool(PoolKind::Worker).is_some());
+        assert!(worker.pool(PoolKind::Rw).is_none());
+        assert!(worker.pool(PoolKind::Ro).is_none());
+        assert!(worker.pool(PoolKind::Ops).is_none());
+
+        let ops = PgPools::build(&cfg, PoolOwner::OpsAgent, Arc::new(NoopDbMetrics))
+            .expect("惰性建池不连活库");
+        assert!(ops.pool(PoolKind::Ops).is_some());
+        assert!(ops.pool(PoolKind::Rw).is_none());
+        assert!(ops.pool(PoolKind::Ro).is_none());
+        assert!(ops.pool(PoolKind::Worker).is_none());
+    }
+
+    #[tokio::test]
+    async fn an_owned_pool_without_its_own_credential_is_rejected() {
+        let mut cfg = lazy_build_cfg();
+        cfg.credentials[1] = None;
+        let err = PgPools::build(&cfg, PoolOwner::CoreServer, Arc::new(NoopDbMetrics))
+            .err()
+            .expect("缺 Ro 凭据必须拒绝建池");
+        assert!(err.to_string().contains("ro"), "{err}");
+    }
+
+    #[tokio::test]
+    async fn refresh_gauges_emits_only_pools_owned_by_process() {
+        let metrics = Arc::new(RecordingDbMetrics::new());
+        let core = PgPools::build(&lazy_build_cfg(), PoolOwner::CoreServer, metrics.clone())
+            .expect("惰性建池不连活库");
+
+        core.refresh_gauges();
+
+        let mut gauges = metrics
+            .gauges
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .clone();
+        gauges.sort_unstable();
+        assert_eq!(gauges, vec![("ro", 0), ("rw", 0)]);
+    }
+
+    #[tokio::test]
+    async fn gauge_refresher_runs_on_each_interval() {
+        let metrics = Arc::new(RecordingDbMetrics::new());
+        let core = Arc::new(
+            PgPools::build(&lazy_build_cfg(), PoolOwner::CoreServer, metrics.clone())
+                .expect("惰性建池不连活库"),
+        );
+        let (stop_tx, stop_rx) = tokio::sync::oneshot::channel::<()>();
+        let task = tokio::spawn({
+            let core = core.clone();
+            async move {
+                core.refresh_gauges_until(Duration::from_millis(5), async {
+                    let _ = stop_rx.await;
+                })
+                .await;
+            }
+        });
+
+        tokio::time::timeout(Duration::from_secs(1), async {
+            loop {
+                let count = metrics
+                    .gauges
+                    .lock()
+                    .unwrap_or_else(|poisoned| poisoned.into_inner())
+                    .len();
+                if count >= 4 {
+                    break;
+                }
+                tokio::time::sleep(Duration::from_millis(1)).await;
+            }
+        })
+        .await
+        .expect("core 的两个 owner 池必须至少刷新两轮");
+        stop_tx.send(()).expect("刷新任务仍在运行");
+        tokio::time::timeout(Duration::from_secs(1), task)
+            .await
+            .expect("收到停机信号后刷新任务必须退出")
+            .expect("刷新任务不得 panic");
+    }
+
+    #[tokio::test]
+    async fn gauge_refresher_returns_after_shutdown() {
+        let metrics = Arc::new(RecordingDbMetrics::new());
+        let core = PgPools::build(&lazy_build_cfg(), PoolOwner::CoreServer, metrics.clone())
+            .expect("惰性建池不连活库");
+
+        tokio::time::timeout(
+            Duration::from_secs(1),
+            core.refresh_gauges_until(Duration::from_secs(30), async {}),
+        )
+        .await
+        .expect("已触发停机时不得等满刷新周期");
+        assert_eq!(
+            metrics
+                .gauges
+                .lock()
+                .unwrap_or_else(|poisoned| poisoned.into_inner())
+                .len(),
+            2,
+            "退出前仍须发布一次 owner 池的初始值"
+        );
+    }
 
     #[test]
     fn rw_pool_sets_its_three_timeouts_and_app_name() {
@@ -277,15 +532,10 @@ mod tests {
     }
 
     #[test]
-    fn worker_integ_ops_timeouts_match_the_pool_table() {
+    fn worker_and_ops_timeouts_match_the_pool_table() {
         assert_eq!(
             session_commands(WORKER, None, "job-worker/worker")[0],
             "set statement_timeout to 300000"
-        );
-        assert_eq!(
-            session_commands(INTEG, None, "integration-gateway/integ")[0],
-            "set statement_timeout to 10000",
-            "Integ 保持配置现状 10000"
         );
         assert_eq!(
             session_commands(OPS, None, "ops-agent/ops")[0],
@@ -294,16 +544,18 @@ mod tests {
     }
 
     #[test]
-    fn app_name_quotes_are_escaped() {
-        let cmds = session_commands(RW, None, "we'ird/rw");
-        assert_eq!(cmds.last().unwrap(), "set application_name to 'we''ird/rw'");
+    fn release_cleanup_rolls_back_before_clearing_session_variables() {
+        let steps = release_cleanup_steps();
+        assert_eq!(steps[0], ReleaseCleanupStep::Rollback);
+        assert_eq!(steps.len(), 1 + SESSION_VARS.len());
+        for (step, name) in steps[1..].iter().zip(SESSION_VARS) {
+            assert_eq!(*step, ReleaseCleanupStep::Clear(name));
+        }
     }
 
     #[test]
-    fn process_name_defaults_to_ep_until_registered() {
-        // 本测试与其他测试共享全局登记位：只断言取值非空且为 ASCII。
-        let name = process_name();
-        assert!(!name.is_empty());
-        assert!(name.is_ascii());
+    fn app_name_quotes_are_escaped() {
+        let cmds = session_commands(RW, None, "we'ird/rw");
+        assert_eq!(cmds.last().unwrap(), "set application_name to 'we''ird/rw'");
     }
 }

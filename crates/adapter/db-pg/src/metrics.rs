@@ -4,7 +4,7 @@
 //! `ep_db_statement_duration_seconds`、`ep_db_tx_retries_total`）由
 //! 装配侧桥接到 ep-platform-obs 的 MetricsRegistry。
 //!
-//! 标签取值域：pool 取五个具名池标签；statement_kind 取语句首词小写；
+//! 标签取值域：pool 取四个具名池标签；statement_kind 取语句首词小写；
 //! sqlstate 取 40001 与 40P01 两值。三者的基数都是有界集合，
 //! 与注册表的标签基数纪律一致。
 

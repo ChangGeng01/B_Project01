@@ -2,15 +2,15 @@
 //! `EP_TEST_PG_URL`（具备建库与删库权限的连接串，形如
 //! `postgres://postgres@127.0.0.1:5432/postgres`）。
 //!
-//! # 五个用例一律带 `#[ignore]`，理由是「未覆盖 ≠ 通过」
+//! # 六个用例一律带 `#[ignore]`，理由是「未覆盖 ≠ 通过」
 //!
 //! 原先的形态是「未设该变量时即刻返回并在 stderr 留痕」。**实测该形态产出的是一条
-//! 恒真的判据**：本机有库与无库两次运行，测试摘要**都是 `ok. 5 passed`**，
+//! 恒真的判据**：本机有库与无库两次运行，测试摘要都显示为 passed，
 //! 差别只在耗时（0.00s 对 0.50s）——即「跑过」与「什么都没做」在结果上完全一样，
 //! 而 CI 两种情况都看到绿。这正是本卷第一类缺陷。
 //!
 //! 标准库测试框架只有 `passed`／`failed`／`ignored` 三种计数，其中只有 `ignored`
-//! 如实表达「本次没跑」。故改为 `#[ignore]`：默认 `cargo test` 报 **5 ignored**，
+//! 如实表达「本次没跑」。故改为 `#[ignore]`：当前默认 `cargo test` 报 **6 ignored**，
 //! 不再冒充通过；有库时以
 //! `EP_TEST_PG_URL=… cargo test -p ep-adapter-db-pg --test live_pg -- --ignored`
 //! 实跑。运行期仍保留 `LiveDb::new()` 的 `None` 早退，用于变量设了但连不上的情形。
@@ -22,8 +22,8 @@
 use std::sync::Arc;
 
 use ep_adapter_db_pg::{
-    NoopDbMetrics, PgMigrationWindowGuard, PgPools, PgUnitOfWork, PoolBuildCfg, PoolKind, PoolSpec,
-    RetryPolicy,
+    NoopDbMetrics, PgMigrationWindowGuard, PgPools, PgUnitOfWork, PoolBuildCfg, PoolKind,
+    PoolOwner, PoolSpec, RetryPolicy,
 };
 use ep_foundation::error::codes::{
     PLATFORM_DB_MIGRATION_WINDOW_CLOSED, PLATFORM_DB_REFERENCED_ROW_MISSING,
@@ -39,7 +39,7 @@ use sqlx::{Executor, Pool, Postgres};
 
 const ENV_URL: &str = "EP_TEST_PG_URL";
 
-/// 从连接串拆出五池构建所需的五个分量。只支持
+/// 从连接串拆出四池构建所需的连接分量。只支持
 /// `postgres://用户[:口令]@主机:端口/库名` 这一种形态：
 /// 驱动侧的 `PgConnectOptions` 不吐口令，只能从原文拆。
 fn parse_pg_url(url: &str) -> (String, u16, String, String, String) {
@@ -164,9 +164,9 @@ fn system_ctx() -> SecurityContext {
     )
 }
 
-/// 用活库连接分量拼出五池构建取值：规模全部压到 1，钩子语义不变。
+/// 用活库连接分量拼出四池构建取值：规模全部压到 1，钩子语义不变。
 fn build_cfg(db: &LiveDb) -> PoolBuildCfg {
-    use ep_adapter_db_pg::{PoolTimeouts, RoResourceLimits};
+    use ep_adapter_db_pg::{PoolCredential, PoolTimeouts, RoResourceLimits};
     const fn spec(kind: PoolKind) -> PoolSpec {
         PoolSpec {
             kind,
@@ -177,13 +177,16 @@ fn build_cfg(db: &LiveDb) -> PoolBuildCfg {
         host: db.host.clone(),
         port: db.port,
         database: db.name.clone(),
-        user: db.user.clone(),
-        password: db.password.clone(),
+        credentials: std::array::from_fn(|_| {
+            Some(PoolCredential {
+                user: db.user.clone(),
+                password: ep_platform_runtime::config::SecretString::new(db.password.clone()),
+            })
+        }),
         specs: [
             spec(PoolKind::Rw),
             spec(PoolKind::Ro),
             spec(PoolKind::Worker),
-            spec(PoolKind::Integ),
             spec(PoolKind::Ops),
         ],
         acquire_timeout: std::time::Duration::from_secs(5),
@@ -193,7 +196,7 @@ fn build_cfg(db: &LiveDb) -> PoolBuildCfg {
             statement_ms: 10_000,
             lock_ms: 3_000,
             idle_in_tx_ms: 15_000,
-        }; 5],
+        }; 4],
         ro_limits: RoResourceLimits {
             work_mem_kb: 65_536,
             temp_file_limit_kb: 2_097_152,
@@ -210,9 +213,9 @@ async fn live_after_connect_sets_pool_session_state() {
         eprintln!("跳过：未设 {ENV_URL}，需运行中的 PostgreSQL");
         return;
     };
-    ep_adapter_db_pg::register_process_name("dbpg-test");
     let cfg = build_cfg(&db);
-    let pools = PgPools::build(&cfg, Arc::new(NoopDbMetrics)).expect("五池构建应成功");
+    let pools = PgPools::build(&cfg, PoolOwner::CoreServer, Arc::new(NoopDbMetrics))
+        .expect("所有者池构建应成功");
     let pool = pools.pool(PoolKind::Rw).expect("rw 池必须存在");
     let mut conn = pool.acquire().await.expect("取连接应成功");
     let row: (String, String, String) = sqlx::query_as(
@@ -230,6 +233,48 @@ async fn live_after_connect_sets_pool_session_state() {
     db.cleanup(Some(&pools)).await;
 }
 
+/// after_release 必须先回滚遗留事务，再清 session GUC；否则清空会被回滚撤销，
+/// 旧租户上下文随连接回到池中。
+#[tokio::test]
+#[ignore = "活库用例：需 EP_TEST_PG_URL，以 --ignored 实跑；默认计入 ignored 而不是 passed"]
+async fn live_after_release_clears_session_vars_after_an_abandoned_transaction() {
+    let Some(db) = LiveDb::new().await else {
+        eprintln!("跳过：未设 {ENV_URL}，需运行中的 PostgreSQL");
+        return;
+    };
+    let cfg = build_cfg(&db);
+    let pools = PgPools::build(&cfg, PoolOwner::CoreServer, Arc::new(NoopDbMetrics))
+        .expect("所有者池构建应成功");
+    let pool = pools.pool(PoolKind::Rw).expect("rw 池必须存在");
+
+    let mut conn = pool.acquire().await.expect("首次取连接应成功");
+    for name in ep_adapter_db_pg::SESSION_VARS {
+        sqlx::query(ep_adapter_db_pg::SET_SESSION_VAR_STMT)
+            .bind(name)
+            .bind("stale-tenant-context")
+            .execute(conn.as_mut())
+            .await
+            .expect("预置旧 session GUC");
+    }
+    sqlx::query("begin")
+        .execute(conn.as_mut())
+        .await
+        .expect("开启遗留事务");
+    drop(conn);
+
+    let mut recycled = pool.acquire().await.expect("重取连接应成功");
+    for name in ep_adapter_db_pg::SESSION_VARS {
+        let value: String = sqlx::query_scalar("select current_setting($1)")
+            .bind(name)
+            .fetch_one(recycled.as_mut())
+            .await
+            .expect("清理后 GUC 可读");
+        assert_eq!(value, "", "{name} 不得保留旧租户上下文");
+    }
+    recycled.close().await.expect("连接可关闭");
+    db.cleanup(Some(&pools)).await;
+}
+
 /// transact 四步在真实库上：会话变量在事务体内可见，提交后可见写入。
 #[tokio::test]
 #[ignore = "活库用例：需 EP_TEST_PG_URL，以 --ignored 实跑；默认计入 ignored 而不是 passed"]
@@ -239,7 +284,8 @@ async fn live_transact_writes_session_vars_and_commits() {
         return;
     };
     let cfg = build_cfg(&db);
-    let pools = PgPools::build(&cfg, Arc::new(NoopDbMetrics)).expect("五池构建应成功");
+    let pools = PgPools::build(&cfg, PoolOwner::CoreServer, Arc::new(NoopDbMetrics))
+        .expect("所有者池构建应成功");
     let uow = PgUnitOfWork::with_pool(
         pools.pool(PoolKind::Rw).expect("rw 池必须存在").clone(),
         PoolKind::Rw,
@@ -286,7 +332,8 @@ async fn live_fk_violation_maps_to_referenced_row_missing() {
         return;
     };
     let cfg = build_cfg(&db);
-    let pools = PgPools::build(&cfg, Arc::new(NoopDbMetrics)).expect("五池构建应成功");
+    let pools = PgPools::build(&cfg, PoolOwner::CoreServer, Arc::new(NoopDbMetrics))
+        .expect("所有者池构建应成功");
     let uow = PgUnitOfWork::with_pool(
         pools.pool(PoolKind::Rw).expect("rw 池必须存在").clone(),
         PoolKind::Rw,
@@ -323,7 +370,8 @@ async fn live_migration_window_guard_open_and_closed_paths() {
         return;
     };
     let cfg = build_cfg(&db);
-    let pools = PgPools::build(&cfg, Arc::new(NoopDbMetrics)).expect("五池构建应成功");
+    let pools = PgPools::build(&cfg, PoolOwner::CoreServer, Arc::new(NoopDbMetrics))
+        .expect("所有者池构建应成功");
     let uow = PgUnitOfWork::with_pool(
         pools.pool(PoolKind::Rw).expect("rw 池必须存在").clone(),
         PoolKind::Rw,
@@ -400,7 +448,8 @@ async fn live_snapshot_transact_exports_a_usable_snapshot() {
         return;
     };
     let cfg = build_cfg(&db);
-    let pools = PgPools::build(&cfg, Arc::new(NoopDbMetrics)).expect("五池构建应成功");
+    let pools = PgPools::build(&cfg, PoolOwner::CoreServer, Arc::new(NoopDbMetrics))
+        .expect("所有者池构建应成功");
     let uow = PgUnitOfWork::with_pool(
         pools.pool(PoolKind::Rw).expect("rw 池必须存在").clone(),
         PoolKind::Rw,

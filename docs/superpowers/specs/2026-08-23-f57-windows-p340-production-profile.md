@@ -3,13 +3,13 @@
 > 日期：2026-08-23（Australia/Melbourne）
 > 状态：已批准硬件和生产设计输入；尚未完成 Windows 实机、容量、恢复或发布认证
 > 开发门：`READY_NOT_AUTHORIZED`；用户已于 2026-08-27 明确授权（F-65），可从收敛计划 G0 开始，本文描述的 F-57 安装、运行时、探针和证据链全部仍为 `NOT_IMPLEMENTED`
-> 适用硬件：当前物理基线为 ThinkStation P340 Tower、i5-10500、32GB RAM、256GB SSD、单 1TB HDD；第 15 节只冻结未来客户自控 IaaS 的独立 `IAAS_WINDOWS_SERVER_HDD_STRICT` 扩展缝，当前首版不实现、不接受，也不继承 P340 证据
+> 适用硬件：当前物理基线为 ThinkStation P340 Tower、i5-10500、32GB RAM、256GB SSD、单 1TB HDD；该数据盘在被合格新盘替代前仅可开发/验证，替代后经安全擦除与处置批准最多作非权威暂存，永不作权威盘、RAID1 成员或备份。生产候选必须换装或增加标称不少于 2,000,000,000,000 bytes 的企业 CMR HDD；NTFS 卷以 1,589,137,899,520 bytes 为名义 floor，并必须满足 §9.1 含实测 NTFS/BitLocker 元数据的动态资格公式。第 15 节只冻结未来客户自控 IaaS 的独立 `IAAS_WINDOWS_SERVER_HDD_STRICT` 扩展缝，当前首版不实现、不接受，也不继承 P340 证据
 > 适用系统：Windows Server 2022 原生服务
 > 权威关系：[F-57 总体设计](2026-08-23-f57-governed-automation-fabric-design.md) 的生产实施附录；生产运营 exact 契约见[客户端、生命周期与安全运营执行契约](2026-08-23-f57-client-lifecycle-security-contract.md)
 
 ## 1. 结论
 
-当前机器只有在本档案全部上线门通过后，才可以作为约 20 名活跃用户的低资源 `SINGLE_DISK_DEGRADED_PRODUCTION`（单磁盘降级生产）节点；通过前只是候选硬件，不能承载真实客户数据：
+当前 P340 主机在换装/增加满足第 9.1 节硬容量包络的数据盘，并通过本档案全部上线门后，才可以作为约 20 名活跃用户的低资源 `SINGLE_DISK_DEGRADED_PRODUCTION`（单磁盘降级生产）候选节点。现有单 1TB HDD profile 永远不能进入该生产状态；在被合格新盘替代前只能开发/验证，被替代后也只有经安全擦除与处置批准才可作非权威暂存，不能承载权威生产数据、充当 RAID1 成员或备份。通过前不能承载真实客户数据：
 
 - 本地 AI 模型关闭；
 - 所有持久客户数据和衍生数据位于加密 HDD；
@@ -19,7 +19,7 @@
 - 权威状态值和界面必须同时显示 `SINGLE_DISK_DEGRADED_PRODUCTION` / “单磁盘降级生产”，不承诺磁盘故障连续运行、硬件热插拔或统一四小时恢复；
 - Windows Server 驱动、TPM、BitLocker、存储、网卡、散热和断电恢复实机验证通过。
 
-现有 P340、256GB SSD 和单块 1TB HDD 单独存在时永远不能达到本项目最高安全档生产。上线最少还要实际取得并验证：兼容 UPS；由独立身份管理、位于服务器外且只追加的自动备份落点；至少两块加密、交替使用且非窗口期物理断开的离线轮换 HDD；彼此分域并离线双人保管的 BitLocker、应用 vault 与备份恢复材料；以及一台洁净恢复主机或可验证、能在演练窗口独占使用的临时恢复硬件。缺少任一项只能开发/测试，不得录入真实客户数据。
+现有 P340、256GB SSD 和单块 1TB HDD 单独存在时永远不能达到本项目最高安全档生产。上线最少还要实际取得并验证：满足第 9.1 节容量门的数据盘；兼容 UPS；由独立身份管理、位于服务器外且只追加的自动备份落点；至少两块加密、交替使用且非窗口期物理断开的离线轮换 HDD；彼此分域并离线双人保管的 BitLocker、应用 vault 与备份恢复材料；以及一台洁净恢复主机或可验证、能在演练窗口独占使用的临时恢复硬件。缺少任一项只能开发/测试，不得录入真实客户数据。
 
 P340 是工作站，不是具备冗余电源、热插拔背板、ECC 认证证据和服务器级 BMC 的服务器。部分配置可能选配 Intel AMT，但 AMT 不等同于具备独立电源、独立管理网络和完整硬件遥测的服务器 BMC；在本机实证前不得把它计作带外恢复能力。本档案只定义受控使用方法，不把工作站改写成服务器级高可用硬件。
 
@@ -27,11 +27,12 @@ P340 是工作站，不是具备冗余电源、热插拔背板、ECC 认证证�
 
 | 字段 | 值 | 影响 |
 |---|---|---|
-| `hardware_profile_id` | `THINKSTATION_P340_I5_10500_32GB_256GB_SSD_1TB_HDD` | 与 runtime topology/P340 wire 相同的容量、节流和诚实状态唯一标识；硬件变化必须生成新 ID |
+| 当前开发档 `hardware_profile_id` | `THINKSTATION_P340_I5_10500_32GB_256GB_SSD_1TB_HDD_DEV_ONLY` | `production_eligible=false`；被合格新盘替代前只能开发、测试和非生产验证；替代后经安全擦除与处置批准，最多作可丢弃的非权威暂存，永不作权威盘、RAID1 成员或备份 |
+| 生产候选 `hardware_profile_id` | `THINKSTATION_P340_I5_10500_32GB_256GB_SSD_2TB_CMR_HDD_MIN` | runtime topology/P340 wire 的唯一首版生产候选；仍须绑定实际磁盘、卷和容量证书，硬件变化必须生成新 ID |
 | CPU | i5-10500，6C/12T | 设计目标为 20 人普通业务、不承载本地模型；是否足够只由实机容量证书确认 |
 | RAM | 32GB | 需要有界连接、worker 和缓存；不得按旧 64GB 预算 |
 | OS SSD | 256GB | 承载 OS、程序、依赖、可重建静态资源及 exact 四类无客户数据运行控制/代码状态；闭集外持久字节失败 |
-| Data HDD | 单 1TB | 所有权威/衍生数据；单点故障、低随机 IOPS |
+| Data HDD | 当前单 1TB 仅开发；生产候选为单块标称至少 2 TB 企业 CMR HDD，NTFS `volume_total_bytes >= max(1,589,137,899,520, 1,481,763,717,120 + 107,374,182,400 + measured_unclassifiable_filesystem_allocation_bytes)` | 所有权威/衍生数据；生产候选仍有单点故障、低随机 IOPS，只能标为降级生产 |
 | OS | Windows Server 2022 | 原生 SCM/ACL/防火墙/BitLocker；无 WSL/Linux 依赖；不是永久平台，须在支持生命周期内完成后继 LTSC 迁移认证 |
 | Active users | 20 | 容量认证基线，不是许可或硬登录上限 |
 | Heavy report concurrency | 1 | 报表请求异步接受，后台单实例执行 |
@@ -44,7 +45,7 @@ P340 是工作站，不是具备冗余电源、热插拔背板、ECC 认证证�
 | 类别 | 最低数量/形态 | 最低用途与限制 |
 |---|---|---|
 | 权威主机 | 复用现有 P340 一台 | 运行 Windows Server 2022、Rust authority 与 PostgreSQL 16；仍是单机、单电源、无热插拔的工作站风险档 |
-| 权威数据盘 | 现有 1TB HDD 一块，须为健康、可认证的 CMR；不满足则更换 | 承载全部权威与衍生持久数据；单盘只能显示降级，未来两块匹配企业 CMR HDD 镜像是优先可用性升级 |
+| 权威数据盘 | 换装或增加一块标称至少 2,000,000,000,000 bytes、可认证的企业 CMR HDD；NTFS 卷以 1,589,137,899,520 bytes 为名义 floor，并通过 §9.1 动态元数据公式 | 承载全部权威与衍生持久数据；现有 1TB HDD 不合格。单盘只能显示降级，未来两块各自满足同一容量档的匹配企业 CMR HDD 镜像是优先可用性升级 |
 | UPS | 一台可通信、可自检且实测运行时间足够完成安全关机的设备 | 只能经第 11 节批准 carrier 接入；普通插排、无通信 UPS 或只写标称 VA/W 不合格 |
 | 服务器外连续目标 | 一个独立身份、独立故障域、HDD-backed、只追加且容量达标的目标 | writer 不能枚举历史、删除、覆盖、改 ACL 或缩短保留；本机目录、同盘分区、VSS 或普通可写共享不合格 |
 | 离线轮换介质 | 至少两块不同 `media_id` 的加密 HDD | 交替形成已验证 generation，非受控窗口物理断开并异地/分区保管；不能同时常连 |
@@ -110,13 +111,23 @@ Lenovo P340 Tower 的机位、控制器和官方操作系统范围以 [官方 PS
 | `packages` | 客户配置代、客户能力包和 exact manifest | 连续 + 全量 |
 | `logs` | 可能含业务关联的应用日志 | 按保留策略 |
 | `temp` | 导入、文档、OCR、AI/MCP 临时业务文件 | 加密、限时清理 |
-| `spool` | Outbox、集成、备份和归档暂存 | 连续状态 |
+| `spool` | 集成状态、archive/backup report spool 与 core/worker MCP completion spool | 连续状态；具名子目录分别计费 |
 | `exports` | 待领取导出和报表文件 | 加密、到期清理 |
 | `plugin-work` | WASM/worker/container 受控工作区 | 按 manifest |
 | `quarantine` | 未通过附件扫描的对象 | 加密、禁止执行 |
 | `secrets` | 客户凭据密文和秘密库元数据 | 独立加密与恢复 |
+| `working` | 受控业务工作文件 | 按对象策略；不得成为未登记永久库 |
+| `generated` | 可交付的生成文件与受控派生物 | 按对象策略 |
+| `generations` | 配置代、能力代与观察/应用证据 | 连续 + 全量 |
+| `evidence` | 认证、发布、恢复与运行证据闭包 | 只追加/按签名策略 |
+| `release` | 候选、发布与离线验证闭包 | 只追加/按签名策略 |
+| `archive` | 非 PostgreSQL 的业务/控制归档；WAL archive 只能进 `postgres/wal` | 按签名保留策略 |
+| `outbox` | 耐久 Outbox 与投递状态 | 连续 + 全量 |
+| `system-telemetry` | 可关联部署或客户的系统遥测明细 | 按最小化/保留策略 |
 | `dumps` | 获批诊断 dump | 默认禁用；启用时限期处置 |
 | `backup-staging` | 本地加密备份暂存 | 不计作独立副本 |
+
+上述顶层目录加 `postgres` 构成生产 `data_root` 的完整 exact-set；不允许安装器、插件或配置生成器创建未登记的持久顶层目录。VSS diff-area extent 是 §9.1 的非目录分账来源，不因此增加另一顶层根。
 
 ### 4.3 OS 泄漏通道
 
@@ -228,14 +239,78 @@ yellow_free       = max(emergency_reserve × 2, p95_daily_growth × 30)
 red_free          = emergency_reserve
 ```
 
-- 低于 `max(yellow_free, 50 GiB)`：停止新大型导入、导出、报表和非必要索引重建；
-- 低于 `max(red_free, 40 GiB)`：创建 deployment-wide `ProductionAdmissionHoldV1`，释放预留后只允许完成在途事务、审计、安全处置和受控停机；
+生产硬容量还必须独立覆盖三个可同时发生的故障桶，不能用上述运行水位或彼此之间借空间：
+
+| 容量桶 ID / 故障或数据类别 | 硬预算 |
+|---|---:|
+| `FILE_WORKING_SHARED` / 业务文件与受控工作区共享桶 | 150 GiB = 161,061,273,600 bytes |
+| `HISTORY_CONTROL_LOG_SHARED` / 历史、控制、证据、日志与报文 spool 共享桶 | 60 GiB = 64,424,509,440 bytes |
+| `POSTGRES_DATABASE_NON_LIVE_WAL` / PostgreSQL 非 live-WAL 数据 | 40 GiB = 42,949,672,960 bytes |
+| `WAL_ARCHIVE_STAGING` / archive staging | 350 GiB = 375,809,638,400 bytes |
+| `SLOT_RETAINED_LIVE_WAL` / 正常恢复边界及 replication-slot 保留的 live WAL | 350 GiB = 375,809,638,400 bytes |
+| `ARCHIVER_FAILURE_LIVE_WAL` / 归档执行器持续失败后额外保留的 live WAL | 350 GiB = 375,809,638,400 bytes |
+| `BACKUP_STAGING` / 本机备份暂存 | 24 GiB = 25,769,803,776 bytes |
+| `SEARCH_INDEX` / 搜索与可重建索引 | 8 GiB = 8,589,934,592 bytes |
+| `RESTORE_DIAGNOSTIC_SCRATCH_SHARED` / 恢复、PostgreSQL 进程临时、获批 dump 与 VSS scratch 共享桶 | 48 GiB = 51,539,607,552 bytes |
+| 小计 | **1380 GiB = 1,481,763,717,120 bytes** |
+| 不可借用 free-space 阻断底线 | **100 GiB = 107,374,182,400 bytes** |
+| NTFS 数据卷名义最低总容量 | **1480 GiB = 1,589,137,899,520 bytes** |
+| NTFS 数据卷本机资格公式 | `volume_total_bytes >= max(1,589,137,899,520, 1,481,763,717,120 + 107,374,182,400 + measured_unclassifiable_filesystem_allocation_bytes)`；全式 checked `u128` |
+
+物理 CMR HDD 标称原始容量同时必须不少于 **2,000,000,000,000 bytes**；必须分别读回物理盘原始容量和 NTFS `volume_total_bytes`，只满足其中一项即失败。`1,589,137,899,520` bytes 保持为低成本名义 floor，但不是忽略文件系统开销的许可：每次资格输入和每个容量样本都必须用当次 `measured_unclassifiable_filesystem_allocation_bytes` 重算上表动态下界，元数据非零时实际合格卷自然高于名义 floor。上述九个桶是产品管理持久对象的完整 exact-set，不是举例或九个可自由重命名的目录。签名 `P340CertificationPolicyDefinitionV1` 还必须冻结下列十四个容量类；除 60 GiB 共享桶外，每个桶恰有一个同额容量类。60 GiB 共享桶的局部上限按最大合法占用精确闭合为 `20+2+2+1+1+34=60 GiB`：
+
+| 容量类 ID | 所属桶 | 类硬上限 |
+|---|---|---:|
+| `BUSINESS_FILE_AND_WORKING_SHARED` | `FILE_WORKING_SHARED` | 161,061,273,600 bytes |
+| `HISTORY_AUDIT_CONTROL_SHARED` | `HISTORY_CONTROL_LOG_SHARED` | 36,507,222,016 bytes（34 GiB） |
+| `POSTGRESQL_TEXT_LOG` | `HISTORY_CONTROL_LOG_SHARED` | 21,474,836,480 bytes（20 GiB） |
+| `ARCHIVE_WRITER_REPORT_SPOOL` | `HISTORY_CONTROL_LOG_SHARED` | 2,147,483,648 bytes（2 GiB） |
+| `BACKUP_WRITER_REPORT_SPOOL` | `HISTORY_CONTROL_LOG_SHARED` | 2,147,483,648 bytes（2 GiB） |
+| `CORE_MCP_COMPLETION_SPOOL` | `HISTORY_CONTROL_LOG_SHARED` | 1,073,741,824 bytes（1 GiB） |
+| `WORKER_MCP_COMPLETION_SPOOL` | `HISTORY_CONTROL_LOG_SHARED` | 1,073,741,824 bytes（1 GiB） |
+| `POSTGRES_DATABASE_NON_LIVE_WAL` | `POSTGRES_DATABASE_NON_LIVE_WAL` | 42,949,672,960 bytes |
+| `WAL_ARCHIVE_STAGING` | `WAL_ARCHIVE_STAGING` | 375,809,638,400 bytes |
+| `SLOT_RETAINED_LIVE_WAL` | `SLOT_RETAINED_LIVE_WAL` | 375,809,638,400 bytes |
+| `ARCHIVER_FAILURE_LIVE_WAL` | `ARCHIVER_FAILURE_LIVE_WAL` | 375,809,638,400 bytes |
+| `BACKUP_STAGING` | `BACKUP_STAGING` | 25,769,803,776 bytes |
+| `SEARCH_INDEX` | `SEARCH_INDEX` | 8,589,934,592 bytes |
+| `RESTORE_DIAGNOSTIC_SCRATCH_SHARED` | `RESTORE_DIAGNOSTIC_SCRATCH_SHARED` | 51,539,607,552 bytes |
+
+十四类/十四 selector 的 total-unique 边界只覆盖 `data_root` 下的产品管理持久对象，加签名 VSS policy 登记的 DATA_HDD diff-area extent；它不把 NTFS/BitLocker 卷元数据伪装成第十五类，也不把任意卷外对象塞进一个 catch-all。`data_root` 下所有持久对象必须按下表唯一归类；`/** except ...` 是集合差，不是可同时命中的第二条前缀规则。目录本身不是计费单位：普通文件按 NTFS allocation size 计数，hard link 以最终 file ID 去重，所有 data stream/partial/reserve/manifest 字节都计入，VSS 按 provider readback 的已分配 extent 计数。禁止的 ADS/reparse/hard-link 别名仍直接失败，不能靠计费吸收。
+
+| canonical `data_root` 相对选择器或非目录分账来源 | 唯一容量类 |
+|---|---|
+| `files/**`、`temp/**`、`exports/**`、`plugin-work/**`、`quarantine/**`、`working/**`、`generated/**` | `BUSINESS_FILE_AND_WORKING_SHARED` |
+| `audit/**`、`packages/**`、`secrets/**`、`generations/**`、`evidence/**`、`release/**`、非 PostgreSQL 的 `archive/**`、`outbox/**`、`system-telemetry/**`、`logs/** except logs/postgresql/**`、`spool/** except` 下列四个具名 spool | `HISTORY_AUDIT_CONTROL_SHARED` |
+| `logs/postgresql/**` | `POSTGRESQL_TEXT_LOG` |
+| `spool/archive-writer/**` | `ARCHIVE_WRITER_REPORT_SPOOL` |
+| `spool/backup-writer/**` | `BACKUP_WRITER_REPORT_SPOOL` |
+| `spool/mcp-audit-completion/core/**` | `CORE_MCP_COMPLETION_SPOOL` |
+| `spool/mcp-audit-completion/worker/**` | `WORKER_MCP_COMPLETION_SPOOL` |
+| `postgres/data/** except postgres/data/pg_wal/**` | `POSTGRES_DATABASE_NON_LIVE_WAL` |
+| `postgres/wal/**` | `WAL_ARCHIVE_STAGING` |
+| `postgres/data/pg_wal/**` 中由正常 crash-recovery/checkpoint 边界或最慢 slot 仍要求保留的 segment | `SLOT_RETAINED_LIVE_WAL` |
+| `postgres/data/pg_wal/**` 中仅因持续 archiver failure 而位于前一保留前沿之外的额外 segment | `ARCHIVER_FAILURE_LIVE_WAL` |
+| `backup-staging/**` | `BACKUP_STAGING` |
+| `indexes/**` | `SEARCH_INDEX` |
+| `postgres/temp/process/**`、`postgres/temp/restore/**`、`dumps/**`、签名 VSS policy 报告的 DATA_HDD diff-area extents | `RESTORE_DIAGNOSTIC_SCRATCH_SHARED` |
+
+同一 live `pg_wal` segment 若同时受多个保留原因影响，按“正常恢复/slot 优先、archiver-failure 只计前一保留前沿之外的增量”归类；无原因、原因未知或 ledger 不能解释的 segment 一律失败关闭。这样同一个物理 segment 永不重复计入两个 350 GiB 桶，同时两种故障仍可并发占满各自预算。`postgres/data` 中除 `pg_wal` 外的字节只计 40 GiB 数据库桶；外置 `postgres/temp/process`、`postgres/temp/restore`、获批 dump 和 VSS diff area 只计 48 GiB 共享 scratch 桶。
+
+Authority 的唯一 `CapacityGovernor` 必须先用容量类 ID 对每次产品持久写、预留和增长做桶聚合 admission，再检查局部配置上限；反向顺序不合法。对象缺少 class ID、同一 file ID/extent 有两个 class ID、class→bucket 不在上述 exact-set、跨桶抵扣、桶计数溢出或扫描出现未归类产品字节时，拒绝新写并创建 deployment-wide hold。固定整卷 collector 还必须枚举 addressable file/stream 与分配 extent：只有经 NTFS/BitLocker 结构读回证明为卷自身、且不对应产品对象或登记 VSS extent 的 allocation bytes 才能进入 `measured_unclassifiable_filesystem_allocation_bytes`；该名称表示“不能归入产品容量类的文件系统元数据”，不是允许未知文件。任何普通文件/stream 位于 `data_root` exact-set 之外、无法访问、无法解释的 allocated extent 或差分不闭合都计入 `unclassified_allocation_bytes` 异常并失败，不能进入 measured 元数据项。零异常时必须 checked-equal `used_bytes = sum(class_usage.allocated_bytes) + measured_unclassifiable_filesystem_allocation_bytes`，并按动态资格公式保证九桶最大值与 100 GiB free floor 之外仍完整容纳当次卷元数据。`backup.spill_max_bytes` 在生产固定为 `25,769,803,776`，计入 `BACKUP_STAGING` 全目录的 allocation bytes，不能再把 manifest/partial 当作免费空间；两个 report spool 的普通默认各为 `268,435,456` bytes，配置只接受 `67,108,864..=2,147,483,648`，签名 production hard max 分别为 `2,147,483,648`，两个 MCP completion spool 分别固定 `1,073,741,824`。PostgreSQL 日志 normal max `21,474,836,480`；legal hold 必须保留受保护日志，但绝不允许借其他桶，60 GiB 聚合桶到限即 hold。
+
+配置生成器必须从同一个已编译政策投影生成这些目录、class ID、局部上限和聚合桶摘要；部署 readback、72 小时每分钟样本及最终容量证书必须 exact-match 九桶、十四类及映射摘要，并携带当次 `measured_unclassifiable_filesystem_allocation_bytes` 与独立 `unclassified_allocation_bytes`。未知根、重复 class、映射/配置漂移、十四类按桶 checked-sum 不等于 `1380 GiB`、任一桶的类上限和大于桶上限、动态卷容量公式不成立、使用量分解不闭合或任一未分类 allocation byte 都阻止候选启动或认证。archive staging 在 350 GiB 停止接纳；`max_slot_wal_keep_size='350GB'` 只约束 slot-retained WAL。后两个 350 GiB 故障桶虽同处 live `pg_wal`，仍须分账，live `pg_wal` 合计硬包络为 700 GiB。
+
+归档持续失败时最多每 30 秒采样；unarchived live WAL 达 300 GiB，或 live `pg_wal` 合计达 650 GiB，必须立即进入 deployment-wide hold、拒绝新业务写并受控停机。350/700 GiB 是不得越过的终值。容量证书必须证明实测峰值 WAL 生成率 ×（采样周期 + 最坏停机时间）小于 50 GiB 反应余量；不能证明就不能签发。重启前必须恢复归档并重新通过水位检查。
+
+- 低于 `max(yellow_free, 100 GiB)`：停止新大型导入、导出、报表和非必要索引重建；
+- 低于 `max(red_free, 100 GiB)`：创建 deployment-wide `ProductionAdmissionHoldV1`，释放预留后只允许完成在途事务、审计、安全处置和受控停机；
 - 无法写审计/WAL：权威写失败关闭；
 - 预留空间不得被普通文件或插件占用。
 
-旧 800GB/2TB 认证数据集和统一 4 小时恢复不适用于当前 1TB HDD。
+旧 800GB 数据集和统一 4 小时恢复承诺均不适用；标称 2 TB 在这里是物理盘最低档，不是可随意消耗的数据集大小。
 
-这两个附加底线只能收紧、不能取代现有公式或 `platform.file.free_space_min_bytes=100 GiB`。因此当前约 1TB P340 的实效门通常是可用空间低于约 `100 GiB` 就暂停批量，低于约 `50 GiB` 就全局 hold；签名站点政策、30 日 P95 增长或现有 100 GiB 文件底线产生更高阈值时必须取更高值。PostgreSQL 日志的 20 GiB 上限不是额外可消耗预留；legal hold 或 typed cleanup 失败导致它超限时立即按同一空间门升级。
+运行水位只能收紧、不能取代硬容量包络或 `platform.file.free_space_min_bytes=100 GiB`。有效批量暂停门是 `max(yellow_free, 100 GiB)`，有效全局 hold 门是 `max(red_free, 100 GiB)`；签名站点政策或 30 日 P95 增长产生更高阈值时取更高值。PostgreSQL 日志的其他运行告警值不是额外可消耗预留；legal hold、typed cleanup 或归档失败导致对应硬桶/水位超限时立即按上面的独立门升级。
 
 ### 9.2 20 人混合负载
 
@@ -350,7 +425,7 @@ DATA_HDD 已灾难性死亡时不走上述正常轮换，也不要求死盘产�
 
 ## 13. RAID1 升级
 
-P340 需要先验证最终安装两块匹配企业 HDD 所需的托架、可选 flex-bay/升级件、供电、SATA、控制器和 Windows Server 驱动。现有 1TB HDD 只有在型号、CMR、固件、健康、工作负载等级和配对兼容性全部认证后才可复用，此时只增加一块匹配盘；否则先移除现盘，再安装两块匹配盘。升级过程：
+P340 需要先验证最终安装两块匹配企业 HDD 所需的托架、可选 flex-bay/升级件、供电、SATA、控制器和 Windows Server 驱动。RAID1 的每个成员必须单独满足第 9.1 节的 2 TB 原始容量和 NTFS 卷容量档；现有 1TB HDD 不得作为镜像成员绕过容量门。升级过程：
 
 1. 完整服务器外备份并验证；
 2. 关机、断电、安装磁盘；
@@ -358,7 +433,7 @@ P340 需要先验证最终安装两块匹配企业 HDD 所需的托架、可选 
 4. 恢复或迁移全部权威数据；
 5. 校验数据库、附件、审计和密钥；
 6. 运行 20 人容量与断电测试；
-7. 未被认证复用的原 1TB HDD 清除权威角色，只作非权威暂存；已被认证复用的盘继续作为镜像成员，不执行本步。
+7. 原 1TB HDD 清除权威角色；经安全擦除和处置批准后最多只作非权威暂存，不得作为独立备份或镜像成员。
 
 重建期间性能、断电和磁盘替换必须演练。RAID1 不增加备份层，也不是硬件热插拔承诺。
 
@@ -435,8 +510,8 @@ deployment、provider、backup、support 和 diagnostics manifest 必须记录 j
 ### 持久性与恢复
 
 - [ ] PostgreSQL checksums、`wal_sync_method=fsync_writethrough` 兼容性 pin、同 DATA_HDD 同文件 `fsync`/`fsync_writethrough` 双方法资格证据，以及当前驱动/write-cache/UPS exact join 下的强杀、flush 与断电测试通过；
-- [ ] PostgreSQL 日志精确保留证明 30 日/20 GiB 普通上限、当前日志不删、至少 7 日、legal hold 优先且超额失败关闭；只有 `EPAuthorityControl` typed cleanup 能按签名清单删除，PostgreSQL 身份删除历史的负例被 ACL 拒绝，且空间低于有效 `max(yellow_free,50 GiB)`/`max(red_free,40 GiB)` 门分别暂停批量/全局 hold。
-- [ ] 固定 PostgreSQL 16 安装包、签名、完整 `installed_files`↔SBOM 双射、服务身份与 typed `RUNNING`、未解析 SDDL→已创建账户 live DACL exact 比对、PGDATA/WAL/temp/log/archive 路径、四方 `system_identifier` 和 `postgresql.conf`/`pg_hba.conf` 已取证；`64/4/3` GUC、两槽安全余量、NORMAL/RESERVED/SUPERUSER 分类预算和角色属性全部通过，HBA `hostssl`+SCRAM 与 client `channel_binding=require` probe 分别通过；Event Log provider/bookmark/record/time/clear/drop/gap/fixture/digest/complete coverage 全量证据通过；仅 clean/same-lock adopt，异锁返回 maintenance；base backup、连续 WAL、`pg_verifybackup`、PITR 与附件一致 cut 在洁净 Windows 主机通过；
+- [ ] PostgreSQL 日志精确保留证明 30 日/20 GiB 普通上限、当前日志不删、至少 7 日、legal hold 优先且超额失败关闭；只有 `EPAuthorityControl` typed cleanup 能按签名清单删除，PostgreSQL 身份删除历史的负例被 ACL 拒绝，且空间低于有效 `max(yellow_free,100 GiB)`/`max(red_free,100 GiB)` 门分别暂停批量/全局 hold。
+- [ ] 固定 PostgreSQL 16 安装包、签名、完整 `installed_files`↔SBOM 双射、服务身份与 typed `RUNNING`、未解析 SDDL→已创建账户 live DACL exact 比对、PGDATA/WAL/temp/log/archive 路径、四方 `system_identifier` 和 `postgresql.conf`/`pg_hba.conf` 已取证；`64/4/3` GUC 下普通容量为 57，当前应用峰值 52 后准确剩余 5 个普通槽，且该服务端残余 5 与峰值内应用安全储备 5 分账；F57 provider graph 的两槽 margin 仅按其完整 consumer exact-set 另行证明；NORMAL/RESERVED/SUPERUSER 分类预算和角色属性全部通过，HBA `hostssl`+SCRAM 与 client `channel_binding=require` probe 分别通过；Event Log provider/bookmark/record/time/clear/drop/gap/fixture/digest/complete coverage 全量证据通过；仅 clean/same-lock adopt，异锁返回 maintenance；base backup、连续 WAL、`pg_verifybackup`、PITR 与附件一致 cut 在洁净 Windows 主机通过；
 - [ ] 当前状态、事实、审计和 Outbox 原子性通过；
 - [ ] 服务器外 writer 删除/覆盖/改 ACL/保留的负向探针全部拒绝；
 - [ ] active-config 分别选择 current `BackupTopologySigningTrustCurrentPointerV1` 与 topology；pointer/manifest 独立信任链、generation/predecessor、固定 signer DN/SPKI、链/撤销/checkpoint 均通过，私有 `BackupTopologyAuthorityV1` 未复用应用/备份恢复域或 recipient/share roster；storage manifest 的 `backup_target_ids` exact singleton，topology revision/predecessor、deployment/epoch/generation/currentness 全部通过；
@@ -454,6 +529,7 @@ deployment、provider、backup、support 和 diagnostics manifest 必须记录 j
 
 ### 容量和诚实状态
 
+- [ ] 物理数据盘原始容量不少于 2,000,000,000,000 bytes，NTFS `volume_total_bytes` 同时不少于 1,589,137,899,520 bytes 和 `1,481,763,717,120 + 107,374,182,400 + measured_unclassifiable_filesystem_allocation_bytes`，且整卷使用量分解、三条 350 GiB 故障路径、100 GiB 不可借用空间和 50 GiB 反应余量全部通过正反向测试；
 - [ ] 15 Workbench + 3 客户门户 + 2 供应商门户的 20 人聚合负载，与 1 个独立保留资源的 Control Center 会话、增量备份、自动化、附件和单报表同时通过；
 - [ ] 低优先级任务可节流、持久等待并恢复；
 - [ ] 绿色/黄色/红色阈值与用户提示通过；

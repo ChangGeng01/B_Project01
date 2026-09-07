@@ -55,8 +55,9 @@ const CLOSE_STMT: &str = "update platform_ops.degradation_windows \
 const COUNT_STMT: &str =
     "select count(*) from platform_ops.degradation_windows where closed_at = 'infinity'";
 
-/// 降级窗口台账的 PostgreSQL 实现。装配时绑定 Ops 池的工作单元
-/// 与指标注册表；注册表用于开窗/关窗成功后刷新 gauge。
+/// 降级窗口台账的 PostgreSQL 实现。它需要写权，装配时必须绑定
+/// core-server 的 Rw 工作单元，不得绑定 ops-agent 的 `ep_ops_ro`
+/// 只读运维池。指标注册表用于开窗/关窗成功后刷新 gauge。
 pub struct PgDegradationLedger {
     uow: Arc<PgUnitOfWork>,
     metrics: Arc<MetricsRegistry>,

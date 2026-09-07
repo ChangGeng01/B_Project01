@@ -1,10 +1,11 @@
-//! 事务重试策略。出处是 02 计划第 4.7 节：序列化失败 40001 与死锁 40P01
-//! 在数据访问层重试，退避 50、150、450 毫秒；只对尚未产生任何外部可见
-//! 副作用的事务重试，判定依据是 `PgTx` 上的 side_effect_marker 标志位。
+//! 未来事务重试策略的纯判定器。出处是 02 计划第 4.7 节：序列化失败 40001
+//! 与死锁 40P01 使用 50、150、450 毫秒退避。当前尚无类型化幂等证明，
+//! [`crate::tx::PgUnitOfWork`] 的公共工厂入口不会调用本判定器并始终单次
+//! 失败关闭；这里保留的 SQLSTATE、次数和遗留 side-effect marker 测试只
+//! 冻结未来策略形态，marker 未置位本身不是重试授权。
 //!
 //! EP__DB__RETRY__MAX_ATTEMPTS 与 EP__DB__RETRY__BACKOFF_MS 两键按
-//! config-reference 的登记为 SIGHUP 热生效：装配侧在热加载时重建
-//! [`RetryPolicy`]，不在旧策略上打补丁。
+//! config-reference 的登记在进程启动时构造策略，修改后须重启对应服务。
 
 use std::time::Duration;
 
@@ -31,20 +32,13 @@ impl RetryPolicy {
         }
     }
 
-    /// 从配置段取值构造。backoff 取值不足或超过三段时截断/补齐到三段，
-    /// 保证与 max_attempts 的形态一致。
-    pub fn from_config(max_attempts: u8, backoff_ms: &[u32]) -> Self {
-        let mut arr = [50u16, 150, 450];
-        for (i, slot) in arr.iter_mut().enumerate() {
-            if let Some(v) = backoff_ms.get(i) {
-                *slot = (*v).min(u32::from(u16::MAX)) as u16;
-            }
+    /// 从配置段取值构造。当前尚无签名策略代，只有冻结的三次退避序列
+    /// 可被接受；任何漂移都失败关闭，绝不截断、补齐或数值钳制。
+    pub fn try_from_config(max_attempts: u8, backoff_ms: &[u32]) -> Result<Self, &'static str> {
+        if max_attempts != 3 || backoff_ms != [50, 150, 450] {
+            return Err("db.retry 必须精确为 max_attempts=3、backoff_ms=[50,150,450]");
         }
-        Self {
-            max_attempts,
-            backoff_ms: arr,
-            retryable_sqlstates: ["40001", "40P01"],
-        }
+        Ok(Self::standard())
     }
 
     pub fn is_retryable_sqlstate(&self, sqlstate: Option<&str>) -> bool {
@@ -195,10 +189,23 @@ mod tests {
     }
 
     #[test]
-    fn from_config_takes_the_first_three_backoff_values() {
-        let p = RetryPolicy::from_config(3, &[10, 20]);
-        assert_eq!(p.backoff_ms, [10, 20, 450], "不足三段保留标准第三段");
-        let p = RetryPolicy::from_config(3, &[10, 20, 30, 40]);
-        assert_eq!(p.backoff_ms, [10, 20, 30], "超过三段截断");
+    fn config_constructor_rejects_instead_of_coercing_non_frozen_values() {
+        for (max_attempts, backoff_ms) in [
+            (0, vec![50, 150, 450]),
+            (255, vec![50, 150, 450]),
+            (3, vec![]),
+            (3, vec![50, 150]),
+            (3, vec![50, 150, 450, 900]),
+            (3, vec![50, 150, 65_536]),
+        ] {
+            assert!(
+                RetryPolicy::try_from_config(max_attempts, &backoff_ms).is_err(),
+                "必须拒绝 max_attempts={max_attempts}, backoff_ms={backoff_ms:?}"
+            );
+        }
+        assert_eq!(
+            RetryPolicy::try_from_config(3, &[50, 150, 450]),
+            Ok(RetryPolicy::standard())
+        );
     }
 }

@@ -111,7 +111,8 @@ const SCHEMAS_WITH_CREATE_STMT: &str = "select n.nspname from pg_namespace n \
 const ROLE_CREATE_FLAGS_STMT: &str =
     "select rolcreaterole, rolcreatedb from pg_roles where rolname = current_user";
 
-/// 数据基座自检的 PostgreSQL 实现。装配时绑定 Ops 池的工作单元。
+/// 数据基座自检的 PostgreSQL 实现。装配时绑定当前进程
+/// 唯一持有的可读工作单元，不跨进程借池。
 pub struct PgDataFoundationCheck {
     uow: Arc<PgUnitOfWork>,
 }
