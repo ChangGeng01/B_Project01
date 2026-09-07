@@ -8,11 +8,11 @@ mod wiring;
 use std::process::ExitCode;
 use std::sync::Arc;
 
-use ep_adapter_ipc::IpcServer;
+use ep_adapter_ipc::{IpcServer, PLUGIN_ENDPOINT};
 use ep_platform_obs::log::{JsonLogger, Level, LogFields};
 use ep_platform_runtime::boot;
 use ep_platform_runtime::http::SystemState;
-use ep_platform_runtime::lifecycle::Lifecycle;
+use ep_platform_runtime::lifecycle::{Lifecycle, EXIT_CONFIG_OR_SELFCHECK};
 use ep_platform_runtime::selfcheck::baseline_registry;
 use ep_platform_runtime::serving::Serving;
 use ep_platform_runtime::{BuildInfo, ProcessKind};
@@ -36,6 +36,10 @@ async fn serve(
     layers: String,
     check_only: bool,
 ) -> ExitCode {
+    if let Err(detail) = cfg.ipc.require_endpoint(PLUGIN_ENDPOINT) {
+        logger.log(Level::Error, LogFields::msg("startup", detail));
+        return ExitCode::from(EXIT_CONFIG_OR_SELFCHECK);
+    }
     let mut lifecycle = Lifecycle::new(PROCESS);
     boot::enter_configuring(&mut lifecycle, &logger);
     boot::enter_selfchecking(&mut lifecycle, &logger);
@@ -88,7 +92,7 @@ async fn serve(
                 Level::Info,
                 LogFields::msg("startup", format!("IPC 监听 {}", ipc.path().display())),
             );
-            serving.spawn(async move {
+            serving.spawn_critical("plugin-host IPC 服务端", async move {
                 ipc.serve(listener, async move {
                     signal.wait().await;
                 })
@@ -99,13 +103,15 @@ async fn serve(
         Err(e) => serving.mark_failed(format!("IPC 服务端不可用：{e}")),
     }
 
-    logger.log(
-        Level::Info,
-        LogFields::msg(
-            "startup",
-            format!("已就绪，状态 {}", state.state().as_str()),
-        ),
-    );
+    if serving.startup_succeeded().await {
+        logger.log(
+            Level::Info,
+            LogFields::msg(
+                "startup",
+                format!("已就绪，状态 {}", state.state().as_str()),
+            ),
+        );
+    }
     serving
         .wait_and_drain(&state, &logger, SHUTDOWN_DRAIN_MS)
         .await

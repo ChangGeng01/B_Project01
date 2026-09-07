@@ -1,9 +1,8 @@
 //! 密钥后端的装配（02 计划 §7：`EP__KMS__BACKEND` 取 builtin 或 hsm）。
 //!
-//! 首版只装配内置 KMS：主密钥文件权限 0400 且属主为本进程账户的校验
-//! 在 `BuiltinKmsBackend::new` 内部完成，不合规即拒。`hsm` 取值待
-//! 客户提供硬件密码机后按同一配置位点切换（02 计划 §11 预留三），
-//! 本阶段配置写 `hsm` 一律视为装配失败——不以半个实现顶位。
+//! F-57 生产需要 TPM/HSM/KMS non-exportable wrapping handle；该 provider 尚未交付，
+//! 因而默认 `builtin` 与 `hsm` 都稳定失败关闭。历史 POSIX master.key 只允许显式
+//! `legacy-file` development/test debug 构建，默认与发布构建不编译磁盘读取入口。
 
 use std::path::Path;
 use std::sync::Arc;
@@ -16,12 +15,25 @@ pub fn build_kms_backend(
     kms: &KmsCfg,
     _secrets_dir: &Path,
 ) -> Result<Arc<BuiltinKmsBackend>, String> {
+    if !kms.builtin.master_key_path.as_os_str().is_empty() {
+        #[cfg(all(feature = "legacy-file", debug_assertions, unix))]
+        if kms.backend == "builtin" {
+            return BuiltinKmsBackend::new(&kms.builtin.master_key_path)
+                .map(Arc::new)
+                .map_err(|e| format!("历史开发密钥后端装配失败：{}", e.message));
+        }
+        return Err(
+            "已废弃的 kms.builtin.master_key_path 只允许显式 legacy-file development/test debug 构建"
+                .into(),
+        );
+    }
+
     match kms.backend.as_str() {
-        "builtin" => BuiltinKmsBackend::new(&kms.builtin.master_key_path)
-            .map(Arc::new)
-            .map_err(|e| format!("内置密钥后端装配失败：{}", e.message)),
-        // hsm 载体按 feature 门控交付；未启用 feature 即装配失败，
-        // 绝不回落 builtin——静默回落会让主密钥保护形态与配置声明不符。
+        "builtin" => Err(
+            "NOT_IMPLEMENTED：F-57 non-exportable wrapping-handle KMS 尚未交付，禁止回退普通 master.key"
+                .into(),
+        ),
+        "hsm" => Err("NOT_IMPLEMENTED：F-57 HSM wrapping-handle provider 尚未交付".into()),
         other => Err(format!("密钥后端 {other} 在本构建中不可用")),
     }
 }
@@ -50,5 +62,32 @@ mod tests {
             ..KmsCfg::default()
         };
         assert!(build_kms_backend(&kms, Path::new("/tmp")).is_err());
+    }
+
+    #[test]
+    fn default_builtin_backend_is_explicitly_not_implemented() {
+        let error = match build_kms_backend(&KmsCfg::default(), Path::new("/tmp")) {
+            Err(error) => error,
+            Ok(_) => panic!("F-57 non-exportable wrapping handle 尚未交付，默认不得读普通文件"),
+        };
+        assert!(error.contains("NOT_IMPLEMENTED"), "{error}");
+    }
+
+    #[cfg(all(feature = "legacy-file", debug_assertions, unix))]
+    #[test]
+    fn missing_legacy_master_key_path_is_redacted_through_assembly() {
+        let kms = KmsCfg {
+            builtin: KmsBuiltinCfg {
+                master_key_path: Path::new("/private/tmp/ABSOLUTE_MASTER_KEY_MARKER/missing.key")
+                    .to_path_buf(),
+            },
+            ..KmsCfg::default()
+        };
+        let error = match build_kms_backend(&kms, Path::new("/tmp")) {
+            Err(error) => error,
+            Ok(_) => panic!("missing key must fail closed"),
+        };
+        assert!(!error.contains("ABSOLUTE_MASTER_KEY_MARKER"), "{error}");
+        assert!(!error.contains("/private/tmp"), "{error}");
     }
 }

@@ -1,5 +1,5 @@
-//! integration-gateway — 8082 健康与指标、出网客户端骨架（超时、退避、熔断）、
-//! 出网白名单校验、独立池 5、优雅停机。
+//! integration-gateway — 固定本机 IPC、出网客户端骨架（超时、退避、熔断）、
+//! 出网白名单校验、零数据库连接、零 TCP 监听、优雅停机。
 //!
 //! 本阶段不实现电子签章协议，也不做证据固化，更不发起任何真实出网请求。
 
@@ -10,17 +10,16 @@ mod wiring;
 use std::process::ExitCode;
 use std::sync::Arc;
 
-use axum::middleware::from_fn_with_state;
+use ep_adapter_ipc::{IpcServer, INTEGRATION_ENDPOINT};
 use ep_platform_obs::log::{JsonLogger, Level, LogFields};
 use ep_platform_runtime::boot;
-use ep_platform_runtime::http::middleware::{catch_panic, observe};
-use ep_platform_runtime::http::{minimal_router, SystemState};
-use ep_platform_runtime::lifecycle::{Lifecycle, EXIT_PANIC};
+use ep_platform_runtime::http::SystemState;
+use ep_platform_runtime::lifecycle::{Lifecycle, EXIT_CONFIG_OR_SELFCHECK};
 use ep_platform_runtime::selfcheck::baseline_registry;
 use ep_platform_runtime::serving::Serving;
-use ep_platform_runtime::{http, BuildInfo, ProcessKind};
+use ep_platform_runtime::{BuildInfo, ProcessKind};
 
-use config::{IntegrationConfig, DEFAULTS};
+use config::{IntegrationConfig, DEFAULTS, SHUTDOWN_DRAIN_MS};
 
 const PROCESS: ProcessKind = ProcessKind::IntegrationGateway;
 
@@ -40,6 +39,10 @@ async fn serve(
     layers: String,
     check_only: bool,
 ) -> ExitCode {
+    if let Err(detail) = cfg.ipc.require_endpoint(INTEGRATION_ENDPOINT) {
+        logger.log(Level::Error, LogFields::msg("startup", detail));
+        return ExitCode::from(EXIT_CONFIG_OR_SELFCHECK);
+    }
     let mut lifecycle = Lifecycle::new(PROCESS);
     boot::enter_configuring(&mut lifecycle, &logger);
     boot::enter_selfchecking(&mut lifecycle, &logger);
@@ -93,28 +96,37 @@ async fn serve(
         Err(e) => serving.mark_failed(format!("出网骨架演练不通过：{e}")),
     }
 
-    let addr = match http::parse_addr(&cfg.http.bind_addr) {
-        Ok(a) => a,
-        Err(e) => {
-            logger.log(Level::Error, LogFields::msg("startup", format!("{e}")));
-            return ExitCode::from(EXIT_PANIC);
-        }
-    };
-    let router = minimal_router()
-        .fallback(http::system::fallback)
-        .route_layer(from_fn_with_state(state.clone(), observe))
-        .layer(from_fn_with_state(state.clone(), catch_panic))
-        .with_state(state.clone());
-
-    serving.spawn_http(addr, router, &logger).await;
-    logger.log(
-        Level::Info,
-        LogFields::msg(
-            "startup",
-            format!("已就绪，状态 {}", state.state().as_str()),
-        ),
+    let ipc = IpcServer::new(
+        cfg.ipc.socket_path.clone(),
+        cfg.ipc.max_frame_bytes,
+        wiring::method_table(state.clone()),
     );
+    match ipc.bind() {
+        Ok(listener) => {
+            let signal = serving.signal();
+            logger.log(
+                Level::Info,
+                LogFields::msg("startup", format!("IPC 监听 {}", ipc.path().display())),
+            );
+            serving.spawn_critical("integration-gateway IPC 服务端", async move {
+                ipc.serve(listener, async move {
+                    signal.wait().await;
+                })
+                .await;
+            });
+        }
+        Err(e) => serving.mark_failed(format!("IPC 服务端不可用：{e}")),
+    }
+    if serving.startup_succeeded().await {
+        logger.log(
+            Level::Info,
+            LogFields::msg(
+                "startup",
+                format!("已就绪，状态 {}", state.state().as_str()),
+            ),
+        );
+    }
     serving
-        .wait_and_drain(&state, &logger, cfg.http.shutdown_drain_ms)
+        .wait_and_drain(&state, &logger, SHUTDOWN_DRAIN_MS)
         .await
 }

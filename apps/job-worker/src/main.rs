@@ -13,6 +13,7 @@ use std::process::ExitCode;
 use std::sync::Arc;
 
 use axum::middleware::from_fn_with_state;
+use ep_adapter_db_pg::POOL_GAUGE_REFRESH_INTERVAL;
 use ep_platform_obs::log::{JsonLogger, Level, LogFields};
 use ep_platform_runtime::boot;
 use ep_platform_runtime::http::middleware::{catch_panic, observe};
@@ -57,16 +58,16 @@ async fn serve(
         return ExitCode::from(EXIT_CONFIG_OR_SELFCHECK);
     }
 
-    // 数据库装配：失败即不注入（unwired-absent），四项 SQL 自检
-    // 如实报未覆盖。本进程不装配密钥后端与机密探针。
+    // 数据库与系统机密是本进程的启动前置。装配失败不得降成 None/Pending，
+    // 否则默认 KMS 未实现也会被假报为自检通过。
     let db = match wiring::build(&cfg.db, &cfg.secrets, &cfg.platform, metrics.clone()) {
         Ok(assembly) => Some(Arc::new(assembly)),
         Err(reason) => {
             logger.log(
-                Level::Warn,
-                LogFields::msg("startup", format!("数据库装配未注入：{reason}")),
+                Level::Error,
+                LogFields::msg("startup", format!("数据库装配失败，拒绝启动：{reason}")),
             );
-            None
+            return ExitCode::from(EXIT_CONFIG_OR_SELFCHECK);
         }
     };
 
@@ -96,17 +97,24 @@ async fn serve(
         db.as_ref().and_then(|d| d.degradation_ledger()),
     );
     if check_only {
-        return boot::check_exit(
+        let code = boot::check_exit(
             &registry
                 .run_all(PROCESS, BuildInfo::current().version)
                 .await,
         );
+        if let Some(db) = &db {
+            db.pools.close().await;
+        }
+        return code;
     }
     let report = match boot::selfcheck(&registry, PROCESS, &mut lifecycle, &metrics, &logger).await
     {
         Ok(r) => r,
         Err((report, code)) => {
             println!("{}", report.to_json());
+            if let Some(db) = &db {
+                db.pools.close().await;
+            }
             return code;
         }
     };
@@ -123,21 +131,29 @@ async fn serve(
         Ok(a) => a,
         Err(e) => {
             logger.log(Level::Error, LogFields::msg("startup", format!("{e}")));
+            if let Some(db) = &db {
+                db.pools.close().await;
+            }
             return ExitCode::from(EXIT_PANIC);
         }
     };
 
     let router = minimal_router()
         .fallback(http::system::fallback)
-        .route_layer(from_fn_with_state(state.clone(), observe))
         .layer(from_fn_with_state(state.clone(), catch_panic))
+        .layer(from_fn_with_state(state.clone(), observe))
         .with_state(state.clone());
 
     let mut serving = Serving::new();
     serving.spawn_http(addr, router, &logger).await;
-    // 装配产物持有一个生命周期：调度器消费 Worker 池属后续阶段，
-    // 这里显式持有而非丢弃，避免池在进程存活期内提前析构。
-    let _db = db;
+    if let Some(db) = db.clone() {
+        let signal = serving.signal();
+        serving.spawn(async move {
+            db.pools
+                .refresh_gauges_until(POOL_GAUGE_REFRESH_INTERVAL, signal.wait())
+                .await;
+        });
+    }
     // 阶段 3a 装配位：内容项 applier 注册表空骨架。发布执行归
     // 本进程（03 计划 §3.4.12），applier 实现随属主模块阶段注入
     // （见 wiring/release.rs），执行路径接通前在此显式持有。
@@ -154,16 +170,25 @@ async fn serve(
             id.directory.clone(),
         )));
     }
-    serving.spawn(scheduler::run(registry, serving.signal(), logger.clone()));
-
-    logger.log(
-        Level::Info,
-        LogFields::msg(
-            "startup",
-            format!("已就绪，状态 {}", state.state().as_str()),
-        ),
+    serving.spawn_critical(
+        "job-worker 调度循环",
+        scheduler::run(registry, serving.signal(), logger.clone()),
     );
-    serving
+
+    if serving.startup_succeeded().await {
+        logger.log(
+            Level::Info,
+            LogFields::msg(
+                "startup",
+                format!("已就绪，状态 {}", state.state().as_str()),
+            ),
+        );
+    }
+    let code = serving
         .wait_and_drain(&state, &logger, cfg.http.shutdown_drain_ms)
-        .await
+        .await;
+    if let Some(db) = db {
+        db.pools.close().await;
+    }
+    code
 }

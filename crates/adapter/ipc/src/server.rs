@@ -139,21 +139,25 @@ impl IpcServer {
         })
     }
 
-    /// 接受连接直到 `shutdown` 完成。停机时删除 socket 文件，不留残留。
+    /// 接受连接直到 `shutdown` 完成，然后等待已接受连接排空。
+    /// 外层排空期限到达后丢弃本 future，JoinSet 会取消所有在途连接。
     pub async fn serve<F>(self, mut listener: IpcListener, shutdown: F)
     where
         F: std::future::Future<Output = ()> + Send,
     {
         let methods = Arc::new(self.methods);
         let max = self.max_frame_bytes;
+        let mut connections = tokio::task::JoinSet::new();
         tokio::pin!(shutdown);
         loop {
             tokio::select! {
+                biased;
                 _ = &mut shutdown => break,
+                _ = connections.join_next(), if !connections.is_empty() => {},
                 accepted = listener.accept() => match accepted {
                     Ok(stream) => {
                         let methods = methods.clone();
-                        tokio::spawn(async move { serve_conn(stream, methods, max).await });
+                        connections.spawn(async move { serve_conn(stream, methods, max).await });
                     }
                     // 单次 accept 失败不拖垮服务端，但也不静默：交给调用方的日志
                     // 看不到这条，于是这里把它作为连接级事实吞掉是不行的——
@@ -163,6 +167,8 @@ impl IpcServer {
             }
         }
         listener.cleanup();
+        drop(listener);
+        while connections.join_next().await.is_some() {}
     }
 }
 
@@ -201,6 +207,109 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    // Host transport is only a harness for the shared connection lifecycle;
+    // these tests do not provide Windows DACL/token or runtime authority.
+    #[cfg(unix)]
+    struct BlockedMethod {
+        entered: tokio::sync::Notify,
+        release: tokio::sync::Notify,
+        dropped: Arc<tokio::sync::Notify>,
+    }
+
+    #[cfg(unix)]
+    #[async_trait::async_trait]
+    impl IpcMethod for BlockedMethod {
+        async fn call(&self, _payload: Value) -> Result<Value, String> {
+            struct OnDrop(Arc<tokio::sync::Notify>);
+            impl Drop for OnDrop {
+                fn drop(&mut self) {
+                    self.0.notify_one();
+                }
+            }
+            let _guard = OnDrop(self.dropped.clone());
+            self.entered.notify_one();
+            self.release.notified().await;
+            Ok(serde_json::json!({"completed": true}))
+        }
+    }
+
+    #[cfg(unix)]
+    async fn blocked_connection(
+        name: &str,
+    ) -> (
+        Arc<BlockedMethod>,
+        tokio::task::JoinHandle<()>,
+        tokio::task::JoinHandle<Result<Value, crate::client::ClientError>>,
+        tokio::sync::oneshot::Sender<()>,
+        PathBuf,
+    ) {
+        let path =
+            std::env::temp_dir().join(format!("ep-drain-{}-{name}.sock", std::process::id()));
+        let method = Arc::new(BlockedMethod {
+            entered: tokio::sync::Notify::new(),
+            release: tokio::sync::Notify::new(),
+            dropped: Arc::new(tokio::sync::Notify::new()),
+        });
+        let server = IpcServer::new(
+            &path,
+            1024,
+            MethodTable::new().with("blocked", method.clone()),
+        );
+        let listener = server.bind().unwrap();
+        let (tx, rx) = tokio::sync::oneshot::channel();
+        let handle = tokio::spawn(server.serve(listener, async {
+            let _ = rx.await;
+        }));
+        let client = crate::client::IpcClient::new(&path, 1024, std::time::Duration::from_secs(2));
+        let request = tokio::spawn(async move { client.call("blocked", Value::Null).await });
+        tokio::time::timeout(std::time::Duration::from_secs(1), method.entered.notified())
+            .await
+            .unwrap();
+        (method, handle, request, tx, path)
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn shutdown_drains_accepted_request_before_returning() {
+        let (method, mut server, request, shutdown, path) = blocked_connection("drain").await;
+        shutdown.send(()).unwrap();
+        assert!(
+            tokio::time::timeout(std::time::Duration::from_millis(30), &mut server)
+                .await
+                .is_err(),
+            "server must own accepted work until its response completes"
+        );
+        method.release.notify_one();
+        assert_eq!(
+            request.await.unwrap().unwrap(),
+            serde_json::json!({"completed":true})
+        );
+        tokio::time::timeout(std::time::Duration::from_secs(1), server)
+            .await
+            .unwrap()
+            .unwrap();
+        assert!(!path.exists());
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn dropping_server_cancels_owned_connection_work() {
+        let (method, server, request, _shutdown, path) = blocked_connection("abort").await;
+        server.abort();
+        assert!(server.await.unwrap_err().is_cancelled());
+        assert!(
+            tokio::time::timeout(
+                std::time::Duration::from_millis(100),
+                method.dropped.notified()
+            )
+            .await
+            .is_ok(),
+            "dropping serve must abort connection futures rather than detach them"
+        );
+        assert!(request.await.unwrap().is_err());
+        std::fs::remove_file(path).ok();
+    }
 
     struct Ping;
 

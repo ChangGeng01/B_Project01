@@ -12,11 +12,11 @@ use std::process::ExitCode;
 use std::sync::Arc;
 use std::time::Duration;
 
-use ep_adapter_ipc::{Forwarder, IpcClient, Pending, Spool};
+use ep_adapter_ipc::{Forwarder, IpcClient, Pending, Spool, CORE_ENDPOINT};
 use ep_platform_obs::log::{JsonLogger, Level, LogFields};
 use ep_platform_runtime::boot;
 use ep_platform_runtime::http::SystemState;
-use ep_platform_runtime::lifecycle::Lifecycle;
+use ep_platform_runtime::lifecycle::{Lifecycle, EXIT_CONFIG_OR_SELFCHECK};
 use ep_platform_runtime::selfcheck::baseline_registry;
 use ep_platform_runtime::serving::Serving;
 use ep_platform_runtime::{BuildInfo, ProcessKind};
@@ -46,6 +46,10 @@ async fn serve(
     layers: String,
     check_only: bool,
 ) -> ExitCode {
+    if let Err(detail) = cfg.ipc.require_endpoint(CORE_ENDPOINT) {
+        logger.log(Level::Error, LogFields::msg("startup", detail));
+        return ExitCode::from(EXIT_CONFIG_OR_SELFCHECK);
+    }
     let mut lifecycle = Lifecycle::new(PROCESS);
     boot::enter_configuring(&mut lifecycle, &logger);
     boot::enter_selfchecking(&mut lifecycle, &logger);
@@ -102,17 +106,19 @@ async fn serve(
 
     let signal = serving.signal();
     let hb_logger = logger.clone();
-    serving.spawn(async move {
+    serving.spawn_critical("archive-writer 心跳循环", async move {
         heartbeat(forwarder, signal, hb_logger).await;
     });
 
-    logger.log(
-        Level::Info,
-        LogFields::msg(
-            "startup",
-            format!("已就绪，心跳周期 {} 秒", HEARTBEAT_PERIOD.as_secs()),
-        ),
-    );
+    if serving.startup_succeeded().await {
+        logger.log(
+            Level::Info,
+            LogFields::msg(
+                "startup",
+                format!("已就绪，心跳周期 {} 秒", HEARTBEAT_PERIOD.as_secs()),
+            ),
+        );
+    }
     serving
         .wait_and_drain(&state, &logger, SHUTDOWN_DRAIN_MS)
         .await

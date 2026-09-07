@@ -1,10 +1,12 @@
-//! master.key 读取与启动校验（假设一：32 字节随机、不二次加密）。
+//! 历史 master.key 载体与内存主密钥类型。
 //!
-//! 路径取 `EP__KMS__BUILTIN__MASTER_KEY_PATH`，默认 `/var/lib/ep/kms/master.key`；
-//! 权限非 0400 或属主不符本进程账户一律拒启动，返回
-//! `PLATFORM.SYSTEM.NOT_READY`——主密钥缺位时进程不具备服务能力。
+//! F-57 默认与发布构建只编译内存类型，不编译磁盘加载入口。只有显式
+//! `legacy-master-key-file` 的 Unix development/test debug 构建保留 0400/属主/长度
+//! 校验，用于迁移期测试；它不是生产 provider。
 
+#[cfg(all(feature = "legacy-master-key-file", debug_assertions, unix))]
 use ep_foundation::error::codes::PLATFORM_SYSTEM_NOT_READY;
+#[cfg(all(feature = "legacy-master-key-file", debug_assertions, unix))]
 use ep_foundation::AppError;
 
 /// 主密钥定长 32 字节（AES-256 键）。
@@ -16,6 +18,8 @@ pub struct MasterKey {
 }
 
 impl MasterKey {
+    // 默认构建没有磁盘构造入口；载体单测只通过 crate 内存入口构造。
+    #[cfg(any(test, all(feature = "legacy-master-key-file", debug_assertions, unix)))]
     pub(crate) fn new(bytes: [u8; MASTER_KEY_LEN]) -> Self {
         Self { bytes }
     }
@@ -35,6 +39,7 @@ impl Drop for MasterKey {
 
 /// 启动校验的纯判定面，供加载器与单元测试共用：
 /// 权限必须恰为 0400，属主必须等于期望 uid，长度必须恰为 32 字节。
+#[cfg(all(feature = "legacy-master-key-file", debug_assertions, unix))]
 pub fn verify_master_key_metadata(
     mode_bits: u32,
     owner_uid: u32,
@@ -61,14 +66,14 @@ pub fn verify_master_key_metadata(
     Ok(())
 }
 
-/// 读取并校验 master.key。属主校验取进程 uid（unix）；非 unix 平台拒启动。
-#[cfg(unix)]
+/// 读取并校验历史 master.key。属主校验取进程 uid。
+#[cfg(all(feature = "legacy-master-key-file", debug_assertions, unix))]
 pub fn load_master_key(path: &std::path::Path) -> Result<MasterKey, AppError> {
     use std::os::unix::fs::MetadataExt;
     let meta = std::fs::metadata(path).map_err(|e| {
         AppError::new(
             PLATFORM_SYSTEM_NOT_READY,
-            format!("master.key 拒启动：读不到 {path:?}（{e}）"),
+            format!("master.key 拒启动：元数据不可读取（{:?}）", e.kind()),
         )
     })?;
     // 期望属主为本进程账户。
@@ -87,17 +92,7 @@ pub fn load_master_key(path: &std::path::Path) -> Result<MasterKey, AppError> {
     Ok(MasterKey::new(arr))
 }
 
-/// 非 unix 平台没有 0400 与属主语义，一律拒启动。
-#[cfg(not(unix))]
-pub fn load_master_key(path: &std::path::Path) -> Result<MasterKey, AppError> {
-    let _ = path;
-    Err(AppError::new(
-        PLATFORM_SYSTEM_NOT_READY,
-        "master.key 拒启动：本平台无 POSIX 权限语义",
-    ))
-}
-
-#[cfg(test)]
+#[cfg(all(test, feature = "legacy-master-key-file", debug_assertions, unix))]
 mod tests {
     use super::*;
 
@@ -123,7 +118,6 @@ mod tests {
         assert_eq!(err.code, PLATFORM_SYSTEM_NOT_READY);
     }
 
-    #[cfg(unix)]
     #[test]
     fn load_rejects_wrong_permissions_on_disk() {
         use std::os::unix::fs::PermissionsExt;
@@ -134,7 +128,6 @@ mod tests {
         std::fs::remove_file(&path).ok();
     }
 
-    #[cfg(unix)]
     #[test]
     fn load_accepts_strict_permissions_on_disk() {
         use std::os::unix::fs::PermissionsExt;
@@ -146,7 +139,6 @@ mod tests {
         std::fs::remove_file(&path).ok();
     }
 
-    #[cfg(unix)]
     #[test]
     fn load_rejects_wrong_length_on_disk() {
         use std::os::unix::fs::PermissionsExt;
@@ -161,5 +153,22 @@ mod tests {
     fn load_rejects_missing_file() {
         let path = std::env::temp_dir().join("ep-kms-test-no-such-dir/master.key");
         assert!(load_master_key(&path).is_err());
+    }
+
+    #[test]
+    fn missing_legacy_master_key_diagnostics_redact_secret_path() {
+        let path = std::path::Path::new("/private/tmp/ABSOLUTE_MASTER_KEY_MARKER/missing.key");
+        let error = match load_master_key(path) {
+            Err(error) => error,
+            Ok(_) => panic!("missing key must fail closed"),
+        };
+        assert_eq!(error.code, PLATFORM_SYSTEM_NOT_READY);
+        for rendered in [error.to_string(), format!("{error:?}")] {
+            assert!(
+                !rendered.contains("ABSOLUTE_MASTER_KEY_MARKER"),
+                "{rendered}"
+            );
+            assert!(!rendered.contains("/private/tmp"), "{rendered}");
+        }
     }
 }

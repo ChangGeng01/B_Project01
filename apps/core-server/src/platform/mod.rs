@@ -16,6 +16,12 @@ mod migration;
 mod sensitive;
 mod windows;
 
+#[cfg(test)]
+pub(crate) mod reauth_handler_tests {
+    pub(crate) use super::key_domain::rotate_key_domain;
+    pub(crate) use super::windows::open_window;
+}
+
 use std::sync::Arc;
 
 use axum::http::{HeaderMap, StatusCode};
@@ -27,7 +33,7 @@ use ep_adapter_kms::BuiltinKmsBackend;
 use ep_foundation::capability::{ActionClass, CapabilityDomain};
 use ep_foundation::error::AppError;
 use ep_platform_runtime::http::headers::idempotency_key_guard;
-use ep_platform_runtime::http::{ApiError, Envelope, SystemState};
+use ep_platform_runtime::http::{ApiError, Envelope, SystemState, TrustedProxyNet};
 
 use crate::wiring::authz::AuthzAssembly;
 use crate::wiring::identity::IdentityAssembly;
@@ -59,6 +65,8 @@ pub struct PlatformState {
     /// 授权域装配（阶段 4 任务 #23）：快照持有者、轮询器与指标
     /// 桥接；判定面接入时（阶段 5+）经此消费（unwired-absent）。
     pub authz: Option<Arc<AuthzAssembly>>,
+    /// 只有直接 TCP 对端命中本表时才解析 X-Forwarded-For；空表默认拒绝信任。
+    pub trusted_proxy_cidrs: Arc<[TrustedProxyNet]>,
     /// `EP__MIGRATION__WINDOW_TTL_MAX_MIN`，A-09 开窗上限。
     pub window_ttl_max_min: u32,
 }

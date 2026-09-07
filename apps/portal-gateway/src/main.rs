@@ -1,12 +1,10 @@
-//! portal-gateway — 8090 HTTP、不建数据库连接、经回环探测 core-server 的
-//! 健康端点、门户侧新建 trace 并回带 X-Correlation-Id、优雅停机。
+//! portal-gateway — 8090 HTTP、零数据库连接、零内部回环 HTTP、优雅停机。
 //!
 //! 阶段 4 起另承载门户 Cookie → 核心会话令牌的转发换算（见
 //! `session.rs`）；本阶段没有门户业务页面、没有脱敏投影。
 
 mod config;
 mod session;
-mod upstream;
 mod wiring;
 
 use std::process::ExitCode;
@@ -23,8 +21,6 @@ use ep_platform_runtime::serving::Serving;
 use ep_platform_runtime::{http, BuildInfo, ProcessKind};
 
 use config::{PortalConfig, DEFAULTS};
-use upstream::PortalState;
-
 const PROCESS: ProcessKind = ProcessKind::PortalGateway;
 
 fn main() -> ExitCode {
@@ -88,29 +84,27 @@ async fn serve(
         }
     };
 
-    let portal_state = PortalState {
-        system: state.clone(),
-        upstream_base_url: cfg.portal.upstream_base_url.into(),
-    };
     let router = portal_system_router()
-        .merge(upstream::router())
         .fallback(http::system::fallback)
         // 门户 Cookie → 核心会话令牌换算（阶段 4 任务 #23）：
         // 在路由层之内完成，系统端点不受影响。
         .route_layer(axum::middleware::from_fn(session::forward_session))
-        .route_layer(from_fn_with_state(state.clone(), observe))
         .layer(from_fn_with_state(state.clone(), catch_panic))
-        .with_state(portal_state);
+        // 覆盖 fallback 与所有提前响应，每请求恰一条访问轨迹。
+        .layer(from_fn_with_state(state.clone(), observe))
+        .with_state(state.clone());
 
     let mut serving = Serving::new();
     serving.spawn_http(addr, router, &logger).await;
-    logger.log(
-        Level::Info,
-        LogFields::msg(
-            "startup",
-            format!("已就绪，状态 {}", state.state().as_str()),
-        ),
-    );
+    if serving.startup_succeeded().await {
+        logger.log(
+            Level::Info,
+            LogFields::msg(
+                "startup",
+                format!("已就绪，状态 {}", state.state().as_str()),
+            ),
+        );
+    }
     serving
         .wait_and_drain(&state, &logger, cfg.http.shutdown_drain_ms)
         .await

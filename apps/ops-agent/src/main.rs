@@ -16,11 +16,12 @@ use axum::middleware::from_fn_with_state;
 use axum::response::{IntoResponse, Response};
 use axum::routing::get;
 use axum::Router;
+use ep_adapter_db_pg::POOL_GAUGE_REFRESH_INTERVAL;
 use ep_platform_obs::log::{JsonLogger, Level, LogFields};
 use ep_platform_runtime::boot;
 use ep_platform_runtime::http::middleware::{catch_panic, observe};
 use ep_platform_runtime::http::{ops_health_router, SystemState};
-use ep_platform_runtime::lifecycle::{Lifecycle, EXIT_PANIC};
+use ep_platform_runtime::lifecycle::{Lifecycle, EXIT_CONFIG_OR_SELFCHECK, EXIT_PANIC};
 use ep_platform_runtime::selfcheck::baseline_registry;
 use ep_platform_runtime::serving::Serving;
 use ep_platform_runtime::{http, BuildInfo, ProcessKind};
@@ -28,6 +29,7 @@ use ep_platform_runtime::{http, BuildInfo, ProcessKind};
 use config::{OpsConfig, DEFAULTS};
 
 const PROCESS: ProcessKind = ProcessKind::OpsAgent;
+static SCRAPE_GATE: tokio::sync::Semaphore = tokio::sync::Semaphore::const_new(1);
 
 fn main() -> ExitCode {
     let p = match boot::prepare::<OpsConfig>(PROCESS, DEFAULTS, |c| &c.log, |c| &c.runtime) {
@@ -41,6 +43,13 @@ fn main() -> ExitCode {
 /// 9101 的聚合指标端点。本进程自己的指标也在里面，因此 ops-agent 不需要
 /// 再单独暴露一个 `/metrics`。
 async fn aggregated_metrics(State(st): State<Arc<SystemState>>) -> Response {
+    let Ok(_permit) = SCRAPE_GATE.try_acquire() else {
+        return (
+            axum::http::StatusCode::SERVICE_UNAVAILABLE,
+            "metrics aggregation already in progress\n",
+        )
+            .into_response();
+    };
     let local = st.metrics().encode_text();
     let text = targets::render(&local, &targets::scrape_all().await);
     (
@@ -61,29 +70,57 @@ async fn serve(
 ) -> ExitCode {
     let mut lifecycle = Lifecycle::new(PROCESS);
     boot::enter_configuring(&mut lifecycle, &logger);
-    boot::enter_selfchecking(&mut lifecycle, &logger);
-
     let metrics = boot::metrics(&logger);
+
+    if let Err(violations) = wiring::budget_check(&cfg.db) {
+        for v in &violations {
+            logger.log(
+                Level::Error,
+                LogFields::msg("startup", format!("连接预算违例：{v:?}")),
+            );
+        }
+        return ExitCode::from(EXIT_CONFIG_OR_SELFCHECK);
+    }
+
+    let db = match wiring::build(&cfg.db, &cfg.secrets, metrics.clone()) {
+        Ok(assembly) => Some(Arc::new(assembly)),
+        Err(reason) => {
+            logger.log(
+                Level::Error,
+                LogFields::msg("startup", format!("数据库装配失败，拒绝启动：{reason}")),
+            );
+            return ExitCode::from(EXIT_CONFIG_OR_SELFCHECK);
+        }
+    };
+
+    boot::enter_selfchecking(&mut lifecycle, &logger);
     let registry = baseline_registry(
         PROCESS,
         layers,
         cfg.selfcheck.clock_skew_max_ms,
-        wiring::sql_probe(),
+        db.as_ref().and_then(|d| d.sql_probe()),
         None,
         None,
     );
     if check_only {
-        return boot::check_exit(
+        let code = boot::check_exit(
             &registry
                 .run_all(PROCESS, BuildInfo::current().version)
                 .await,
         );
+        if let Some(db) = &db {
+            db.pools.close().await;
+        }
+        return code;
     }
     let report = match boot::selfcheck(&registry, PROCESS, &mut lifecycle, &metrics, &logger).await
     {
         Ok(r) => r,
         Err((report, code)) => {
             println!("{}", report.to_json());
+            if let Some(db) = &db {
+                db.pools.close().await;
+            }
             return code;
         }
     };
@@ -100,6 +137,9 @@ async fn serve(
         Ok(a) => a,
         Err(e) => {
             logger.log(Level::Error, LogFields::msg("startup", format!("{e}")));
+            if let Some(db) = &db {
+                db.pools.close().await;
+            }
             return ExitCode::from(EXIT_PANIC);
         }
     };
@@ -107,33 +147,50 @@ async fn serve(
         Ok(a) => a,
         Err(e) => {
             logger.log(Level::Error, LogFields::msg("startup", format!("{e}")));
+            if let Some(db) = &db {
+                db.pools.close().await;
+            }
             return ExitCode::from(EXIT_PANIC);
         }
     };
 
     let health = ops_health_router()
         .fallback(http::system::fallback)
-        .route_layer(from_fn_with_state(state.clone(), observe))
         .layer(from_fn_with_state(state.clone(), catch_panic))
+        .layer(from_fn_with_state(state.clone(), observe))
         .with_state(state.clone());
     let scrape = Router::new()
         .route("/metrics", get(aggregated_metrics))
         .fallback(http::system::fallback)
-        .route_layer(from_fn_with_state(state.clone(), observe))
         .layer(from_fn_with_state(state.clone(), catch_panic))
+        .layer(from_fn_with_state(state.clone(), observe))
         .with_state(state.clone());
 
     let mut serving = Serving::new();
     serving.spawn_http(metrics_addr, scrape, &logger).await;
     serving.spawn_http(health_addr, health, &logger).await;
-    logger.log(
-        Level::Info,
-        LogFields::msg(
-            "startup",
-            format!("已就绪，抓取目标 {} 个", targets::TARGETS.len()),
-        ),
-    );
-    serving
+    if let Some(db) = db.clone() {
+        let signal = serving.signal();
+        serving.spawn(async move {
+            db.pools
+                .refresh_gauges_until(POOL_GAUGE_REFRESH_INTERVAL, signal.wait())
+                .await;
+        });
+    }
+    if serving.startup_succeeded().await {
+        logger.log(
+            Level::Info,
+            LogFields::msg(
+                "startup",
+                format!("已就绪，抓取目标 {} 个", targets::TARGET_COUNT),
+            ),
+        );
+    }
+    let code = serving
         .wait_and_drain(&state, &logger, cfg.http.shutdown_drain_ms)
-        .await
+        .await;
+    if let Some(db) = db {
+        db.pools.close().await;
+    }
+    code
 }

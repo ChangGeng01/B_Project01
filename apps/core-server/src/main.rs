@@ -14,7 +14,8 @@ use std::process::ExitCode;
 use std::sync::Arc;
 
 use axum::middleware::from_fn_with_state;
-use ep_adapter_ipc::IpcServer;
+use ep_adapter_db_pg::POOL_GAUGE_REFRESH_INTERVAL;
+use ep_adapter_ipc::{IpcServer, CORE_ENDPOINT};
 use ep_platform_obs::log::{JsonLogger, Level, LogFields};
 use ep_platform_runtime::boot;
 use ep_platform_runtime::http::headers::header_guard;
@@ -45,6 +46,10 @@ async fn serve(
     layers: String,
     check_only: bool,
 ) -> ExitCode {
+    if let Err(detail) = cfg.ipc.require_endpoint(CORE_ENDPOINT) {
+        logger.log(Level::Error, LogFields::msg("startup", detail));
+        return ExitCode::from(EXIT_CONFIG_OR_SELFCHECK);
+    }
     let mut lifecycle = Lifecycle::new(PROCESS);
     boot::enter_configuring(&mut lifecycle, &logger);
 
@@ -61,16 +66,17 @@ async fn serve(
         return ExitCode::from(EXIT_CONFIG_OR_SELFCHECK);
     }
 
-    // 数据库与密钥后端装配：失败即不注入（unwired-absent），
-    // 自检如实报未覆盖，九个平台端点按 503 NOT_PROVISIONED 处置。
+    // 数据库与系统机密是本进程的启动前置。装配失败若降成 None，Blocking
+    // 自检会被改写为 Pending，并可能把 KMS NOT_IMPLEMENTED 假报为启动通过。
+    // 因此这里必须在任何监听器建立前以 78 失败关闭。
     let db = match wiring::build(&cfg.db, &cfg.secrets, &cfg.platform, metrics.clone()) {
         Ok(assembly) => Some(Arc::new(assembly)),
         Err(reason) => {
             logger.log(
-                Level::Warn,
-                LogFields::msg("startup", format!("数据库装配未注入：{reason}")),
+                Level::Error,
+                LogFields::msg("startup", format!("数据库装配失败，拒绝启动：{reason}")),
             );
-            None
+            return ExitCode::from(EXIT_CONFIG_OR_SELFCHECK);
         }
     };
     let kms = match &db {
@@ -150,11 +156,15 @@ async fn serve(
     }
 
     if check_only {
-        return boot::check_exit(
+        let code = boot::check_exit(
             &registry
                 .run_all(PROCESS, BuildInfo::current().version)
                 .await,
         );
+        if let Some(db) = &db {
+            db.pools.close().await;
+        }
+        return code;
     }
 
     let report = match boot::selfcheck(&registry, PROCESS, &mut lifecycle, &metrics, &logger).await
@@ -162,6 +172,9 @@ async fn serve(
         Ok(r) => r,
         Err((report, code)) => {
             println!("{}", report.to_json());
+            if let Some(db) = &db {
+                db.pools.close().await;
+            }
             return code;
         }
     };
@@ -178,6 +191,9 @@ async fn serve(
         Ok(a) => a,
         Err(e) => {
             logger.log(Level::Error, LogFields::msg("startup", format!("{e}")));
+            if let Some(db) = &db {
+                db.pools.close().await;
+            }
             return ExitCode::from(EXIT_PANIC);
         }
     };
@@ -198,11 +214,12 @@ async fn serve(
 
     let platform_state = Arc::new(platform::PlatformState {
         system: state.clone(),
-        db,
+        db: db.clone(),
         kms,
         identity,
         authn,
         authz,
+        trusted_proxy_cidrs: cfg.http.trusted_proxy_cidrs.clone().into(),
         window_ttl_max_min: cfg.migration.window_ttl_max_min,
     });
     let authz_poller = platform_state.authz.as_ref().map(|a| a.poller.clone());
@@ -216,11 +233,21 @@ async fn serve(
         )
         .await;
 
+    if let Some(db) = db.clone() {
+        let signal = serving.signal();
+        serving.spawn(async move {
+            db.pools
+                .refresh_gauges_until(POOL_GAUGE_REFRESH_INTERVAL, signal.wait())
+                .await;
+        });
+    }
+
     // 授权快照轮询任务（EP__AUTHZ__SNAPSHOT__POLL_INTERVAL_MS）：
     // 与 HTTP 同起同停；单轮失败记 WARN 后继续，不退出循环。
     if let Some(poller) = authz_poller {
-        serving.spawn(async move {
-            poller.run_forever().await;
+        let signal = serving.signal();
+        serving.spawn_critical("授权快照轮询", async move {
+            poller.run_until(signal.wait()).await;
         });
     }
 
@@ -238,7 +265,7 @@ async fn serve(
                 Level::Info,
                 LogFields::msg("startup", format!("IPC 监听 {}", ipc.path().display())),
             );
-            serving.spawn(async move {
+            serving.spawn_critical("core IPC 服务端", async move {
                 ipc.serve(listener, async move {
                     signal.wait().await;
                 })
@@ -248,16 +275,22 @@ async fn serve(
         Err(e) => serving.mark_failed(format!("IPC 服务端不可用：{e}")),
     }
 
-    logger.log(
-        Level::Info,
-        LogFields::msg(
-            "startup",
-            format!("已就绪，状态 {}", state.state().as_str()),
-        ),
-    );
-    serving
+    if serving.startup_succeeded().await {
+        logger.log(
+            Level::Info,
+            LogFields::msg(
+                "startup",
+                format!("已就绪，状态 {}", state.state().as_str()),
+            ),
+        );
+    }
+    let code = serving
         .wait_and_drain(&state, &logger, cfg.http.shutdown_drain_ms)
-        .await
+        .await;
+    if let Some(db) = db {
+        db.pools.close().await;
+    }
+    code
 }
 
 fn build_router(
@@ -271,6 +304,7 @@ fn build_router(
         state.clone(),
     );
     let limit = SyncLimit::new(cfg.http.request_timeout_ms, state.clone());
+    let trusted_proxies = platform_state.trusted_proxy_cidrs.clone();
 
     // 平台路由已在内部应用自己的状态，合并前先各自落态为 Router<()>；
     // fallback 依赖系统状态，须在落态前挂上。
@@ -281,13 +315,13 @@ fn build_router(
     let router = router.merge(probe::router(state.clone()).with_state(state.clone()));
     let router = router.merge(platform::platform_router(platform_state.clone()));
 
-    // 由外到内是 panic 捕获、并发闸门、同步等待上限、四头纯格式
-    // 校验（第一道）、认证与法人真实校验（阶段 4 任务 #23，经端口
-    // 在 wiring 注入）、访问日志与指标。panic 捕获在最外层，才盖得
-    // 住闸门与超时层自身的意外。
+    // 由外到内是服务端请求元数据/全部 x-ep-* 剥离、统一访问轨迹、panic 捕获、
+    // 请求体上限、并发闸门、同步等待上限、四头纯格式校验（第一道）、
+    // 认证与法人真实校验（阶段 4 任务 #23，经端口在 wiring 注入）。请求元数据
+    // 层必须最外；访问轨迹必须包住其他所有层与 fallback，才能让请求头、
+    // 认证、闸门、超时、正文上限、panic 与 404 的提前响应也恰有一条记录；
+    // MatchedPath 仍取模板路径，fallback 固定为 <unmatched>。
     router
-        // route_layer 才拿得到 MatchedPath，指标的 route 标签因此是模板路径。
-        .route_layer(from_fn_with_state(state.clone(), observe))
         .layer(from_fn_with_state(
             platform_state.clone(),
             platform::middleware::authenticate,
@@ -307,4 +341,9 @@ fn build_router(
             usize::try_from(cfg.http.max_body_bytes).unwrap_or(usize::MAX),
         ))
         .layer(from_fn_with_state(state.clone(), catch_panic))
+        .layer(from_fn_with_state(state.clone(), observe))
+        .layer(from_fn_with_state(
+            trusted_proxies,
+            platform::middleware::request_metadata,
+        ))
 }
