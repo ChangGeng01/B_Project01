@@ -2,6 +2,19 @@
 
 面向合同驱动型企业的私有化、可治理、可组合业务自动化平台。
 
+## 开发交接入口
+
+2026-09-07 的交付目标是**总体架构、配置和实施计划可立即用于开发**。先读[开发起步指南](docs/development-start-here.md)，从唯一执行入口 G0-01 开始；Windows 安装与存储配置读[Windows Server / SSD + HDD 交接指南](docs/windows-server-storage-handoff.md)。两份指南是现行契约的易读导航，不新增执行计划、配置真值或生产认证。
+
+| 层面 | 确定方案 |
+|---|---|
+| 服务端 | Windows Server 2022 原生服务，Rust 单写权威与同机 PostgreSQL 16；服务/进程集合由 CapabilityGraph 和经验证的运行拓扑决定 |
+| SSD | Windows、签名程序、静态依赖及严格登记的无客户数据控制/代码状态 |
+| HDD | 数据库及 live WAL、附件、索引、审计、日志、临时业务文件、导出和秘密密文；可重建的客户数据也在 HDD |
+| 运行内存 | 32 GiB 档使用有界连接和任务队列；页面文件、休眠和 Windows 崩溃转储禁用，须验证无页面文件的内存余量 |
+| 持久性 | 数据卷身份、加密、容量与路径验证失败即阻止权威写入；服务器外连续备份、离线轮换介质与洁净恢复分别验证 |
+| 开发与上线 | 可以开始 G0 开发；Windows 安装器、完整业务和生产证据仍须按 G0–G6 实现与验证 |
+
 ## 当前状态
 
 - 文档完整度：**F-57 Governed Automation Fabric** 已完成 2026-08-24 收敛并获用户批准；`DESIGN_READY` 仅描述设计文档完整度，不是开发或实现状态。
@@ -9,7 +22,7 @@
 - 范围：现行闭集仍为 **185 个 RequirementID（174 个主需求 + 11 个延期边界）**；没有删除、合并或静默延期最终要求。
 - 代码：仓库已有 Rust/PostgreSQL 骨架、早期平台逻辑和历史迁移；CapabilityGraph、F-57 权威主干、CTC-01、四端客户端、完整业务范围和发布认证均未实现。
 - 生产状态字段：`production_state=PRODUCTION_NOT_READY`。现有 ThinkStation P340 主机与 Windows Server 2022 可继续作为待认证候选，但原单块 1 TB HDD 的 profile 永久 `production_eligible=false`，不能靠补 UPS 或补证据转为权威生产盘，也不能复用为 RAID1 成员或备份盘；唯一低成本例外是被合格新盘替代、完成安全擦除并获处置批准后，最多作可随时丢弃的非权威暂存。必须先换装/新增一块物理 CMR 原始容量 `>=2,000,000,000,000` bytes 的 DATA_HDD；NTFS 权威卷以 `1,589,137,899,520` bytes 为名义 floor，并须满足 `volume_total_bytes >= max(1,589,137,899,520,1,481,763,717,120+107,374,182,400+measured_unclassifiable_filesystem_allocation_bytes)`。九桶/十四 capacity class/十四 canonical selector 只唯一覆盖产品管理 `data_root` 对象与登记 VSS extent；NTFS/BitLocker 元数据独立实测且不可借桶，普通卷外对象或解释不了的 allocation 一律失败关闭。随后 UPS、服务器外只追加备份、两块离线轮换 HDD、分域恢复材料、洁净恢复硬件、72 小时容量和完整 L3 证据仍须全部通过，才可录入真实客户数据。
-- 本轮没有实现 F-57 业务能力、创建 F-57 业务迁移、安装服务或改变生产环境；只修复现有 Rust/CI/本地控制骨架的安全性与一致性缺陷，并同步完成文档再基线。
+- 既有 Rust/CI/本地控制骨架的修复见[深度收敛核验](docs/superpowers/reviews/2026-09-07-deep-release-convergence-verification.md)；本轮架构、配置与开发交接的修订及验证见[开发交接核验](docs/superpowers/reviews/2026-09-07-windows-development-handoff-verification.md)。没有实现 F-57 业务能力、创建业务迁移、安装服务或改变生产环境。
 
 ## 阅读导航（不定义权威排序）
 

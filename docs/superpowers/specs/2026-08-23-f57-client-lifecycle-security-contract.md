@@ -150,6 +150,22 @@ iOS/Android 不加载能力包、WASM、原生插件或动态下载的可执行�
 - 被盗或撤销签名身份立即进入 incident 流程；相应 digest 加入 `revoked_digests[]`，服务端拒绝其新会话，高风险在线会话立即撤销。
 - Tauri 任一必选目标未通过上述签名、安装、更新、撤销和真实启动门，主线在 G5 客户端技术门停止；唯一回退是按现行计划完成全 Flutter + Rust 分支，不能混搭后继续。
 
+### 3.4 解析语料、原生生命周期输入与签名边界
+
+G0 的四个公开 DER 根和 16 个固定 `ep.f57.fixture.*` 原生格式语料，只验证容器、元数据、合成签名结构与策略解析负例；其旧 role/outcome 名称不授予 OS 安装、升级或撤销验收资格。语料根只进入内存解析上下文，连可重置设备的系统信任库也不得安装。任意合成 DER 根不能替代 iOS 的 Apple 发行资格。
+
+实际 G5/G6 生命周期使用主计划 §3 唯一定义、由既有 `f57-client-platform-evidence.v1.schema.json` 独占的嵌入式 `ClientNativeLifecycleInputsV1`。它绑定当前真包与四个不同的同身份源包、原生整数版本、签名连续性及受审渠道 pin。首发前可准备同一真实应用身份/渠道的受控基线和负例；当前候选冻结后不得为适配基线重新签名、重打包或改动当前包。输入、渠道资格、最终商店交付字节或原生证明缺失时失败关闭，不得回退到解析语料。Android 更新身份要求相同 application ID 及相同证书或有效签名轮换证明；本计划另外要求严格递增的原生版本，避免把展示用 SemVer 当安装顺序。[Android 官方更新规则](https://developer.android.com/google/play/app-updates)
+
+iOS 验证 bundle ID、Team ID、App ID prefix、application-identifier 与当前真实 profile/store 资格；prefix 必须按原生签名/profile 核验，不能假定它总等于 Team ID。macOS 同时验证安装器与嵌入 app 的签名、原生 designated requirement 及所选渠道的公证资格。具体原生字段、可支持版本规则、proof 字节解析器和失败条件由主计划固定。[Apple App ID prefix 规则](https://developer.apple.com/library/archive/qa/qa1879/_index.html)、[macOS 原生代码签名规则](https://developer.apple.com/library/archive/technotes/tn2206/_index.html)
+
+产品 CMS 制品 wrapper 与原生包签名是两个独立身份：既有八个 wrapper 角色保留产品证书 DN/SPKI 与 89 行证据注册契约，只签定最终包的 exact bytes。原生包使用受审渠道实际签发的证书和独立 pin；既有签名 `PACKAGE_SIGNATURE` leaf 绑定 wrapper ref、同一包字节和原生验证证明，不要求两者 SPKI 相等，也不需要取得商店私钥。App Store/TestFlight 在分发前会用 Apple 身份重新签名，上传前 archive 不能冒充最终交付包。[Apple 关于商店重新签名的说明](https://developer.apple.com/documentation/xcode/using-the-latest-code-signature-format)
+
+原生 pin 是既有受信平台 carrier 中受审的编译常量，按 mode/platform/application/channel 精确选择；包含角色限定的真实叶证书、subject/SPKI 与根证书内容 pin。首次使用前依据客户批准的账号/渠道和独立取得的公开证书完成登记，随独立产品签名的 runner 安装，并在 graph/source 身份冻结前审定。运行时只按既有 store 规则派生 ref，不能从待验包或同 bundle 的自述根建立信任。轮换、续证、商店签名变化需要新 pin revision、受审源码/graph 版本、签名 runner 和新 attempt；旧 decision 离线重放仍使用其原始已认证 pin 版本，缺失即失败。所有新类型仅嵌入现有 readback schema，完整遍历原生包/DER/profile/receipt/lineage/公证及所需原生 CRL/OCSP 字节；不新增 JSON root、媒体、signer 行或第 33 个类别解析器。
+
+原生 CA 吊销检查单独归档完整签名 CRL/OCSP DER，按证书 issuer/serial、签名、GOOD/未撤销状态和可信 preflight 有效窗验证；缺少必须证明、unknown、过期或 soft-fail 均禁止通过。直接受审的自签 Android APK 证书没有 CA 状态服务，是明确限定的 pin/包撤销策略例外，不能泛化到 Apple、Windows 或 macOS。当前候选使用新鲜原生证明；永久 decision 仅按已认证的原始时间窗口重放历史，不能要求旧证明永远当前有效，也不能把历史证明用于新候选。现有归档 `DecisionSigner|Tsa` 不承担原生证书角色。
+
+先将完整输入冻结进现有 `PACKAGE_SIGNATURE` readback，再持久化并验证其现有签名 leaf，最后才执行原生副作用。安装、升级、撤销和降级各使用独立重置实例，共享冻结字节而不共享已安装状态。升级从真实基线到当前包；失败保留验收还必须把完整且签名有效的更高版本源提交到真实原生安装流程，在受控、可清理的临时 staging 空间不足条件下采集已开始请求及其 closed 平台 API 操作结果（原生操作身份、状态/错误码与同次空间测量），验证当前包未变且可重新启动，权威事实零变更。操作结果嵌入既有 `UPGRADE` readback，由受信 collector 按受审 OS/channel 精确映射采集，不发明原始二进制回执或用任意非零错误代替。损坏下载的预检拒绝是附加负例，不能独自证明原生更新失败保留；无法取得该平台/渠道的真实证明就不能通过该门。撤销先证明源包本可正常升级，再在隔离的合成数据策略中分别验证其 digest 和 signer 拒绝；共享 signer 时当前包的新会话也须拒绝，结束后重置隔离策略，不变更生产撤销或真实 CA 状态。
+
 ## 4. Provider、外部处理位置和 XML 边界
 
 Provider 权限和载体契约以 [ADR-0023](../../adr/ADR-0023-f57-provider-manifest-resource-grant.md) 为准。有效权限永远是：

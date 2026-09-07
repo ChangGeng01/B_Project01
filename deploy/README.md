@@ -1,5 +1,7 @@
 # deploy/ 单机部署骨架
 
+Windows Server 的现行架构、SSD 程序卷 / HDD 数据卷、签名配置和安装任务入口见[Windows 存储交接指南](../docs/windows-server-storage-handoff.md)；开发从[起步指南](../docs/development-start-here.md)对应的 G0-01 开始。当前还没有可执行的 F-57 Windows 安装器，不能用本目录的历史脚本替代。
+
 > **F-57 状态：`HISTORICAL_LINUX_RESEARCH_ONLY`。** 本目录的 systemd、cgroup、Podman、Docker Compose、`/var/lib/ep` 和 64GiB 预算不得用于正式生产，也不得被描述为 Windows Server 2022 安装入口。现行生产规范见 [F-57 Windows/P340 生产档案](../docs/superpowers/specs/2026-08-23-f57-windows-p340-production-profile.md)。目录暂保留用于旧决策追溯和开发研究，不执行其中生产命令。
 
 本目录当前只有交付物 D-06 的一部分：`systemd/system/` 下八个 cgroup slice 的静态资源限额 drop-in。

@@ -68,7 +68,7 @@ P340 是工作站，不是具备冗余电源、热插拔背板、ECC 认证证�
 | Windows Server 非 P340 官方预装目标 | 对实际 BIOS/驱动/控制器逐项认证；不能靠同型号猜测 |
 | 单机权威 | 主机故障即停机；未来暖备才提供快速提升 |
 
-Lenovo P340 Tower 的机位、控制器和官方操作系统范围以 [官方 PSREF](https://psref.lenovo.com/syspool/Sys/PDF/ThinkStation/ThinkStation_P340_Tower/ThinkStation_P340_Tower_Spec.PDF) 为硬件核验来源；实际机器的托架、线缆、SATA 端口和控制器仍需现场检查。Windows Server 2022 的支持边界以 [Microsoft 生命周期页面](https://learn.microsoft.com/en-us/lifecycle/products/windows-server-2022) 为准；该页面列出的 PT 日期为 Mainstream End **2026-10-13**、Extended End **2031-10-14**。这些是本档案记录的官方日期，不是产品内硬编码常量；每次安装、生产认证和后继 LTSC 裁决都必须重新查询官方生命周期并保存查询时间与证据。主流支持结束不是自动停产条件，但其后签发新生产证书必须同时具备补丁来源、支持策略、客户风险接受和已排期的 Windows Server 2025/后继 LTSC 迁移认证；扩展支持结束前必须完成迁移，不得把 2022 当作永久平台。
+Lenovo P340 Tower 的机位、控制器和官方操作系统范围以 [官方 PSREF](https://psref.lenovo.com/syspool/Sys/PDF/ThinkStation/ThinkStation_P340_Tower/ThinkStation_P340_Tower_Spec.PDF) 为硬件核验来源；实际机器的托架、线缆、SATA 端口和控制器仍需现场检查。Windows Server 2022 的支持边界以 [Microsoft 生命周期页面](https://learn.microsoft.com/en-us/lifecycle/products/windows-server-2022) 为准；该页面列出的 PT 日期为 Mainstream End **2026-10-13**、Extended End **2031-10-14**。2026-09-07 另按 Microsoft [Windows Server release information 的 ISO 日期表](https://learn.microsoft.com/en-us/windows/release-health/windows-server-release-info)交叉核对，上述两个日期一致；生命周期网页的本地化时区显示不得静默改变本档案采用的日期口径。这些是本档案记录的官方日期，不是产品内硬编码常量；每次安装、生产认证和后继 LTSC 裁决都必须重新查询官方生命周期并保存查询时间与证据。主流支持结束不是自动停产条件，但其后签发新生产证书必须同时具备补丁来源、支持策略、客户风险接受和已排期的 Windows Server 2025/后继 LTSC 迁移认证；扩展支持结束前必须完成迁移，不得把 2022 当作永久平台。
 
 ## 4. 双卷和路径政策
 
@@ -124,7 +124,7 @@ Lenovo P340 Tower 的机位、控制器和官方操作系统范围以 [官方 PS
 | `archive` | 非 PostgreSQL 的业务/控制归档；WAL archive 只能进 `postgres/wal` | 按签名保留策略 |
 | `outbox` | 耐久 Outbox 与投递状态 | 连续 + 全量 |
 | `system-telemetry` | 可关联部署或客户的系统遥测明细 | 按最小化/保留策略 |
-| `dumps` | 获批诊断 dump | 默认禁用；启用时限期处置 |
+| `dumps` | 保留的产品诊断槽；不包括 Windows page/swap/hibernation/crash/minidump/WER 文件 | 当前禁用；目录与容量分类不授予采集权限 |
 | `backup-staging` | 本地加密备份暂存 | 不计作独立副本 |
 
 上述顶层目录加 `postgres` 构成生产 `data_root` 的完整 exact-set；不允许安装器、插件或配置生成器创建未登记的持久顶层目录。VSS diff-area extent 是 §9.1 的非目录分账来源，不因此增加另一顶层根。
@@ -133,9 +133,9 @@ Lenovo P340 Tower 的机位、控制器和官方操作系统范围以 [官方 PS
 
 生产安装必须明确处理：
 
-- pagefile 移至 HDD 或禁用，并验证 32GB 内存档下不会因禁用导致不稳定；
-- 禁用 hibernation 与 Fast Startup；禁止 `hiberfil.sys` 保存业务进程内存；
-- WER、服务 crash dump 默认关闭，获批时写 HDD；
+- `WindowsPersistentFilePolicyReadbackV1` 的 `PAGE_FILE`、`SWAP_FILE`、`HIBERNATION_FILE`、`KERNEL_OR_FULL_CRASH_DUMP`、`MINI_DUMP`、`WER_LOCAL_DUMP` 六类固定为 `DISABLED`，两块盘均不得出现对应文件；不得通过移至 HDD、普通审批或临时诊断重新开启；
+- 安装器须在要求的重启前设置 `PagingFiles=[]`，禁用自动管理 pagefile、`SwapfileControl`、hibernation、Fast Startup、kernel/full/minidump 及全局/逐可执行文件 WER LocalDumps，并清空 dump locator；重启后同时读回设置与两卷实际文件；
+- DATA_HDD 由证书保护、在可信启动后才解锁，因此当前 profile 不依赖 HDD pagefile。无页文件模式必须在 72 小时混合负载中证明 physical RAM 为 `34359738368` bytes、commit limit `>=32212254720` bytes、峰值及每个样本 committed bytes `<=25769803776`、working set `<=17179869184` bytes，且无 commit-allocation failure、OOM/SCM restart 或 hard-fault counter reset；任何一项不通过均不得认证或准入；
 - VSS/shadow copies 不得在 SSD 保存客户内容，也不得计作备份层；Windows Search 禁止索引业务根；
 - ETW、HTTP.sys/IIS（若启用）、Defender/EDR operational log 只允许固定事件码和随机 incident ID，不得记录客户值、请求/响应正文、对象 ID 或可反查 digest；
 - `%TEMP%`、服务 profile temp、WebView cache 和本地控制中心浏览器 profile 写 HDD；
@@ -143,6 +143,8 @@ Lenovo P340 Tower 的机位、控制器和官方操作系统范围以 [官方 PS
 - Defender/扫描器 quarantine 写 HDD；
 - RDP clipboard/drive/printer redirection 默认关闭；RDP bitmap/cache 和获批管理 profile 不得承载客户正文；
 - Print Spooler 默认禁用；服务器禁止作为普通打印、邮件、浏览和办公机器，避免系统 spool/cache 引入业务内容。
+
+以上六个 `DISABLED` 行与仅可位于已验证 DATA_HDD 的 `VSS_DIFF_AREA`、`PRODUCT_MALWARE_QUARANTINE` 构成唯一八行持久文件政策，字段与读回以上位[收敛主计划 §3](../plans/2026-08-24-f57-converged-program.md#3-stable-program-interfaces) 的 `WindowsPersistentFilePolicyReadbackV1` 为准。`dumps` 及 scratch 容量 selector 只保留产品诊断的归类位置，当前不授权采集，不构成开启上述 Windows 六类文件的例外；未来若要启用产品诊断须先变更相应签名契约与证据门。
 
 F-57 最终发布门必须在完整混合负载下以实际打开后的 final handle、volume GUID 和设备证据跟踪全部写入；junction、reparse point、mount point、符号链接、路径替换与检查后改向必须进入 TOCTOU 负例。证明 SSD 没有内容承载或可关联客户的持久字节，未知路径即失败，不能以字符串路径检查或“没有观察到问题”代替登记。
 
@@ -251,7 +253,7 @@ red_free          = emergency_reserve
 | `ARCHIVER_FAILURE_LIVE_WAL` / 归档执行器持续失败后额外保留的 live WAL | 350 GiB = 375,809,638,400 bytes |
 | `BACKUP_STAGING` / 本机备份暂存 | 24 GiB = 25,769,803,776 bytes |
 | `SEARCH_INDEX` / 搜索与可重建索引 | 8 GiB = 8,589,934,592 bytes |
-| `RESTORE_DIAGNOSTIC_SCRATCH_SHARED` / 恢复、PostgreSQL 进程临时、获批 dump 与 VSS scratch 共享桶 | 48 GiB = 51,539,607,552 bytes |
+| `RESTORE_DIAGNOSTIC_SCRATCH_SHARED` / 恢复、PostgreSQL 进程临时、保留产品诊断槽与 VSS scratch 共享桶 | 48 GiB = 51,539,607,552 bytes |
 | 小计 | **1380 GiB = 1,481,763,717,120 bytes** |
 | 不可借用 free-space 阻断底线 | **100 GiB = 107,374,182,400 bytes** |
 | NTFS 数据卷名义最低总容量 | **1480 GiB = 1,589,137,899,520 bytes** |
@@ -303,7 +305,7 @@ red_free          = emergency_reserve
 
 这一定义依据 PostgreSQL 16 的[正常 WAL 回收行为](https://www.postgresql.org/docs/16/wal-configuration.html)、[WAL 与 archive-status 枚举接口](https://www.postgresql.org/docs/16/functions-admin.html)及其[规范名称定义](https://github.com/postgres/postgres/blob/REL_16_STABLE/src/include/access/xlog_internal.h)；上述有界生命周期/唯一计费要求是本产品待实现的认证约束，不声称 PostgreSQL 已提供该 collector 或 cause ledger。
 
-同一 segment 同时受正常恢复/slot 与归档故障影响时正常原因优先；故障类只计正常集合之外、由同一连续 archiver-failure epoch 证明为 failure-only 的额外 segment。两个 selector 的对象身份集合必须不交，任意无原因/未知生命周期、未知名字/子目录、重复所有权或 ledger 不能解释的 allocation 一律失败关闭；不得将不匹配者落入 normal-WAL catch-all。这样同一个物理对象永不重复计入两个 350 GiB 桶，同时两种故障仍可并发占满各自预算。`postgres/data` 中除整个 `pg_wal` 子树外的字节只计 40 GiB 数据库桶；外置 `postgres/temp/process`、`postgres/temp/restore`、获批 dump 和 VSS diff area 只计 48 GiB 共享 scratch 桶。
+同一 segment 同时受正常恢复/slot 与归档故障影响时正常原因优先；故障类只计正常集合之外、由同一连续 archiver-failure epoch 证明为 failure-only 的额外 segment。两个 selector 的对象身份集合必须不交，任意无原因/未知生命周期、未知名字/子目录、重复所有权或 ledger 不能解释的 allocation 一律失败关闭；不得将不匹配者落入 normal-WAL catch-all。这样同一个物理对象永不重复计入两个 350 GiB 桶，同时两种故障仍可并发占满各自预算。`postgres/data` 中除整个 `pg_wal` 子树外的字节只计 40 GiB 数据库桶；外置 `postgres/temp/process`、`postgres/temp/restore`、保留 `dumps` selector 和 VSS diff area 只计 48 GiB 共享 scratch 桶。该保留 selector 不授权诊断采集，Windows 六类禁用政策仍按 §4.3 执行。
 
 计划正 golden 必须包括健康空闲实例已回收供未来使用的 `H24`、有证据的预分配 segment、`archive_status/H24.ready` 与 `.done`（包括对应 segment 已移走但清理生命周期仍可证实）、history/backup/partial 和已知临时对象；逐个证明只收费一次且完整 allocation 进入正常类。负 golden 包括 `archive_status/unknown.ready`、未知根名/后缀/子目录、只有 future 文件名而无分配证据、无生命周期的临时文件、normal/failure 双重分类，以及仍被恢复/slot 需要却错误算为 failure-only。G0 投影、G1 governor 和 G6 初始/每分钟/最终 readback 必须共享这组语义与 mapping digest。collector、cause ledger 与这些 golden 的代码及执行均仍为 `NOT_IMPLEMENTED`；本文只修正规范，不产生运行通过证据。
 
@@ -490,7 +492,7 @@ deployment、provider、backup、support 和 diagnostics manifest 必须记录 j
 - [ ] BIOS、TPM、Secure Boot、BitLocker、网卡和存储驱动通过；
 - [ ] OS、数据与离线介质均为 GPT + NTFS、BitLocker software XTS-AES-256 且 100% 加密；ReFS/FAT/exFAT、硬件自加密替代、算法/状态不明或载入数据后再加密均失败；
 - [ ] UEFI 管理密码由双人分域保管；禁用未批准的 USB/外部介质启动和 PXE；每次认证读回 Secure Boot、TPM clear 状态、boot order 与启动项 exact-set；
-- [ ] Intel AMT 未使用时保持未配置/禁用；若现场启用，必须另有管理网、独立凭据、TLS 信任、固件证据和单独认证，且仍不得计作服务器级 BMC；
+- [ ] 首版 Intel AMT 必须为 `DISABLED_UNCONFIGURED`，启用即失败。未来启用须先发布新的 graph/profile version，冻结管理网、独立凭据、TLS 信任、固件与独立认证证据；当前不存在启用后的生产正路径，且任何未来 AMT 能力仍不得计作服务器级 BMC；
 - [ ] 机器位于受控机房，启用可用的机箱锁/防拆开关或封签并记录检查；未经批准的拆机使生产状态失效；
 - [ ] USB removable device 默认拒绝，AutoRun 禁用，复合 HID/NIC/boot-class 与 BadUSB 负例通过；只在离线轮换窗口按已登记 `media_id`、硬件序列号、volume GUID 与 BitLocker protector 临时放行对应备份盘，完成写入/验证后安全弹出、撤销设备授权并证明介质物理断开；
 - [ ] 记录 OS SSD 的型号、序列号、固件、SMART、剩余寿命、温度、掉盘行为和空闲空间；冻结 Windows 更新/回滚空间预算，并把 SSD 故障后的洁净重装与权威数据恢复耗时纳入证书；
@@ -504,7 +506,7 @@ deployment、provider、backup、support 和 diagnostics manifest 必须记录 j
 
 - [ ] deployment manifest 精确绑定 software/data volume；
 - [ ] 完整混合负载写跟踪证明 SSD 无客户或衍生字节；
-- [ ] pagefile、dump、TEMP、quarantine、cache 和 secret vault 符合本档案；
+- [ ] 八行 `WindowsPersistentFilePolicyReadbackV1` 在安装及重启后完全一致：pagefile、swapfile、hibernation、kernel/full crash dump、minidump 与 WER LocalDumps 六类均禁用且两卷实际文件不存在；VSS diff area 与产品 quarantine 只在已验证 DATA_HDD；无页文件 32 GiB/72 小时 commit 与 working-set 证据通过；TEMP、cache 和 secret vault 符合本档案；
 - [ ] 权威、provider、备份、离线介质、洁净恢复、支持和诊断的中国大陆驻留 manifest/readback 全部有效，未知或跨境路径为 0；
 - [ ] 任一未知写路径为 0。
 

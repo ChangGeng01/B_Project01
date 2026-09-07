@@ -1,6 +1,6 @@
 # F-57 文档权威与取代登记
 
-> 日期：2026-08-23（Australia/Melbourne）；审计更新：2026-08-27
+> 日期：2026-08-23（Australia/Melbourne）；审计更新：2026-09-07
 > 状态：`CURRENT`；2026-08-24 收敛修订、ADR-0025 与五文件实施计划集已获用户批准
 > 目的：让开发、测试和评审人员能够唯一判断“哪句话仍可执行”，而不需要按文件日期猜测
 
@@ -99,6 +99,9 @@
 | [ADR-0024](../../adr/ADR-0024-f57-backup-key-envelope.md) | `CURRENT_SUBJECT` | 每 backup set 独立 recovery-only `BackupKeyEnvelopeV1`、2-of-3 加密 share、轮换、撤销和洁净主机互操作 | 复用生产 operational recipient/token/custodian、把 backup writer 当恢复者或用 ADR-0020 代替备份域信封 |
 | [ADR-0025](../../adr/ADR-0025-f57-capability-graph-and-feature-first-boundaries.md) | `CURRENT_SUBJECT` | 单一 CapabilityGraph、feature-first crate 与 touched-feature 渐进迁移 | 未获开发授权时开始 crate 重排，或把逻辑层合并成无边界巨型 crate |
 | `docs/config-reference.md` | `CURRENT_SUBJECT_INPUT` | 既有配置键、默认值与说明的历史输入；G0 后机器真值是 generated config catalog | 作为实现门、增加 F-57 key、或覆盖 CapabilityGraph/generated registry |
+| `docs/development-start-here.md` | `CURRENT_SUMMARY_NON_NORMATIVE` | 五文件计划的开发起步导航、现有命令实际边界与阶段准备清单 | 另立第六执行计划、改变 G0-01 自举例外、把计划命令当已交付或签发开发/生产证据 |
+| `docs/windows-server-storage-handoff.md` | `CURRENT_SUMMARY_NON_NORMATIVE` | Windows/SSD/HDD 配置、路径、资源、故障与任务 owner 的可读投影 | 新增普通 TOML 生产入口、放宽已签部署清单、恢复 HDD pagefile/dump 或替代实机证据 |
+| `docs/superpowers/reviews/2026-09-07-windows-development-handoff-verification.md` | `CURRENT_SUMMARY_NON_NORMATIVE` | 本轮修订、实测检查与外部未覆盖的审阅记录 | 定义新需求/状态、把本地基线无新增失败解释成 L0–L3 或上线通过 |
 | `docs/data-dictionary.md` | `CURRENT_SUBJECT_INPUT` | 既有类型码、表字段与分册索引输入；G0 后机器真值是 generated data dictionary | 作为实现门或第二数据库 schema/owner 真值 |
 | `docs/error-codes.md` | `CURRENT_SUBJECT_INPUT` | 既有错误分类和兼容语义输入；G0 后机器真值是 generated error catalog/OpenAPI | 禁止计划使用新 typed error；把旧表当 F-57 闭集；手工双写生成 ErrorCode |
 | `docs/event-catalog.md` | `CURRENT_SUBJECT_INPUT` | 既有事件语义输入；G0 后机器真值是 generated event catalog | 作为实现门或绕过 capability fact/event owner |

@@ -30,7 +30,7 @@
 
 archive staging、replication-slot-retained live WAL、persistent-archiver-failure extra live WAL 各自保留独立 `350 GiB`；总 live `pg_wal` 硬上限为 `700 GiB`，同一 segment 以正常恢复/slot 为优先分类，archiver-failure 只计前一保留前沿以外的增量，禁止双计。archive-failure growth / total live WAL 在 `300/650 GiB` 时进入 fail-closed hold，在 `350/700 GiB` 时 hard shutdown。监测周期 `<=30 s`，并且同硬件实测 `peak_wal_rate_bytes_per_second * (sample_period_seconds + shutdown_seconds) < 50 GiB`。这些是签名 hardware/capacity profile 的不可覆盖字段，不新增可由环境或命令行放宽的运行期配置键。
 
-Windows pagefile、WER dump、服务 dump、恶意文件 quarantine 和包含业务载荷的诊断输出必须禁用持久化或明确路由到加密 HDD。Windows Event Log 只允许记录稳定事件码和随机、不可关联客户或对象的 `incident_id`；客户值、对象 ID、客户正文哈希、可反查 digest、附件、提示或秘密一律禁止。
+Windows 持久文件政策按[总体设计 §13.2.1](superpowers/specs/2026-08-23-f57-governed-automation-fabric-design.md#1321-windows-持久文件政策与无页面文件内存门)固定八行：PAGE_FILE、SWAP_FILE、HIBERNATION_FILE、KERNEL_OR_FULL_CRASH_DUMP、MINI_DUMP、WER_LOCAL_DUMP 六类在 SSD/HDD 均为 DISABLED，不能改路由后启用；VSS_DIFF_AREA 与 PRODUCT_MALWARE_QUARANTINE 只允许 verified DATA_HDD。包含业务载荷的产品诊断输出和临时目录按登记政策写加密 HDD，不授予开启 Windows dump 的权限。32 GiB 无 pagefile 模式须通过同一候选的 72 小时内存/commit headroom 认证。Windows Event Log 只允许记录稳定事件码和随机、不可关联客户或对象的 `incident_id`；客户值、对象 ID、客户正文哈希、可反查 digest、附件、提示或秘密一律禁止。
 
 密钥材料不得保存为 SSD/HDD 明文文件。生产凭据密文进入 HDD 上的产品加密秘密库；只有非导出的 wrapping handle 可以位于客户批准的 TPM、HSM 或 KMS。不得把客户凭据正文持久化到 SSD 上的 WinCred、Windows 服务 profile 或普通文件；业务密文和密钥元数据进入 HDD 权威数据库。
 

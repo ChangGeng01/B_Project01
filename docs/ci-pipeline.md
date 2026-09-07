@@ -26,7 +26,7 @@ cargo xtask f57 verify --level l1 --profile windows-f57-release-precommit
 
 该入口由 `ep-xtask` 内版本化、冻结的 `WindowsF57ReleasePrecommitPlanV1` 解析并执行本文件 §7.1 的完整内部命令转录；YAML、PowerShell 与调度平台不得复制、删减或重排该转录。这样“外部只有一个 Rust 入口”和“内部必须跑完明确命令集合”是同一契约的两层，不是两套入口。
 
-当前仓库尚未交付该命令族；此时请求 F-57 分层证据必须返回 `NOT_DELIVERED`/退出码 70，不能回退使用旧 Linux、25-task 或 11-stage 聚合冒充现行结果。
+当前仓库尚未交付该命令族。2026-09-07 对 `cargo xtask f57 verify --level l0 --changed-from HEAD` 的实测为「未知子命令 f57」/退出码 `2`；现有 `xtask/src/main.rs` 尚未注册 `f57`，没有执行 F-57 检查，也没有产生证据。`NOT_DELIVERED`/退出码 `70` 是 G0-01 CLI 壳必须交付的目标：合法但尚未交付的分支返回 `70`，非法语法仍返回 `2`，均不得产生 PASS、签名回执或门禁证据。后续任务只在其实际交付并验证后启用对应分支，不能回退使用旧 Linux、25-task 或 11-stage 聚合冒充现行结果。
 
 现存 D-07 Linux 自托管 workflow 也不能冒充 L1：它所在 runner 持有本地离线材料，因此只接受受保护
 默认分支 `main` 的 push，且 checkout 不保留凭据；不接受人工触发、PR、fork、feature branch
@@ -405,7 +405,7 @@ NO_PRODUCTION_ACTIVATION
 NO_PRODUCTION_GENERATION_ADMISSION
 ```
 
-首次授权开发时只执行 G0 的 L0/L1 架构和生成门。L2、L3 不能因命令已预登记而提前显示 PASS。
+开发授权已获得；从 G0-01 建立 CLI、登记表与基础契约，按 G0-01…G0-06 的依赖顺序推进。L0/L1 选择器及首次签名 G0 门由 G0-06 交付，不能在 G0-01 开始前要求它们已可运行。L2、L3 不能因命令已预登记而提前显示 PASS。当前可运行的本地检查及首次开发自举顺序见[开发交接导航](development-start-here.md)；该导航不替代五文件实施计划。
 
 ### 14.1 已登记基线红与新回归的区分（F-68）
 

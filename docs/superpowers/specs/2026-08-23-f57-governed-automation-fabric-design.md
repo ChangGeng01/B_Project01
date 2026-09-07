@@ -2,7 +2,7 @@
 
 > 批准日期：2026-08-23（Australia/Melbourne）
 > 收敛修订：2026-08-24（Australia/Melbourne）
-> 状态：**CURRENT / APPROVED；2026-08-24 架构收敛修订已由用户批准。本文可以作为实施计划与开发的规范输入，但本次批准只授权完成文档再基线，不授权开始 F-57 产品实现、迁移、实机认证或发布；开发授权已另于 2026-08-27 由使用方授予（F-65），见 :767 与 README:8**
+> 状态：**CURRENT / APPROVED；2026-08-24 架构收敛修订已由用户批准。本文可以作为实施计划与开发的规范输入，但本次批准只授权完成文档再基线，不授权开始 F-57 产品实现、迁移、实机认证或发布；开发授权已另于 2026-08-27 由使用方授予（F-65），见[README 当前状态](../../../README.md#当前状态)**
 > 产品定位：面向合同驱动型企业的、本地优先、可治理、可组合的业务自动化操作系统
 > 硬件基线：现有 ThinkStation P340 Tower、Windows Server 2022、i5-10500、32GB RAM、256GB SSD 与单 1TB HDD 只可开发/验证；生产候选必须先把权威数据盘扩容为标称至少 2TB，NTFS 以 1,589,137,899,520 bytes 为名义 floor 并通过 §13.5.1 含实测卷元数据的动态资格公式，再按约 20 名活跃用户实测认证
 > 功能基线：《管理软件基本需求》及现行 PRD 中与本文不冲突的业务细节
@@ -13,7 +13,7 @@
 
 本文中的“必须”“禁止”“只能”“不得”是发布门禁；“可以”“允许”只表示在前置门禁满足后可启用，不表示默认启用。设计控制只有在代码、测试、Windows 实机、备份恢复和安全验证均取得证据后，才能宣称已经实现。
 
-本文不授权开始开发。实施只能依据后续 F-57 实施计划，由用户另行批准后执行。
+本文自身不构成开发授权；开发授权已于 2026-08-27 另行取得（F-65），当前可依据 2026-08-24 五文件收敛计划从 G0-01 开始。2026-09-07 的完善范围是架构、配置与开发交接，不改变业务实现或生产认证状态。
 
 ## 1. 权威关系与旧文档裁决
 
@@ -609,9 +609,28 @@ P340 单 HDD 的基础备份默认采用 `PostgreSQL 输出 → 固定大小分�
 
 ### 13.2 SSD/HDD 路由
 
-`HDD_STRICT` 只约束 authority node 上承载内容或可关联客户的持久数据；终端仍可按 §10.3 保存最小、加密、可撤销、非权威缓存。权威 SSD 的 Set A 只允许 Windows、程序、静态资源、可重装依赖、可重新下载模型、由签名安装器/WDAC 保护的非秘密验证信任锚（含客户登记公钥）、§12.2 明确允许且可重新登记的 OS-managed sealed BitLocker/key-store metadata，以及 §12.4 限定的固定事件码和随机 incident ID。Set B 是唯一 mutable 例外，exact 四类为：有界 POWER capsule、有界 package-recovery continuation capsule、recovery-domain-signed kernel pointer/journal head、可重建的 content-addressed signed native-code slot/cache；每类必须使用独立签名 media/path、大小、保留、off-host mirror、终态删除与 SSD-loss 重建契约，任何第五类、未登记路径或客户/业务 authority 字节都失败关闭。客户 deployment manifest 本体必须位于 HDD `packages`，不得放入 SSD software root。PostgreSQL data/WAL、附件、索引、审计、应用日志、报表、导入导出、插件工作区、临时业务文件、含业务数据的 pagefile/dump 和所有衍生数据必须位于加密 HDD 数据卷。密钥材料不与业务数据同盘：它不得成为 SSD/HDD 明文文件。生产凭据密文保存在 HDD 加密秘密库，只有非导出的 wrapping handle 可以位于客户批准的 TPM、HSM 或 KMS；不得把客户凭据正文持久化到 SSD 上的 WinCred、服务 profile 或普通文件。密钥元数据和业务密文仍位于 HDD（稳定需求 `NFR-002`、`SEC-011`、`SEC-012`）。
+`HDD_STRICT` 只约束 authority node 上承载内容或可关联客户的持久数据；终端仍可按 §10.3 保存最小、加密、可撤销、非权威缓存。权威 SSD 的 Set A 只允许 Windows、程序、静态资源、可重装依赖、可重新下载模型、由签名安装器/WDAC 保护的非秘密验证信任锚（含客户登记公钥）、§12.2 明确允许且可重新登记的 OS-managed sealed BitLocker/key-store metadata，以及 §12.4 限定的固定事件码和随机 incident ID。Set B 是唯一 mutable 例外，exact 四类为：有界 POWER capsule、有界 package-recovery continuation capsule、recovery-domain-signed kernel pointer/journal head、可重建的 content-addressed signed native-code slot/cache；每类必须使用独立签名 media/path、大小、保留、off-host mirror、终态删除与 SSD-loss 重建契约，任何第五类、未登记路径或客户/业务 authority 字节都失败关闭。客户 deployment manifest 本体必须位于 HDD `packages`，不得放入 SSD software root。PostgreSQL data/WAL、附件、索引、审计、应用日志、报表、导入导出、插件工作区、临时业务文件和所有衍生数据必须位于加密 HDD 数据卷。Windows pagefile、swapfile、休眠与系统/服务崩溃转储遵守下述强制禁用政策，不存在“移到 HDD 即可启用”的例外。密钥材料不与业务数据同盘：它不得成为 SSD/HDD 明文文件。生产凭据密文保存在 HDD 加密秘密库，只有非导出的 wrapping handle 可以位于客户批准的 TPM、HSM 或 KMS；不得把客户凭据正文持久化到 SSD 上的 WinCred、服务 profile 或普通文件。密钥元数据和业务密文仍位于 HDD（稳定需求 `NFR-002`、`SEC-011`、`SEC-012`）。
 
 安装器和启动自检必须验证每个路径，并同时验证 OS/DATA_HDD protector exact-set、Secure Boot、PCR、九个 pre-HDD locator、证书策略/链、broker restricted token/WMI 权限、explicit-thumbprint unlock readback 与 `fixed_data_auto_unlock=false`；无法证明不写 SSD、不能阻止第二 pipe instance，或不满足该解锁门禁的组件不能取得生产认证。必须分别演练普通 broker reboot unlock、TPM/OS SSD 损坏后的双人八步 recovery-password 重新登记和任一 recovery password 被盗，确认新 key/certificate/protector 与 epoch/NV 原子推进、旧 protector 仅在普通重启验收后移除、数据卷不误解锁且应用/备份恢复域不被连带攻破（稳定需求 `NFR-015`）。RAM 可以缓存和计算，但不得成为唯一持久副本。
+
+#### 13.2.1 Windows 持久文件政策与无页面文件内存门
+
+本节明确收编[收敛主计划](../plans/2026-08-24-f57-converged-program.md)的 `WindowsPersistentFilePolicyReadbackV1` 和 Task 15 安装/重启读回契约，消除旧摘要允许把 pagefile/dump 改写到 HDD 的歧义。当前生产档固定恰八行，按 kind 排序；每行必须有实际策略值、文件位置/缺席与设备读回，不能只提供摘要或手工声明。
+
+| Kind | 唯一允许的 placement | 运行要求 |
+|---|---|---|
+| `PAGE_FILE` | `DISABLED` | `PagingFiles=[]`，关闭自动管理，SSD/HDD 均不得出现 pagefile |
+| `SWAP_FILE` | `DISABLED` | 关闭 `SwapfileControl`，两卷均无 swapfile |
+| `HIBERNATION_FILE` | `DISABLED` | 禁用休眠及 Fast Startup，两卷均无 hibernation 文件 |
+| `KERNEL_OR_FULL_CRASH_DUMP` | `DISABLED` | 禁用内核/完整内存转储，清除 locator |
+| `MINI_DUMP` | `DISABLED` | 禁用 mini dump，清除 locator |
+| `WER_LOCAL_DUMP` | `DISABLED` | 全局及每 executable 的 WER LocalDumps 均禁用 |
+| `VSS_DIFF_AREA` | `DATA_HDD_VOLUME_ROOT` | 仅 verified DATA_HDD；逐 provider、association 和 final-handle extent 读回，不计作独立备份 |
+| `PRODUCT_MALWARE_QUARANTINE` | `DATA_HDD_VOLUME_ROOT` | 仅 storage manifest 固定的产品扫描隔离根，禁止自行选择目录 |
+
+DATA_HDD 要在 trusted boot 后经独立 broker 解锁，不能成为 Windows 启动前的 pagefile 依赖。32 GiB 无页面文件档必须在同一候选的 72 小时、20 用户混合负载实测中同时满足：物理 RAM `34,359,738,368` bytes，系统 commit limit 至少 `32,212,254,720` bytes，peak commit charge 及每次采样 committed bytes 至多 `25,769,803,776` bytes，working set 至多 `17,179,869,184` bytes，无 commit-allocation failure、OOM 或 SCM restart，hard-fault counter reset 为零。不足时认证与生产准入失败；不得通过启用任一盘的 pagefile、转储或放宽预算绕过，扩内存/改硬件必须生成新 profile 并重认证。
+
+`data_root/dumps` 及 48 GiB scratch 桶保留既有产品诊断选择器和容量归属，但目录存在、预留容量或诊断审批均不授予开启以上六类 Windows 持久文件的能力；当前没有把它们恢复为“获批可启用”的入口。实际非 Windows 诊断对象仍须经过已登记策略、HDD 路径与限期处置验证，不能借此增加第九类政策或第五类 SSD 例外。
 
 ### 13.3 低资源生产档
 
@@ -647,7 +666,7 @@ P340 是工作站，必须额外验证 Windows Server 驱动、BIOS、TPM、BitL
 
 静态包络是九桶 exact-set，不再用“附件/历史/数据库”这些容易把日志和 spool 漏在外面的松散标签。按声明顺序为 `FILE_WORKING_SHARED=161061273600`、`HISTORY_CONTROL_LOG_SHARED=64424509440`、`POSTGRES_DATABASE_NON_LIVE_WAL=42949672960`、`WAL_ARCHIVE_STAGING=375809638400`、`SLOT_RETAINED_LIVE_WAL=375809638400`、`ARCHIVER_FAILURE_LIVE_WAL=375809638400`、`BACKUP_STAGING=25769803776`、`SEARCH_INDEX=8589934592`、`RESTORE_DIAGNOSTIC_SCRATCH_SHARED=51539607552` bytes，checked-sum 为 **1380 GiB = 1,481,763,717,120 bytes**。再加不可借用的 **100 GiB = 107,374,182,400 bytes** free-space 阻断底线，形成 **1480 GiB = 1,589,137,899,520 bytes** 的名义 NTFS floor；实际资格必须在每次输入和样本上 checked 证明 `volume_total_bytes >= max(1,589,137,899,520, 1,481,763,717,120 + 107,374,182,400 + measured_unclassifiable_filesystem_allocation_bytes)`，因此 NTFS/BitLocker 卷元数据不会吃掉九桶或 100 GiB 底线。物理 CMR HDD 标称原始容量仍必须至少 **2,000,000,000,000 bytes**。动态 volume 门与 raw-device 门同时必须通过，不得只验其一。
 
-九桶内部是十四容量类。它们只对 canonical `data_root` 下的产品管理对象和已登记 DATA_HDD VSS extent 构成 total-unique 映射；NTFS/BitLocker 卷元数据不取得 class ID，只进入上述实测标量，任意普通卷外文件或不能解释的 allocated extent 仍是失败异常。60 GiB 共享桶固定为 PostgreSQL text log 20 GiB、archive/backup report spool 各 2 GiB、core/worker MCP completion spool 各 1 GiB，以及 history/audit/packages/secrets/application-log 等共享余量 34 GiB（`36,507,222,016` bytes），即 `20+2+2+1+1+34=60`；report spool 普通默认各 `268,435,456` bytes，配置只接受 `67,108,864..=2,147,483,648` bytes，生产仍按各 `2,147,483,648`-byte 最大合法占用保留，差额不可借。24 GiB `BACKUP_STAGING` 全部约束 `{data_root}\backup-staging` 的 physical allocation bytes，`backup.spill_max_bytes=25,769,803,776`，partial/manifest/journal/reserve 不得另算。`postgres/data` 中非 `pg_wal` 数据只计 40 GiB；外置 process/restore temp、获批 dump 和 VSS extent 共用 48 GiB。完整九桶、十四类和 disjoint root/ledger 映射见 [Windows/P340 生产档案 §9.1](2026-08-23-f57-windows-p340-production-profile.md#91-空间公式)，机器真值由同一个 G0 P340 policy projection 生成。
+九桶内部是十四容量类。它们只对 canonical `data_root` 下的产品管理对象和已登记 DATA_HDD VSS extent 构成 total-unique 映射；NTFS/BitLocker 卷元数据不取得 class ID，只进入上述实测标量，任意普通卷外文件或不能解释的 allocated extent 仍是失败异常。60 GiB 共享桶固定为 PostgreSQL text log 20 GiB、archive/backup report spool 各 2 GiB、core/worker MCP completion spool 各 1 GiB，以及 history/audit/packages/secrets/application-log 等共享余量 34 GiB（`36,507,222,016` bytes），即 `20+2+2+1+1+34=60`；report spool 普通默认各 `268,435,456` bytes，配置只接受 `67,108,864..=2,147,483,648` bytes，生产仍按各 `2,147,483,648`-byte 最大合法占用保留，差额不可借。24 GiB `BACKUP_STAGING` 全部约束 `{data_root}\backup-staging` 的 physical allocation bytes，`backup.spill_max_bytes=25,769,803,776`，partial/manifest/journal/reserve 不得另算。`postgres/data` 中非 `pg_wal` 数据只计 40 GiB；外置 process/restore temp、已登记产品诊断（不含 §13.2.1 禁止的 Windows 转储）和 VSS extent 共用 48 GiB。完整九桶、十四类和 disjoint root/ledger 映射见 [Windows/P340 生产档案 §9.1](2026-08-23-f57-windows-p340-production-profile.md#91-空间公式)，机器真值由同一个 G0 P340 policy projection 生成。
 
 所有产品管理持久对象在分配前必须取得唯一 class ID；Authority 的单一 `CapacityGovernor` 先对 class→bucket 聚合额度做 admission，再检查局部配置。未知类、同一 file ID/extent 重复分类、跨桶抵扣、未归类 allocation bytes、checked-sum 溢出或生成映射漂移一律失败关闭。同处 `postgres/data/pg_wal` 的 segment 按正常恢复/slot 优先，archiver-failure 只计前一保留前沿以外的增量，任何 segment 只进一个 350 GiB live-WAL 桶。PostgreSQL legal hold 只能保留受保护日志并在 60 GiB 聚合桶到限时建立 deployment-wide hold，不能借其他桶。初始 readback、72 小时的 4321 个 `HDD_FREE_AND_GROWTH` 样本和最终容量证书均须 exact-repeat 九桶/十四类/map digest、`measured_unclassifiable_filesystem_allocation_bytes` 和独立 `unclassified_allocation_bytes=0`，并证明 `used_bytes = sum(class_usage) + measured_unclassifiable_filesystem_allocation_bytes` 与动态卷容量公式同时成立。
 
