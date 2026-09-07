@@ -145,7 +145,7 @@ integration-gateway 的运行期数据库能力固定为零：没有 `ep_app_rw`
 
 `<池>` 取 `rw`、`ro`、`worker`、`ops` 四值。`statement_ms` 的逐池默认值取阶段 1 计划第 7.2 节的池表：rw 10000、ro 60000、worker 300000、ops 5000。`lock_ms` 与 `idle_in_tx_ms` 四池同值。integration-gateway 没有池种类、配置或连接；旧 `integ` 值不得继续解析。`db.ro.temp_file_limit_kb` 保留取值登记但不在会话级下发：`temp_file_limit` 为 SUSET 参数，应用角色无权 SET，该限额由引导侧角色默认值承接（db/bootstrap/03_role_defaults.sql）。
 
-`db.retry.*` 只对尚未产生任何外部可见副作用的事务生效，触发条件为 SQLSTATE 40001 与 40P01；两键在进程启动时构造重试策略，修改后须重启对应 Windows 服务。当前尚无签名重试策略代，启动值必须精确为 `max_attempts=3`、`backoff_ms=[50,150,450]`；0/255、空数组、长度不等、超出 `u16` 或任一数值漂移均拒绝启动，不做截断、补齐或钳制。
+`db.retry.*` 当前只校验冻结的未来策略形状，不启用自动重试。所有当前公共事务工厂始终只执行一次，包括 SQLSTATE 40001/40P01；任何配置值或未设置的旧外部副作用标记都不授予重试权限，可信 typed idempotency authority 仍为 `NOT_IMPLEMENTED`。当前尚无签名重试策略代，启动值必须精确为 `max_attempts=3`、`backoff_ms=[50,150,450]`；未来策略中的 3 表示首次执行之外最多三次重试，而不是总共三次执行。0/255、空数组、长度不等、超出 `u16` 或任一数值漂移均拒绝启动，不做截断、补齐或钳制；通过形状校验不等于交付或授权重试。
 
 `db.pool.*` 的 `20/10/5/2` 与 `db.budget.*` 的 `37/10/52`（另含 5 个安全余量）只记录 ADR-0018 旧四池拓扑的历史默认/测量种子，不是 F-57 的不可变产品真值，也不能直接形成生产放行值。依 [ADR-0019](adr/ADR-0019-f57-runtime-topology-and-measured-connection-budget.md)，Task 1 必须先登记签名 deployment/config generation 的连接消费者 exact set，拒绝未知或重复消费者，再按真实硬件、拓扑和并发负载重测常驻、临时/迁移/恢复与不可分配安全储备并签发容量证书；硬件、拓扑或代改变即重测。启动与迁移开窗分别按该代已认证预算校验，超限以退出码 78 拒绝。迁移预期版本清单与摘要由 `migration_manifest` 在构建期嵌入签名 PE；运行期只有数据库中的实际历史可读，不提供路径、环境变量或命令行参数覆盖期望值。
 

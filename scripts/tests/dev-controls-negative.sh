@@ -53,7 +53,7 @@ case " $* " in
 	exit 0
 	;;
 *" compose "*" ps -a -q "*)
-	service=${!#}
+	for service do :; done
 	[ "${EP_TEST_MISSING_SERVICE:-}" = "$service" ] || printf 'ep-%s\n' "$service"
 	exit 0
 	;;
@@ -147,6 +147,20 @@ assert_unsafe_state_rejected() {
 	[ ! -s "$CHMOD_LOG" ] || fail "$label 在所有权标记校验前尝试创建目录或改权限"
 }
 
+# Exercise the exact generated fixture with a POSIX shell, not Bash's /bin/sh mode.
+if command -v dash >/dev/null 2>&1; then
+	for fixture_service in postgres core-server; do
+		fixture_id=$(EP_TEST_ENGINE_LOG="$ENGINE_LOG" EP_TEST_MISSING_SERVICE= \
+			dash "$FAKE_BIN/docker" compose -f /fixture/compose.yaml ps -a -q "$fixture_service")
+		[ "$fixture_id" = "ep-$fixture_service" ] || fail "dash fixture lost service ID: $fixture_service"
+		fixture_missing=$(EP_TEST_ENGINE_LOG="$ENGINE_LOG" EP_TEST_MISSING_SERVICE="$fixture_service" \
+			dash "$FAKE_BIN/docker" compose -f /fixture/compose.yaml ps -a -q "$fixture_service")
+		[ -z "$fixture_missing" ] || fail "dash fixture did not omit missing service: $fixture_service"
+	done
+	printf 'PASS: exact fake Docker fixture under dash (normal and missing services).\n'
+else
+	printf 'SKIP: dash unavailable; exact dash fixture check not executed.\n'
+fi
 NONEMPTY_STATE=$TMP_ROOT/nonempty-unowned-state
 mkdir -p "$NONEMPTY_STATE"
 printf 'not an EP state directory' >"$NONEMPTY_STATE/user-file"

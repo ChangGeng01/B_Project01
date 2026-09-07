@@ -247,7 +247,7 @@ red_free          = emergency_reserve
 | `HISTORY_CONTROL_LOG_SHARED` / 历史、控制、证据、日志与报文 spool 共享桶 | 60 GiB = 64,424,509,440 bytes |
 | `POSTGRES_DATABASE_NON_LIVE_WAL` / PostgreSQL 非 live-WAL 数据 | 40 GiB = 42,949,672,960 bytes |
 | `WAL_ARCHIVE_STAGING` / archive staging | 350 GiB = 375,809,638,400 bytes |
-| `SLOT_RETAINED_LIVE_WAL` / 正常恢复边界及 replication-slot 保留的 live WAL | 350 GiB = 375,809,638,400 bytes |
+| `SLOT_RETAINED_LIVE_WAL` / 正常 WAL：当前/保留、有界预分配/回收供未来使用的 segment 及获识别的 PG16 支持对象 | 350 GiB = 375,809,638,400 bytes |
 | `ARCHIVER_FAILURE_LIVE_WAL` / 归档执行器持续失败后额外保留的 live WAL | 350 GiB = 375,809,638,400 bytes |
 | `BACKUP_STAGING` / 本机备份暂存 | 24 GiB = 25,769,803,776 bytes |
 | `SEARCH_INDEX` / 搜索与可重建索引 | 8 GiB = 8,589,934,592 bytes |
@@ -289,13 +289,23 @@ red_free          = emergency_reserve
 | `spool/mcp-audit-completion/worker/**` | `WORKER_MCP_COMPLETION_SPOOL` |
 | `postgres/data/** except postgres/data/pg_wal/**` | `POSTGRES_DATABASE_NON_LIVE_WAL` |
 | `postgres/wal/**` | `WAL_ARCHIVE_STAGING` |
-| `postgres/data/pg_wal/**` 中由正常 crash-recovery/checkpoint 边界或最慢 slot 仍要求保留的 segment | `SLOT_RETAINED_LIVE_WAL` |
-| `postgres/data/pg_wal/**` 中仅因持续 archiver failure 而位于前一保留前沿之外的额外 segment | `ARCHIVER_FAILURE_LIVE_WAL` |
+| `postgres/data/pg_wal/` 下满足下文 `PG16_NORMAL_WAL_OBJECT_SET` 具名形态及生命周期证据的正常 WAL 对象；不是任意子树通配 | `SLOT_RETAINED_LIVE_WAL` |
+| `postgres/data/pg_wal/` 下获识别的 segment（含获证实的 `.partial`），仅因持续 archiver failure 保留，且不属于前一正常对象集合 | `ARCHIVER_FAILURE_LIVE_WAL` |
 | `backup-staging/**` | `BACKUP_STAGING` |
 | `indexes/**` | `SEARCH_INDEX` |
 | `postgres/temp/process/**`、`postgres/temp/restore/**`、`dumps/**`、签名 VSS policy 报告的 DATA_HDD diff-area extents | `RESTORE_DIAGNOSTIC_SCRATCH_SHARED` |
 
-同一 live `pg_wal` segment 若同时受多个保留原因影响，按“正常恢复/slot 优先、archiver-failure 只计前一保留前沿之外的增量”归类；无原因、原因未知或 ledger 不能解释的 segment 一律失败关闭。这样同一个物理 segment 永不重复计入两个 350 GiB 桶，同时两种故障仍可并发占满各自预算。`postgres/data` 中除 `pg_wal` 外的字节只计 40 GiB 数据库桶；外置 `postgres/temp/process`、`postgres/temp/restore`、获批 dump 和 VSS diff area 只计 48 GiB 共享 scratch 桶。
+`PG16_NORMAL_WAL_OBJECT_SET` 是现有正常 WAL selector 的封闭语义，不新增类、selector、配置键或字节预算。路径均相对 `postgres/data/pg_wal/`，ASCII 名称区分规范大小写；`H8=[0-9A-F]{8}`、`H24=[0-9A-F]{24}`，不是允许任意名称的 glob：
+
+- 根下 `H24` 完整 segment 与 `H24.partial`：正常类别包括当前写入、crash-recovery/checkpoint/restartpoint、`wal_keep_size`、最慢 slot 所需保留，以及有界的正常待归档和有界预分配/回收供未来使用。证据必须绑定同一 cluster system identifier、timeline、WAL segment size、当前/恢复/slot 前沿、有效配置和当次分配/回收决策；未来 segment 必须落在被证实的预分配区间并有确切数量/已分配字节，不能仅因编号大于当前 LSN 就接受。正常待归档须有健康归档进度及有界生命周期证据，不能把持续故障伪装成普通 pending。`min_wal_size`/`max_wal_size` 是生命周期输入，不替代本 profile 的硬包络；回收后 segment 的旧内容不要求等于未来文件名中的 timeline/LSN。
+- 根下 `H8.history`、`H24.H8.backup`，以及唯一获识别的子目录 `archive_status/` 内的 `<archive-name>.ready` / `.done`；`<archive-name>` 只能是上述完整 segment、partial、timeline-history 或 backup-history 形态。目录本身仍依前述 NTFS 元数据分解计量，不增加容量类。支持对象必须关联同一 cluster 的已验证 timeline 历史、backup 起止记录或归档状态转换；只接受对应运行模式中的合法 producer（例如 `.partial` 的归档恢复结束、恢复期间归档的 `archive_mode=always`），`.ready` 本身不是故障证明。status 对应 segment 已回收/移走时仍须有可核验的归档/回收/清理记录，不能要求它必然仍在根下，也不能接受孤立无证据 marker。全部支持对象 allocation 一次计入正常 350 GiB 类，即使 marker 关联的 segment 单独计入故障类，也不重复收取该 segment。
+- 根下 `xlogtemp.<pid>`（正十进制 PID）、`RECOVERYXLOG`、`RECOVERYHISTORY` 只在已验证 PostgreSQL 创建/复制/恢复/清理生命周期内获识别；须绑定 boot/process 或恢复 attempt、final file ID、目标 segment/history、已分配大小、当前活动状态与有界结束/清理义务（或已结束对象的清理证据）。Windows 删除完整 WAL 的短暂 `H24.deleted` 也只在同一 segment 的已验证 rename→unlink 生命周期内计入正常类，直到 allocation 真正释放；不泛化成 `.partial.deleted` 或任意 `.deleted` 后缀。名字或一个 PID 本身不构成授权；无法解释的过期临时对象仍失败。这些临时形态依 PostgreSQL 16 的 [WAL 创建/删除路径](https://github.com/postgres/postgres/blob/REL_16_STABLE/src/backend/access/transam/xlog.c)、[timeline 路径](https://github.com/postgres/postgres/blob/REL_16_STABLE/src/backend/access/transam/timeline.c)和[恢复路径](https://github.com/postgres/postgres/blob/REL_16_STABLE/src/backend/access/transam/xlogrecovery.c)冻结。
+
+这一定义依据 PostgreSQL 16 的[正常 WAL 回收行为](https://www.postgresql.org/docs/16/wal-configuration.html)、[WAL 与 archive-status 枚举接口](https://www.postgresql.org/docs/16/functions-admin.html)及其[规范名称定义](https://github.com/postgres/postgres/blob/REL_16_STABLE/src/include/access/xlog_internal.h)；上述有界生命周期/唯一计费要求是本产品待实现的认证约束，不声称 PostgreSQL 已提供该 collector 或 cause ledger。
+
+同一 segment 同时受正常恢复/slot 与归档故障影响时正常原因优先；故障类只计正常集合之外、由同一连续 archiver-failure epoch 证明为 failure-only 的额外 segment。两个 selector 的对象身份集合必须不交，任意无原因/未知生命周期、未知名字/子目录、重复所有权或 ledger 不能解释的 allocation 一律失败关闭；不得将不匹配者落入 normal-WAL catch-all。这样同一个物理对象永不重复计入两个 350 GiB 桶，同时两种故障仍可并发占满各自预算。`postgres/data` 中除整个 `pg_wal` 子树外的字节只计 40 GiB 数据库桶；外置 `postgres/temp/process`、`postgres/temp/restore`、获批 dump 和 VSS diff area 只计 48 GiB 共享 scratch 桶。
+
+计划正 golden 必须包括健康空闲实例已回收供未来使用的 `H24`、有证据的预分配 segment、`archive_status/H24.ready` 与 `.done`（包括对应 segment 已移走但清理生命周期仍可证实）、history/backup/partial 和已知临时对象；逐个证明只收费一次且完整 allocation 进入正常类。负 golden 包括 `archive_status/unknown.ready`、未知根名/后缀/子目录、只有 future 文件名而无分配证据、无生命周期的临时文件、normal/failure 双重分类，以及仍被恢复/slot 需要却错误算为 failure-only。G0 投影、G1 governor 和 G6 初始/每分钟/最终 readback 必须共享这组语义与 mapping digest。collector、cause ledger 与这些 golden 的代码及执行均仍为 `NOT_IMPLEMENTED`；本文只修正规范，不产生运行通过证据。
 
 Authority 的唯一 `CapacityGovernor` 必须先用容量类 ID 对每次产品持久写、预留和增长做桶聚合 admission，再检查局部配置上限；反向顺序不合法。对象缺少 class ID、同一 file ID/extent 有两个 class ID、class→bucket 不在上述 exact-set、跨桶抵扣、桶计数溢出或扫描出现未归类产品字节时，拒绝新写并创建 deployment-wide hold。固定整卷 collector 还必须枚举 addressable file/stream 与分配 extent：只有经 NTFS/BitLocker 结构读回证明为卷自身、且不对应产品对象或登记 VSS extent 的 allocation bytes 才能进入 `measured_unclassifiable_filesystem_allocation_bytes`；该名称表示“不能归入产品容量类的文件系统元数据”，不是允许未知文件。任何普通文件/stream 位于 `data_root` exact-set 之外、无法访问、无法解释的 allocated extent 或差分不闭合都计入 `unclassified_allocation_bytes` 异常并失败，不能进入 measured 元数据项。零异常时必须 checked-equal `used_bytes = sum(class_usage.allocated_bytes) + measured_unclassifiable_filesystem_allocation_bytes`，并按动态资格公式保证九桶最大值与 100 GiB free floor 之外仍完整容纳当次卷元数据。`backup.spill_max_bytes` 在生产固定为 `25,769,803,776`，计入 `BACKUP_STAGING` 全目录的 allocation bytes，不能再把 manifest/partial 当作免费空间；两个 report spool 的普通默认各为 `268,435,456` bytes，配置只接受 `67,108,864..=2,147,483,648`，签名 production hard max 分别为 `2,147,483,648`，两个 MCP completion spool 分别固定 `1,073,741,824`。PostgreSQL 日志 normal max `21,474,836,480`；legal hold 必须保留受保护日志，但绝不允许借其他桶，60 GiB 聚合桶到限即 hold。
 

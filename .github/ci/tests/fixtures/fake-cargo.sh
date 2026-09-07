@@ -109,7 +109,17 @@ if [[ -n ${EP_CI_FAKE_CARGO_TEST_RC:-} && $# -eq 6 && ${1:-} == "test" && ${2:-}
     && ${3:-} == "--workspace" && ${4:-} == "--locked" && ${5:-} == "--offline" \
     && ${6:-} == "--no-fail-fast" ]]; then
     failed=${EP_CI_FAKE_CARGO_TEST_FAILED:-0}
-    printf 'test result: synthetic. 0 passed; %s failed; 0 ignored; 0 measured; 0 filtered out\n' "$failed"
+    if [[ $failed == 0 ]]; then result_status=ok; else result_status=FAILED; fi
+    printf 'test result: %s. 100 passed; %s failed; 0 ignored; 0 measured; 0 filtered out\n' "$result_status" "$failed"
+    if [[ $failed != 0 ]]; then
+        printf 'error: test failed, to rerun pass `-p completed-crate --lib`\n' >&2
+    fi
+    case ${EP_CI_FAKE_CARGO_TEST_ABNORMAL:-} in
+        signal)
+            printf 'error: test failed, to rerun pass `-p aborted-crate --lib`\n\nCaused by:\n  process did not exit successfully: `/fixture/aborted-target` (signal: 6, SIGABRT: process abort signal)\n' >&2 ;;
+        not-executed)
+            printf 'error: test failed, to rerun pass `-p missing-crate --lib`\n\nCaused by:\n  could not execute process `/fixture/missing-target` (never executed)\n\nCaused by:\n  Permission denied (os error 13)\n' >&2 ;;
+    esac
     if [[ ${EP_CI_FAKE_CARGO_TEST_COMPILE_FAILURE:-0} == 1 ]]; then
         printf 'error: could not compile `synthetic-broken-crate` (lib) due to 1 previous error\n' >&2
     fi

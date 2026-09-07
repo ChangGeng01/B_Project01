@@ -478,6 +478,11 @@ pub fn base32_encode(bytes: &[u8]) -> String {
 
 /// base64url 解码（挑战/登记引用反序列化用；仅接受无填充形态）。
 pub(crate) fn b64url_decode(text: &str) -> Option<Vec<u8>> {
+    // Unpadded Base64url cannot end with one sextet: accepting a trailing
+    // zero sextet would give the same signed bytes a second replay-ledger key.
+    if text.len() % 4 == 1 {
+        return None;
+    }
     let val = |c: u8| -> Option<u8> {
         match c {
             b'A'..=b'Z' => Some(c - b'A'),
@@ -638,6 +643,54 @@ mod tests {
         assert_eq!(base32_encode(b"foob"), "MZXW6YQ");
         assert_eq!(base32_encode(b"fooba"), "MZXW6YTB");
         assert_eq!(base32_encode(b"foobar"), "MZXW6YTBOI");
+    }
+
+    #[test]
+    fn impossible_base64url_lengths_and_nonzero_unused_bits_are_rejected() {
+        for text in ["A", "AAAAA", "AAAAAAAAA", "Zh", "Zm9"] {
+            assert!(b64url_decode(text).is_none(), "noncanonical input: {text}");
+        }
+        for (text, bytes) in [
+            ("", &b""[..]),
+            ("Zg", &b"f"[..]),
+            ("Zm8", &b"fo"[..]),
+            ("Zm9v", &b"foo"[..]),
+        ] {
+            assert_eq!(b64url_decode(text).as_deref(), Some(bytes));
+        }
+    }
+
+    fn assert_zero_sextet_alias_rejected(consumed: bool) {
+        let now = DateTime::from_timestamp(2_000_000_000, 0).expect("fixed time");
+        let svc = MfaChallengeService::with_key([7; 32], 300);
+        let token = svc
+            .issue(uuid::Uuid::from_u128(9), "AB", "win", now)
+            .expect("issue");
+        assert_eq!(
+            token.len() % 4,
+            0,
+            "fixture must admit a zero-sextet alias in the old decoder"
+        );
+        let (_, mut reservation) = svc.reserve(&token, now).expect("reserve");
+        if consumed {
+            reservation.mark_consumed();
+        }
+        drop(reservation);
+        assert!(svc.reserve(&token, now).is_err());
+        assert!(
+            svc.reserve(&format!("{token}A"), now).is_err(),
+            "alias bypassed consumed={consumed}"
+        );
+    }
+
+    #[test]
+    fn appended_zero_sextet_cannot_escape_consumed_reservation() {
+        assert_zero_sextet_alias_rejected(true);
+    }
+
+    #[test]
+    fn appended_zero_sextet_cannot_escape_burned_reservation() {
+        assert_zero_sextet_alias_rejected(false);
     }
 
     #[test]

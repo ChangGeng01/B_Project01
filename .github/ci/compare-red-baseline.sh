@@ -173,6 +173,14 @@ measure_tests() {
         echo "$rc compile-failed"
         return
     fi
+    # --no-fail-fast 可先输出旧失败的完整汇总，再有另一个 target 崩溃或
+    # 根本未执行。任何进程失败诊断均失败关闭；普通已完成 libtest 的
+    # `error: test failed, to rerun pass ...` 不属于这一类。
+    # 这是对 Cargo 文本诊断的保守检查，不是结构化的逐 target 完成协议。
+    if grep -Eq 'process didn.t exit successfully|process did not exit successfully|could not execute process|could not execute test|failed to (execute|run) (process|test)|never executed|\(signal: [0-9]+|test (binary|executable).*not found' <<<"$out"; then
+        echo "$rc abnormal-execution"
+        return
+    fi
     # 同上：herestring，不用 `printf | grep -q`。
     if ! grep -q '^test result' <<<"$out"; then
         echo "$rc -"
@@ -219,6 +227,12 @@ for index in "${!EXPECTED_GATES[@]}"; do
     if [[ $gate == "cargo-test" && $got_count == "compile-failed" ]]; then
         printf '%-14s %-10s %-10s %s\n' "$gate" "${expect_exit}/${expect_count}" "${got_exit}/?" \
             "未覆盖：cargo-test 输出含编译失败，测试结果不是完整可比证据"
+        uncovered=$((uncovered + 1))
+        continue
+    fi
+    if [[ $gate == "cargo-test" && $got_count == "abnormal-execution" ]]; then
+        printf '%-14s %-10s %-10s %s\n' "$gate" "${expect_exit}/${expect_count}" "${got_exit}/?" \
+            "未覆盖：cargo-test 输出含进程异常或未执行，测试结果不是完整可比证据"
         uncovered=$((uncovered + 1))
         continue
     fi

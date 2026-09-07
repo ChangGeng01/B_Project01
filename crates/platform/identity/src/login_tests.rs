@@ -496,6 +496,57 @@ async fn a_successfully_consumed_mfa_challenge_cannot_create_a_second_session() 
 }
 
 #[tokio::test]
+async fn complete_mfa_appended_zero_sextet_cannot_create_a_second_session() {
+    let hn = harness();
+    let user = seed_account(&hn.h, 15, "alias-user", false);
+    seed_password(&hn.h, user, hn.pws.hash("Ab1!Ab1!Ab1!").expect("hash"));
+    seed_device(&hn.h, user, None);
+    lock(&hn.h).devices[0].device_id = "AB".into();
+    let seed = seed_totp(&hn, user);
+    lock(&hn.h).duties.push(DutyClass::Audit);
+    let now = Utc::now();
+    let mut request = req("alias-user", "Ab1!Ab1!Ab1!");
+    request.device_id = "AB".into();
+    let SignInOutcome::MfaRequired { challenge } = must_ok(hn.svc.sign_in(request, now).await)
+    else {
+        panic!("MFA required")
+    };
+    assert_eq!(challenge.len() % 4, 0, "exercise impossible-length alias");
+    let code = totp_code(
+        &seed,
+        u64::try_from(now.timestamp()).expect("positive time"),
+    )
+    .expect("valid seed");
+    let request = CompleteMfaRequest {
+        challenge: challenge.clone(),
+        proof: SecondFactorProof::Totp { code: code.clone() },
+        source_addr: "198.51.100.10".into(),
+        request_id: "canonical-mfa".into(),
+        trace_id: "0".repeat(32),
+    };
+    must_success(hn.svc.complete_mfa(request, now).await);
+    let replay = hn
+        .svc
+        .complete_mfa(
+            CompleteMfaRequest {
+                challenge: format!("{challenge}A"),
+                proof: SecondFactorProof::Totp { code },
+                source_addr: "203.0.113.10".into(),
+                request_id: "alias-mfa".into(),
+                trace_id: "1".repeat(32),
+            },
+            now,
+        )
+        .await;
+    assert_eq!(
+        lock(&hn.h).sessions.len(),
+        1,
+        "alias must not create a second session"
+    );
+    assert_eq!(must_err(replay), PLATFORM_AUTHN_MFA_INVALID);
+}
+
+#[tokio::test]
 async fn a_failed_mfa_proof_releases_the_challenge_for_a_valid_retry() {
     let hn = harness();
     let user = seed_account(&hn.h, 14, "nora", false);

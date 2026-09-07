@@ -374,6 +374,15 @@ expect "N33 多个汇总候选不能用首行伪造计数" 3 "读不到计数" -
     EP_CI_FAKE_CARGO_TEST_RC=101 EP_CI_FAKE_CARGO_TEST_FAILED=3 \
     EP_RED_BASELINE="$WORK/rb-complete.tsv" bash "$COMPARE"
 
+# Completed known failures cannot hide another target with no libtest completion.
+for abnormal in signal not-executed; do
+    expect "N34 cargo-test known reds plus $abnormal are uncovered" 3 "异常或未执行" -- \
+        env PATH="$FAKE_CARGO_DIR:$PATH" EP_CI_REAL_CARGO="$REAL_CARGO" \
+        EP_CI_FAKE_XTASK_RESULTS="$FAKE_XTASK_RESULTS" EP_CI_FAKE_CARGO_TEST_RC=101 \
+        EP_CI_FAKE_CARGO_TEST_FAILED=3 EP_CI_FAKE_CARGO_TEST_ABNORMAL="$abnormal" \
+        EP_RED_BASELINE="$WORK/rb-complete.tsv" bash "$COMPARE"
+done
+
 # ---- 结论 ------------------------------------------------------------------
 
 echo
