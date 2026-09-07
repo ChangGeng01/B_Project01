@@ -6,12 +6,12 @@
 
 use std::sync::Arc;
 
-use axum::extract::{Query, State};
+use axum::extract::{Extension, Query, State};
 use axum::http::HeaderMap;
 use axum::response::{IntoResponse, Response};
 use ep_adapter_db_pg::SensitiveFieldFilter;
 use ep_foundation::capability::{ActionClass, CapabilityDomain};
-use ep_foundation::security::context::DutyClass;
+use ep_foundation::security::context::{DutyClass, SecurityContext};
 use ep_platform_runtime::http::{ApiError, Envelope};
 use ep_platform_tenancy::capability as cap;
 use serde_json::{json, Value};
@@ -28,13 +28,14 @@ const CAPABILITY_BINDING: (CapabilityDomain, ActionClass) = (
 
 pub async fn list_sensitive_fields(
     State(state): State<Arc<PlatformState>>,
+    security_context: Option<Extension<SecurityContext>>,
     headers: HeaderMap,
     Query(params): Query<Vec<(String, String)>>,
 ) -> Response {
     let trace = trace_of(&headers);
     let out: Result<Response, ApiError> = async {
         let ctx = extract_context(
-            &headers,
+            security_context.as_deref(),
             &state.system,
             &[DutyClass::Security, DutyClass::Audit],
         )?;

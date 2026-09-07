@@ -10,6 +10,19 @@ use ep_platform_runtime::config::{
 use serde::Deserialize;
 
 /// 进程固定默认层。内置默认由各段的 Default 承载，这里只写按进程固定的键。
+#[cfg(windows)]
+pub const DEFAULTS: &str = r#"
+[http]
+bind_addr = "127.0.0.1:8080"
+
+[ipc]
+socket_path = '\\.\pipe\ep-core'
+
+[metrics]
+bind_addr = "127.0.0.1:8080"
+"#;
+
+#[cfg(not(windows))]
 pub const DEFAULTS: &str = r#"
 [http]
 bind_addr = "127.0.0.1:8080"
@@ -65,7 +78,7 @@ mod tests {
         assert_eq!(cfg.http.bind_addr, "127.0.0.1:8080");
         assert_eq!(
             cfg.ipc.socket_path.to_string_lossy(),
-            "/run/ep/ipc/core.sock"
+            ep_adapter_ipc::CORE_ENDPOINT
         );
         assert_eq!(cfg.http.concurrency_limit, 20);
         assert_eq!(cfg.db.pool.rw_max, 20);
@@ -88,5 +101,14 @@ mod tests {
     fn an_egress_section_is_rejected() {
         let err = load("[egress]\nallowlist = []\n").expect_err("core-server 没有 egress 段");
         assert!(err.contains("egress"), "{err}");
+    }
+
+    #[test]
+    fn core_ipc_endpoint_cannot_be_redirected() {
+        let cfg = load("[ipc]\nsocket_path = \"/tmp/attacker.sock\"\n").unwrap();
+        assert!(cfg
+            .ipc
+            .require_endpoint(ep_adapter_ipc::CORE_ENDPOINT)
+            .is_err());
     }
 }

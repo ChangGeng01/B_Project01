@@ -56,14 +56,13 @@ impl ProcessKind {
         }
     }
 
-    /// 是否持有常规数据库连接。为假的四个进程对全部 SQL 类自检项标 NotApplicable。
+    /// 是否持有常规数据库连接。为假的进程对全部 SQL 类自检项
+    /// 标 NotApplicable。integration-gateway 是零数据库边界，不得因旧预算表误判。
     pub const fn holds_sql_session(self) -> bool {
         match self {
-            ProcessKind::CoreServer
-            | ProcessKind::JobWorker
-            | ProcessKind::IntegrationGateway
-            | ProcessKind::OpsAgent => true,
+            ProcessKind::CoreServer | ProcessKind::JobWorker | ProcessKind::OpsAgent => true,
             ProcessKind::PortalGateway
+            | ProcessKind::IntegrationGateway
             | ProcessKind::PluginHost
             | ProcessKind::ArchiveWriter
             | ProcessKind::BackupWriter => false,
@@ -123,20 +122,12 @@ mod tests {
     }
 
     #[test]
-    fn exactly_four_processes_hold_sql_sessions() {
+    fn exactly_three_processes_hold_sql_sessions() {
         let holders: Vec<&str> = ALL_PROCESSES
             .into_iter()
             .filter(|p| p.holds_sql_session())
             .map(|p| p.name())
             .collect();
-        assert_eq!(
-            holders,
-            [
-                "core-server",
-                "job-worker",
-                "integration-gateway",
-                "ops-agent"
-            ]
-        );
+        assert_eq!(holders, ["core-server", "job-worker", "ops-agent"]);
     }
 }

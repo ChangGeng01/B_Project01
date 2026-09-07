@@ -4,7 +4,7 @@
 > 收敛修订：2026-08-24（Australia/Melbourne）
 > 状态：**CURRENT / APPROVED；2026-08-24 架构收敛修订已由用户批准。本文可以作为实施计划与开发的规范输入，但本次批准只授权完成文档再基线，不授权开始 F-57 产品实现、迁移、实机认证或发布；开发授权已另于 2026-08-27 由使用方授予（F-65），见 :767 与 README:8**
 > 产品定位：面向合同驱动型企业的、本地优先、可治理、可组合的业务自动化操作系统
-> 生产基线：单台 ThinkStation P340 Tower、Windows Server 2022、i5-10500、32GB RAM、256GB SSD、单 1TB HDD、约 20 名活跃用户
+> 硬件基线：现有 ThinkStation P340 Tower、Windows Server 2022、i5-10500、32GB RAM、256GB SSD 与单 1TB HDD 只可开发/验证；生产候选必须先把权威数据盘扩容为标称至少 2TB，NTFS 以 1,589,137,899,520 bytes 为名义 floor 并通过 §13.5.1 含实测卷元数据的动态资格公式，再按约 20 名活跃用户实测认证
 > 功能基线：《管理软件基本需求》及现行 PRD 中与本文不冲突的业务细节
 
 ## 0. 本文用途与规范语言
@@ -231,7 +231,7 @@ F-57 生产运行时只能采用原生 Windows Service、Service SID、命名管
 
 系统必须只有一个可签名、可版本化的业务能力语义源 `CapabilityGraphV1`。每个能力节点由唯一 `CapabilityId + version + owning_feature` 标识，并至少绑定 command/query/fact、输入/结果/错误 schema、状态与不变量、授权 scope/conditions/risk/SoD、数据 owner、Objective/closure、允许 carrier、生命周期和证据要求。
 
-复杂语义不得因为不适合塞进一行 graph struct 就退化成第二真值。G0 先建立通用语义合约 wire/compiler/projection；以后每个 owning task 只可读取现行契约中以唯一 BEGIN/END marker 和 digest 明确登记的机器表锚点，并通过 graph-owned 的 exact source-header/index/codec、contract-kind validator 与独立 normalization golden，把状态守卫/不变量、授权 scope/condition/CandidateQuery、Objective trigger/reopen/closure、责任能力、effect intent、timeout、termination和 compensation 转换成排序、强类型的 `SemanticContractRowV1`/`SemanticContractFieldV1`。策略参数、状态定义和 workflow graph 等嵌套结构只能使用 schema-bound `CANONICAL_JCS_OBJECT`，不得降级成普通 UTF8。唯一例外是业务合同 §8.4 的 workflow：它以固定 authoring rule 直接作为 `GRAPH_NATIVE + WORKFLOW_DEFINITION_REGISTRY` 行进入图，禁止另建 Markdown workflow 表。每份绑定都携带 typed provenance、投影路径/摘要、可在 graph root exact-resolve 的 row schema、exact row count、owner 和 projection targets。Graph digest 因而直接覆盖语义行；strict `SemanticContractProjectionV1` JSON 和 `SemanticContractsManifestV1` primary 都从已编译绑定生成，不是编译所需的先决输入。Graph 内的 lifecycle、authorization 和 objective 字段只是对这些绑定行的强类型索引，必须逐字段 exact-join，不能作为另一份可独立修改的摘要；Objective definition、trigger/execution/compensation 用冻结的 15-kind exact row-key set，timeout/termination 用 trigger 所引用的 dedicated policy-ID exact set，workflow 用全局 workflow-ID row key并按 definition.objective_kind 覆盖同一 15-kind set，三者不得混为“都是 15 行”。运行时 registry、OpenAPI、客户端、UI、MCP、Excel 和测试只能从同一已编译绑定生成；契约表、绑定、投影任一不等即整代拒绝，历史 seed 永久不回写。
+复杂语义不得因为不适合塞进一行 graph struct 就退化成第二真值。G0 先建立通用语义合约 wire/compiler/projection；以后每个 owning task 只可读取现行契约中以唯一 BEGIN/END marker 和 digest 明确登记的机器表锚点，并通过 graph-owned 的 exact source-header/index/codec、contract-kind validator 与独立 normalization golden，把状态守卫/不变量、授权 scope/condition/CandidateQuery、Objective trigger/reopen/closure、责任能力、effect intent、timeout、termination和 compensation 转换成排序、强类型的 `SemanticContractRowV1`/`SemanticContractFieldV1`。策略参数、状态定义和 workflow graph 等嵌套结构只能使用 schema-bound `CANONICAL_JCS_OBJECT`，不得降级成普通 UTF8。状态 transition 中的 action、guard、invariant 与 reverse-fact-trigger token 必须各自 exact-resolve 到同一领域、同行 kind 的唯一 `STATE_SEMANTIC_SYMBOL_REGISTRY` 定义；owner fact、状态动作和通知事件是三个不同语义层，不能从 prose 猜 alias 或共用 catch-all trigger。唯一例外是业务合同 §8.4 的 workflow：它以固定 authoring rule 直接作为 `GRAPH_NATIVE + WORKFLOW_DEFINITION_REGISTRY` 行进入图，禁止另建 Markdown workflow 表。每份绑定都携带 typed provenance、投影路径/摘要、可在 graph root exact-resolve 的 row schema、exact row count、owner 和 projection targets。Graph digest 因而直接覆盖语义行；strict `SemanticContractProjectionV1` JSON 和 `SemanticContractsManifestV1` primary 都从已编译绑定生成，不是编译所需的先决输入。Graph 内的 lifecycle、authorization 和 objective 字段只是对这些绑定行的强类型索引，必须逐字段 exact-join，不能作为另一份可独立修改的摘要；Objective definition、trigger/execution/compensation 用冻结的 15-kind exact row-key set，timeout/termination 用 trigger 所引用的 dedicated policy-ID exact set，workflow 用全局 workflow-ID row key并按 definition.objective_kind 覆盖同一 15-kind set，三者不得混为“都是 15 行”。运行时 registry、OpenAPI、客户端、UI、MCP、Excel 和测试只能从同一已编译绑定生成；契约表、绑定、投影任一不等即整代拒绝，历史 seed 永久不回写。
 
 以下内容只能是同一能力图的确定性投影，不得继续作为可独立手改的第二真值：
 
@@ -601,7 +601,8 @@ P340 单 HDD 的基础备份默认采用 `PostgreSQL 输出 → 固定大小分�
 | CPU | Intel Core i5-10500，6 核 12 线程 |
 | 内存 | 32GB |
 | 系统盘 | 256GB SSD |
-| 数据盘 | 单块 1TB HDD，可后续增加 |
+| 现有数据盘 | 单块 1TB HDD；`production_eligible=false`，只可开发/测试/非生产验证 |
+| 生产数据盘底线 | 标称容量至少 2,000,000,000,000 bytes 的企业 CMR HDD；NTFS 名义 floor `1,589,137,899,520` bytes，且 `volume_total_bytes >= max(1,589,137,899,520, 1,481,763,717,120 + 107,374,182,400 + measured_unclassifiable_filesystem_allocation_bytes)` |
 | 服务器系统 | Windows Server 2022，原生服务，不使用 WSL |
 | 用户基线 | 约 20 名活跃用户；不是硬拒绝上限，也不是许可口径 |
 | 本地模型 | 延后开发，当前容量档关闭 |
@@ -640,14 +641,27 @@ Authority 必须持有唯一的全机 `CapacityGovernor`。其他服务开始 OC
 
 P340 是工作站，必须额外验证 Windows Server 驱动、BIOS、TPM、BitLocker、存储控制器、网卡、散热、断电恢复、UPS 和磁盘健康。未通过不得宣传为服务器级高可用。
 
+#### 13.5.1 数据盘硬容量包络
+
+生产 profile 必须同时为三条可并发故障路径独立留空间：archive staging `350 GiB`、replication-slot 保留的 live WAL `350 GiB`、归档执行器持续失败后新增的 unarchived live WAL `350 GiB`。后两项都位于 `pg_wal`，容量认证仍必须分账，并以 `700 GiB` 作为 live `pg_wal` 合计硬包络；不得因物理目录相同就把两种故障当作互斥。
+
+静态包络是九桶 exact-set，不再用“附件/历史/数据库”这些容易把日志和 spool 漏在外面的松散标签。按声明顺序为 `FILE_WORKING_SHARED=161061273600`、`HISTORY_CONTROL_LOG_SHARED=64424509440`、`POSTGRES_DATABASE_NON_LIVE_WAL=42949672960`、`WAL_ARCHIVE_STAGING=375809638400`、`SLOT_RETAINED_LIVE_WAL=375809638400`、`ARCHIVER_FAILURE_LIVE_WAL=375809638400`、`BACKUP_STAGING=25769803776`、`SEARCH_INDEX=8589934592`、`RESTORE_DIAGNOSTIC_SCRATCH_SHARED=51539607552` bytes，checked-sum 为 **1380 GiB = 1,481,763,717,120 bytes**。再加不可借用的 **100 GiB = 107,374,182,400 bytes** free-space 阻断底线，形成 **1480 GiB = 1,589,137,899,520 bytes** 的名义 NTFS floor；实际资格必须在每次输入和样本上 checked 证明 `volume_total_bytes >= max(1,589,137,899,520, 1,481,763,717,120 + 107,374,182,400 + measured_unclassifiable_filesystem_allocation_bytes)`，因此 NTFS/BitLocker 卷元数据不会吃掉九桶或 100 GiB 底线。物理 CMR HDD 标称原始容量仍必须至少 **2,000,000,000,000 bytes**。动态 volume 门与 raw-device 门同时必须通过，不得只验其一。
+
+九桶内部是十四容量类。它们只对 canonical `data_root` 下的产品管理对象和已登记 DATA_HDD VSS extent 构成 total-unique 映射；NTFS/BitLocker 卷元数据不取得 class ID，只进入上述实测标量，任意普通卷外文件或不能解释的 allocated extent 仍是失败异常。60 GiB 共享桶固定为 PostgreSQL text log 20 GiB、archive/backup report spool 各 2 GiB、core/worker MCP completion spool 各 1 GiB，以及 history/audit/packages/secrets/application-log 等共享余量 34 GiB（`36,507,222,016` bytes），即 `20+2+2+1+1+34=60`；report spool 普通默认各 `268,435,456` bytes，配置只接受 `67,108,864..=2,147,483,648` bytes，生产仍按各 `2,147,483,648`-byte 最大合法占用保留，差额不可借。24 GiB `BACKUP_STAGING` 全部约束 `{data_root}\backup-staging` 的 physical allocation bytes，`backup.spill_max_bytes=25,769,803,776`，partial/manifest/journal/reserve 不得另算。`postgres/data` 中非 `pg_wal` 数据只计 40 GiB；外置 process/restore temp、获批 dump 和 VSS extent 共用 48 GiB。完整九桶、十四类和 disjoint root/ledger 映射见 [Windows/P340 生产档案 §9.1](2026-08-23-f57-windows-p340-production-profile.md#91-空间公式)，机器真值由同一个 G0 P340 policy projection 生成。
+
+所有产品管理持久对象在分配前必须取得唯一 class ID；Authority 的单一 `CapacityGovernor` 先对 class→bucket 聚合额度做 admission，再检查局部配置。未知类、同一 file ID/extent 重复分类、跨桶抵扣、未归类 allocation bytes、checked-sum 溢出或生成映射漂移一律失败关闭。同处 `postgres/data/pg_wal` 的 segment 按正常恢复/slot 优先，archiver-failure 只计前一保留前沿以外的增量，任何 segment 只进一个 350 GiB live-WAL 桶。PostgreSQL legal hold 只能保留受保护日志并在 60 GiB 聚合桶到限时建立 deployment-wide hold，不能借其他桶。初始 readback、72 小时的 4321 个 `HDD_FREE_AND_GROWTH` 样本和最终容量证书均须 exact-repeat 九桶/十四类/map digest、`measured_unclassifiable_filesystem_allocation_bytes` 和独立 `unclassified_allocation_bytes=0`，并证明 `used_bytes = sum(class_usage) + measured_unclassifiable_filesystem_allocation_bytes` 与动态卷容量公式同时成立。
+
+archive staging 写入器在 `350 GiB` 处强制停止接纳；`max_slot_wal_keep_size='350GB'` 只管理 slot-retained 部分。归档持续失败的 unarchived live WAL 每最多 30 秒采样，达 `300 GiB` 或 live `pg_wal` 合计达 `650 GiB` 时立即进入 deployment-wide hold，拒绝新业务写并受控停机；`350/700 GiB` 是不得超过的终值。容量认证必须证明实测峰值 WAL 生成率 ×（采样周期 + 最坏停机时间）小于独立 `50 GiB` 反应余量；无法证明时不得认证。重启前必须恢复归档并重新通过水位检查，不得将持续失败留给“盘还没满”作为控制。
+
 ### 13.6 升级路线
 
-1. 当前 32GB、单 HDD：单磁盘降级生产，UPS、服务器外追加式增量备份、离线轮换副本和恢复演练为上线硬门；
-2. 最终安装两块匹配企业 HDD 组成经验证的 RAID1：现有 1TB HDD 通过型号、健康、性能和兼容认证时只加一块匹配盘；未通过则移除现盘后安装两块新盘，权威数据迁入镜像；
-3. 增加到 64GB，并升级独立备份设备和电源保障；
-4. 增加第二台 Windows Server 暖备。
+1. 现有 32GB + 1TB HDD：仅开发/验证，`production_eligible=false`；
+2. 增加或替换为一块标称至少 2TB、且 NTFS 卷达到本节底线的企业 CMR HDD：完整重测后才可进入单磁盘降级生产候选；
+3. 最终安装两块各自满足第 2 项容量档的匹配企业 HDD 组成经验证的 RAID1；现有 1TB HDD 不得作为镜像成员绕过容量门；
+4. 增加到 64GB，并升级独立备份设备和电源保障；
+5. 增加第二台 Windows Server 暖备。
 
-未通过复用认证而被移除的现有 1TB HDD，在安全擦除和处置批准后只能作为非权威暂存，不能作为独立备份；若通过认证并成为 RAID1 成员，则不适用该句。P340 内部磁盘升级必须关机并进入维护窗口，不得宣传为硬件热插拔。
+现有 1TB HDD 在安全擦除和处置批准后只能作非权威暂存，不能作独立备份或 RAID1 成员。P340 内部磁盘升级必须关机并进入维护窗口，不得宣传为硬件热插拔。
 
 ### 13.7 可用性与恢复目标
 

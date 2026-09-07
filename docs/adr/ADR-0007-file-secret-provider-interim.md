@@ -112,4 +112,4 @@ HSM 为每个 recipient 建独立的 nonextractable AES-256 secret-store object�
 
 ## 追加：同期四头临时披露已由阶段 4 关闭（任务 #23）
 
-本 ADR「后果」负面段披露的同期同类状态——四个请求头 `X-Legal-Entity-Id`、`X-Device-Id`、`X-Client`、`Authorization` 只校存在性与格式——已由阶段 4 关闭：真实校验经端口在 core-server 装配注入（认证层令牌摘要查 sessions，法人层对照授权集合），关闭说明见 ADR-0011 追加段与 `docs/config-reference.md` 第 5 节。`FileSecretProvider` 自身也已由本 ADR 的阶段 2 终态替换；生产配置、常驻二进制与发布证据均不得再选择或携带它。
+本 ADR「后果」负面段披露的同期同类状态——四个请求头 `X-Legal-Entity-Id`、`X-Device-Id`、`X-Client`、`Authorization` 只校存在性与格式——已由阶段 4 关闭：真实校验经端口在 core-server 装配注入（认证层令牌摘要查 sessions，法人层对照授权集合），关闭说明见 ADR-0011 追加段与 `docs/config-reference.md` 第 5 节。规范上，`FileSecretProvider` 已被本 ADR 定义的阶段 2 终态取代；**实现上 `KmsSecretProvider` 截至 2026-09-01 仍为 `NOT_IMPLEMENTED`**。因此生产/默认构建遇到 KMS 必须失败关闭，也不得回退文件；只有显式 `legacy-file` 的 development/test debug 构建可使用受控 reader。这里的“取代”是目标规范状态，不是阶段 2 已交付或生产机密链已经可用。

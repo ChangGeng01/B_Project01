@@ -4,7 +4,7 @@
 //! 这是把「不建库连接」这条边界前移到类型层，配置里出现 db 段即启动失败。
 
 use ep_platform_runtime::config::{
-    HttpCfg, LogCfg, MetricsCfg, PortalCfg, RuntimeCfg, SecretsCfg, SelfcheckCfg, TraceCfg,
+    HttpCfg, LogCfg, MetricsCfg, RuntimeCfg, SelfcheckCfg, TraceCfg,
 };
 use serde::Deserialize;
 
@@ -15,19 +15,15 @@ bind_addr = "127.0.0.1:8090"
 [metrics]
 bind_addr = "127.0.0.1:8090"
 
-[portal]
-upstream_base_url = "http://127.0.0.1:8080"
 "#;
 
 #[derive(Deserialize, Debug, Default)]
 #[serde(deny_unknown_fields, default)]
 pub struct PortalConfig {
     pub http: HttpCfg,
-    pub portal: PortalCfg,
     pub log: LogCfg,
     pub metrics: MetricsCfg,
     pub trace: TraceCfg,
-    pub secrets: SecretsCfg,
     pub selfcheck: SelfcheckCfg,
     pub runtime: RuntimeCfg,
 }
@@ -46,11 +42,9 @@ mod tests {
     }
 
     #[test]
-    fn portal_listens_on_8090_and_points_at_core() {
+    fn portal_listens_on_8090_without_a_configurable_internal_upstream() {
         let cfg = load("").expect("默认层必须自洽");
         assert_eq!(cfg.http.bind_addr, "127.0.0.1:8090");
-        assert_eq!(cfg.portal.upstream_base_url, "http://127.0.0.1:8080");
-        assert_eq!(cfg.portal.rate_limit_rps, 20);
     }
 
     // 负样例断言的是「门户不建库连接」这条边界本身。
@@ -58,5 +52,21 @@ mod tests {
     fn a_db_section_is_rejected() {
         let err = load("[db]\nhost = \"127.0.0.1\"\n").expect_err("portal-gateway 没有 db 段");
         assert!(err.contains("db"), "{err}");
+    }
+
+    #[test]
+    fn obsolete_upstream_and_unused_secrets_sections_are_rejected() {
+        assert!(
+            load("[portal]\nupstream_base_url = \"http://127.0.0.1:8080\"\n").is_err(),
+            "门户内部调用已固定为未来 ep-core IPC，不得恢复回环 HTTP"
+        );
+        assert!(
+            load("[portal]\nrate_limit_rps = 20\n").is_err(),
+            "旧单值限流键不得静默兼容"
+        );
+        assert!(
+            load("[secrets]\nprovider = \"kms\"\n").is_err(),
+            "零 KMS 门户不得接受无消费者的 secrets 段"
+        );
     }
 }

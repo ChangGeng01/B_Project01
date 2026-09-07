@@ -39,13 +39,19 @@ use hkdf::Hkdf;
 use hmac::{Hmac, Mac};
 use sha2::Sha256;
 
-use crate::cache::{wall_clock, Clock, DekCache};
+#[cfg(any(test, all(feature = "legacy-master-key-file", debug_assertions, unix)))]
+use crate::cache::wall_clock;
+#[cfg(any(test, all(feature = "legacy-master-key-file", debug_assertions, unix)))]
+use crate::cache::Clock;
+use crate::cache::DekCache;
 use crate::cfg::{
     parse_blind_index_bytes, DekCacheCfg, ENV_BLIND_INDEX_BYTES, ENV_DEK_CACHE_MAX_ENTRIES,
     ENV_DEK_CACHE_TTL_S,
 };
 use crate::envelope::{self, PLAINTEXT_MAX};
-use crate::masterkey::{load_master_key, MasterKey};
+#[cfg(all(feature = "legacy-master-key-file", debug_assertions, unix))]
+use crate::masterkey::load_master_key;
+use crate::masterkey::MasterKey;
 use crate::material::{
     DataKey, DataKeyState, DekAlgorithm, DestroyApproval, DestroyEvidence, DomainKind, KeyDomain,
     KeyDomainState,
@@ -84,13 +90,15 @@ pub struct BuiltinKmsBackend {
 }
 
 impl BuiltinKmsBackend {
-    /// 生产入口：按路径读 master.key，权限与属主校验失败即拒启动。
+    /// 历史 development/test debug 入口；F-57 默认与发布构建不编译。
+    #[cfg(all(feature = "legacy-master-key-file", debug_assertions, unix))]
     pub fn new(master_key_path: &std::path::Path) -> Result<BuiltinKmsBackend, AppError> {
         let master = load_master_key(master_key_path)?;
         Ok(Self::from_master(master, wall_clock()))
     }
 
     /// 测试与装配入口：直接注入主密钥与时钟，不碰文件系统。
+    #[cfg(any(test, all(feature = "legacy-master-key-file", debug_assertions, unix)))]
     pub(crate) fn from_master(master: MasterKey, clock: Clock) -> BuiltinKmsBackend {
         BuiltinKmsBackend {
             master,

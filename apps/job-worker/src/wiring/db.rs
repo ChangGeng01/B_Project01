@@ -2,23 +2,24 @@
 //!
 //! 与 core-server 同纪律：预算违例以退出码 78 拒启；机密解析或建池
 //! 失败时不注入，四项 SQL 自检如实报未覆盖，绝不以空实现顶位。
-//! 本进程只消费 Worker 池（任务）与 Ops 池（降级台账与自检取数），
-//! 建池仍按五池全量 connect_lazy：惰性建池不产生实际连接，预算求和
-//! 口径因此与库侧保持一致。
+//! 本进程只持有 Worker 池；降级台账与自检也复用该池。
+//! Rw/Ro 只由 core-server 持有，Ops 只由 ops-agent 持有；
+//! 全机四池合计 37，不在每个进程各复制一遍。
 
-use std::path::Path;
 use std::sync::Arc;
 use std::time::Duration;
 
 use ep_adapter_db_pg::budget::BudgetViolation;
 use ep_adapter_db_pg::{
     ConnectionBudget, DbMetrics, PgDataFoundationCheck, PgDegradationLedger, PgIdempotencyStore,
-    PgLegalEntityDirectory, PgMigrationWindowGuard, PgPools, PgUnitOfWork, PoolBuildCfg, PoolKind,
-    PoolSpec, PoolTimeouts, RetryPolicy, RoResourceLimits,
+    PgLegalEntityDirectory, PgMigrationWindowGuard, PgPools, PgUnitOfWork, PoolBuildCfg,
+    PoolCredential, PoolKind, PoolOwner, PoolSpec, PoolTimeouts, RetryPolicy, RoResourceLimits,
 };
 use ep_foundation::port::db::{IdempotencyStore, MigrationWindowGuard};
 use ep_platform_obs::MetricsRegistry;
-use ep_platform_runtime::config::{DbCfg, PlatformCfg, SecretRef, SecretsCfg};
+#[cfg(all(feature = "legacy-file", debug_assertions))]
+use ep_platform_runtime::config::resolve_legacy_file_secret;
+use ep_platform_runtime::config::{DbCfg, PlatformCfg, SecretRef, SecretString, SecretsCfg};
 use ep_platform_runtime::selfcheck::probe::SqlProbe;
 
 use super::metrics::ObsDbMetrics;
@@ -27,12 +28,11 @@ use super::probes::FoundationProbeAdapter;
 /// job-worker 的进程名，落 `application_name` 的 `<process>` 段。
 pub const PROCESS_NAME: &str = "job-worker";
 
-/// 装配产物：五池（惰性）、Worker 与 Ops 工作单元、窗口守卫、台账与自检取数。
+/// 装配产物：job-worker 唯一持有的 Worker 池/工作单元、窗口守卫、台账与自检取数。
 #[allow(dead_code)]
 pub struct WorkerDbAssembly {
     pub pools: PgPools,
     pub uow_worker: Arc<PgUnitOfWork>,
-    pub uow_ops: Arc<PgUnitOfWork>,
     /// B-03 迁移窗口守卫（E-17 注入点）：阶段 13b 的在线 DDL 由本进程
     /// 的 DDL 执行器发起，在把控制交给 ep-platform-release 的编排之前
     /// 调用注入实例的 `assert_open(tx)`；本阶段只装配不接入执行路径。
@@ -63,8 +63,8 @@ impl WorkerDbAssembly {
     }
 }
 
-/// 五池规模表，顺序按 [`PoolKind::ALL`] 对齐。
-pub fn budget_specs(db: &DbCfg) -> [PoolSpec; 5] {
+/// 四池规模表，顺序按 [`PoolKind::ALL`] 对齐。
+pub fn budget_specs(db: &DbCfg) -> [PoolSpec; 4] {
     [
         PoolSpec {
             kind: PoolKind::Rw,
@@ -79,10 +79,6 @@ pub fn budget_specs(db: &DbCfg) -> [PoolSpec; 5] {
             max_connections: db.pool.worker_max,
         },
         PoolSpec {
-            kind: PoolKind::Integ,
-            max_connections: db.pool.integ_max,
-        },
-        PoolSpec {
             kind: PoolKind::Ops,
             max_connections: db.pool.ops_max,
         },
@@ -93,26 +89,46 @@ pub fn budget_specs(db: &DbCfg) -> [PoolSpec; 5] {
 pub fn budget_check(db: &DbCfg) -> Result<(), Vec<BudgetViolation>> {
     ConnectionBudget::from_specs(
         db.budget.resident_max,
+        db.budget.temporary_max,
         db.budget.peak_max,
         &budget_specs(db),
     )
     .validate()
 }
 
-/// 机密解引用：`secret://<domain>/<name>#<version>` 读
-/// `<dir>/<domain>/<name>#<version>` 文件正文。文件缺失即失败。
-pub fn resolve_secret(dir: &Path, reference: &SecretRef) -> Result<String, String> {
-    let rest = reference
-        .as_str()
-        .strip_prefix("secret://")
-        .ok_or_else(|| format!("机密引用缺前缀：{}", reference.as_str()))?;
-    let path = dir.join(rest);
-    std::fs::read_to_string(&path)
-        .map(|s| s.trim().to_string())
-        .map_err(|e| format!("机密解引用失败 {}: {e}", path.display()))
+/// KMS 未交付前默认失败关闭；仅显式 legacy-file debug/test 构建可走共享受控 reader。
+pub fn resolve_secret(secrets: &SecretsCfg, reference: &SecretRef) -> Result<SecretString, String> {
+    #[cfg(not(feature = "legacy-file"))]
+    {
+        let _ = (&secrets.provider, reference);
+        Err("NOT_IMPLEMENTED：KmsSecretProvider 尚未交付，禁止回退明文文件".into())
+    }
+    #[cfg(feature = "legacy-file")]
+    {
+        if matches!(
+            secrets.provider,
+            ep_platform_runtime::config::SecretsProvider::Kms
+        ) {
+            Err("NOT_IMPLEMENTED：KmsSecretProvider 尚未交付，禁止回退明文文件".into())
+        } else {
+            #[cfg(not(debug_assertions))]
+            {
+                let _ = reference;
+                Err(
+                    "生产/默认构建禁止 file provider；仅 development/test 的 legacy-file debug 构建可用"
+                        .into(),
+                )
+            }
+            #[cfg(debug_assertions)]
+            {
+                resolve_legacy_file_secret(&secrets.dir, reference)
+                    .map_err(|error| error.to_string())
+            }
+        }
+    }
 }
 
-fn pool_build_cfg(db: &DbCfg, password: String) -> PoolBuildCfg {
+fn pool_build_cfg(db: &DbCfg, password: SecretString) -> PoolBuildCfg {
     let to = |t: ep_platform_runtime::config::PoolTimeoutCfg| PoolTimeouts {
         statement_ms: t.statement_ms,
         lock_ms: t.lock_ms,
@@ -122,8 +138,15 @@ fn pool_build_cfg(db: &DbCfg, password: String) -> PoolBuildCfg {
         host: db.host.clone(),
         port: db.port,
         database: db.database.clone(),
-        user: db.user.clone(),
-        password,
+        credentials: [
+            None,
+            None,
+            Some(PoolCredential {
+                user: db.user.clone(),
+                password,
+            }),
+            None,
+        ],
         specs: budget_specs(db),
         acquire_timeout: Duration::from_millis(u64::from(db.pool.acquire_timeout_ms)),
         max_lifetime: Duration::from_secs(u64::from(db.pool.max_lifetime_s)),
@@ -132,7 +155,6 @@ fn pool_build_cfg(db: &DbCfg, password: String) -> PoolBuildCfg {
             to(db.timeout.rw),
             to(db.timeout.ro),
             to(db.timeout.worker),
-            to(db.timeout.integ),
             to(db.timeout.ops),
         ],
         ro_limits: RoResourceLimits {
@@ -150,12 +172,19 @@ pub fn build(
     platform: &PlatformCfg,
     registry: Arc<MetricsRegistry>,
 ) -> Result<WorkerDbAssembly, String> {
-    ep_adapter_db_pg::register_process_name(PROCESS_NAME);
-    let password = resolve_secret(&secrets.dir, &db.password_ref)?;
+    if db.user != "ep_app_rw" {
+        return Err(format!("job-worker 只允许 ep_app_rw，当前为 {}", db.user));
+    }
+    let password = resolve_secret(secrets, &db.password_ref)?;
     let metrics: Arc<dyn DbMetrics> = Arc::new(ObsDbMetrics::new(registry.clone()));
-    let pools = PgPools::build(&pool_build_cfg(db, password), metrics.clone())
-        .map_err(|e| format!("建池失败：{e}"))?;
-    let policy = RetryPolicy::from_config(db.retry.max_attempts, &db.retry.backoff_ms);
+    let pools = PgPools::build(
+        &pool_build_cfg(db, password),
+        PoolOwner::JobWorker,
+        metrics.clone(),
+    )
+    .map_err(|e| format!("建池失败：{e}"))?;
+    let policy = RetryPolicy::try_from_config(db.retry.max_attempts, &db.retry.backoff_ms)
+        .map_err(str::to_string)?;
 
     let mk = |kind: PoolKind| -> Result<Arc<PgUnitOfWork>, String> {
         let pool = pools
@@ -169,17 +198,15 @@ pub fn build(
         )))
     };
     let uow_worker = mk(PoolKind::Worker)?;
-    let uow_ops = mk(PoolKind::Ops)?;
 
     Ok(WorkerDbAssembly {
         pools,
         window_guard: Arc::new(PgMigrationWindowGuard),
         idempotency_store: Arc::new(PgIdempotencyStore::new(platform.idempotency.retention_days)),
         legal_entities: Arc::new(PgLegalEntityDirectory::new(uow_worker.clone())),
-        ledger: Arc::new(PgDegradationLedger::new(uow_ops.clone(), registry)),
-        foundation_check: Arc::new(PgDataFoundationCheck::new(uow_ops.clone())),
+        ledger: Arc::new(PgDegradationLedger::new(uow_worker.clone(), registry)),
+        foundation_check: Arc::new(PgDataFoundationCheck::new(uow_worker.clone())),
         uow_worker,
-        uow_ops,
     })
 }
 
@@ -191,15 +218,15 @@ pub fn build(
 mod tests {
     use super::*;
 
-    // 负样例断言的是预算这条规则本身：五池合计超过常驻上限必须拦下。
+    // 负样例断言的是预算这条规则本身：当前四池合计超过常驻上限必须拦下。
     #[test]
     fn a_budget_overflow_is_rejected_before_any_pool_is_built() {
         let mut db = DbCfg::default();
-        db.budget.resident_max = 41;
-        let errs = budget_check(&db).expect_err("42 超 41 必须违例");
+        db.budget.resident_max = 36;
+        let errs = budget_check(&db).expect_err("37 超 36 必须违例");
         assert!(
             errs.iter()
-                .any(|e| matches!(e, BudgetViolation::ResidentOverflow { sum: 42, limit: 41 })),
+                .any(|e| matches!(e, BudgetViolation::ResidentOverflow { sum: 37, limit: 36 })),
             "{errs:?}"
         );
     }
@@ -207,5 +234,44 @@ mod tests {
     #[test]
     fn the_standard_budget_passes() {
         assert!(budget_check(&DbCfg::default()).is_ok());
+    }
+
+    #[test]
+    fn kms_provider_is_not_implemented_and_never_falls_back_to_file() {
+        let secrets = SecretsCfg::default();
+        let err = match resolve_secret(&secrets, &SecretRef::parse("secret://db/app_rw#1").unwrap())
+        {
+            Err(error) => error,
+            Ok(_) => panic!("KMS 未实现必须拒启"),
+        };
+        assert!(err.contains("NOT_IMPLEMENTED"), "{err}");
+    }
+
+    #[cfg(all(feature = "legacy-file", debug_assertions))]
+    #[test]
+    fn explicit_development_legacy_file_provider_reads_a_nonempty_secret() {
+        let dir = std::env::temp_dir().join("ep-job-worker-wiring-test");
+        std::fs::create_dir_all(dir.join("db")).unwrap();
+        std::fs::write(dir.join("db/app_rw#1"), "worker-secret\n").unwrap();
+        let secrets = SecretsCfg {
+            dir: dir.clone(),
+            provider: ep_platform_runtime::config::SecretsProvider::File,
+        };
+        let got = resolve_secret(&secrets, &SecretRef::parse("secret://db/app_rw#1").unwrap());
+        let got = got.unwrap_or_else(|error| panic!("受控机密应解析成功：{error}"));
+        assert_eq!(got.expose(), "worker-secret");
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    #[cfg(all(feature = "legacy-file", not(debug_assertions)))]
+    #[test]
+    fn release_shape_has_no_legacy_file_reader() {
+        let secrets = SecretsCfg {
+            provider: ep_platform_runtime::config::SecretsProvider::File,
+            ..SecretsCfg::default()
+        };
+        assert!(
+            resolve_secret(&secrets, &SecretRef::parse("secret://db/app_rw#1").unwrap()).is_err()
+        );
     }
 }

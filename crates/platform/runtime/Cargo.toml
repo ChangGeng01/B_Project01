@@ -8,6 +8,11 @@ build = "build.rs"
 [lints]
 workspace = true
 
+[features]
+# 仅供 development/test 明确启用的历史明文文件 reader。发布构建不得启用；
+# KmsSecretProvider 交付前，默认构建对两种 provider 都失败关闭。
+legacy-file = []
+
 [dependencies]
 ep-foundation.workspace = true
 ep-platform-obs.workspace = true
@@ -22,8 +27,9 @@ hyper.workspace = true
 hyper-util.workspace = true
 http-body-util.workspace = true
 sha2.workspace = true
+zeroize.workspace = true
 
-[target.'cfg(target_os = "linux")'.dependencies]
+[target.'cfg(any(target_os = "linux", target_os = "macos"))'.dependencies]
 libc.workspace = true
 
 [build-dependencies]
@@ -33,3 +39,4 @@ sha2.workspace = true
 tokio = { workspace = true, features = ["rt-multi-thread", "macros", "time", "net"] }
 # 自检测试构造类型化标识符用。
 uuid.workspace = true
+tower.workspace = true

@@ -273,20 +273,31 @@ impl SnapshotPoller {
             .await
     }
 
-    /// 轮询循环：错误记 WARN 后按间隔继续，不因单次失败退出。
-    pub async fn run_forever(self: Arc<Self>) {
+    /// 轮询循环：错误记 WARN 后按间隔继续，不因单次失败退出；全局停机
+    /// 可以中断正在等待的轮询间隔，避免每次优雅停机都耗尽 drain 上限。
+    pub async fn run_until<F>(self: Arc<Self>, shutdown: F)
+    where
+        F: std::future::Future<Output = ep_platform_runtime::shutdown::StopReason>,
+    {
+        tokio::pin!(shutdown);
         loop {
-            match self.poll_once().await {
-                Ok(_) => {}
-                Err(e) => self.logger.log(
+            let result = tokio::select! {
+                _ = &mut shutdown => break,
+                result = self.poll_once() => result,
+            };
+            if let Err(e) = result {
+                self.logger.log(
                     Level::Warn,
                     LogFields::msg(
                         "authz-snapshot",
                         format!("快照轮询本轮失败，沿用上一版快照：{}", e.code),
                     ),
-                ),
+                );
             }
-            tokio::time::sleep(self.poll_interval).await;
+            tokio::select! {
+                _ = &mut shutdown => break,
+                _ = tokio::time::sleep(self.poll_interval) => {}
+            }
         }
     }
 }

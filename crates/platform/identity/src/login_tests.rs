@@ -449,6 +449,103 @@ async fn complete_mfa_totp_full_chain_builds_context() {
 }
 
 #[tokio::test]
+async fn a_successfully_consumed_mfa_challenge_cannot_create_a_second_session() {
+    let hn = harness();
+    let user = seed_account(&hn.h, 13, "mira", false);
+    seed_password(&hn.h, user, hn.pws.hash("Ab1!Ab1!Ab1!").expect("哈希"));
+    seed_device(&hn.h, user, None);
+    let seed = seed_totp(&hn, user);
+    lock(&hn.h).duties.push(DutyClass::Audit);
+    let now = Utc::now();
+    let out = must_ok(hn.svc.sign_in(req("mira", "Ab1!Ab1!Ab1!"), now).await);
+    let SignInOutcome::MfaRequired { challenge } = out else {
+        panic!("应要求 MFA")
+    };
+    let code = totp_code(&seed, u64::try_from(now.timestamp()).expect("正时刻")).expect("合法种子");
+    must_success(
+        hn.svc
+            .complete_mfa(
+                CompleteMfaRequest {
+                    challenge: challenge.clone(),
+                    proof: SecondFactorProof::Totp { code: code.clone() },
+                    source_addr: "198.51.100.10".to_string(),
+                    request_id: "mfa-first-use".to_string(),
+                    trace_id: "0".repeat(32),
+                },
+                now,
+            )
+            .await,
+    );
+
+    let err = must_err(
+        hn.svc
+            .complete_mfa(
+                CompleteMfaRequest {
+                    challenge,
+                    proof: SecondFactorProof::Totp { code },
+                    source_addr: "203.0.113.10".to_string(),
+                    request_id: "mfa-replay".to_string(),
+                    trace_id: "1".repeat(32),
+                },
+                now,
+            )
+            .await,
+    );
+    assert_eq!(err, PLATFORM_AUTHN_MFA_INVALID);
+    assert_eq!(lock(&hn.h).sessions.len(), 1, "同一挑战只能建立一个会话");
+}
+
+#[tokio::test]
+async fn a_failed_mfa_proof_releases_the_challenge_for_a_valid_retry() {
+    let hn = harness();
+    let user = seed_account(&hn.h, 14, "nora", false);
+    seed_password(&hn.h, user, hn.pws.hash("Ab1!Ab1!Ab1!").expect("哈希"));
+    seed_device(&hn.h, user, None);
+    let seed = seed_totp(&hn, user);
+    lock(&hn.h).duties.push(DutyClass::Audit);
+    let now = Utc::now();
+    let out = must_ok(hn.svc.sign_in(req("nora", "Ab1!Ab1!Ab1!"), now).await);
+    let SignInOutcome::MfaRequired { challenge } = out else {
+        panic!("应要求 MFA")
+    };
+    let bad =
+        totp_code(&seed, u64::try_from(now.timestamp() + 60).expect("正时刻")).expect("合法种子");
+    let err = must_err(
+        hn.svc
+            .complete_mfa(
+                CompleteMfaRequest {
+                    challenge: challenge.clone(),
+                    proof: SecondFactorProof::Totp { code: bad },
+                    source_addr: "198.51.100.20".to_string(),
+                    request_id: "mfa-bad-proof".to_string(),
+                    trace_id: "0".repeat(32),
+                },
+                now,
+            )
+            .await,
+    );
+    assert_eq!(err, PLATFORM_AUTHN_MFA_INVALID);
+
+    let correct =
+        totp_code(&seed, u64::try_from(now.timestamp()).expect("正时刻")).expect("合法种子");
+    must_success(
+        hn.svc
+            .complete_mfa(
+                CompleteMfaRequest {
+                    challenge,
+                    proof: SecondFactorProof::Totp { code: correct },
+                    source_addr: "198.51.100.20".to_string(),
+                    request_id: "mfa-valid-retry".to_string(),
+                    trace_id: "0".repeat(32),
+                },
+                now,
+            )
+            .await,
+    );
+    assert_eq!(lock(&hn.h).sessions.len(), 1);
+}
+
+#[tokio::test]
 async fn complete_mfa_wrong_code_commits_failure_and_advances_lockout() {
     let hn = harness();
     let user = seed_account(&hn.h, 9, "iris", false);
@@ -494,6 +591,132 @@ async fn complete_mfa_wrong_code_commits_failure_and_advances_lockout() {
             LoginAttemptOutcome::MfaInvalid
         ]
     );
+}
+
+#[tokio::test]
+async fn complete_mfa_lockout_blocks_a_correct_code_from_another_source() {
+    let hn = harness();
+    let user = seed_account(&hn.h, 11, "kira", false);
+    seed_password(&hn.h, user, hn.pws.hash("Ab1!Ab1!Ab1!").expect("哈希"));
+    seed_device(&hn.h, user, None);
+    let seed = seed_totp(&hn, user);
+    lock(&hn.h).duties.push(DutyClass::Security);
+    let now = Utc::now();
+    let out = must_ok(hn.svc.sign_in(req("kira", "Ab1!Ab1!Ab1!"), now).await);
+    let SignInOutcome::MfaRequired { challenge } = out else {
+        panic!("应要求 MFA")
+    };
+    // skew ±1 之外的码固定错误；每次换来源地址，证明账号锁定不依赖来源桶。
+    let bad =
+        totp_code(&seed, u64::try_from(now.timestamp() + 60).expect("正时刻")).expect("合法种子");
+    for octet in 1..=5 {
+        let err = must_err(
+            hn.svc
+                .complete_mfa(
+                    CompleteMfaRequest {
+                        challenge: challenge.clone(),
+                        proof: SecondFactorProof::Totp { code: bad.clone() },
+                        source_addr: format!("198.51.100.{octet}"),
+                        request_id: format!("mfa-wrong-{octet}"),
+                        trace_id: "0".repeat(32),
+                    },
+                    now,
+                )
+                .await,
+        );
+        assert_eq!(err, PLATFORM_AUTHN_MFA_INVALID);
+    }
+    assert!(
+        lock(&hn.h)
+            .lockouts
+            .iter()
+            .find(|row| row.user_id == user)
+            .and_then(|row| row.locked_until)
+            .is_some_and(|until| until > now),
+        "五次跨来源错码必须锁定权威 challenge 所绑定的账号"
+    );
+
+    let correct =
+        totp_code(&seed, u64::try_from(now.timestamp()).expect("正时刻")).expect("合法种子");
+    let err = must_err(
+        hn.svc
+            .complete_mfa(
+                CompleteMfaRequest {
+                    challenge,
+                    proof: SecondFactorProof::Totp { code: correct },
+                    source_addr: "203.0.113.99".to_string(),
+                    request_id: "mfa-correct-while-locked".to_string(),
+                    trace_id: "0".repeat(32),
+                },
+                now,
+            )
+            .await,
+    );
+    assert_eq!(err, PLATFORM_AUTHN_ACCOUNT_LOCKED);
+    assert!(lock(&hn.h).sessions.is_empty(), "锁定期不得创建会话");
+    assert_eq!(
+        attempt_outcomes(&hn.h).last(),
+        Some(&LoginAttemptOutcome::AccountLocked),
+        "锁定拒绝必须留下账号级登录流水"
+    );
+}
+
+#[tokio::test]
+async fn issuing_new_mfa_challenges_does_not_reset_mfa_failures() {
+    let hn = harness();
+    let user = seed_account(&hn.h, 12, "lina", false);
+    seed_password(&hn.h, user, hn.pws.hash("Ab1!Ab1!Ab1!").expect("哈希"));
+    seed_device(&hn.h, user, None);
+    let seed = seed_totp(&hn, user);
+    lock(&hn.h).duties.push(DutyClass::Security);
+    let now = Utc::now();
+    let bad =
+        totp_code(&seed, u64::try_from(now.timestamp() + 60).expect("正时刻")).expect("合法种子");
+
+    for octet in 1..=5 {
+        let out = must_ok(
+            hn.svc
+                .sign_in(
+                    SignInRequest {
+                        source_addr: format!("198.51.100.{octet}"),
+                        request_id: format!("password-ok-{octet}"),
+                        ..req("lina", "Ab1!Ab1!Ab1!")
+                    },
+                    now,
+                )
+                .await,
+        );
+        let SignInOutcome::MfaRequired { challenge } = out else {
+            panic!("完整认证前应继续要求 MFA")
+        };
+        let err = must_err(
+            hn.svc
+                .complete_mfa(
+                    CompleteMfaRequest {
+                        challenge,
+                        proof: SecondFactorProof::Totp { code: bad.clone() },
+                        source_addr: format!("203.0.113.{octet}"),
+                        request_id: format!("mfa-wrong-{octet}"),
+                        trace_id: "0".repeat(32),
+                    },
+                    now,
+                )
+                .await,
+        );
+        assert_eq!(err, PLATFORM_AUTHN_MFA_INVALID);
+    }
+
+    let err = must_err(hn.svc.sign_in(req("lina", "Ab1!Ab1!Ab1!"), now).await);
+    assert_eq!(
+        err, PLATFORM_AUTHN_ACCOUNT_LOCKED,
+        "重新通过第一因子只能签发挑战，不能洗掉此前 MFA 失败计数"
+    );
+    assert!(lock(&hn.h)
+        .lockouts
+        .iter()
+        .find(|row| row.user_id == user)
+        .and_then(|row| row.locked_until)
+        .is_some_and(|until| until > now));
 }
 
 #[tokio::test]

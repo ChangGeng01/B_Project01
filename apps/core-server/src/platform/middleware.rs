@@ -5,9 +5,9 @@
 //!     不逐次写库），消费 ep-platform-identity 既有会话端口。
 //! 二、法人校验层（与认证同事务执行，逻辑分两段）：请求的
 //!     X-Legal-Entity-Id 对照 user_legal_entity_grants 授权集合，
-//!     再与设备 restricted_legal_entity_id 取交集；校验通过后把
-//!     核验后的身份写进请求扩展，并注入 `x-ep-*` 头面供既有
-//!     extract_context 交接面消费（签名不动）。
+//!     再与设备 restricted_legal_entity_id 取交集；校验通过后只把
+//!     核验后的完整安全上下文写进请求扩展。身份 `x-ep-*` 头不会回填，
+//!     请求扩展是受保护处理器的唯一身份权威。
 //!
 //! 会话变量 `app.legal_entity_id` 等四条的写入与连接归还清除由
 //! db-pg transact 的 SessionContext 机制承担，本层不拼 SET 语句。
@@ -17,6 +17,8 @@
 //! +来源地址双维度速率限制（`PLATFORM.AUTHN.RATE_LIMITED`）。
 
 use std::collections::HashMap;
+use std::hash::Hash;
+use std::net::IpAddr;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
@@ -35,7 +37,7 @@ use ep_foundation::id::marker::{LegalEntity, Session};
 use ep_foundation::id::Id;
 use ep_foundation::port::tx::UnitOfWork;
 use ep_foundation::security::context::{
-    ClientKind, DataScopeTag, DepartmentScope, DeviceId, DutyClass, HumanContextInput, RecordShare,
+    ClientKind, DataScopeTag, DepartmentScope, DeviceId, HumanContextInput, RecordShare,
     RecordShareGrant, RequestId, RoleCode, TraceId,
 };
 use ep_foundation::security::level::SecurityLevel;
@@ -49,7 +51,9 @@ use ep_platform_identity::session::{
 use ep_platform_identity::types::{AccountStatus, DeviceRow, SessionRow, UserAccountRow};
 use ep_platform_obs::MetricsRegistry;
 use ep_platform_runtime::http::headers::{is_exempt, is_pre_auth};
-use ep_platform_runtime::http::{ApiError, Detail};
+use ep_platform_runtime::http::{
+    resolve_client_ip, ApiError, Detail, RequestMeta, TrustedProxyNet,
+};
 
 use super::{trace_of, PlatformState, ZERO_TRACE};
 
@@ -59,6 +63,14 @@ const RATE_WINDOW_SECONDS: u64 = 60;
 const LOGIN_NAME_WINDOW_MAX: u32 = 10;
 /// 来源地址维度窗口上限（U-B 临时取值）：防单源扫号。
 const SOURCE_ADDR_WINDOW_MAX: u32 = 60;
+/// 一分钟内最多登记的登录名键数；远高于 20 用户合法峰值，容量满时失败关闭。
+const ACTIVE_LOGIN_KEY_MAX: usize = 1024;
+/// 一分钟内最多登记的来源 IP 数；容量满时不淘汰旧键，避免换键绕过。
+const ACTIVE_SOURCE_KEY_MAX: usize = 4096;
+/// 登录名进入匿名内存表前的最大字节数，与身份域首版字段上限对齐。
+const LOGIN_KEY_MAX_BYTES: usize = 64;
+/// 全表清理最短间隔。每请求工作量通常为 O(1)，扫描成本受硬容量上界约束。
+const EVICTION_INTERVAL_SECONDS: u64 = 1;
 /// PRE_AUTH 请求体读取上限：只为取登录名，超限即拒。
 const PRE_AUTH_BODY_LIMIT: usize = 64 * 1024;
 /// 中间件侧固定请求标识。
@@ -79,7 +91,8 @@ pub struct PreAuthRateLimiter {
 
 struct RateWindow {
     logins: HashMap<String, WindowCount>,
-    addrs: HashMap<String, WindowCount>,
+    addrs: HashMap<IpAddr, WindowCount>,
+    last_eviction: Option<Instant>,
 }
 
 struct WindowCount {
@@ -93,22 +106,43 @@ impl PreAuthRateLimiter {
             inner: Mutex::new(RateWindow {
                 logins: HashMap::new(),
                 addrs: HashMap::new(),
+                last_eviction: None,
             }),
         }
     }
 
     /// 两个维度都未超限才放行；放行即各计一次。
-    pub fn allow(&self, login_name: Option<&str>, source_addr: &str, now: Instant) -> bool {
+    pub fn allow(&self, login_name: Option<&str>, source_addr: IpAddr, now: Instant) -> bool {
         let mut w = self
             .inner
             .lock()
             .unwrap_or_else(|poisoned| poisoned.into_inner());
-        // 先清过期键，再计数：驻留量 = 当前窗口内的活跃键数，不随历史全集增长。
-        evict_expired(&mut w.addrs, now);
-        evict_expired(&mut w.logins, now);
-        let addr_ok = bump(&mut w.addrs, source_addr, SOURCE_ADDR_WINDOW_MAX, now);
+        // 清理按固定最短间隔触发，避免每个匿名请求都在全局锁内扫描整表。
+        // 两张表另有硬容量，所以单次扫描和总驻留内存都有确定上界。
+        let should_evict = w.last_eviction.is_none_or(|last| {
+            now.duration_since(last) >= Duration::from_secs(EVICTION_INTERVAL_SECONDS)
+        });
+        if should_evict {
+            evict_expired(&mut w.addrs, now);
+            evict_expired(&mut w.logins, now);
+            w.last_eviction = Some(now);
+        }
+        let addr_ok = bump(
+            &mut w.addrs,
+            source_addr,
+            SOURCE_ADDR_WINDOW_MAX,
+            ACTIVE_SOURCE_KEY_MAX,
+            now,
+        );
         let login_ok = match login_name {
-            Some(name) => bump(&mut w.logins, name, LOGIN_NAME_WINDOW_MAX, now),
+            Some(name) if !name.is_empty() && name.len() <= LOGIN_KEY_MAX_BYTES => bump(
+                &mut w.logins,
+                name.to_string(),
+                LOGIN_NAME_WINDOW_MAX,
+                ACTIVE_LOGIN_KEY_MAX,
+                now,
+            ),
+            Some(_) => false,
             None => true,
         };
         addr_ok && login_ok
@@ -117,13 +151,22 @@ impl PreAuthRateLimiter {
 
 /// 清掉所有已过滑窗的键。过期键的计数无论如何都会在下次访问时归零，
 /// 留着它们只占内存不改变判定，因此可以安全整体删除。
-fn evict_expired(map: &mut HashMap<String, WindowCount>, now: Instant) {
+fn evict_expired<K: Eq + Hash>(map: &mut HashMap<K, WindowCount>, now: Instant) {
     let window = Duration::from_secs(RATE_WINDOW_SECONDS);
     map.retain(|_, w| now.duration_since(w.start) < window);
 }
 
-fn bump(map: &mut HashMap<String, WindowCount>, key: &str, max: u32, now: Instant) -> bool {
-    let entry = map.entry(key.to_string()).or_insert(WindowCount {
+fn bump<K: Eq + Hash>(
+    map: &mut HashMap<K, WindowCount>,
+    key: K,
+    max: u32,
+    capacity: usize,
+    now: Instant,
+) -> bool {
+    if !map.contains_key(&key) && map.len() >= capacity {
+        return false;
+    }
+    let entry = map.entry(key).or_insert(WindowCount {
         start: now,
         count: 0,
     });
@@ -221,8 +264,11 @@ fn header_of(req: &Request, name: &str) -> Option<String> {
         .map(str::to_string)
 }
 
-fn source_addr_of(req: &Request) -> String {
-    header_of(req, "x-forwarded-for").unwrap_or_else(|| "unknown".to_string())
+fn source_addr_of(req: &Request) -> IpAddr {
+    req.extensions()
+        .get::<RequestMeta>()
+        .map(|meta| meta.client_ip)
+        .unwrap_or_else(|| resolve_client_ip(req, &[]))
 }
 
 /// 两层中间件的外层入口。系统端点整体豁免；PRE_AUTH 白名单先过
@@ -232,11 +278,11 @@ pub async fn authenticate(
     mut req: Request,
     next: Next,
 ) -> Response {
-    // 先剥再判：`x-ep-*` 头面只由 apply_principal 在核验成功后注入，
-    // 客户端送进来的一律是伪造。不剥的话，任何走到 next.run 而未经
-    // apply_principal 的路径（系统豁免、PRE_AUTH 未携带令牌、认证面
-    // 未装配）都会把伪造头原样交给处理器的 extract_context（F-78）。
-    strip_injected_identity_headers(&mut req);
+    // 正常路径由更外层的 request_metadata 先建立元数据；此处保留失败关闭的
+    // 防御性补位，使测试或未来误接线也不会接受入站 x-ep-*。
+    if req.extensions().get::<RequestMeta>().is_none() {
+        prepare_request_metadata(&mut req, &state.trusted_proxy_cidrs);
+    }
     let path = req.uri().path().to_string();
     if is_exempt(&path) {
         return next.run(req).await;
@@ -277,22 +323,55 @@ fn requires_authenticated_caller(path: &str) -> bool {
     path == "/api/v1/platform/identity/me/legal-entities"
 }
 
-/// 剥离客户端可能伪造的全部身份头面。
-///
-/// 这五个头名与 `apply_principal` 注入的一一对应；那里加一个，这里必须
-/// 同批加一个，否则新加的那个就是一条新的伪造通道。
+/// 剥离客户端可能伪造的全部内部头面。按前缀而非固定清单处理，未来新增
+/// 内部头也不会自动变成伪造通道。
 fn strip_injected_identity_headers(req: &mut Request) {
-    const INJECTED: [&str; 5] = [
-        "x-ep-user-id",
-        "x-ep-legal-entity-id",
-        "x-ep-session-id",
-        "x-ep-duty-classes",
-        "x-ep-roles",
-    ];
     let headers = req.headers_mut();
-    for name in INJECTED {
+    let injected: Vec<_> = headers
+        .keys()
+        .filter(|name| name.as_str().starts_with("x-ep-"))
+        .cloned()
+        .collect();
+    for name in injected {
         headers.remove(name);
     }
+}
+
+fn insert_internal_header(headers: &mut axum::http::HeaderMap, name: &str, value: &str) {
+    if let (Ok(n), Ok(v)) = (
+        axum::http::HeaderName::from_bytes(name.as_bytes()),
+        value.parse(),
+    ) {
+        headers.insert(n, v);
+    }
+}
+
+fn inject_request_meta_headers(req: &mut Request, meta: &RequestMeta) {
+    let headers = req.headers_mut();
+    insert_internal_header(headers, "x-ep-request-id", meta.request_id.as_str());
+    insert_internal_header(headers, "x-ep-trace-id", meta.trace_id.as_str());
+}
+
+fn prepare_request_metadata(req: &mut Request, trusted: &[TrustedProxyNet]) -> RequestMeta {
+    let client_ip = resolve_client_ip(req, trusted);
+    let meta = RequestMeta::generate(client_ip);
+    // 客户端送入的任何 x-ep-* 都没有权威；先按前缀清空，再只注入本请求
+    // 的服务端关联值。认证成功分支只写 SecurityContext 请求扩展。
+    strip_injected_identity_headers(req);
+    inject_request_meta_headers(req, &meta);
+    req.extensions_mut().insert(meta.clone());
+    meta
+}
+
+/// 最外层请求元数据中间件：在 body/concurrency/authn 之前完成可信来源解析、
+/// 内部头剥离与唯一关联标识生成。
+pub async fn request_metadata(
+    State(trusted): State<Arc<[TrustedProxyNet]>>,
+    mut req: Request,
+    next: Next,
+) -> Response {
+    prepare_request_metadata(&mut req, &trusted);
+    next.run(req).await
 }
 
 enum PreAuthOutcome {
@@ -319,7 +398,7 @@ async fn pre_auth_entry(
         let login = take_login_name(req).await;
         if !authn
             .limiter
-            .allow(login.as_deref(), &source_addr_of(req), Instant::now())
+            .allow(login.as_deref(), source_addr_of(req), Instant::now())
         {
             // 限流拒入即一次登录尝试被拒：填充面取八值中语义最近的
             // admission_rejected（准入拒绝类），不新造标签取值。
@@ -588,46 +667,12 @@ fn map_verify_error(err: AppError, state: &PlatformState, trace: &str) -> ApiErr
     api_err(state, code, trace)
 }
 
-/// 核验结果写进请求：扩展供需要的处理器直接取用，`x-ep-*` 头面
-/// 供既有 extract_context 交接面消费（签名不动）。
+/// 核验结果只写进请求扩展；不把任何身份字段回填到头面。
 fn apply_principal(req: &mut Request, p: &SessionPrincipal) {
-    let headers = req.headers_mut();
-    let insert = |headers: &mut axum::http::HeaderMap, name: &str, value: &str| {
-        if let (Ok(n), Ok(v)) = (
-            axum::http::HeaderName::from_bytes(name.as_bytes()),
-            value.parse(),
-        ) {
-            headers.insert(n, v);
-        }
-    };
-    insert(headers, "x-ep-user-id", &p.account.id.as_uuid().to_string());
-    insert(
-        headers,
-        "x-ep-legal-entity-id",
-        &p.legal_entity_id.as_uuid().to_string(),
-    );
-    insert(headers, "x-ep-session-id", &p.session.id.to_string());
-    insert(headers, "x-ep-duty-classes", &duty_list_of(&p.authz));
-    insert(headers, "x-ep-roles", &p.authz.role_codes.join(","));
     let ctx = build_context(req, p);
     if let Some(ctx) = ctx {
         req.extensions_mut().insert(ctx);
     }
-}
-
-fn duty_list_of(set: &UserAuthzSet) -> String {
-    set.duty_classes
-        .iter()
-        .map(|d| match d {
-            DutyClass::System => "SYSTEM",
-            DutyClass::Data => "DATA",
-            DutyClass::Security => "SECURITY",
-            DutyClass::Audit => "AUDIT",
-            DutyClass::Key => "KEY",
-            DutyClass::Config => "CONFIG",
-        })
-        .collect::<Vec<_>>()
-        .join(",")
 }
 
 fn client_of(req: &Request) -> ClientKind {
@@ -720,17 +765,78 @@ const _: fn() = || {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use ep_platform_identity::types::{AccountKind, DeviceStatus};
+
+    fn ip(raw: &str) -> IpAddr {
+        raw.parse().expect("测试 IP 必须合法")
+    }
+
+    fn test_principal() -> SessionPrincipal {
+        let user_id =
+            Id::from_uuid(uuid::Uuid::parse_str("11111111-1111-7111-8111-111111111111").unwrap());
+        let legal_entity_id =
+            Id::from_uuid(uuid::Uuid::parse_str("22222222-2222-7222-8222-222222222222").unwrap());
+        let device_row_id = uuid::Uuid::parse_str("33333333-3333-7333-8333-333333333333").unwrap();
+        let now = Utc::now();
+        SessionPrincipal {
+            session: SessionRow {
+                id: uuid::Uuid::parse_str("44444444-4444-7444-8444-444444444444").unwrap(),
+                user_id,
+                user_device_row_id: device_row_id,
+                token_hash: vec![0; 32],
+                active_legal_entity_id: legal_entity_id,
+                issued_at: now,
+                expires_at: now,
+                idle_expires_at: now,
+                last_seen_at: now,
+                revoked_at: None,
+                revoke_reason: None,
+                is_breakglass: false,
+            },
+            account: UserAccountRow {
+                id: user_id,
+                account_kind: AccountKind::Employee,
+                login_name: "alice".into(),
+                employee_no: None,
+                display_name: "Alice".into(),
+                home_legal_entity_id: legal_entity_id,
+                status: AccountStatus::Active,
+                clearance_level: SecurityLevel::Secret.code(),
+                security_level: SecurityLevel::Secret.code(),
+                is_mfa_required: true,
+                created_at: now,
+            },
+            authz: UserAuthzSet {
+                role_codes: vec!["SECURITY_ADMIN".into()],
+                duty_classes: vec![ep_foundation::security::context::DutyClass::Security],
+                legal_entity_ids: vec![legal_entity_id],
+                snapshot_version: 7,
+                ..Default::default()
+            },
+            device: DeviceRow {
+                id: device_row_id,
+                user_id,
+                device_id: "device-1".into(),
+                client: ClientKind::Ops,
+                public_key: None,
+                attestation_ref: None,
+                restricted_legal_entity_id: None,
+                status: DeviceStatus::Active,
+            },
+            legal_entity_id,
+        }
+    }
 
     #[test]
     fn rate_limiter_blocks_after_window_max() {
         let limiter = PreAuthRateLimiter::new();
         let now = Instant::now();
         for _ in 0..LOGIN_NAME_WINDOW_MAX {
-            assert!(limiter.allow(Some("alice"), "10.0.0.1", now));
+            assert!(limiter.allow(Some("alice"), ip("10.0.0.1"), now));
         }
-        assert!(!limiter.allow(Some("alice"), "10.0.0.2", now));
+        assert!(!limiter.allow(Some("alice"), ip("10.0.0.2"), now));
         // 另一登录名不受影响（地址维度仍在窗口内计数）。
-        assert!(limiter.allow(Some("bob"), "10.0.0.3", now));
+        assert!(limiter.allow(Some("bob"), ip("10.0.0.3"), now));
     }
 
     /// 过期键必须被清出，否则匿名调用方换键即可让内存单调涨。
@@ -738,21 +844,99 @@ mod tests {
     fn rate_limiter_evicts_expired_keys_instead_of_growing_unbounded() {
         let limiter = PreAuthRateLimiter::new();
         let t0 = Instant::now();
-        // 5000 个各不相同的来源地址，每个只出现一次。
-        for i in 0..5000 {
-            assert!(limiter.allow(None, &format!("10.0.{}.{}", i / 256, i % 256), t0));
+        // 一批各不相同的来源地址，每个只出现一次。
+        for i in 0..128 {
+            let raw = format!("10.0.{}.{}", i / 256, i % 256);
+            assert!(limiter.allow(None, ip(&raw), t0));
         }
         {
             let w = limiter.inner.lock().unwrap();
-            assert_eq!(w.addrs.len(), 5000, "同一窗口内的键都在");
+            assert_eq!(w.addrs.len(), 128, "同一窗口内的键都在");
         }
-        // 越过窗口后再来一个键：一次 allow 就应把此前 5000 个过期键全清掉。
+        // 越过窗口后再来一个键：一次 allow 就应把此前过期键清掉。
         let later = t0 + Duration::from_secs(RATE_WINDOW_SECONDS + 1);
-        assert!(limiter.allow(None, "10.9.9.9", later));
+        assert!(limiter.allow(None, ip("10.9.9.9"), later));
         {
             let w = limiter.inner.lock().unwrap();
             assert_eq!(w.addrs.len(), 1, "过期键必须被清出，只剩当前这一个");
         }
+    }
+
+    /// 活跃窗口里的攻击者键同样必须有硬上限；只清过期键仍允许一分钟内
+    /// 注入任意多的唯一值。
+    #[test]
+    fn rate_limiter_rejects_new_source_keys_when_the_active_cap_is_full() {
+        let limiter = PreAuthRateLimiter::new();
+        let now = Instant::now();
+        for i in 0..4096 {
+            assert!(
+                limiter.allow(None, ip(&format!("198.51.{}.{}", i / 256, i % 256)), now,),
+                "容量内第 {i} 个来源应登记"
+            );
+        }
+        assert!(
+            !limiter.allow(None, ip("203.0.113.254"), now),
+            "活跃来源达到硬上限后，新键必须失败关闭"
+        );
+        assert_eq!(limiter.inner.lock().unwrap().addrs.len(), 4096);
+    }
+
+    #[test]
+    fn rate_limiter_rejects_overlong_login_without_storing_it() {
+        let limiter = PreAuthRateLimiter::new();
+        let oversized = "a".repeat(257);
+        assert!(
+            !limiter.allow(Some(&oversized), ip("198.51.100.1"), Instant::now()),
+            "超长匿名键必须拒绝，不能进入堆内表"
+        );
+        assert!(
+            limiter.inner.lock().unwrap().logins.is_empty(),
+            "被拒的超长登录名不得占用登记容量"
+        );
+    }
+
+    #[test]
+    fn source_address_uses_the_transport_peer_and_ignores_forwarded_headers() {
+        use axum::extract::ConnectInfo;
+        use std::net::SocketAddr;
+
+        let mut req = Request::builder()
+            .header("x-forwarded-for", "203.0.113.99")
+            .body(Body::empty())
+            .expect("构造请求");
+        req.extensions_mut().insert(ConnectInfo(
+            "[2001:db8::7]:43123"
+                .parse::<SocketAddr>()
+                .expect("固定地址合法"),
+        ));
+
+        assert_eq!(
+            source_addr_of(&req),
+            ip("2001:db8::7"),
+            "限流来源只能取服务端观察到的对端 IP"
+        );
+    }
+
+    #[test]
+    fn source_address_accepts_a_forwarded_chain_only_from_configured_proxies() {
+        use axum::extract::ConnectInfo;
+        use ep_platform_runtime::http::{resolve_client_ip, TrustedProxyNet};
+        use std::net::{IpAddr, SocketAddr};
+
+        let mut req = Request::builder()
+            .header("x-forwarded-for", "203.0.113.7, 10.0.0.8")
+            .body(Body::empty())
+            .expect("构造请求");
+        req.extensions_mut().insert(ConnectInfo(
+            "10.0.0.9:443".parse::<SocketAddr>().expect("固定地址合法"),
+        ));
+        let trusted = [TrustedProxyNet::parse("10.0.0.0/8").expect("固定网段合法")];
+
+        assert_eq!(
+            resolve_client_ip(&req, &trusted),
+            "203.0.113.7".parse::<IpAddr>().expect("固定地址合法"),
+            "只可从已配置的可信代理链解析首个不可信客户端地址"
+        );
     }
 
     #[test]
@@ -760,26 +944,33 @@ mod tests {
         let limiter = PreAuthRateLimiter::new();
         let now = Instant::now();
         for _ in 0..SOURCE_ADDR_WINDOW_MAX {
-            assert!(limiter.allow(None, "10.9.9.9", now));
+            assert!(limiter.allow(None, ip("10.9.9.9"), now));
         }
-        assert!(!limiter.allow(None, "10.9.9.9", now));
+        assert!(!limiter.allow(None, ip("10.9.9.9"), now));
         let later = now + Duration::from_secs(RATE_WINDOW_SECONDS + 1);
-        assert!(limiter.allow(None, "10.9.9.9", later));
+        assert!(limiter.allow(None, ip("10.9.9.9"), later));
     }
 
     /// 伪造的 `x-ep-*` 必须在最外层被剥掉。
     ///
-    /// 反例是这条修复的全部理由：不剥的话，任何走到 `next.run` 而未经
-    /// `apply_principal` 的路径都会把客户端送来的身份头原样交给处理器。
+    /// 即使当前处理器只信 SecurityContext 扩展，也要在最外层剥掉整个前缀，
+    /// 防止未来新增的服务端元数据头或旁路处理器意外恢复头面信任。
     #[test]
     fn injected_identity_headers_are_stripped_from_inbound_requests() {
         let mut req = Request::builder()
             .uri("/api/v1/platform/identity/me/legal-entities")
             .header("x-ep-user-id", "00000000-0000-7000-8000-000000000009")
-            .header("x-ep-legal-entity-id", "00000000-0000-7000-8000-00000000000a")
+            .header(
+                "x-ep-legal-entity-id",
+                "00000000-0000-7000-8000-00000000000a",
+            )
             .header("x-ep-session-id", "forged")
             .header("x-ep-duty-classes", "SECURITY")
             .header("x-ep-roles", "SYSTEM")
+            .header("x-ep-device-id", "forged-device")
+            .header("x-ep-request-id", "forged-request")
+            .header("x-ep-trace-id", "11111111111111111111111111111111")
+            .header("x-ep-future-private-header", "forged-future-value")
             .header("x-client", "ops")
             .body(Body::empty())
             .expect("构造请求");
@@ -792,6 +983,10 @@ mod tests {
             "x-ep-session-id",
             "x-ep-duty-classes",
             "x-ep-roles",
+            "x-ep-device-id",
+            "x-ep-request-id",
+            "x-ep-trace-id",
+            "x-ep-future-private-header",
         ] {
             assert!(
                 req.headers().get(name).is_none(),
@@ -805,36 +1000,67 @@ mod tests {
         );
     }
 
-    /// 剥离清单必须与 `apply_principal` 注入的头名逐一对应。
-    ///
-    /// 那边加一个这边不加，新加的那个就是一条新的伪造通道；此断言让
-    /// 这种漏改当场红。
     #[test]
-    fn strip_list_covers_every_header_apply_principal_injects() {
-        let src = include_str!("middleware.rs");
-        let injected: std::collections::BTreeSet<&str> = src
-            .lines()
-            .filter_map(|l| l.trim().strip_prefix("insert(headers, \""))
-            .filter_map(|r| r.split('"').next())
-            .collect();
-        let stripped: std::collections::BTreeSet<&str> = [
+    fn request_metadata_is_regenerated_after_all_inbound_internal_headers_are_removed() {
+        let mut req = Request::builder()
+            .header("x-ep-request-id", "forged-request")
+            .header("x-ep-trace-id", "11111111111111111111111111111111")
+            .header("x-ep-device-id", "forged-device")
+            .body(Body::empty())
+            .expect("构造请求");
+
+        let meta = prepare_request_metadata(&mut req, &[]);
+
+        assert_ne!(meta.request_id.as_str(), "forged-request");
+        assert_ne!(meta.trace_id.as_str(), "11111111111111111111111111111111");
+        assert_eq!(
+            req.headers()
+                .get("x-ep-request-id")
+                .and_then(|v| v.to_str().ok()),
+            Some(meta.request_id.as_str())
+        );
+        assert_eq!(
+            req.headers()
+                .get("x-ep-trace-id")
+                .and_then(|v| v.to_str().ok()),
+            Some(meta.trace_id.as_str())
+        );
+        assert!(req.headers().get("x-ep-device-id").is_none());
+        assert_eq!(
+            req.extensions()
+                .get::<RequestMeta>()
+                .map(|stored| stored.trace_id.as_str()),
+            Some(meta.trace_id.as_str())
+        );
+    }
+
+    #[test]
+    fn authenticated_principal_is_exposed_only_as_a_security_context_extension() {
+        let mut req = Request::builder()
+            .header("x-client", "ops")
+            .body(Body::empty())
+            .expect("构造请求");
+
+        apply_principal(&mut req, &test_principal());
+
+        let context = req
+            .extensions()
+            .get::<SecurityContext>()
+            .expect("认证主体必须写入安全上下文扩展");
+        assert_eq!(context.snapshot_version, 7);
+        for name in [
             "x-ep-user-id",
             "x-ep-legal-entity-id",
             "x-ep-session-id",
             "x-ep-duty-classes",
             "x-ep-roles",
-        ]
-        .into_iter()
-        .collect();
-        assert!(
-            !injected.is_empty(),
-            "取不到 apply_principal 的注入头名，判定未做出"
-        );
-        assert!(
-            injected.is_subset(&stripped),
-            "apply_principal 注入了未被剥离的头：{:?}",
-            injected.difference(&stripped).collect::<Vec<_>>()
-        );
+            "x-ep-device-id",
+        ] {
+            assert!(
+                req.headers().get(name).is_none(),
+                "身份字段 {name} 不得回填到请求头"
+            );
+        }
     }
 
     /// 白名单里的 `me/legal-entities` 仍要求携带令牌。
@@ -853,14 +1079,5 @@ mod tests {
             assert!(is_pre_auth(p));
             assert!(!requires_authenticated_caller(p), "{p} 不应要求令牌");
         }
-    }
-
-    #[test]
-    fn duty_list_serializes_in_uppercase_form() {
-        let set = UserAuthzSet {
-            duty_classes: vec![DutyClass::Security, DutyClass::Audit],
-            ..Default::default()
-        };
-        assert_eq!(duty_list_of(&set), "SECURITY,AUDIT");
     }
 }

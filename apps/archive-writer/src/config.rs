@@ -9,6 +9,16 @@ use ep_platform_runtime::config::{
 };
 use serde::Deserialize;
 
+#[cfg(windows)]
+pub const DEFAULTS: &str = r#"
+[ipc]
+socket_path = '\\.\pipe\ep-core'
+
+[spool]
+dir = "/var/lib/ep/archive-writer/spool"
+"#;
+
+#[cfg(not(windows))]
 pub const DEFAULTS: &str = r#"
 [ipc]
 socket_path = "/run/ep/ipc/core.sock"
@@ -51,7 +61,7 @@ mod tests {
         let cfg = load("").expect("默认层必须自洽");
         assert_eq!(
             cfg.ipc.socket_path.to_string_lossy(),
-            "/run/ep/ipc/core.sock"
+            ep_adapter_ipc::CORE_ENDPOINT
         );
         assert_eq!(
             cfg.spool.dir.to_string_lossy(),
@@ -75,5 +85,14 @@ mod tests {
             load("[http]\nbind_addr = \"127.0.0.1:9000\"\n").is_err(),
             "archive-writer 无监听"
         );
+    }
+
+    #[test]
+    fn core_ipc_endpoint_cannot_be_redirected() {
+        let cfg = load("[ipc]\nsocket_path = \"/tmp/attacker.sock\"\n").unwrap();
+        assert!(cfg
+            .ipc
+            .require_endpoint(ep_adapter_ipc::CORE_ENDPOINT)
+            .is_err());
     }
 }

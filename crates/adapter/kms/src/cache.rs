@@ -15,6 +15,7 @@ use crate::cfg::DekCacheCfg;
 pub type Clock = Arc<dyn Fn() -> Instant + Send + Sync>;
 
 /// 实时时钟。
+#[cfg(any(test, all(feature = "legacy-master-key-file", debug_assertions, unix)))]
 pub fn wall_clock() -> Clock {
     Arc::new(Instant::now)
 }
@@ -31,6 +32,7 @@ pub(crate) struct DekCache {
 }
 
 impl DekCache {
+    #[cfg(any(test, all(feature = "legacy-master-key-file", debug_assertions, unix)))]
     pub(crate) fn new(clock: Clock) -> DekCache {
         DekCache {
             entries: Mutex::new(HashMap::new()),

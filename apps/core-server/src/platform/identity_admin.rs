@@ -1,14 +1,14 @@
 //! 身份域管理面与自助面端点：MFA 登记、设备凭据、账号生命周期、
 //! 应急账号（规格 §6.2，任务 #21）。
 //!
-//! 职责门禁（临时头阶段经 extract_context 逐项校验）：
+//! 职责门禁（经认证中间件写入的 SecurityContext 扩展逐项校验）：
 //! 自助事务六类职责任一；账号生命周期与应急提交/关闭仅 SECURITY；
 //! 应急批准 SECURITY 或 AUDIT 命中（批准人判据本体在用例内校验）。
 //! A-20：能力元组与路由注册逐行同行。
 
 use std::sync::Arc;
 
-use axum::extract::{Path, State};
+use axum::extract::{Extension, Path, State};
 use axum::http::{HeaderMap, StatusCode};
 use axum::middleware::from_fn_with_state;
 use axum::response::{IntoResponse, Response};
@@ -21,7 +21,7 @@ use ep_foundation::error::codes::{
 };
 use ep_foundation::id::marker::{LegalEntity, UserAccount};
 use ep_foundation::id::Id;
-use ep_foundation::security::context::{ClientKind, DutyClass};
+use ep_foundation::security::context::{ClientKind, DutyClass, SecurityContext};
 use ep_platform_identity::account_admin::{partial_failed_error, ImportAccountRow};
 use ep_platform_identity::breakglass::BreakglassSubmit;
 use ep_platform_identity::lifecycle::DeviceRegisterInput;
@@ -71,11 +71,12 @@ fn invalid_payload(state: &PlatformState, trace: &str) -> ApiError {
 /// TOTP 登记开始：返回登记引用与 base32 种子（仅此一次明文外出）。
 pub async fn mfa_enrollment_begin(
     State(state): State<Arc<PlatformState>>,
+    security_context: Option<Extension<SecurityContext>>,
     headers: HeaderMap,
 ) -> Response {
     let trace = trace_of(&headers);
     let out: Result<Response, ApiError> = async {
-        let ctx = extract_context(&headers, &state.system, ALL_DUTIES)?;
+        let ctx = extract_context(security_context.as_deref(), &state.system, ALL_DUTIES)?;
         let identity = identity_of(&state, &trace)?;
         let r = identity
             .enrollment
@@ -109,12 +110,13 @@ pub struct MfaCompleteBody {
 /// TOTP 登记完成：验证码核验后落凭据。
 pub async fn mfa_enrollment_complete(
     State(state): State<Arc<PlatformState>>,
+    security_context: Option<Extension<SecurityContext>>,
     headers: HeaderMap,
     Json(body): Json<MfaCompleteBody>,
 ) -> Response {
     let trace = trace_of(&headers);
     let out: Result<Response, ApiError> = async {
-        let ctx = extract_context(&headers, &state.system, ALL_DUTIES)?;
+        let ctx = extract_context(security_context.as_deref(), &state.system, ALL_DUTIES)?;
         let identity = identity_of(&state, &trace)?;
         let id = identity
             .enrollment
@@ -136,12 +138,13 @@ pub async fn mfa_enrollment_complete(
 /// 注销本人名下指定 MFA 凭据（最后因子禁删判据在用例内）。
 pub async fn mfa_enrollment_unenroll(
     State(state): State<Arc<PlatformState>>,
+    security_context: Option<Extension<SecurityContext>>,
     headers: HeaderMap,
     Path(id): Path<Uuid>,
 ) -> Response {
     let trace = trace_of(&headers);
     let out: Result<Response, ApiError> = async {
-        let ctx = extract_context(&headers, &state.system, ALL_DUTIES)?;
+        let ctx = extract_context(security_context.as_deref(), &state.system, ALL_DUTIES)?;
         let identity = identity_of(&state, &trace)?;
         let done = identity
             .enrollment
@@ -175,12 +178,13 @@ pub struct DeviceRegisterBody {
 /// 登记本人设备（单法人限定可选；上下文取交集语义在用例内）。
 pub async fn register_device(
     State(state): State<Arc<PlatformState>>,
+    security_context: Option<Extension<SecurityContext>>,
     headers: HeaderMap,
     Json(body): Json<DeviceRegisterBody>,
 ) -> Response {
     let trace = trace_of(&headers);
     let out: Result<Response, ApiError> = async {
-        let ctx = extract_context(&headers, &state.system, ALL_DUTIES)?;
+        let ctx = extract_context(security_context.as_deref(), &state.system, ALL_DUTIES)?;
         let identity = identity_of(&state, &trace)?;
         let client: ClientKind = serde_json::from_value(body.client.clone())
             .map_err(|_| invalid_payload(&state, &trace))?;
@@ -213,12 +217,13 @@ pub async fn register_device(
 /// 远程注销本人设备（级联撤销该设备上的会话，返回撤销数）。
 pub async fn revoke_device(
     State(state): State<Arc<PlatformState>>,
+    security_context: Option<Extension<SecurityContext>>,
     headers: HeaderMap,
     Path(id): Path<Uuid>,
 ) -> Response {
     let trace = trace_of(&headers);
     let out: Result<Response, ApiError> = async {
-        let ctx = extract_context(&headers, &state.system, ALL_DUTIES)?;
+        let ctx = extract_context(security_context.as_deref(), &state.system, ALL_DUTIES)?;
         let identity = identity_of(&state, &trace)?;
         let revoked = identity
             .lifecycle
@@ -246,13 +251,14 @@ pub struct ResetPasswordBody {
 /// 重置本人口令：路径账号标识必须与调用上下文一致（本人事务）。
 pub async fn reset_password(
     State(state): State<Arc<PlatformState>>,
+    security_context: Option<Extension<SecurityContext>>,
     headers: HeaderMap,
     Path(id): Path<Uuid>,
     Json(body): Json<ResetPasswordBody>,
 ) -> Response {
     let trace = trace_of(&headers);
     let out: Result<Response, ApiError> = async {
-        let ctx = extract_context(&headers, &state.system, ALL_DUTIES)?;
+        let ctx = extract_context(security_context.as_deref(), &state.system, ALL_DUTIES)?;
         if id != ctx.user_id.as_uuid() {
             return Err(ApiError::new(
                 PLATFORM_AUTHZ_OBJECT_FORBIDDEN,
@@ -325,12 +331,13 @@ fn parse_import_rows(
 /// 批量导入账号（200 行上限；逐行独立事务，失败行退回 409 明细）。
 pub async fn import_batch(
     State(state): State<Arc<PlatformState>>,
+    security_context: Option<Extension<SecurityContext>>,
     headers: HeaderMap,
     Json(body): Json<ImportBatchBody>,
 ) -> Response {
     let trace = trace_of(&headers);
     let out: Result<Response, ApiError> = async {
-        let ctx = extract_context(&headers, &state.system, SECURITY_DUTY)?;
+        let ctx = extract_context(security_context.as_deref(), &state.system, SECURITY_DUTY)?;
         let identity = identity_of(&state, &trace)?;
         let rows = parse_import_rows(body, &state, &trace)?;
         let outcome = identity
@@ -356,12 +363,13 @@ pub async fn import_batch(
 /// 激活账号（UNACTIVATED→ACTIVE；SoD 与待办判据在用例内）。
 pub async fn activate_account(
     State(state): State<Arc<PlatformState>>,
+    security_context: Option<Extension<SecurityContext>>,
     headers: HeaderMap,
     Path(id): Path<Uuid>,
 ) -> Response {
     let trace = trace_of(&headers);
     let out: Result<Response, ApiError> = async {
-        let ctx = extract_context(&headers, &state.system, SECURITY_DUTY)?;
+        let ctx = extract_context(security_context.as_deref(), &state.system, SECURITY_DUTY)?;
         let identity = identity_of(&state, &trace)?;
         let done = identity
             .lifecycle
@@ -388,13 +396,14 @@ pub struct TransferBody {
 /// 账号移交（职责归属迁移；SoD 纯函数与未结审批待办校验在用例内）。
 pub async fn transfer_account(
     State(state): State<Arc<PlatformState>>,
+    security_context: Option<Extension<SecurityContext>>,
     headers: HeaderMap,
     Path(id): Path<Uuid>,
     Json(body): Json<TransferBody>,
 ) -> Response {
     let trace = trace_of(&headers);
     let out: Result<Response, ApiError> = async {
-        let ctx = extract_context(&headers, &state.system, SECURITY_DUTY)?;
+        let ctx = extract_context(security_context.as_deref(), &state.system, SECURITY_DUTY)?;
         let identity = identity_of(&state, &trace)?;
         identity
             .lifecycle
@@ -427,12 +436,13 @@ pub async fn transfer_account(
 /// 停用账号（即时撤全部会话与设备凭据，登记 deactivated 事件）。
 pub async fn deactivate_account(
     State(state): State<Arc<PlatformState>>,
+    security_context: Option<Extension<SecurityContext>>,
     headers: HeaderMap,
     Path(id): Path<Uuid>,
 ) -> Response {
     let trace = trace_of(&headers);
     let out: Result<Response, ApiError> = async {
-        let ctx = extract_context(&headers, &state.system, SECURITY_DUTY)?;
+        let ctx = extract_context(security_context.as_deref(), &state.system, SECURITY_DUTY)?;
         let identity = identity_of(&state, &trace)?;
         identity
             .lifecycle
@@ -463,12 +473,13 @@ pub struct BreakglassSubmitBody {
 /// 提交应急启用申请（三类允许动作枚举形态在用例外先解析）。
 pub async fn breakglass_submit(
     State(state): State<Arc<PlatformState>>,
+    security_context: Option<Extension<SecurityContext>>,
     headers: HeaderMap,
     Json(body): Json<BreakglassSubmitBody>,
 ) -> Response {
     let trace = trace_of(&headers);
     let out: Result<Response, ApiError> = async {
-        let ctx = extract_context(&headers, &state.system, SECURITY_DUTY)?;
+        let ctx = extract_context(security_context.as_deref(), &state.system, SECURITY_DUTY)?;
         let identity = identity_of(&state, &trace)?;
         let mut actions = Vec::with_capacity(body.allowed_action_set.len());
         for raw in &body.allowed_action_set {
@@ -505,13 +516,18 @@ pub struct BreakglassApproveBody {
 /// 批准应急启用（approved_by≠requested_by 与 duty_class 判据在用例内）。
 pub async fn breakglass_approve(
     State(state): State<Arc<PlatformState>>,
+    security_context: Option<Extension<SecurityContext>>,
     headers: HeaderMap,
     Path(id): Path<Uuid>,
     Json(body): Json<BreakglassApproveBody>,
 ) -> Response {
     let trace = trace_of(&headers);
     let out: Result<Response, ApiError> = async {
-        let ctx = extract_context(&headers, &state.system, SECURITY_OR_AUDIT)?;
+        let ctx = extract_context(
+            security_context.as_deref(),
+            &state.system,
+            SECURITY_OR_AUDIT,
+        )?;
         let identity = identity_of(&state, &trace)?;
         identity
             .breakglass
@@ -533,12 +549,13 @@ pub async fn breakglass_approve(
 /// 关闭应急窗口（提前收口；到期失效由 job-worker 后台承接）。
 pub async fn breakglass_close(
     State(state): State<Arc<PlatformState>>,
+    security_context: Option<Extension<SecurityContext>>,
     headers: HeaderMap,
     Path(id): Path<Uuid>,
 ) -> Response {
     let trace = trace_of(&headers);
     let out: Result<Response, ApiError> = async {
-        let ctx = extract_context(&headers, &state.system, SECURITY_DUTY)?;
+        let ctx = extract_context(security_context.as_deref(), &state.system, SECURITY_DUTY)?;
         let identity = identity_of(&state, &trace)?;
         identity
             .breakglass

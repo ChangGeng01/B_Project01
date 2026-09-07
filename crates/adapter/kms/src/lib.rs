@@ -1,5 +1,6 @@
-//! ep-adapter-kms — KMS 载体层：EPC1 信封加密、受治理盲索引、密钥域状态机
-//! 与两个载体后端（内置 builtin / 客户 HSM，后者经 `hsm` feature 门控）。
+//! ep-adapter-kms — KMS 载体层的加密算法、受治理盲索引、密钥域状态机与
+//! 内存行为骨架。F-57 的 TPM/HSM non-exportable wrapping-handle 生产 provider
+//! 尚未交付；默认/发布构建没有普通 master.key 磁盘构造入口。
 //!
 //! 出处：02 计划第 4 节（密钥域、信封、盲索引、销毁核验）与规格报告第 5 节。
 //! 只实现 foundation 冻结的 [`ep_foundation::port::kms::KmsBackend`] 一个公开
@@ -25,7 +26,9 @@ pub mod hsm;
 
 pub use builtin::{BuiltinKmsBackend, RotationReport};
 pub use envelope::aad_for_row;
-pub use masterkey::{load_master_key, verify_master_key_metadata, MasterKey, MASTER_KEY_LEN};
+#[cfg(all(feature = "legacy-master-key-file", debug_assertions, unix))]
+pub use masterkey::{load_master_key, verify_master_key_metadata};
+pub use masterkey::{MasterKey, MASTER_KEY_LEN};
 pub use material::{
     DataKey, DataKeyState, DekAlgorithm, DestroyApproval, DestroyEvidence, DomainKind, KeyDomain,
     KeyDomainState,

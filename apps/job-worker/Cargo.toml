@@ -7,6 +7,10 @@ publish.workspace = true
 [lints]
 workspace = true
 
+[features]
+# 只给 development/test 构建透传历史文件机密 reader；生产发布不得启用。
+legacy-file = ["ep-platform-runtime/legacy-file"]
+
 [dependencies]
 ep-foundation.workspace = true
 ep-platform-runtime.workspace = true

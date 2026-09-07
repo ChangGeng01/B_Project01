@@ -45,9 +45,11 @@ axum = { version = "0.8", default-features = false, features = ["http1", "json",
 hyper = { version = "1", features = ["client", "http1"] }
 hyper-util = { version = "0.1", features = ["tokio"] }
 http-body-util = "0.1"
+tower = { version = "0.5", features = ["util"] }
 toml = "0.8"
 libc = "0.2"
 sha2 = "0.10"
+zeroize = "1.9"
 # 以下六项由阶段 2 任务 #12（ep-adapter-kms）引入，只允许出现在 adapter 层：
 # 密码学取 RustCrypto 系（AES-256-GCM / HKDF / HMAC / ECDSA P-256），
 # rand 承接信封 nonce 的随机源（foundation 尚无 Rng 端口），
@@ -59,7 +61,7 @@ p256 = { version = "0.13", default-features = false, features = ["ecdsa"] }
 rand = "0.8"
 unicode-normalization = "0.1"
 # 以下一项由阶段 2 任务 #11（ep-adapter-db-pg）引入，只允许出现在 adapter 层：
-# sqlx 承接五具名池与会话语义（runtime-tokio），关闭默认特性避免引入
+# sqlx 承接四具名池与会话语义（runtime-tokio），关闭默认特性避免引入
 # migrate/macros/tls 等非必需组件；chrono 与 uuid 特征对齐编解码纪律。
 sqlx = { version = "0.8", default-features = false, features = ["runtime-tokio", "postgres", "chrono", "uuid"] }
 # 以下一项由阶段 2 任务 #13（tools/migrate 实现体）引入，只允许出现在 tools/migrate：

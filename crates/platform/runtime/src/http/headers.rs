@@ -14,6 +14,7 @@ use ep_foundation::error::codes::{
 use std::sync::Arc;
 
 use super::envelope::{ApiError, Detail};
+use super::request_meta::ensure_request_meta;
 use super::state::SystemState;
 
 /// 四个固定头。系统端点豁免这四个头，豁免清单见 [`EXEMPT_PREFIXES`]。
@@ -154,9 +155,10 @@ impl IdempotencyKeyHeaderGuard {
 /// 无幂等语义，04 计划 §5）。
 pub async fn idempotency_key_guard(
     State(st): State<Arc<SystemState>>,
-    req: Request,
+    mut req: Request,
     next: Next,
 ) -> Response {
+    let trace_id = ensure_request_meta(&mut req).trace_id.as_str().to_string();
     if req.method().is_safe() || is_pre_auth(req.uri().path()) {
         return next.run(req).await;
     }
@@ -169,7 +171,7 @@ pub async fn idempotency_key_guard(
         Err(reason) => ApiError::new(
             PLATFORM_IDEMPOTENCY_KEY_REQUIRED,
             st.next_incident_no(),
-            ep_platform_obs::TraceContext::new().trace_id().to_string(),
+            trace_id,
         )
         .with_details(vec![Detail {
             field: "Idempotency-Key".into(),
@@ -183,9 +185,10 @@ pub async fn idempotency_key_guard(
 /// 固定请求头校验层。系统端点豁免。
 pub async fn header_guard(
     State(st): State<Arc<SystemState>>,
-    req: Request,
+    mut req: Request,
     next: Next,
 ) -> Response {
+    let trace_id = ensure_request_meta(&mut req).trace_id.as_str().to_string();
     if is_exempt(req.uri().path()) {
         return next.run(req).await;
     }
@@ -205,7 +208,7 @@ pub async fn header_guard(
     ApiError::new(
         PLATFORM_REQUEST_HEADER_MISSING,
         st.next_incident_no(),
-        ep_platform_obs::TraceContext::new().trace_id().to_string(),
+        trace_id,
     )
     .with_details(problems)
     .into_response()

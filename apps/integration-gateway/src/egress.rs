@@ -107,38 +107,11 @@ impl Breaker {
 
 /// 启动时对出网骨架做一次演练，不发起任何真实请求。
 ///
-/// 演练两件事：白名单自身可被判定命中（解析结果与判定口径一致），
-/// 以及按当前配置的熔断参数走一圈 Closed → Open → HalfOpen → Closed。
+/// 白名单的唯一规范形校验已经由 `EgressTarget::parse` 在反序列化时完成；这里演练
+/// 当前熔断参数能走完 Closed → Open → HalfOpen → Closed。
 /// 后者能在启动时就抓出 `half_open_probes = 0` 这类「熔断后永不恢复」的取值——
 /// 那种取值在真实故障发生前完全看不出来。
 pub fn rehearse(allowlist: &[EgressTarget], cfg: BreakerCfg) -> Result<String, String> {
-    // F-81：原判据是 `for t in allowlist { if !is_allowed(allowlist, t.as_str()) }`
-    // ——拿白名单里的项去问白名单自己认不认。`is_allowed` 是纯字符串相等
-    // （`t.as_str() == target`），所以每一项必然命中自身，**该判据没有可失败的输入**。
-    //
-    // 真正会出问题的是另一件事：`EgressTarget::parse` 只校验形态、**不做规范化**
-    // （末行逐字 `Ok(EgressTarget(raw.to_string()))`），于是大写主机与显式 `:443`
-    // 都能通过校验并原样存下；而匹配是精确相等，运行期一旦产出规范化 URL，
-    // 这类白名单项就永远匹配不上——出网被拒，而启动日志印的是「白名单 N 项，演练通过」。
-    // 改判它们是否为规范形：这有真实的失败输入。
-    for t in allowlist {
-        let raw = t.as_str();
-        let rest = raw.strip_prefix("https://").unwrap_or(raw);
-        let (host, port) = match rest.split_once(':') {
-            Some((h, p)) => (h, Some(p)),
-            None => (rest, None),
-        };
-        if host.chars().any(|c| c.is_ascii_uppercase()) {
-            return Err(format!(
-                "白名单项 {raw} 的主机含大写字母；匹配是精确相等而运行期主机名规范化为小写，该项永不命中"
-            ));
-        }
-        if port == Some("443") {
-            return Err(format!(
-                "白名单项 {raw} 显式写了 https 的默认端口 443；运行期 URL 不带默认端口，该项永不命中"
-            ));
-        }
-    }
     if cfg.failure_threshold == 0 {
         return Err("egress.breaker.failure_threshold 为 0，熔断器会立刻断开".into());
     }
@@ -292,10 +265,7 @@ mod tests {
         assert_eq!(b.state(), BreakerState::Closed, "成功一次后计数必须归零");
     }
 
-    /// `is_allowed` 是**精确相等**匹配，没有任何规范化。
-    ///
-    /// 这条语义就是 `rehearse` 里那个规范形判据存在的理由：形态只要差一个字符
-    /// （大写主机、显式默认端口、末尾斜杠）运行期就永不命中，而配置层收得下。
+    /// `is_allowed` 是**精确相等**匹配；newtype 保证配置只可能保存唯一规范形。
     #[test]
     fn is_allowed_is_exact_equality_with_no_normalisation() {
         let list = vec![EgressTarget::parse("https://a.example.com").expect("合法白名单项")];
@@ -311,19 +281,18 @@ mod tests {
         }
     }
 
-    /// 规范形判据必须真的能拒——它替换的那条自匹配判据没有可失败的输入。
+    /// 非规范形在配置边界被拒，rehearse 只负责熔断状态机。
     #[test]
-    fn rehearse_rejects_entries_that_could_never_match_at_runtime() {
+    fn parser_rejects_noncanonical_targets_before_rehearsal() {
         let cfg = BreakerCfg {
             failure_threshold: 2,
             half_open_probes: 1,
             ..Default::default()
         };
         for bad in ["https://A.Example.com", "https://a.example.com:443"] {
-            let list = vec![EgressTarget::parse(bad).expect("配置层收得下这些非规范形")];
             assert!(
-                rehearse(&list, cfg).is_err(),
-                "{bad} 应被规范形判据拒绝"
+                EgressTarget::parse(bad).is_err(),
+                "{bad} 应在配置边界被拒绝"
             );
         }
         let good = vec![EgressTarget::parse("https://a.example.com:8443").expect("合法")];

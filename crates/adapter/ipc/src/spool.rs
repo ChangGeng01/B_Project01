@@ -167,7 +167,8 @@ impl Spool {
                 detail: e.to_string(),
             })?;
         }
-        rename_with_retry(&tmp, &path)
+        rename_with_retry(&tmp, &path)?;
+        sync_parent_after_replace(&path)
     }
 }
 
@@ -180,7 +181,7 @@ fn rename_with_retry(from: &Path, to: &Path) -> Result<(), SpoolError> {
     const MAX_ATTEMPTS: u32 = 5;
     let mut last = String::new();
     for attempt in 0..MAX_ATTEMPTS {
-        match std::fs::rename(from, to) {
+        match replace_file(from, to) {
             Ok(()) => return Ok(()),
             Err(e) => {
                 last = e.to_string();
@@ -196,6 +197,68 @@ fn rename_with_retry(from: &Path, to: &Path) -> Result<(), SpoolError> {
         path: to.to_path_buf(),
         detail: format!("原子替换失败，已重试 {MAX_ATTEMPTS} 次：{last}"),
     })
+}
+
+/// Unix `rename` 会原子覆盖同卷目标；Windows 的 `std::fs::rename` 在目标已存在时
+/// 会失败，而 spool 从第二次追加起目标必然存在。Windows 因此必须使用
+/// `MoveFileExW(REPLACE_EXISTING|WRITE_THROUGH)`，不能先删目标再改名（那会重新打开
+/// 掉电丢整份队列的窗口）。临时文件与目标固定在同一目录，不允许跨卷复制语义。
+#[cfg(not(windows))]
+fn replace_file(from: &Path, to: &Path) -> std::io::Result<()> {
+    std::fs::rename(from, to)
+}
+
+#[cfg(windows)]
+fn replace_file(from: &Path, to: &Path) -> std::io::Result<()> {
+    use std::os::windows::ffi::OsStrExt;
+
+    const MOVEFILE_REPLACE_EXISTING: u32 = 0x1;
+    const MOVEFILE_WRITE_THROUGH: u32 = 0x8;
+
+    #[link(name = "Kernel32")]
+    extern "system" {
+        #[link_name = "MoveFileExW"]
+        fn move_file_ex_w(
+            existing_file_name: *const u16,
+            new_file_name: *const u16,
+            flags: u32,
+        ) -> i32;
+    }
+
+    let from_wide: Vec<u16> = from.as_os_str().encode_wide().chain(Some(0)).collect();
+    let to_wide: Vec<u16> = to.as_os_str().encode_wide().chain(Some(0)).collect();
+    // SAFETY: 两个缓冲区在调用期间存活、均以 NUL 结尾；flags 不请求跨卷复制，
+    // 且源/目标由 `rewrite` 固定为同一目录中的普通路径。
+    let moved = unsafe {
+        move_file_ex_w(
+            from_wide.as_ptr(),
+            to_wide.as_ptr(),
+            MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH,
+        )
+    };
+    if moved == 0 {
+        Err(std::io::Error::last_os_error())
+    } else {
+        Ok(())
+    }
+}
+
+/// `File::sync_all` 只把临时文件正文刷稳；Unix 还要刷父目录，才能把 rename 的目录项
+/// 纳入掉电边界。Windows 已由 `MOVEFILE_WRITE_THROUGH` 承担同一职责。
+#[cfg(unix)]
+fn sync_parent_after_replace(path: &Path) -> Result<(), SpoolError> {
+    let parent = path.parent().unwrap_or_else(|| Path::new("."));
+    std::fs::File::open(parent)
+        .and_then(|dir| dir.sync_all())
+        .map_err(|error| SpoolError::Io {
+            path: parent.to_path_buf(),
+            detail: format!("spool 原子替换后父目录落盘失败：{error}"),
+        })
+}
+
+#[cfg(not(unix))]
+fn sync_parent_after_replace(_path: &Path) -> Result<(), SpoolError> {
+    Ok(())
 }
 
 fn total_bytes(lines: &[String]) -> u64 {

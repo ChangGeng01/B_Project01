@@ -8,8 +8,8 @@
 - 开发状态字段：`development_state=READY_NOT_AUTHORIZED`；`blocking_reason=NONE`；`DEVELOPMENT_AUTHORIZED=true`（开发授权已于 2026-08-27 由使用方授予（逐字指令「需要 完全 可即刻开发 状态 最谨慎」，留证 00c F-65）；状态机节点名依 converged §7 保持至 G0_BOOTSTRAP_GREEN）；`implementation_state=NOT_IMPLEMENTED`。五文件计划已具备所需细度；**授权已于 2026-08-27 获得（F-65），开发从 G0 开始**。
 - 范围：现行闭集仍为 **185 个 RequirementID（174 个主需求 + 11 个延期边界）**；没有删除、合并或静默延期最终要求。
 - 代码：仓库已有 Rust/PostgreSQL 骨架、早期平台逻辑和历史迁移；CapabilityGraph、F-57 权威主干、CTC-01、四端客户端、完整业务范围和发布认证均未实现。
-- 生产状态字段：`production_state=PRODUCTION_NOT_READY`。现有 ThinkStation P340、单 1TB HDD 和 Windows Server 2022 只是候选硬件；在 UPS、服务器外只追加备份、两块离线轮换 HDD、分域恢复材料、洁净恢复硬件、72 小时容量和完整 L3 证据通过前，不得录入真实客户数据。
-- 本轮只完成文档再基线；没有编写业务代码、创建 F-57 迁移、安装服务或改变生产环境。
+- 生产状态字段：`production_state=PRODUCTION_NOT_READY`。现有 ThinkStation P340 主机与 Windows Server 2022 可继续作为待认证候选，但原单块 1 TB HDD 的 profile 永久 `production_eligible=false`，不能靠补 UPS 或补证据转为权威生产盘，也不能复用为 RAID1 成员或备份盘；唯一低成本例外是被合格新盘替代、完成安全擦除并获处置批准后，最多作可随时丢弃的非权威暂存。必须先换装/新增一块物理 CMR 原始容量 `>=2,000,000,000,000` bytes 的 DATA_HDD；NTFS 权威卷以 `1,589,137,899,520` bytes 为名义 floor，并须满足 `volume_total_bytes >= max(1,589,137,899,520,1,481,763,717,120+107,374,182,400+measured_unclassifiable_filesystem_allocation_bytes)`。九桶/十四 capacity class/十四 canonical selector 只唯一覆盖产品管理 `data_root` 对象与登记 VSS extent；NTFS/BitLocker 元数据独立实测且不可借桶，普通卷外对象或解释不了的 allocation 一律失败关闭。随后 UPS、服务器外只追加备份、两块离线轮换 HDD、分域恢复材料、洁净恢复硬件、72 小时容量和完整 L3 证据仍须全部通过，才可录入真实客户数据。
+- 本轮没有实现 F-57 业务能力、创建 F-57 业务迁移、安装服务或改变生产环境；只修复现有 Rust/CI/本地控制骨架的安全性与一致性缺陷，并同步完成文档再基线。
 
 ## 阅读导航（不定义权威排序）
 

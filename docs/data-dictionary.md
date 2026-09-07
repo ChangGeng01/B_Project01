@@ -819,7 +819,7 @@ The still-visible legacy prose below is explicitly non-normative for F-57 table 
 
 ### 7.24 platform_ops 视图
 
-固定五个：`v_degradation_open`（未关闭窗口）、`v_rpo_status`（DATABASE 与 ATTACHMENT 两行 RPO 结论）、`v_backup_last_success`（各备份种类最近当前 VERIFIED；DISPOSED 不再入选）、`v_capacity_current`（六组件最新容量）、`v_ops_health`（前四者的健康聚合）。`ep_ops_ro` 只获这五个视图的 SELECT，不获基表权限；六张迁移表仍在 core-server 内经 RLS 与 ABAC 访问。
+固定五个：`v_degradation_open`（未关闭窗口）、`v_rpo_status`（DATABASE 与 ATTACHMENT 两行 RPO 结论）、`v_backup_last_success`（各备份种类最近当前 VERIFIED；DISPOSED 不再入选）、`v_capacity_current`（六组件最新容量）、`v_ops_health`（前四者的健康聚合）。在 `platform_ops` 内，`ep_ops_ro` 只获这五个视图的 SELECT，不获任何基表权限；六张迁移表仍在 core-server 内经 RLS 与 ABAC 访问。另为 Ops-agent 的 Blocking 迁移一致性自检，`ep_ops_ro` 仅获 `platform_core` schema USAGE 与唯一非业务元数据表 `platform_core.schema_history` 的 SELECT；它不获 `platform_core` 其他基表权限、任何 schema CREATE 或任何写权限。
 
 ## 8. platform_authz schema（阶段 4）
 

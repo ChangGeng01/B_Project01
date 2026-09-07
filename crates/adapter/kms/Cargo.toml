@@ -11,6 +11,9 @@ workspace = true
 # 客户 HSM 载体（PKCS#11）由本 feature 门控：声明位与实现位同在本 crate，
 # 首版为占位实现，按降级返回已登记错误码，不接真实 PKCS#11 调用。
 hsm = []
+# 仅供显式 development/test debug 构建读取历史 POSIX master.key。
+# F-57 默认与发布构建不编译磁盘加载入口。
+legacy-master-key-file = []
 
 [dependencies]
 ep-foundation.workspace = true

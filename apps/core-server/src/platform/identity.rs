@@ -7,7 +7,7 @@
 
 use std::sync::Arc;
 
-use axum::extract::{Path, State};
+use axum::extract::{Extension, Path, State};
 use axum::http::{HeaderMap, StatusCode};
 use axum::middleware::from_fn_with_state;
 use axum::response::{IntoResponse, Response};
@@ -22,13 +22,13 @@ use ep_foundation::error::codes::{
     PLATFORM_AUTHN_MFA_LAST_FACTOR_FORBIDDEN, PLATFORM_AUTHN_RATE_LIMITED,
 };
 use ep_foundation::error::ErrorCode;
-use ep_foundation::security::context::DutyClass;
+use ep_foundation::security::context::{DutyClass, SecurityContext};
 use ep_platform_identity::login::{
     CompleteMfaRequest, SecondFactorProof, SignInOutcome, SignInRequest, SignInSuccess,
 };
 use ep_platform_identity::types::{AccountKind, SessionRow, UserAccountRow};
 use ep_platform_runtime::http::headers::idempotency_key_guard;
-use ep_platform_runtime::http::{ApiError, Envelope};
+use ep_platform_runtime::http::{ApiError, Envelope, RequestMeta};
 use serde::Deserialize;
 use serde_json::{json, Value};
 
@@ -51,23 +51,6 @@ fn identity_of(state: &PlatformState, trace: &str) -> Result<Arc<IdentityAssembl
         .identity
         .clone()
         .ok_or_else(|| not_provisioned(state, trace))
-}
-
-fn source_addr_of(headers: &HeaderMap) -> String {
-    headers
-        .get("x-forwarded-for")
-        .and_then(|v| v.to_str().ok())
-        .unwrap_or("unknown")
-        .to_string()
-}
-
-fn request_id_of(headers: &HeaderMap) -> String {
-    headers
-        .get("x-ep-request-id")
-        .and_then(|v| v.to_str().ok())
-        .filter(|v| v.len() >= 8)
-        .unwrap_or("platform-signin")
-        .to_string()
 }
 
 fn bearer_of(headers: &HeaderMap) -> Option<String> {
@@ -167,19 +150,19 @@ pub struct SignInBody {
 
 async fn do_sign_in(
     state: &Arc<PlatformState>,
-    headers: &HeaderMap,
+    meta: &RequestMeta,
     body: SignInBody,
     expected_kind: Option<AccountKind>,
 ) -> Result<Response, ApiError> {
-    let trace = trace_of(headers);
+    let trace = meta.trace_id.as_str().to_string();
     let identity = identity_of(state, &trace)?;
     let req = SignInRequest {
         login_name: body.login_name,
         password: body.password,
         device_id: body.device_id,
         client: body.client,
-        source_addr: source_addr_of(headers),
-        request_id: request_id_of(headers),
+        source_addr: meta.client_ip.to_string(),
+        request_id: meta.request_id.as_str().to_string(),
         trace_id: trace.clone(),
         expected_kind,
     };
@@ -224,10 +207,10 @@ async fn do_sign_in(
 /// 运维面 sign-in（PRE_AUTH；幂等豁免）。
 pub async fn sign_in(
     State(state): State<Arc<PlatformState>>,
-    headers: HeaderMap,
+    Extension(meta): Extension<RequestMeta>,
     Json(body): Json<SignInBody>,
 ) -> Response {
-    match do_sign_in(&state, &headers, body, None).await {
+    match do_sign_in(&state, &meta, body, None).await {
         Ok(r) => r,
         Err(e) => e.into_response(),
     }
@@ -236,10 +219,10 @@ pub async fn sign_in(
 /// 门户面 sign-in（PRE_AUTH；强制账号形态 PORTAL）。
 pub async fn portal_sign_in(
     State(state): State<Arc<PlatformState>>,
-    headers: HeaderMap,
+    Extension(meta): Extension<RequestMeta>,
     Json(body): Json<SignInBody>,
 ) -> Response {
-    match do_sign_in(&state, &headers, body, Some(AccountKind::Portal)).await {
+    match do_sign_in(&state, &meta, body, Some(AccountKind::Portal)).await {
         Ok(r) => r,
         Err(e) => e.into_response(),
     }
@@ -255,17 +238,17 @@ pub struct CompleteMfaBody {
 /// complete-mfa（PRE_AUTH；幂等豁免）。
 pub async fn complete_mfa(
     State(state): State<Arc<PlatformState>>,
-    headers: HeaderMap,
+    Extension(meta): Extension<RequestMeta>,
     Json(body): Json<CompleteMfaBody>,
 ) -> Response {
-    let trace = trace_of(&headers);
+    let trace = meta.trace_id.as_str().to_string();
     let out: Result<Response, ApiError> = async {
         let identity = identity_of(&state, &trace)?;
         let req = CompleteMfaRequest {
             challenge: body.challenge,
             proof: SecondFactorProof::Totp { code: body.code },
-            source_addr: source_addr_of(&headers),
-            request_id: request_id_of(&headers),
+            source_addr: meta.client_ip.to_string(),
+            request_id: meta.request_id.as_str().to_string(),
             trace_id: trace.clone(),
         };
         let s = identity
@@ -294,9 +277,10 @@ pub async fn complete_mfa(
 async fn do_sign_out(
     state: &Arc<PlatformState>,
     headers: &HeaderMap,
+    security_context: Option<&SecurityContext>,
 ) -> Result<Response, ApiError> {
     let trace = trace_of(headers);
-    let ctx = extract_context(headers, &state.system, ALL_DUTIES)?;
+    let ctx = extract_context(security_context, &state.system, ALL_DUTIES)?;
     let identity = identity_of(state, &trace)?;
     let token = bearer_of(headers).ok_or_else(|| {
         ApiError::new(
@@ -317,8 +301,12 @@ async fn do_sign_out(
 }
 
 /// 运维面 sign-out（Bearer 令牌定位会话）。
-pub async fn sign_out(State(state): State<Arc<PlatformState>>, headers: HeaderMap) -> Response {
-    match do_sign_out(&state, &headers).await {
+pub async fn sign_out(
+    State(state): State<Arc<PlatformState>>,
+    security_context: Option<Extension<SecurityContext>>,
+    headers: HeaderMap,
+) -> Response {
+    match do_sign_out(&state, &headers, security_context.as_deref()).await {
         Ok(r) => r,
         Err(e) => e.into_response(),
     }
@@ -327,17 +315,22 @@ pub async fn sign_out(State(state): State<Arc<PlatformState>>, headers: HeaderMa
 /// 门户面 sign-out。
 pub async fn portal_sign_out(
     State(state): State<Arc<PlatformState>>,
+    security_context: Option<Extension<SecurityContext>>,
     headers: HeaderMap,
 ) -> Response {
-    match do_sign_out(&state, &headers).await {
+    match do_sign_out(&state, &headers, security_context.as_deref()).await {
         Ok(r) => r,
         Err(e) => e.into_response(),
     }
 }
 
-async fn do_me(state: &Arc<PlatformState>, headers: &HeaderMap) -> Result<Response, ApiError> {
+async fn do_me(
+    state: &Arc<PlatformState>,
+    headers: &HeaderMap,
+    security_context: Option<&SecurityContext>,
+) -> Result<Response, ApiError> {
     let trace = trace_of(headers);
-    let ctx = extract_context(headers, &state.system, ALL_DUTIES)?;
+    let ctx = extract_context(security_context, &state.system, ALL_DUTIES)?;
     let identity = identity_of(state, &trace)?;
     let row = identity
         .lifecycle
@@ -351,30 +344,39 @@ async fn do_me(state: &Arc<PlatformState>, headers: &HeaderMap) -> Result<Respon
 }
 
 /// 运维面 identity/me。
-pub async fn me(State(state): State<Arc<PlatformState>>, headers: HeaderMap) -> Response {
-    match do_me(&state, &headers).await {
+pub async fn me(
+    State(state): State<Arc<PlatformState>>,
+    security_context: Option<Extension<SecurityContext>>,
+    headers: HeaderMap,
+) -> Response {
+    match do_me(&state, &headers, security_context.as_deref()).await {
         Ok(r) => r,
         Err(e) => e.into_response(),
     }
 }
 
 /// 门户面 identity/me。
-pub async fn portal_me(State(state): State<Arc<PlatformState>>, headers: HeaderMap) -> Response {
-    match do_me(&state, &headers).await {
+pub async fn portal_me(
+    State(state): State<Arc<PlatformState>>,
+    security_context: Option<Extension<SecurityContext>>,
+    headers: HeaderMap,
+) -> Response {
+    match do_me(&state, &headers, security_context.as_deref()).await {
         Ok(r) => r,
         Err(e) => e.into_response(),
     }
 }
 
 /// me/legal-entities：逐法人探测（不 OR 展开），PRE_AUTH 白名单豁免
-/// 幂等键（GET 天然豁免）；临时头阶段仍需用户标识头推导上下文。
+/// 幂等键（GET 天然豁免）；仍需认证中间件写入的安全上下文扩展。
 pub async fn me_legal_entities(
     State(state): State<Arc<PlatformState>>,
+    security_context: Option<Extension<SecurityContext>>,
     headers: HeaderMap,
 ) -> Response {
     let trace = trace_of(&headers);
     let out: Result<Response, ApiError> = async {
-        let ctx = extract_context(&headers, &state.system, ALL_DUTIES)?;
+        let ctx = extract_context(security_context.as_deref(), &state.system, ALL_DUTIES)?;
         let identity = identity_of(&state, &trace)?;
         let les = identity
             .lifecycle
@@ -400,11 +402,12 @@ pub async fn me_legal_entities(
 /// 本人会话清单（令牌摘要不外出）。
 pub async fn list_sessions(
     State(state): State<Arc<PlatformState>>,
+    security_context: Option<Extension<SecurityContext>>,
     headers: HeaderMap,
 ) -> Response {
     let trace = trace_of(&headers);
     let out: Result<Response, ApiError> = async {
-        let ctx = extract_context(&headers, &state.system, ALL_DUTIES)?;
+        let ctx = extract_context(security_context.as_deref(), &state.system, ALL_DUTIES)?;
         let identity = identity_of(&state, &trace)?;
         let rows = identity
             .lifecycle
@@ -427,12 +430,13 @@ pub async fn list_sessions(
 /// 撤销本人名下指定会话。
 pub async fn revoke_session(
     State(state): State<Arc<PlatformState>>,
+    security_context: Option<Extension<SecurityContext>>,
     headers: HeaderMap,
     Path(id): Path<uuid::Uuid>,
 ) -> Response {
     let trace = trace_of(&headers);
     let out: Result<Response, ApiError> = async {
-        let ctx = extract_context(&headers, &state.system, ALL_DUTIES)?;
+        let ctx = extract_context(security_context.as_deref(), &state.system, ALL_DUTIES)?;
         let identity = identity_of(&state, &trace)?;
         let revoked = identity
             .lifecycle

@@ -631,6 +631,7 @@ dependencies = [
  "ep-platform-identity",
  "ep-platform-obs",
  "ep-platform-outbox",
+ "ep-platform-runtime",
  "ep-platform-tenancy",
  "serde_json",
  "sqlx",
@@ -1244,7 +1245,9 @@ dependencies = [
  "sha2 0.10.9",
  "tokio",
  "toml",
+ "tower",
  "uuid",
+ "zeroize",
 ]
 
 [[package]]
@@ -1827,7 +1830,8 @@ dependencies = [
 name = "integration-gateway"
 version = "0.1.0"
 dependencies = [
- "axum",
+ "async-trait",
+ "ep-adapter-ipc",
  "ep-foundation",
  "ep-platform-obs",
  "ep-platform-runtime",
@@ -2065,7 +2069,10 @@ checksum = "c08d65885ee38876c4f86fa503fb49d7b507c2b62552df7c70b2fce627e06381"
 name = "ops-agent"
 version = "0.1.0"
 dependencies = [
+ "async-trait",
  "axum",
+ "ep-adapter-db-pg",
+ "ep-adapter-ipc",
  "ep-foundation",
  "ep-platform-obs",
  "ep-platform-runtime",
@@ -2230,12 +2237,9 @@ name = "portal-gateway"
 version = "0.1.0"
 dependencies = [
  "axum",
- "ep-foundation",
  "ep-platform-obs",
  "ep-platform-runtime",
  "serde",
- "serde_json",
- "tokio",
 ]
 
 [[package]]

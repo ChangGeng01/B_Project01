@@ -18,6 +18,7 @@ bind_addr = "127.0.0.1:9101"
 
 [db]
 user = "ep_ops_ro"
+password_ref = "secret://db/ops_ro#1"
 "#;
 
 #[derive(Deserialize, Debug, Default)]
@@ -52,6 +53,7 @@ mod tests {
         assert_eq!(cfg.http.bind_addr, "127.0.0.1:9102");
         assert_eq!(cfg.metrics.bind_addr, "127.0.0.1:9101");
         assert_eq!(cfg.db.user, "ep_ops_ro", "运维台只读账号");
+        assert_eq!(cfg.db.password_ref.as_str(), "secret://db/ops_ro#1");
         assert_eq!(cfg.db.pool.ops_max, 2);
     }
 

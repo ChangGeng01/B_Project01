@@ -7,6 +7,8 @@ pub mod secret;
 pub mod sections;
 
 pub use loader::{ConfigError, ConfigLoader};
+#[cfg(all(feature = "legacy-file", debug_assertions))]
+pub use secret::{resolve_legacy_file_secret, LegacySecretError};
 pub use secret::{SecretRef, SecretString};
 pub use sections::{
     AdmissionCfg, AuthArgon2Cfg, AuthBreakglassCfg, AuthCfg, AuthLockoutCfg, AuthPasswordCfg,
@@ -14,8 +16,7 @@ pub use sections::{
     AuthzDecisionCfg, AuthzExportCfg, AuthzScopeCfg, AuthzSnapshotCfg, BreakerCfg, DbCfg,
     DbPoolCfg, DbRetryCfg, DbRoCfg, DbTimeoutCfg, EgressCfg, EgressTarget, HttpCfg, IdempotencyCfg,
     IpcCfg, KmsBuiltinCfg, KmsCfg, KmsHsmCfg, LogCfg, MetricsCfg, MigrationCfg, PlatformCfg,
-    PoolTimeoutCfg, PortalCfg, RuntimeCfg, SecretsCfg, SecretsProvider, SelfcheckCfg, SpoolCfg,
-    TraceCfg,
+    PoolTimeoutCfg, RuntimeCfg, SecretsCfg, SecretsProvider, SelfcheckCfg, SpoolCfg, TraceCfg,
 };
 
 use std::path::PathBuf;

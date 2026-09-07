@@ -7,6 +7,13 @@
 use ep_platform_runtime::config::{IpcCfg, LogCfg, RuntimeCfg, SecretsCfg, SelfcheckCfg, TraceCfg};
 use serde::Deserialize;
 
+#[cfg(windows)]
+pub const DEFAULTS: &str = r#"
+[ipc]
+socket_path = '\\.\pipe\ep-plugin'
+"#;
+
+#[cfg(not(windows))]
 pub const DEFAULTS: &str = r#"
 [ipc]
 socket_path = "/run/ep/ipc/plugin.sock"
@@ -45,7 +52,7 @@ mod tests {
         let cfg = load("").expect("默认层必须自洽");
         assert_eq!(
             cfg.ipc.socket_path.to_string_lossy(),
-            "/run/ep/ipc/plugin.sock"
+            ep_adapter_ipc::PLUGIN_ENDPOINT
         );
         assert_eq!(cfg.ipc.max_frame_bytes, 1_048_576);
     }
@@ -61,5 +68,14 @@ mod tests {
             load("[db]\nhost = \"127.0.0.1\"\n").is_err(),
             "plugin-host 没有 db 段"
         );
+    }
+
+    #[test]
+    fn plugin_ipc_endpoint_cannot_be_redirected() {
+        let cfg = load("[ipc]\nsocket_path = \"/tmp/attacker.sock\"\n").unwrap();
+        assert!(cfg
+            .ipc
+            .require_endpoint(ep_adapter_ipc::PLUGIN_ENDPOINT)
+            .is_err());
     }
 }

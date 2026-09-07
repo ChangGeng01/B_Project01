@@ -1,5 +1,7 @@
 -- rollback: revoke select, insert, update on all tables in schema platform_core from ep_app_rw;
 -- rollback: revoke select on all tables in schema platform_core from ep_analyst_ro;
+-- rollback: revoke select on table platform_core.schema_history from ep_ops_ro;
+-- rollback: revoke usage on schema platform_core from ep_ops_ro;
 -- db/migrations/platform_core/V20260901100500__platform_core_grants.sql
 -- platform_core 全部对象的显式授权收口（阶段 2 计划第 3.4 节第 15 号迁移）。
 -- 第 1 号迁移的默认权限只覆盖建表时点之后的对象语义，本迁移对既有对象显式授予，
@@ -12,6 +14,12 @@ set statement_timeout = '30min';
 
 grant select, insert, update on all tables in schema platform_core to ep_app_rw;
 grant select on all tables in schema platform_core to ep_analyst_ro;
+
+-- ops-agent 持有独立 ep_ops_ro/Ops2 池，其 Blocking 启动自检需要核对
+-- 全局唯一迁移清单。只授这一张非业务元数据表，不授予
+-- platform_core 其他基表，也不授予任何写权或 schema CREATE。
+grant usage on schema platform_core to ep_ops_ro;
+grant select on table platform_core.schema_history to ep_ops_ro;
 
 -- 全部 24 个属主角色在建表迁移末尾调用 platform_core.attach_table_guards 与
 -- assert_baseline_indexes，跨 schema 调用要求本 schema 的 USAGE；

@@ -4,12 +4,14 @@ pub mod client;
 pub mod envelope;
 pub mod headers;
 pub mod middleware;
+mod request_meta;
 pub mod server;
 pub mod state;
 pub mod system;
 
 pub use envelope::{ApiError, Detail, Envelope, ErrorBody};
 pub use middleware::{Gate, SyncLimit};
+pub use request_meta::{ensure_request_meta, resolve_client_ip, RequestMeta, TrustedProxyNet};
 pub use server::{bind, parse_addr, serve, serve_on, ServeError};
 pub use state::SystemState;
 pub use system::{

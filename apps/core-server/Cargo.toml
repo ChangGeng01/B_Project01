@@ -11,6 +11,11 @@ workspace = true
 # 探针端点 POST /api/v1/system/echo 只在本 feature 下编译，默认关闭；
 # 发布构建不得启用（裁定 B-01 与阶段 14 的 RG-CI-PROBE-ABSENT）。
 ci-probe = []
+# 只给 development/test 构建透传历史文件机密 reader；生产发布不得启用。
+legacy-file = [
+    "ep-platform-runtime/legacy-file",
+    "ep-adapter-kms/legacy-master-key-file",
+]
 
 [dependencies]
 ep-foundation.workspace = true

@@ -1,6 +1,6 @@
 # 配置参考
 
-> **F-57 总体开发状态（2026-08-23）：`READY_NOT_AUTHORIZED`；本文件的**文件分类**为 `CURRENT_SUBJECT_INPUT`（权威登记 `:100`）；其中的**生成式配置登记内容**仍待按 F-57 再基线，`registry_state=REGISTRY_PENDING_REBASELINE`、`implementation_state=NOT_IMPLEMENTED`。（F-68 消歧：原句易被读成文件分类是 `REGISTRY_PENDING_REBASELINE`，与登记表冲突。）** 下文 328/337 旧闭集、固定九进程、AI 例外、`NONE` 病毒扫描和任何可能把客户数据写到 `C:\ProgramData`/系统 SSD 的路径，不再是完整现行配置。只有用户另行明确授权后，才可依据 [F-57](superpowers/specs/2026-08-23-f57-governed-automation-fabric-design.md) 和本节部署清单规则从 G0 开始实现并再基线；~~当前不得执行开发~~——开发授权已于 2026-08-27 由使用方授予（逐字指令「需要 完全 可即刻开发 状态 最谨慎」，留证 00c F-65）；状态机节点名依 converged §7 保持至 G0_BOOTSTRAP_GREEN；自 G0 起可实现并再基线。
+> **F-57 总体开发状态（2026-08-23）：`READY_NOT_AUTHORIZED`；本文件的**文件分类**为 `CURRENT_SUBJECT_INPUT`（权威登记 `:100`）；其中的**生成式配置登记内容**仍待按 F-57 再基线，`registry_state=REGISTRY_PENDING_REBASELINE`、`implementation_state=NOT_IMPLEMENTED`。（F-68 消歧：原句易被读成文件分类是 `REGISTRY_PENDING_REBASELINE`，与登记表冲突。）** 早期 328/337 旧闭集、固定九进程、AI 例外、`NONE` 病毒扫描和任何可能把客户数据写到 `C:\ProgramData`/系统 SSD 的路径，不再是完整现行配置；本文件现登记 329/338 口径。只有用户另行明确授权后，才可依据 [F-57](superpowers/specs/2026-08-23-f57-governed-automation-fabric-design.md) 和本节部署清单规则从 G0 开始实现并再基线；~~当前不得执行开发~~——开发授权已于 2026-08-27 由使用方授予（逐字指令「需要 完全 可即刻开发 状态 最谨慎」，留证 00c F-65）；状态机节点名依 converged §7 保持至 G0_BOOTSTRAP_GREEN；自 G0 起可实现并再基线。
 
 ## F-57 不可覆盖的部署清单
 
@@ -11,20 +11,24 @@
 | `deployment_id` | 客户部署唯一标识，必须与许可、配置代、备份和审计一致 |
 | `software_volume_id` | 256GB SSD 的稳定设备/卷标识；只承载 signed Set A 的 Windows、程序、静态依赖、可重建模型/metadata及 exact 四类 mutable Set B（POWER capsule、package-recovery capsule、kernel pointer/head、signed native-code slot/cache），任何第五类或客户/业务 authority 字节失败 |
 | `software_root` | SSD 上只读安装目录；不得作为 temp、spool、日志、导出或客户文件目录 |
-| `data_volume_id` | 1TB HDD 或后续 RAID1 数据卷的稳定设备/卷标识，不能只用盘符判断 |
+| `data_volume_id` | DATA_HDD 或后续 RAID1 数据卷的稳定设备/卷标识，不能只用盘符判断；现有 1 TB 盘只属于 development profile，生产单盘/RAID1 成员的每块 raw device 均须 `>=2,000,000,000,000` bytes |
 | `data_root` | HDD 上的加密权威数据根；PostgreSQL data/WAL、附件、索引、日志、temp、spool、导出和插件工作区均由此派生 |
 | `backup_target_ids` | `F57AuthorityStorageManifestPayloadV1` 中服务器外备份目标的稳定标识；最高档必须 exact 为 `[current BackupTopologyV1.continuous_target.target_id]` 单元素向量，同机卷、普通可写 SMB、VM snapshot 或离线 A/B 介质不能冒充该连续目标 |
 | `postgres16_windows_install_contract_ref` | 指向 Task 11 唯一 strict `Postgres16WindowsInstallContractV1`；由当前 `WindowsAuthorityArtifactSetV1` 认证，禁止安装员、环境变量或命令行改写 service/path/config/TLS 投影 |
 | `backup_topology_signing_trust_current_ref` | 指向当前签名 `BackupTopologySigningTrustCurrentPointerV1`；pointer typed-load 唯一 `BackupTopologySigningTrustManifestV1`，由部署 bootstrap 固定的独立 trust-manifest authority 验证并按 generation/predecessor 单调推进。该 manifest 独占固定 topology signer DN/SPKI、离线证书链、撤销快照和 transparency checkpoint；禁止复用应用恢复域、备份恢复域、2-of-3 recipient/share roster、候选 signer 或 ambient Windows root |
 | `backup_topology_ref` | 指向当前签名 `BackupTopologyV1` 唯一 head；仅由以上 active-config current trust pointer/manifest 构造的私有 `BackupTopologyAuthorityV1` 验证固定 signer。genesis 为 revision 1/null predecessor，后续必须 prior+1 且 exact 引用前一完整 envelope；topology exact-repeat trust current/manifest refs，storage manifest 的 `backup_target_ids` 在最高档恰为 singleton `[continuous_target.target_id]`。固定六角色、服务器外连续目标、恰好 A/B 两块离线 HDD、保留/容量及凭据/故障/管理/保管域，不得由 `sink.*`、目录扫描、时间戳或旧签名对象临场替代 |
 | `ups_adapter_manifest_ref` | 指向当前 strict `UpsAdapterManifestV1`；`implementation_binary_ref` 固定为候选 authority-kernel。manifest 冻结 carrier、canonical GUID/device instance 或可按部署签名定制的 numeric-IP-octets/nonzero-port structured endpoint、最小能力和 credential policy；正数 `configuration_projection.configuration_generation` 与 `SHA256(JCS(configuration_projection))` 唯一绑定 selected profile/outlet/P340 power path。冻结 `5/15/86400/30` 秒时限，禁止固定站点 IP、DNS、文本 IP 别名、ambient 发现或配置覆盖 |
-| `hardware_profile_id` | 当前物理基线唯一 `THINKSTATION_P340_I5_10500_32GB_256GB_SSD_1TB_HDD`，与 runtime topology/P340 wire byte-equal。未来新 graph/profile version 若启用 IaaS，必须使用其独立 recipe 签发的 provider/VM profile ID，不能伪装为 P340。变更磁盘、内存、CPU/provider SKU、数据规模或启用本地模型后必须生成新 profile 并再认证 |
+| `hardware_profile_id` | 当前 1TB 物理盘档为 `THINKSTATION_P340_I5_10500_32GB_256GB_SSD_1TB_HDD_DEV_ONLY` 且 `production_eligible=false`；首版生产候选唯一接受 `THINKSTATION_P340_I5_10500_32GB_256GB_SSD_2TB_CMR_HDD_MIN`，并要求物理盘 raw、NTFS 名义 floor 与加入实测卷元数据后的动态容量公式分别通过精确读回。未来新 graph/profile version 若启用 IaaS，必须使用其独立 recipe 签发的 provider/VM profile ID，不能伪装为 P340。变更磁盘、内存、CPU/provider SKU、数据规模或启用本地模型后必须生成新 profile 并再认证 |
 | `authority_epoch` | 单写权威代；未来暖备提升必须在 fencing 后产生新值 |
 | `infrastructure_certification_profile_ref` | 当前首版只接受物理 `SINGLE_DISK_DEGRADED_PRODUCTION` 认证证据；`IAAS_WINDOWS_SERVER_HDD_STRICT` 仅保留为未来独立 profile 标识，当前选择必须以 `PROFILE_NOT_IMPLEMENTED` / `STORAGE_MEDIA_UNVERIFIED` 失败关闭。未来启用须先发布新 graph/profile version，且不得填入或复用 P340 hardware/UPS ref。 |
 | `postgres_log_retention_policy_ref` | 指向已签、不可由 `postgresql.conf`、环境或 CLI 覆盖的 PostgreSQL 日志保留政策；普通目标 30 日/20 GiB，当前日志不删、至少 7 日，legal hold 优先，只有 `EPAuthorityControl` typed cleanup 可执行 |
 | `employee_api_origin` | `ep-data-migrate` 的唯一公开迁移 API origin；必须为无 path、query、fragment 的 HTTPS origin，校验证书链、SAN 和清单 host；拒绝 loopback/localhost、直连 core-server、命名管道、重定向、系统代理以及 CLI/模板覆盖 |
 
-`data_root` 的规范子目录至少包括 `postgres/data`、`postgres/wal`、`postgres/temp/process`、`postgres/temp/restore`、`files`、`audit`、`indexes`、`logs`、`temp`、`spool`、`exports`、`plugin-work`、`quarantine`、`dumps` 和 `backup-staging`。`postgres/data` 是 PGDATA 并包含 live `pg_wal` 与数据库临时关系；`postgres/wal` 只作 WAL archive staging；`postgres/temp/process` 只作 PostgreSQL 进程 TEMP/TMP，`postgres/temp/restore` 只作恢复 scratch。程序不得自行回退到 `%TEMP%`、`%ProgramData%`、用户 profile 或当前工作目录，也不得使用 `initdb --waldir`、用户 tablespace 或 reparse descendant 绕开 DATA_HDD。
+`data_root` 的生产顶层目录是完整 exact-set：`postgres`、`files`、`audit`、`indexes`、`packages`、`logs`、`temp`、`spool`、`exports`、`plugin-work`、`quarantine`、`secrets`、`working`、`generated`、`generations`、`evidence`、`release`、`archive`、`outbox`、`system-telemetry`、`dumps`、`backup-staging`。其中 PostgreSQL 子目录 exact-set 为 `postgres/data`、`postgres/wal`、`postgres/temp/process`、`postgres/temp/restore`；`postgres/data` 是 PGDATA 并包含 live `pg_wal` 与数据库临时关系，`postgres/wal` 只作 WAL archive staging，`postgres/temp/process` 只作 PostgreSQL 进程 TEMP/TMP，`postgres/temp/restore` 只作恢复 scratch。配置生成器不得创建未登记的持久顶层根，VSS diff-area extent 只按容量政策的非目录来源分账。程序不得自行回退到 `%TEMP%`、`%ProgramData%`、用户 profile 或当前工作目录，也不得使用 `initdb --waldir`、用户 tablespace 或 reparse descendant 绕开 DATA_HDD。
+
+首版生产 profile 的 DATA_HDD NTFS authority volume 名义 floor 必须 `>=1,589,137,899,520` bytes，但本机资格还必须以 checked `u128` 满足 `volume_total_bytes >= max(1,589,137,899,520, 1,481,763,717,120 + 107,374,182,400 + measured_unclassifiable_filesystem_allocation_bytes)`。该 `1480 GiB` 不可通过共享故障预算缩小：九桶 exact-set 的硬预算依次为 `161061273600,64424509440,42949672960,375809638400,375809638400,375809638400,25769803776,8589934592,51539607552` bytes，checked-sum 为 `1,481,763,717,120` bytes，再加不可借用 `107,374,182,400` bytes。`measured_unclassifiable_filesystem_allocation_bytes` 只接受固定整卷 collector 证明为 NTFS/BitLocker 卷自身、且不对应产品对象或登记 VSS extent 的 allocation bytes；它不属于九桶、不可被产品借用，也不是把未知文件视为元数据的 catch-all。60 GiB 的 `HISTORY_CONTROL_LOG_SHARED` 桶又按最大合法占用精确分成 PostgreSQL text log `21,474,836,480`、archive/backup report spool 各 `2,147,483,648`、core/worker MCP completion spool 各 `1,073,741,824`，以及历史/audit/packages/secrets/application-log 等共享余量 `36,507,222,016` bytes；`20+2+2+1+1+34=60 GiB`，legal hold 只能保留对象并触发 hold，不能借其他桶。完整九桶、十四容量类和 canonical root/ledger 映射以 [Windows/P340 生产档案 §9.1](superpowers/specs/2026-08-23-f57-windows-p340-production-profile.md#91-空间公式) 为唯一人工可读表，G0 生成的 `P340CertificationPolicyDefinitionV1` 是机器真值。每个 `data_root` 产品管理持久对象与登记 VSS extent 必须有且只有一个 class ID；聚合桶 admission 先于局部限额，未知/重复/跨桶、独立 `unclassified_allocation_bytes` 非零、使用量分解不闭合或映射摘要漂移全部 fail closed。
+
+archive staging、replication-slot-retained live WAL、persistent-archiver-failure extra live WAL 各自保留独立 `350 GiB`；总 live `pg_wal` 硬上限为 `700 GiB`，同一 segment 以正常恢复/slot 为优先分类，archiver-failure 只计前一保留前沿以外的增量，禁止双计。archive-failure growth / total live WAL 在 `300/650 GiB` 时进入 fail-closed hold，在 `350/700 GiB` 时 hard shutdown。监测周期 `<=30 s`，并且同硬件实测 `peak_wal_rate_bytes_per_second * (sample_period_seconds + shutdown_seconds) < 50 GiB`。这些是签名 hardware/capacity profile 的不可覆盖字段，不新增可由环境或命令行放宽的运行期配置键。
 
 Windows pagefile、WER dump、服务 dump、恶意文件 quarantine 和包含业务载荷的诊断输出必须禁用持久化或明确路由到加密 HDD。Windows Event Log 只允许记录稳定事件码和随机、不可关联客户或对象的 `incident_id`；客户值、对象 ID、客户正文哈希、可反查 digest、附件、提示或秘密一律禁止。
 
@@ -32,7 +36,7 @@ Windows pagefile、WER dump、服务 dump、恶意文件 quarantine 和包含业
 
 生产附件扫描固定为 `REQUIRED_PROVIDER`：扫描服务不可用、超时或未知时保持隔离。旧 `NONE` 只能用于开发/测试且无真实客户数据的环境，不能形成生产配置或认证证据。
 
-`THINKSTATION_P340_I5_10500_32GB_256GB_SSD_1TB_HDD` 固定关闭本地模型、重报表并发为 1，并对 OCR、批量导入导出、低优先级自动化和维护实施有界队列。第 21 名活跃用户不被硬拒绝，但容量证书外的低优先级任务可以节流。
+`THINKSTATION_P340_I5_10500_32GB_256GB_SSD_2TB_CMR_HDD_MIN` 固定关闭本地模型、重报表并发为 1，并对 OCR、批量导入导出、低优先级自动化和维护实施有界队列。第 21 名活跃用户不被硬拒绝，但容量证书外的低优先级任务可以节流。`..._1TB_HDD_DEV_ONLY` 不得产生生产容量证书。
 
 本文件是全部配置键的唯一登记处。代码侧的配置结构体与本文件由 CI 项 `xtask configdoc` 逐键比对，缺一即失败。新增配置键的顺序是先登记后使用。F-56 的许可证和声明式模块包不新增运行期配置键：生产验签信任包路径固定为 `C:\ProgramData\EnterprisePlatform\trust\license-roots.p7b`，其摘要、ACL、轮换和失败关闭规则属于签名产品/部署协议，不能由配置、环境变量或命令行覆盖。
 
@@ -47,7 +51,7 @@ Windows pagefile、WER dump、服务 dump、恶意文件 quarantine 和包含业
 
 ## 2. 登记表
 
-下表是首版全部 **326 个配置登记族**（F-84：原 328，删去 `ops.metrics_listen` 与 `ops.health_listen` 两族——ops-agent 的两个监听地址本已由 `http.bind_addr` 与 `metrics.bind_addr` 加第 3 节的按进程固定值登记，这两个键是第二套登记且无优先级、无相等性校验，实际生效的是先绑定的那个、另一个静默失效；代码侧对这两个键名零命中，删后与代码一致）：每个表格登记行计 1 个族，其中 `db.timeout.<池>.*` 的 3 个占位族分别展开 `rw|ro|worker|ops` 四值，因此生成供代码逐键比对的具体点分键共 **337 个**（`328 - 3 + 3×4`）。阶段 1–14 的现行配置表已在 F-54 做环境变量引用与点分键全量对账，F-55 追加 16 个本地 AI/MCP 登记族。迁移期望清单属于签名 PE 的编译期事实，不登记运行期配置键；明确作废的别名与只表示前缀的通配写法也不计入上述口径。
+下表是首版全部 **329 个配置登记族**（F-84：原 328，删去 `ops.metrics_listen` 与 `ops.health_listen` 两族——ops-agent 的两个监听地址本已由 `http.bind_addr` 与 `metrics.bind_addr` 加第 3 节的按进程固定值登记，这两个键是第二套登记且无优先级、无相等性校验，实际生效的是先绑定的那个、另一个静默失效；F-86 为可信反向代理边界新增 `http.trusted_proxy_cidrs` 一族；2026-09-01 为 core-server 的只读池新增独立 `db.ro_user` 与 `db.ro_password_ref` 两族）：每个表格登记行计 1 个族，其中 `db.timeout.<池>.*` 的 3 个占位族分别展开 `rw|ro|worker|ops` 四值，因此生成供代码逐键比对的具体点分键共 **338 个**（`329 - 3 + 3×4`）。阶段 1–14 的现行配置表已在 F-54 做环境变量引用与点分键全量对账，F-55 追加 16 个本地 AI/MCP 登记族。迁移期望清单属于签名 PE 的编译期事实，不登记运行期配置键；明确作废的别名与只表示前缀的通配写法也不计入上述口径。
 
 ### 2.1 HTTP
 
@@ -59,17 +63,24 @@ Windows pagefile、WER dump、服务 dump、恶意文件 quarantine 和包含业
 | http.shutdown_drain_ms | u32 | 30000 | 启动 |
 | http.concurrency_limit | u16 | 20 | 启动 |
 | http.concurrency_wait_ms | u32 | 10000 | 启动 |
+| http.trusted_proxy_cidrs | CIDR[] | [] | 启动 |
 
 `http.request_timeout_ms` 的 8000 与普通同步业务等待上限 8 秒同源，超时返回 `PLATFORM.SYSTEM.SYNC_TIMEOUT`。只有两个编译期具名 route profile 不读该键：AI compose 使用独立 45-slot 数据面、Tower 122000 ms/内部推理 120000 ms；`POST /mcp` 使用独立公平全局 16-slot 再按 connector 4-slot、Tower 32000 ms/协议绝对 30000 ms。两者都不占、不借普通 `http.concurrency_limit=20`，其他 route 不得声明第三种例外。`http.concurrency_limit` 与 `http.concurrency_wait_ms` 是普通并发闸门的两个参数，等待超时返回 `PLATFORM.CAPACITY.CONCURRENCY_LIMIT`；拒绝次数由通用 HTTP 请求指标按状态码与路由统计，不另设 quota 指标。
+
+`http.trusted_proxy_cidrs` 默认空，表示只信任实际 TCP 对端地址并完全忽略 `X-Forwarded-For`。只有直接对端命中显式 CIDR 时才解析该头；重复头、总长超过 1024 bytes、超过 16 hop、非法 IP 或整条链都是可信代理时均回落到直接对端，不把攻击者原字符串作为限流键。代理部署必须由当前签名配置代逐个登记实际代理网段；不得写 `0.0.0.0/0`、`::/0` 或把客户端可直达的网段登记为代理。
 
 ### 2.2 IPC
 
 | 键 | 类型 | 默认值 | 生效方式 |
 |---|---|---|---|
 | ipc.socket_path | path | 按服务端进程固定，见下 | 启动 |
-| ipc.max_frame_bytes | u32 | 1048576 | 启动 |
+| ipc.max_frame_bytes | u32（固定值） | 1048576 | 启动 |
 
 服务端进程与 `ipc.socket_path` 是一一对应的封闭映射：core-server=`\\.\pipe\ep-core`、integration-gateway=`\\.\pipe\ep-integ`、plugin-host=`\\.\pipe\ep-plugin`、ai-inferer=`\\.\pipe\ep-ai`；其他进程不得创建产品业务管道。值与映射不符即拒绝启动，不提供 HTTP endpoint、端口、别名或第二条 IPC 配置。四条管道均固定 `reject_remote_clients=true`；每个 server generation 仅 bootstrap 首实例取 `first_pipe_instance(true)`，同进程后续/补位实例一律取 `first_pipe_instance(false)`。服务端在读取应用字节前冒充客户端，以线程 token 的服务 SID/账户执行逐项 operation allowlist，PID 只作审计关联；客户端发送前校验服务端进程 token。账户与 operation 任一不符立即拒绝并审计。实现白名单必须逐字符串列出，不得使用通配规则。
+
+`ipc.max_frame_bytes` 同样不是可调性能旋钮：协议值固定为 `1048576`，任何更大、更小或零值都在配置阶段拒绝，不能扩大攻击面，也不能用一个必然截断健康/错误响应的小值制造假就绪。
+
+实现状态（2026-09-01）：Windows 命名管道的 DACL、服务端在读应用字节前的客户端 token 核验，以及客户端发送前的服务 token 核验仍为 `NOT_IMPLEMENTED`。`ep-adapter-ipc` 在 Windows 上已通过目标编译，但 `bind` 与 `connect` 当前固定失败关闭并返回含 `NOT_IMPLEMENTED` 的传输错误，绝不使用默认 DACL 退化运行；这不构成 IPC、安全门禁或 Windows 生产运行已交付。Unix 域套接字仅用于开发测试，不是 Windows Server 生产证据。
 
 - `ep-core` server=`NT SERVICE\ep-core`；客户端 ACE 只含 `ep-portal|ep-archive|ep-backup|ep-ops`。`ep-portal` 只可调用 `portal.session.sign_in.v1`、`portal.session.sign_out.v1`、`portal.identity.me.v1`、`portal.order_confirm.v1`、`portal.delivery_notice.v1`、`portal.invoice_upload.begin.v1`、`portal.invoice_upload.chunk.v1`、`portal.invoice_upload.end.v1`、`portal.invoice_upload.abort.v1`、`portal.settlement_query.v1`、`portal.profile_maintain.v1`；前三项为门户身份操作，后八个 operation 承载五项门户业务能力。`ep-archive` 只可调用 `ops.attachment_writeout_scope.query.v1`、`ops.writeout_result.report.v1`、`ops.failure_event.report.v1`、`ops.replication_lifecycle.report.v1`。`ep-backup` 只可调用 `ops.writeout_result.report.v1`、`ops.verification_conclusion.report.v1`、`ops.failure_event.report.v1`、`ops.replication_lifecycle.report.v1`、`ops.attachment_checksum_verdict.report.v1`、`ops.backup_slot.acquire.v1`、`ops.backup_slot.release.v1`。`ep-ops` 只可调用 `health.get.v1`、`metrics.snapshot.v1` 与 `ops.signed_artifact.install_receipt.v1`；最后一项只接受 F-55 strict 安装收据，不是任意路径/文件登记 API。
 - `ep-integ` server=`NT SERVICE\ep-integ`；客户端 ACE 只含 `ep-worker|ep-core|ep-ops`。`ep-worker` 只可调用 `push.dispatch.v1`、`esign.request.submit.v1`、`esign.status.get.v1`、`mcp.remote.exchange.v1`，并只在同一已关联签章双工连接接收 gateway 反向发送的 `esign_file.begin.v1`、`esign_file.chunk.v1`、`esign_file.end.v1`、`esign_file.abort.v1`；`ep-core` 只可调用 `virus_scan.begin.v1`、`virus_scan.chunk.v1`、`virus_scan.end.v1`、`virus_scan.abort.v1`、`mcp.remote.exchange.v1`；`ep-ops` 只可调用 `health.get.v1`、`metrics.snapshot.v1`。
@@ -99,8 +110,10 @@ integration-gateway 的运行期数据库能力固定为零：没有 `ep_app_rw`
 | db.database | string | ep | 启动 |
 | db.user | string | ep_app_rw | 启动 |
 | db.password_ref | string | secret://db/app_rw#1 | 取用 |
+| db.ro_user | string | ep_analyst_ro | 启动 |
+| db.ro_password_ref | string | secret://db/analyst_ro#1 | 取用 |
 
-`db.password_ref` 写的是引用而不是口令本身，见第 5 节。
+`db.password_ref` 与 `db.ro_password_ref` 写的是引用而不是口令本身，见第 5 节。core-server 的 RW/RO 两池必须分别 exact 使用 `ep_app_rw` / `ep_analyst_ro` 和各自 secret ref；任一凭据缺失、为空、角色错配或两池复用同一角色均拒绝启动。job-worker 仅持有 worker 池的 `ep_app_rw` 凭据；ops-agent 仅持有 ops 池的 `ep_ops_ro` 凭据；integration-gateway 不持数据库凭据。
 
 生产中的 PostgreSQL 16 安装参数不是本节的可覆盖配置键。唯一 owner 是 `crates/platform/backup/src/postgres16_windows.rs`，唯一 schema 是 `docs/evidence/f57-postgres16-windows-install.v1.schema.json`；它拥有五个 strict plain root：19-field package lock、13-field install contract、4-field Event Log fixture set、19-field Event Log scan coverage 与 17-field install readback。contract 的 `server_component_set_ref` 必须回指同一 artifact set 的六组件集合；其六字段 Event Log scan contract typed-load fixture ref/digest，service-install evidence 则认证 readback 及 coverage ref。package-lock 的 `installed_files` 必须完整列出 engine root 下每个普通文件的 canonical relative path、重开长度和 SHA-256，并与离线包、SBOM 及 engine final-handle 独立重枚举形成双射；扩展名必须与锁定包 `.control`、SBOM 和 available/installed/enabled 集合 exact-match。V1 固定 `downgrade_allowed=false`，只允许 clean install 或 package-lock、包/文件集摘要、版本/control/catalog 全部 byte-equal 的 same-lock adopt/repair；发现任何不同的旧版或新版都必须先返回 `MAINTENANCE_UPGRADE_REQUIRED`，不得改服务或数据。
 
@@ -132,7 +145,7 @@ integration-gateway 的运行期数据库能力固定为零：没有 `ep_app_rw`
 
 `<池>` 取 `rw`、`ro`、`worker`、`ops` 四值。`statement_ms` 的逐池默认值取阶段 1 计划第 7.2 节的池表：rw 10000、ro 60000、worker 300000、ops 5000。`lock_ms` 与 `idle_in_tx_ms` 四池同值。integration-gateway 没有池种类、配置或连接；旧 `integ` 值不得继续解析。`db.ro.temp_file_limit_kb` 保留取值登记但不在会话级下发：`temp_file_limit` 为 SUSET 参数，应用角色无权 SET，该限额由引导侧角色默认值承接（db/bootstrap/03_role_defaults.sql）。
 
-`db.retry.*` 只对尚未产生任何外部可见副作用的事务生效，触发条件为 SQLSTATE 40001 与 40P01；两键在进程启动时构造重试策略，修改后须重启对应 Windows 服务。
+`db.retry.*` 只对尚未产生任何外部可见副作用的事务生效，触发条件为 SQLSTATE 40001 与 40P01；两键在进程启动时构造重试策略，修改后须重启对应 Windows 服务。当前尚无签名重试策略代，启动值必须精确为 `max_attempts=3`、`backoff_ms=[50,150,450]`；0/255、空数组、长度不等、超出 `u16` 或任一数值漂移均拒绝启动，不做截断、补齐或钳制。
 
 `db.pool.*` 的 `20/10/5/2` 与 `db.budget.*` 的 `37/10/52`（另含 5 个安全余量）只记录 ADR-0018 旧四池拓扑的历史默认/测量种子，不是 F-57 的不可变产品真值，也不能直接形成生产放行值。依 [ADR-0019](adr/ADR-0019-f57-runtime-topology-and-measured-connection-budget.md)，Task 1 必须先登记签名 deployment/config generation 的连接消费者 exact set，拒绝未知或重复消费者，再按真实硬件、拓扑和并发负载重测常驻、临时/迁移/恢复与不可分配安全储备并签发容量证书；硬件、拓扑或代改变即重测。启动与迁移开窗分别按该代已认证预算校验，超限以退出码 78 拒绝。迁移预期版本清单与摘要由 `migration_manifest` 在构建期嵌入签名 PE；运行期只有数据库中的实际历史可读，不提供路径、环境变量或命令行参数覆盖期望值。
 
@@ -154,7 +167,7 @@ integration-gateway 的运行期数据库能力固定为零：没有 `ep_app_rw`
 
 PostgreSQL 文本日志不使用本表 `log.*` 作为保留权威，也不新增可被环境/命令行放宽的键。`postgres_log_retention_policy_ref` 的签名政策固定：`max_age_seconds=2592000`、`max_total_bytes=21474836480`、`minimum_retained_age_seconds=604800`、`delete_current_log=false`；计数包含 SERVER_LOG 下所有 closed/rotated PostgreSQL 日志并用 final-handle 去重，当前打开文件、7 日内文件及 legal-hold object 永不进入删除集。唯一 owner 是既有 `EPAuthorityControl` 中的 typed `POSTGRES_LOG_RETENTION_CLEANUP`；请求必须带 policy ref、trusted time、严格按 `(closed_at,path,digest)` 排序的预览清单、legal-hold readback、空间 readback 和双人批准，执行后逐项重开验证已删/保留集及前后 digest 并入审计。`NT SERVICE\ep-postgres16`、backup writer 和普通 Authority 的 ACL 必须拒绝删除历史、改 ACL、解除 legal hold 或改政策。legal hold 导致 30 日/20 GiB 无法同时满足时，保留被保护文件并进入 fail-closed 容量处置，不得从 current/7-day/held 集删除。
 
-DATA_HDD 的有效批量暂停门为 `max(existing yellow_free, 50 GiB)`，有效全局 hold 门为 `max(existing red_free, 40 GiB)`。当前 P340 已有 `emergency_reserve=max(20 GiB,capacity×5%)`、`yellow_free=max(2×reserve,30-day P95 growth)` 和 `platform.file.free_space_min_bytes=107374182400`，因此实际必须取更严格值，不得用新 50/40 GiB 底线将约 1TB P340 放宽到低于现行约 100/50 GiB 门。
+DATA_HDD 的有效批量暂停门为 `max(existing yellow_free, 100 GiB)`，有效全局 hold 门为 `max(existing red_free, 100 GiB)`；同一个 `platform.file.free_space_min_bytes=107374182400` 是不可借用的生产阻断底线，不允许普通写继续消耗。系统同时执行独立的 archive-failure/total-live-WAL `300/650 GiB` hold 与 `350/700 GiB` hard shutdown；任何通用水位不得把其中一项放宽或拿另一桶抵扣。现有 1 TB development profile 不因满足某个局部水位而获得生产资格。
 
 ### 2.6 机密与自检
 
@@ -178,10 +191,12 @@ DATA_HDD 的有效批量暂停门为 `max(existing yellow_free, 50 GiB)`，有�
 | egress.allowlist | string 数组 | 空 | 启动 |
 | egress.connect_timeout_ms | u32 | 3000 | 启动 |
 | egress.request_timeout_ms | u32 | 15000 | 启动 |
-| egress.ca_bundle_path | path | `{data_root}\config\ca\provider-ca.pem` | 取用；客户 provider 信任材料属于客户配置数据 |
+| egress.ca_bundle_path | path | `{data_root}\packages\trust\provider-ca.pem` | 取用；客户 provider 信任材料属于客户配置数据，计入 `HISTORY_AUDIT_CONTROL_SHARED` |
 | egress.breaker.failure_threshold | u16 | 5 | 启动 |
 | egress.breaker.open_ms | u32 | 30000 | 启动 |
 | egress.breaker.half_open_probes | u8 | 1 | 启动 |
+
+`egress.allowlist` 的每个元素必须先 strict-parse 为唯一 `EgressTargetV1`，wire 固定为 `https://host` 或 `https://host:port`，其他 scheme 一律拒绝；IPv6 的端口形态只能是 `https://[host]:port`。`host` 恰为三种之一：ASCII lowercase DNS（每个 label 为 1..63 个 `a-z0-9-`、首尾非 `-`，总长不超过 253，无尾点）、canonical IPv4 dotted decimal（四段十进制 `0..255`，除单个 `0` 外无前导零）或带方括号的 RFC 5952 lowercase canonical IPv6（无 zone/scope ID、IPv4 legacy alias 或多种等价压缩写法）。默认 HTTPS 端口 443 必须省略；只有非 443 的 `1..=65535` 端口可显式出现。解析后 formatter 必须逐字产生原输入，数组再按 formatter bytes 排序且不得重复；大小写、Unicode/IDNA 输入、通配符、空白、userinfo、path、query、fragment、尾点、空 label、整数/八进制/十六进制 IPv4、未加方括号或非 canonical IPv6、端口 0/溢出/前导零以及显式 `:443` 全部拒绝，不能静默规范化。
 
 出网默认白名单为空，即默认不允许出网。`egress.ca_bundle_path` 为 Windows 原生 PE 进程使用的显式信任根；TLS 客户端使用 rustls，不依赖机器证书库，也不存在现行 OCI/scratch 基础镜像语义。
 
@@ -196,15 +211,15 @@ UPS runtime-loss 行为同样不进配置表。最新 status 在 15 秒到期时
 | 键 | 类型 | 默认值 | 生效方式 |
 |---|---|---|---|
 | spool.dir | path | `{data_root}\spool\<proc>` | 启动 |
-| spool.max_bytes | u64 | 21474836480 | 启动 |
+| spool.max_bytes | u64 | 268435456 | 启动；生产允许范围 `67108864..=2147483648` |
 
-本通用二键只由 archive-writer 与 backup-writer 使用，部署模板分别展开为 `{data_root}\spool\archive-writer` 与 `{data_root}\spool\backup-writer`，两者上限均为 21474836480；不存在第二套 `archive.spool_*` 或 `backup.spool_*` 键。`archive.wal_spool_max_gb` 是 WAL 正文暂存上限，与本节 IPC 报文 spool 不同，不得互相覆盖。
+本通用二键只由 archive-writer 与 backup-writer 使用，部署模板分别展开为 `{data_root}\spool\archive-writer` 与 `{data_root}\spool\backup-writer`，普通默认各为 `268435456` bytes，签名 P340 production hard max 各为 `2147483648` bytes；配置解析使用 checked range `67108864..=2147483648`，超界拒绝启动。两类目录分别持有 `ARCHIVE_WRITER_REPORT_SPOOL|BACKUP_WRITER_REPORT_SPOOL` class ID，生产容量包络仍按两者可能同时达到 2 GiB 预留，不因当前默认更小而把 3.5 GiB 差额借给其他类。不存在第二套 `archive.spool_*` 或 `backup.spool_*` 键。`archive.wal_spool_max_gb` 是 WAL 正文暂存上限，与本节 IPC 报文 spool 不同，不得互相覆盖。
 
-F-55 MCP completion 使用的不是本通用 spool，也不新增配置键。core-server/job-worker 的固定目录、各 1 GiB/1024 个 1 MiB 预留 slot、严格 record、DACL、原子重放与 fail-closed 规则只以 F-55 §4.7 的 `McpAuditCompletionSpoolV1` 编译期常量实现；`spool.dir`、`spool.max_bytes` 不得指向或放大该目录。
+F-55 MCP completion 使用的不是本通用 spool，也不新增配置键。生产部署固定目录是 `{data_root}\spool\mcp-audit-completion\core` 与 `...\worker`，各 1 GiB/1024 个 1 MiB 预留 slot，分别带 `CORE_MCP_COMPLETION_SPOOL|WORKER_MCP_COMPLETION_SPOOL` class ID；严格 record、DACL、原子重放与 fail-closed 规则只以 F-55 §4.7 的 `McpAuditCompletionSpoolV1` 编译期常量实现。历史 `C:\ProgramData\...` 只可作未认证开发输入，生产不得把 completion 写入 RUNTIME_SSD；`spool.dir`、`spool.max_bytes` 不得指向或放大该目录。
 
 报文 spool 不允许静默丢关键证据。`WriteoutResultReport`、`VerificationConclusionReport`、`FailureEventReport`、`ReplicationLifecycleReport`、`AttachmentChecksumVerdictReport` 五类均为 critical，只追加并在 core 确认入库后截断；`AttachmentWriteoutScopeQuery` 与 `BackupSlotAcquire/Release` 是需即时应答的控制请求，不落 spool，core 不可用时不得启动对应新周期。只有从本地写出 manifest 与落点对象清单可确定性重建的 `HEARTBEAT|PROGRESS_SNAPSHOT` 本地进度记录是 reconstructible，允许按 `(record_kind, object_id)` 只保留最新一条。
 
-软停止水位固定为 `spool.max_bytes - 67108864`，末 64 MiB 只供在途周期的 critical 关闭/失败/复制生命周期报文。到达软水位后继续接收 WAL 并完成当前写出，但不得启动新全量备份或附件写出周期；写 Windows Event Log。若到达硬上限也不得删除或覆盖 critical 报文；恢复连接后先重放并让 core 以 `WRITER_NOT_IN_SERVICE`、subject=`<writer>:report-spool-exhausted` 打开不可抑制窗口，重放完成且低于软水位才关闭。普通运行过程中更新文件采用排他创建/追加、flush、原子 manifest 切换，恢复按 `(occurred_at, report_id)` 幂等重放。
+软停止水位由 checked subtraction 固定为 `spool.max_bytes - 67108864`，末 64 MiB 只供在途周期的 critical 关闭/失败/复制生命周期报文；低于 64 MiB 的配置在解析阶段即失败，绝不做下溢或饱和运算。到达软水位后继续接收 WAL 并完成当前写出，但不得启动新全量备份或附件写出周期；写 Windows Event Log。若达到该 writer 的局部硬上限或 60 GiB 聚合桶先达到硬上限，都不得删除或覆盖 critical 报文；先建立 deployment-wide hold，恢复连接后重放并让 core 以 `WRITER_NOT_IN_SERVICE`、subject=`<writer>:report-spool-exhausted` 打开不可抑制窗口，重放完成且同时低于局部与聚合水位才关闭。普通运行过程中更新文件采用排他创建/追加、flush、原子 manifest 切换，恢复按 `(occurred_at, report_id)` 幂等重放；目录中 partial/manifest/reserve 的 NTFS allocation bytes 全部计入该 class。
 
 ### 2.10 密钥管理
 
@@ -216,7 +231,7 @@ F-55 MCP completion 使用的不是本通用 spool，也不新增配置键。cor
 | kms.hsm.slot | u32 | 0 | 启动 |
 | kms.hsm.pin_ref | bootstrap 引用 | `bootstrap://windows-dpapi/hsm-pin#1` | 取用 |
 
-`kms.backend` 取 `builtin` 时也不得生成普通 `master.key` 文件；客户批准的 TPM 2.0 non-exportable wrapping handle 包装 HDD vault 中的用途/法人 data key。`kms.builtin.master_key_path` 只为拒绝旧配置而保留，生产必须为空。取 `hsm` 时不回落内置实现，`kms.hsm.*` 指向不存在的硬件后端即以 78 失败。`kms.hsm.pin_ref` 是建立 KMS 之前的短期 bootstrap 引用，PIN 不落 SSD、HDD、argv、环境变量或日志。
+`kms.backend` 取 `builtin` 时也不得生成普通 `master.key` 文件；客户批准的 TPM 2.0 non-exportable wrapping handle 包装 HDD vault 中的用途/法人 data key。`kms.builtin.master_key_path` 的默认值必须为空，默认/发布构建出现非空即在触盘前拒绝；只有显式 `legacy-file` 的 Unix development/test debug 构建可为迁移期测试读取历史 0400 文件，该分支不在发布构建中编译，也不构成生产 provider。取 `hsm` 时不回落内置实现，`kms.hsm.*` 指向未交付后端即以 78 失败。`kms.hsm.pin_ref` 是建立 KMS 之前的短期 bootstrap 引用，PIN 不落 SSD、HDD、argv、环境变量或日志。
 
 盲索引宽度不属于部署配置：`KmsBackend::derive_blind_key` 固定返回 `BlindIndex([u8; 32])`，数据库固定存 32 字节。配置结构不得登记盲索引字节数或按字段覆盖宽度；唯一性由各业务字段的索引约束单独表达。
 
@@ -404,7 +419,7 @@ F-51 U-L-01 的首版值为编译期常量：统计最近 60 秒内有请求的�
 | backup.restore_plan_path | path 可空 | null；restore 时必填 | 启动 |
 | backup.full_schedule | cron | `0 1 * * *` | 取用 |
 | backup.attachment_full_schedule | cron | `0 3 * * *` | 取用 |
-| backup.spill_max_bytes | u64 | 53687091200 | 取用 |
+| backup.spill_max_bytes | u64 | 25769803776 | 取用；P340 production 固定硬限 |
 | backup.bootstrap_deadline_hours | u32 | 无默认，必填 | 取用 |
 | backup.verify_decrypt_sample_ratio | decimal(9,6) | 0.050000 | 取用 |
 | backup_encryption.dbek_ref | secret 引用 | 无默认，必填 | 取用 |
@@ -415,7 +430,9 @@ F-51 U-L-01 的首版值为编译期常量：统计最近 60 秒内有请求的�
 | key_recovery.verification_interval_days | u32 | 183 | 取用 |
 | key_recovery.shard_pickup_sla_hours | u32 | 无默认，必填 | 取用 |
 
-development/test 环境变量由表中点分键机械转换为 `EP__` 加双下划线分段，例如 `archive.wal_spool_max_gb` 对应 `EP__ARCHIVE__WAL_SPOOL_MAX_GB`；production 出现任何此类变量即拒绝。`archive.max_slot_wal_keep_gb` 的旧名已撤销，不登记别名；数据库侧 `max_slot_wal_keep_size` 必须与 `archive.wal_spool_max_gb` 同值，由自检读回核对。
+development/test 环境变量由表中点分键机械转换为 `EP__` 加双下划线分段，例如 `archive.wal_spool_max_gb` 对应 `EP__ARCHIVE__WAL_SPOOL_MAX_GB`；production 出现任何此类变量即拒绝。`archive.wal_spool_max_gb` 只约束 `{data_root}\postgres\wal` 的 archive-staging 类。`archive.max_slot_wal_keep_gb` 的旧名已撤销且没有运行期替代键；数据库侧 `max_slot_wal_keep_size='350GB'` 只约束 live `pg_wal` 的 slot-retained 类，由签名 P340 policy 的独立字段生成并单独读回。两项当前数值同为 350 GiB 不构成同一配置所有权、同一计费类或互借关系。
+
+`backup.spill_max_bytes=25769803776` 是整个 `{data_root}\backup-staging` 容量类的 production hard limit，不是单个 chunk、单次流或 payload logical-length 限额。计数包含该根下 partial、journal、manifest、reserve 与 NTFS allocation rounding；writer 必须在创建任一对象前同时取得 `BACKUP_STAGING` class permit 与同名 24 GiB 聚合桶余量，达到相等边界即停止新备份并进入 fail-closed 处置。备份 report 写入 `{data_root}\spool\backup-writer`，属于 60 GiB 共享桶，绝不从这 24 GiB 借位或反向挤占。
 
 本表仍只有“启动”和“取用”两种加载语义。“变更后重判”是附加发布守卫，不是第三种热加载协议：新落点类型、地址或介质结论在重新完成落点判定和整机恢复演练前不得成为有效认证值。阶段 14 不实现 SIGHUP 或目录监听。
 
@@ -670,6 +687,10 @@ development/test 环境变量按总则映射，例如 `ai.enabled` 为 `EP__AI__
 
 生产只接受 `secrets.provider=kms`。所有客户凭据正文以 envelope ciphertext 保存在 `{data_root}\secrets` HDD vault；用途/法人 data key 由客户批准的 TPM/HSM/KMS non-exportable wrapping handle 包装。服务只能取得调用级、作用域化、可撤销的短期内存 handle。客户 secret、secret hash、通用 master key 正文和连接器长期凭据不得落入 SSD、WinCred、服务 profile、普通文件、argv、环境变量、日志或普通 IPC。初始化、轮换、撤销和恢复均为双人高风险命令并产生不可变证据；provider 关闭或 handle 过期时失败关闭。
 
+实现状态（2026-09-01）：`KmsSecretProvider` 仍为 `NOT_IMPLEMENTED`，不得把配置枚举或数据 KMS adapter 误报成已交付的系统机密 provider。当前常驻进程遇到 `provider=kms` 必须在第一次数据库连接前以启动失败结束，且绝不回退文件；`provider=file` 只在显式启用 `legacy-file` feature 的 development/test debug 构建可用，默认/发布构建拒绝且不编译文件读取分支。该止血边界不使任何生产门禁转绿，只有 §5.1 的 HDD vault/短期 handle provider 完整交付并通过发布负例后才能改变 `NOT_IMPLEMENTED`。
+
+当前数据库装配从 legacy debug reader 到 `PoolCredential` 全程以不可 `Clone` 的 zeroizing `SecretString` 承载；reader 对根、父目录与目标执行 canonical/final-handle containment，拒绝 symlink/reparse point，错误只返回稳定类别、不回显绝对路径。边界仍不等于全链清零：SQLx 的公开 `PgConnectOptions::password(&str)` 会在第三方连接选项内部复制为普通 `String`，本仓无法证明该副本 drop 时 zeroize。此限制保留为已知第三方边界，KMS/短期 handle 正式实现与依赖验收必须关闭它，现阶段不得宣称“数据库口令全链 zeroize”或据此放行生产门禁。
+
 ### 5.2 `HISTORICAL_NON_NORMATIVE_APPENDIX`：F-55 WinCred 维护协议
 
 下列 WinCred、DPAPI 文件树、八命令 `ep-secretctl` 和 `C:\ProgramData` intent 设计只作旧方案追溯，已被 §5.1 取代，不得在 F-57 生产实现中启用。其有价值的双人批准、短期维护窗、内存清零、故障恢复和非秘密 receipt 思路应迁入 HDD vault/secret broker，而不是恢复 WinCred 持久凭据。
@@ -694,7 +715,7 @@ WinCred 初始化、轮换与删除的唯一入口是随产品签名、进入 SB
 
 原第二处临时状态（请求头 `X-Legal-Entity-Id`、`X-Device-Id`、`X-Client`、`Authorization` 四个在阶段 1 只校验存在性与格式、不做任何真实校验）已由阶段 4 关闭（任务 #23）：四头纯格式校验保留为第一道（runtime `http/headers.rs`），真实校验经端口在 core-server 装配注入——认证层以 `Authorization` 令牌 SHA-256 摘要查 sessions，法人校验层对照 `user_legal_entity_grants` 授权集合校验 `X-Legal-Entity-Id`；关闭说明见 ADR-0011 追加段。系统端点与 PRE_AUTH 白名单（登录、MFA 完成前段、法人列表、门户登录）豁免这些头，豁免清单在代码中是一张固定表，新增豁免路径须改该表并触发安全审查。
 
-配套 CI 断言：`SecretBytes` 与 `SecretString` 均未实现 `Clone`、`Debug`、`Display`、`Serialize`；配置结构体中的机密引用只能使用 `SecretRef`、`WindowsCredentialRef` 或 `BootstrapRef` 三种强类型，不能退化为普通 `String`，实际 secret 不得出现在配置结构体。
+配套 CI 当前只证明已实现的 `SecretString` 未实现 `Clone`、`Debug`、`Display`、`Serialize`；未来 KMS/WinCred 二进制秘密载体 `SecretBytes` 尚未实现，也没有对应门禁，不得把规范名字误报成已交付类型。配置结构体中的机密引用终态只能使用 `SecretRef`、`WindowsCredentialRef` 或 `BootstrapRef` 三种强类型，不能退化为普通 `String`，实际 secret 不得出现在配置结构体；其中后两种强类型及其运行载体仍须按所属任务的 `NOT_IMPLEMENTED` 状态逐项验收。
 
 ## 6. 已删除、不得再引入的键
 
@@ -706,7 +727,7 @@ WinCred 初始化、轮换与删除的唯一入口是随产品签名、进入 SB
 - `platform.notify.push_endpoint`、`portal.core_api.base_url`、`portal.upstream_base_url`：产品进程业务 IPC 已统一为固定 DACL 命名管道，管道名与 operation 是协议常量，不设 endpoint 配置，不得兼容读取或转换成 localhost HTTP；推送固定经 `\\.\pipe\ep-integ` 的 `push.dispatch.v1`。
 - `portal.rate_limit_rps`：由 `portal.rate_limit.requests_per_minute` 与 `portal.rate_limit.burst` 取代，不做双读兼容。
 - `db.pool.integ_max`：integration-gateway 已归零数据库权限、连接与配置，不兼容解析 `integ` 池或该旧键。历史四池 `37`、临时 `10`、硬峰值 `52` 与安全余量 `5` 只作 ADR-0019 实测再基线的种子，不是现行固定产品预算。
-- `archive.max_slot_wal_keep_gb`：由 `archive.wal_spool_max_gb` 取代；同值由部署自检与 PostgreSQL 参数读回保证。
+- `archive.max_slot_wal_keep_gb`：已删除且无运行期替代键；`archive.wal_spool_max_gb` 只拥有 archive staging，独立的 slot-retained `max_slot_wal_keep_size='350GB'` 由签名 P340 policy 生成并读回。两者当前恰好同值，但不能互为配置来源或容量抵扣。
 - `ops.crosscheck_period_seconds`、`ops.crosscheck_statement_timeout_ms`、`ops.crosscheck.timeout_seconds`：专用复制交叉核对子系统已删除，交叉核对复用 `ops.wal_retention_sample_period_seconds`，不得恢复第二套周期或超时键。
 
 ## 7. 当前状态

@@ -56,10 +56,13 @@ where
             addr: addr.to_string(),
             detail: e.to_string(),
         })?;
-    axum::serve(listener, router)
-        .with_graceful_shutdown(shutdown)
-        .await
-        .map_err(|e| ServeError::Serve(e.to_string()))
+    axum::serve(
+        listener,
+        router.into_make_service_with_connect_info::<SocketAddr>(),
+    )
+    .with_graceful_shutdown(shutdown)
+    .await
+    .map_err(|e| ServeError::Serve(e.to_string()))
 }
 
 /// 与 [`serve`] 同一条路径，但把实际绑定到的地址交给调用方。
@@ -85,15 +88,24 @@ pub async fn serve_on<F>(
 where
     F: std::future::Future<Output = ()> + Send + 'static,
 {
-    axum::serve(listener, router)
-        .with_graceful_shutdown(shutdown)
-        .await
-        .map_err(|e| ServeError::Serve(e.to_string()))
+    axum::serve(
+        listener,
+        router.into_make_service_with_connect_info::<SocketAddr>(),
+    )
+    .with_graceful_shutdown(shutdown)
+    .await
+    .map_err(|e| ServeError::Serve(e.to_string()))
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    async fn observed_peer(
+        axum::extract::ConnectInfo(peer): axum::extract::ConnectInfo<SocketAddr>,
+    ) -> String {
+        peer.ip().to_string()
+    }
 
     #[test]
     fn loopback_addresses_parse() {
@@ -110,5 +122,34 @@ mod tests {
             parse_addr("localhost:8080").is_err(),
             "只接受 IP 字面量，不做名字解析"
         );
+    }
+
+    #[tokio::test]
+    async fn real_socket_requests_receive_connect_info() {
+        use tokio::io::{AsyncReadExt, AsyncWriteExt};
+
+        let (listener, addr) = bind("127.0.0.1:0".parse().unwrap()).await.unwrap();
+        let (shutdown_tx, shutdown_rx) = tokio::sync::oneshot::channel::<()>();
+        let server = tokio::spawn(serve_on(
+            listener,
+            Router::new().route("/peer", axum::routing::get(observed_peer)),
+            async move {
+                let _ = shutdown_rx.await;
+            },
+        ));
+
+        let mut stream = tokio::net::TcpStream::connect(addr).await.unwrap();
+        stream
+            .write_all(b"GET /peer HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n")
+            .await
+            .unwrap();
+        let mut response = Vec::new();
+        stream.read_to_end(&mut response).await.unwrap();
+        let response = String::from_utf8(response).unwrap();
+        assert!(response.starts_with("HTTP/1.1 200"), "{response}");
+        assert!(response.ends_with("127.0.0.1"), "{response}");
+
+        let _ = shutdown_tx.send(());
+        server.await.unwrap().unwrap();
     }
 }

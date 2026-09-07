@@ -5,6 +5,7 @@
 //! 分段而不是一个大结构，是因为八个进程各取所需：archive-writer 与
 //! backup-writer 的根结构里根本没有 `db` 段，配置里出现 db 段即启动失败。
 
+use std::net::{Ipv4Addr, Ipv6Addr};
 use std::path::PathBuf;
 
 use serde::Deserialize;
@@ -20,6 +21,8 @@ pub struct HttpCfg {
     pub shutdown_drain_ms: u32,
     pub concurrency_limit: u16,
     pub concurrency_wait_ms: u32,
+    /// 只有直接 TCP 对端命中这些 CIDR 时才受理 X-Forwarded-For；默认空即不信任代理头。
+    pub trusted_proxy_cidrs: Vec<crate::http::TrustedProxyNet>,
 }
 
 impl Default for HttpCfg {
@@ -32,6 +35,7 @@ impl Default for HttpCfg {
             shutdown_drain_ms: 30_000,
             concurrency_limit: 20,
             concurrency_wait_ms: 10_000,
+            trusted_proxy_cidrs: Vec::new(),
         }
     }
 }
@@ -40,7 +44,36 @@ impl Default for HttpCfg {
 #[serde(deny_unknown_fields, default)]
 pub struct IpcCfg {
     pub socket_path: PathBuf,
+    #[serde(deserialize_with = "deserialize_fixed_ipc_frame_bytes")]
     pub max_frame_bytes: u32,
+}
+
+fn deserialize_fixed_ipc_frame_bytes<'de, D>(deserializer: D) -> Result<u32, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    let value = u32::deserialize(deserializer)?;
+    if value != 1_048_576 {
+        return Err(serde::de::Error::custom(
+            "ipc.max_frame_bytes 是协议常量，必须精确为 1048576",
+        ));
+    }
+    Ok(value)
+}
+
+impl IpcCfg {
+    /// 每个进程只允许冻结的单一端点。分层配置仍会显示该键的来源，但不能借覆盖层
+    /// 把受控命名管道改成任意路径或第二个 endpoint。
+    pub fn require_endpoint(&self, expected: &str) -> Result<(), String> {
+        if self.socket_path == std::path::Path::new(expected) {
+            Ok(())
+        } else {
+            Err(format!(
+                "ipc.socket_path 必须精确为 {expected}，不接受覆盖值 {}",
+                self.socket_path.display()
+            ))
+        }
+    }
 }
 
 impl Default for IpcCfg {
@@ -58,7 +91,6 @@ pub struct DbPoolCfg {
     pub rw_max: u16,
     pub ro_max: u16,
     pub worker_max: u16,
-    pub integ_max: u16,
     pub ops_max: u16,
     pub acquire_timeout_ms: u32,
     pub max_lifetime_s: u32,
@@ -71,9 +103,8 @@ impl Default for DbPoolCfg {
             rw_max: 20,
             ro_max: 10,
             worker_max: 5,
-            integ_max: 5,
             ops_max: 2,
-            // 阶段 2 任务 #11 自 3000 提到 8000：五池满载下取连接的
+            // 阶段 2 任务 #11 自 3000 提到 8000：四池满载下取连接的
             // 等待窗口对齐网关侧请求超时，避免 3s 误伤突发排队。
             acquire_timeout_ms: 8_000,
             max_lifetime_s: 1_800,
@@ -106,14 +137,13 @@ impl Default for PoolTimeoutCfg {
     }
 }
 
-/// 五个具名池的超时，取值见阶段 1 计划第 7.2 节。
+/// 四个具名池的超时；integration-gateway 零数据库，不保留 integ 配置。
 #[derive(Clone, Copy, Deserialize, Debug)]
 #[serde(deny_unknown_fields, default)]
 pub struct DbTimeoutCfg {
     pub rw: PoolTimeoutCfg,
     pub ro: PoolTimeoutCfg,
     pub worker: PoolTimeoutCfg,
-    pub integ: PoolTimeoutCfg,
     pub ops: PoolTimeoutCfg,
 }
 
@@ -123,7 +153,6 @@ impl Default for DbTimeoutCfg {
             rw: PoolTimeoutCfg::with_statement(10_000),
             ro: PoolTimeoutCfg::with_statement(60_000),
             worker: PoolTimeoutCfg::with_statement(300_000),
-            integ: PoolTimeoutCfg::with_statement(10_000),
             ops: PoolTimeoutCfg::with_statement(5_000),
         }
     }
@@ -145,36 +174,71 @@ impl Default for DbRoCfg {
     }
 }
 
-#[derive(Clone, Deserialize, Debug)]
-#[serde(deny_unknown_fields, default)]
+#[derive(Clone, Debug)]
 pub struct DbRetryCfg {
     pub max_attempts: u8,
     pub backoff_ms: Vec<u32>,
 }
 
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct DbRetryCfgWire {
+    #[serde(default = "default_db_retry_max_attempts")]
+    max_attempts: u8,
+    #[serde(default = "default_db_retry_backoff_ms")]
+    backoff_ms: Vec<u32>,
+}
+
+const fn default_db_retry_max_attempts() -> u8 {
+    3
+}
+
+fn default_db_retry_backoff_ms() -> Vec<u32> {
+    vec![50, 150, 450]
+}
+
+impl<'de> Deserialize<'de> for DbRetryCfg {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        let wire = DbRetryCfgWire::deserialize(deserializer)?;
+        if wire.max_attempts != default_db_retry_max_attempts()
+            || wire.backoff_ms.as_slice() != [50, 150, 450]
+        {
+            return Err(serde::de::Error::custom(
+                "db.retry 必须精确为 max_attempts=3、backoff_ms=[50,150,450]",
+            ));
+        }
+        Ok(Self {
+            max_attempts: wire.max_attempts,
+            backoff_ms: wire.backoff_ms,
+        })
+    }
+}
+
 impl Default for DbRetryCfg {
     fn default() -> Self {
         Self {
-            max_attempts: 3,
-            backoff_ms: vec![50, 150, 450],
+            max_attempts: default_db_retry_max_attempts(),
+            backoff_ms: default_db_retry_backoff_ms(),
         }
     }
 }
 
-/// 连接预算（裁定 C-04）：resident 上限与突发上限。启动时五池规模
-/// 求和校验，超限以退出码 78 拒启，校验本体在 ep-adapter-db-pg 的
-/// `ConnectionBudget`。
+/// 当前 P340 连接预算种子。签名的全机 budget generation/digest 尚未实现前，
+/// 三个持池进程必须逐项接受 `20/10/5/2 + 10 + 5 = 52`，不能从各自配置文件
+/// 独立漂移；任何不等值或求和超限均以退出码 78 拒启。
 #[derive(Clone, Copy, Deserialize, Debug)]
 #[serde(deny_unknown_fields, default)]
 pub struct DbBudgetCfg {
     pub resident_max: u16,
+    pub temporary_max: u16,
     pub peak_max: u16,
 }
 
 impl Default for DbBudgetCfg {
     fn default() -> Self {
         Self {
-            resident_max: 42,
+            resident_max: 37,
+            temporary_max: 10,
             peak_max: 52,
         }
     }
@@ -203,6 +267,9 @@ pub struct DbCfg {
     pub database: String,
     pub user: String,
     pub password_ref: SecretRef,
+    /// core-server Ro 池的独立只读账号；其他进程不解引用。
+    pub ro_user: String,
+    pub ro_password_ref: SecretRef,
     pub pool: DbPoolCfg,
     pub timeout: DbTimeoutCfg,
     pub ro: DbRoCfg,
@@ -219,6 +286,9 @@ impl Default for DbCfg {
             database: "ep".into(),
             user: "ep_app_rw".into(),
             password_ref: SecretRef::parse("secret://db/app_rw#1").expect("内置默认必须自洽"),
+            ro_user: "ep_analyst_ro".into(),
+            ro_password_ref: SecretRef::parse("secret://db/analyst_ro#1")
+                .expect("内置默认必须自洽"),
             pool: DbPoolCfg::default(),
             timeout: DbTimeoutCfg::default(),
             ro: DbRoCfg::default(),
@@ -269,14 +339,15 @@ impl Default for KmsCfg {
 #[derive(Clone, Deserialize, Debug)]
 #[serde(deny_unknown_fields, default)]
 pub struct KmsBuiltinCfg {
-    /// 主密钥文件：权限必须 0400 且属主为本进程账户，否则拒启动。
+    /// 已废弃的阶段 2 文件入口。F-57 默认必须为空；非空只允许显式
+    /// `legacy-file` development/test debug 构建处理，默认/发布构建拒绝。
     pub master_key_path: PathBuf,
 }
 
 impl Default for KmsBuiltinCfg {
     fn default() -> Self {
         Self {
-            master_key_path: PathBuf::from("/var/lib/ep/kms/master.key"),
+            master_key_path: PathBuf::new(),
         }
     }
 }
@@ -628,8 +699,11 @@ impl Default for TraceCfg {
 #[derive(Clone, Copy, PartialEq, Eq, Deserialize, Debug)]
 #[serde(rename_all = "lowercase")]
 pub enum SecretsProvider {
-    File,
     Kms,
+    /// 历史 development/test reader。默认/发布构建不编译本枚举值，
+    /// 因而 `provider=file` 会在配置反序列化阶段直接失败。
+    #[cfg(feature = "legacy-file")]
+    File,
 }
 
 #[derive(Clone, Deserialize, Debug)]
@@ -643,7 +717,9 @@ impl Default for SecretsCfg {
     fn default() -> Self {
         Self {
             dir: PathBuf::from("/var/lib/ep/secrets"),
-            provider: SecretsProvider::File,
+            // 生产唯一允许的声明值。KmsSecretProvider 尚未交付时，消费方
+            // 必须以 NOT_IMPLEMENTED 拒启，不能暗中回退历史明文 reader。
+            provider: SecretsProvider::Kms,
         }
     }
 }
@@ -717,21 +793,56 @@ impl std::error::Error for EgressTargetError {}
 
 impl EgressTarget {
     pub fn parse(raw: &str) -> Result<EgressTarget, EgressTargetError> {
+        if raw.is_empty() || !raw.is_ascii() || raw.chars().any(char::is_whitespace) {
+            return Err(EgressTargetError(
+                "白名单项必须是非空、无空白的 ASCII HTTPS origin".into(),
+            ));
+        }
         let Some(rest) = raw.strip_prefix("https://") else {
             return Err(EgressTargetError(format!("{raw} 必须以 https:// 开头")));
         };
-        if rest.contains('/') {
-            return Err(EgressTargetError(format!("{raw} 只写主机与端口，不写路径")));
+        if rest.contains(['/', '?', '#', '@', '\\']) {
+            return Err(EgressTargetError(format!(
+                "{raw} 只允许主机与可选端口，不允许路径、查询、片段、用户信息或反斜线"
+            )));
         }
-        let (host, port) = match rest.split_once(':') {
-            Some((h, p)) => (h, Some(p)),
-            None => (rest, None),
+        let (host, port) = if rest.starts_with('[') {
+            let Some(close) = rest.find(']') else {
+                return Err(EgressTargetError(format!("{raw} 的 IPv6 缺少右方括号")));
+            };
+            let host = &rest[..=close];
+            let suffix = &rest[close + 1..];
+            let port = if suffix.is_empty() {
+                None
+            } else if let Some(value) = suffix.strip_prefix(':') {
+                Some(value)
+            } else {
+                return Err(EgressTargetError(format!("{raw} 的 IPv6 主机后缀非法")));
+            };
+            (host, port)
+        } else {
+            match rest.rsplit_once(':') {
+                Some((h, p)) if !h.contains(':') => (h, Some(p)),
+                Some(_) => {
+                    return Err(EgressTargetError(format!("{raw} 的 IPv6 必须使用方括号")));
+                }
+                None => (rest, None),
+            }
         };
-        if host.is_empty() || host.contains('*') {
-            return Err(EgressTargetError(format!("{raw} 的主机为空或含通配符")));
+
+        validate_egress_host(host)
+            .map_err(|detail| EgressTargetError(format!("{raw}：{detail}")))?;
+
+        if port == Some("443") {
+            return Err(EgressTargetError(format!(
+                "{raw} 不得显式写 HTTPS 默认端口 443"
+            )));
         }
         if let Some(p) = port {
-            if p.parse::<u16>().is_err() {
+            if p.is_empty() || p.starts_with('+') || (p.len() > 1 && p.starts_with('0')) {
+                return Err(EgressTargetError(format!("{raw} 的端口不是规范十进制")));
+            }
+            if !matches!(p.parse::<u16>(), Ok(1..=u16::MAX)) {
                 return Err(EgressTargetError(format!("{raw} 的端口不是 1..=65535")));
             }
         }
@@ -743,6 +854,59 @@ impl EgressTarget {
     }
 }
 
+fn validate_egress_host(host: &str) -> Result<(), &'static str> {
+    if host.is_empty() || host.contains('*') {
+        return Err("主机为空或含通配符");
+    }
+
+    if let Some(inner) = host.strip_prefix('[').and_then(|h| h.strip_suffix(']')) {
+        let address: Ipv6Addr = inner.parse().map_err(|_| "方括号内不是合法 IPv6")?;
+        if inner != address.to_string() {
+            return Err("IPv6 必须使用小写压缩规范形");
+        }
+        return Ok(());
+    }
+
+    if let Ok(address) = host.parse::<Ipv4Addr>() {
+        return if host == address.to_string() {
+            Ok(())
+        } else {
+            Err("IPv4 必须使用规范十进制形式")
+        };
+    }
+
+    // WHATWG URL 与部分 HTTP 客户端会把 `127.1`、`0177.0.0.1`、
+    // `2130706433`、`0x7f000001` 等旧式数字主机解释为 IPv4。若在这里把它们当
+    // DNS 名保存，审阅者看到的白名单与客户端实际连接的地址就可能分叉。
+    if host.split('.').all(is_legacy_ipv4_number) {
+        return Err("疑似旧式数字 IPv4；必须使用四段规范十进制 IPv4");
+    }
+
+    if host.len() > 253 || host.ends_with('.') || host.bytes().any(|b| b.is_ascii_uppercase()) {
+        return Err("DNS 主机名必须不超过 253 字节、小写且不带末尾点");
+    }
+    if host.split('.').any(|label| {
+        label.is_empty()
+            || label.len() > 63
+            || !label
+                .bytes()
+                .all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || b == b'-')
+            || label.starts_with('-')
+            || label.ends_with('-')
+    }) {
+        return Err("DNS 主机名标签必须为 1..=63 字节并只含小写字母、数字或内部连字符");
+    }
+    Ok(())
+}
+
+fn is_legacy_ipv4_number(label: &str) -> bool {
+    !label.is_empty()
+        && (label.bytes().all(|b| b.is_ascii_digit())
+            || label
+                .strip_prefix("0x")
+                .is_some_and(|hex| !hex.is_empty() && hex.bytes().all(|b| b.is_ascii_hexdigit())))
+}
+
 impl<'de> Deserialize<'de> for EgressTarget {
     fn deserialize<D: serde::Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
         let raw = String::deserialize(d)?;
@@ -750,9 +914,27 @@ impl<'de> Deserialize<'de> for EgressTarget {
     }
 }
 
+fn deserialize_egress_allowlist<'de, D>(deserializer: D) -> Result<Vec<EgressTarget>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    let values = Vec::<EgressTarget>::deserialize(deserializer)?;
+    for pair in values.windows(2) {
+        if pair[0].as_str() >= pair[1].as_str() {
+            return Err(serde::de::Error::custom(format!(
+                "egress.allowlist 必须按规范 origin 字节严格递增且无重复：{} / {}",
+                pair[0].as_str(),
+                pair[1].as_str()
+            )));
+        }
+    }
+    Ok(values)
+}
+
 #[derive(Clone, Deserialize, Debug)]
 #[serde(deny_unknown_fields, default)]
 pub struct EgressCfg {
+    #[serde(deserialize_with = "deserialize_egress_allowlist")]
     pub allowlist: Vec<EgressTarget>,
     pub connect_timeout_ms: u32,
     pub request_timeout_ms: u32,
@@ -776,7 +958,27 @@ impl Default for EgressCfg {
 #[serde(deny_unknown_fields, default)]
 pub struct SpoolCfg {
     pub dir: PathBuf,
+    #[serde(deserialize_with = "deserialize_report_spool_max_bytes")]
     pub max_bytes: u64,
+}
+
+/// P340 容量包络为 archive-writer 与 backup-writer 各预留的单目录硬上限。
+/// 默认仍保持 256 MiB；签名配置可以收紧或放大，但不得越过这条 2 GiB 物理预算。
+pub const REPORT_SPOOL_HARD_MAX_BYTES: u64 = 2_147_483_648;
+pub const REPORT_SPOOL_MIN_BYTES: u64 = 67_108_864;
+
+fn deserialize_report_spool_max_bytes<'de, D>(deserializer: D) -> Result<u64, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    let value = u64::deserialize(deserializer)?;
+    if (REPORT_SPOOL_MIN_BYTES..=REPORT_SPOOL_HARD_MAX_BYTES).contains(&value) {
+        Ok(value)
+    } else {
+        Err(serde::de::Error::custom(format!(
+            "spool.max_bytes 必须在 {REPORT_SPOOL_MIN_BYTES}..={REPORT_SPOOL_HARD_MAX_BYTES} 字节内"
+        )))
+    }
 }
 
 impl Default for SpoolCfg {
@@ -788,50 +990,77 @@ impl Default for SpoolCfg {
     }
 }
 
-#[derive(Clone, Deserialize, Debug)]
-#[serde(deny_unknown_fields, default)]
-pub struct PortalCfg {
-    pub upstream_base_url: String,
-    pub rate_limit_rps: u16,
-}
-
-impl Default for PortalCfg {
-    fn default() -> Self {
-        Self {
-            upstream_base_url: "http://127.0.0.1:8080".into(),
-            rate_limit_rps: 20,
-        }
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
 
     #[test]
-    fn pool_statement_timeouts_match_the_five_named_pools() {
+    fn ipc_frame_limit_is_a_fixed_protocol_constant() {
+        let exact: IpcCfg = toml::from_str("max_frame_bytes = 1048576\n").unwrap();
+        assert_eq!(exact.max_frame_bytes, 1_048_576);
+        for invalid in [0, 1, 1_048_575, 1_048_577, u32::MAX] {
+            assert!(
+                toml::from_str::<IpcCfg>(&format!("max_frame_bytes = {invalid}\n")).is_err(),
+                "IPC 帧上限不得偏离协议常量：{invalid}"
+            );
+        }
+    }
+
+    #[test]
+    fn pool_statement_timeouts_match_the_four_named_pools() {
         let t = DbTimeoutCfg::default();
         assert_eq!(t.rw.statement_ms, 10_000);
         assert_eq!(t.ro.statement_ms, 60_000);
         assert_eq!(t.worker.statement_ms, 300_000);
-        assert_eq!(t.integ.statement_ms, 10_000);
         assert_eq!(t.ops.statement_ms, 5_000);
-        for p in [t.rw, t.ro, t.worker, t.integ, t.ops] {
+        for p in [t.rw, t.ro, t.worker, t.ops] {
             assert_eq!(p.lock_ms, 3_000);
             assert_eq!(p.idle_in_tx_ms, 15_000);
         }
     }
 
     #[test]
+    fn retry_policy_rejects_every_non_frozen_shape_at_config_parse_time() {
+        let exact: DbRetryCfg = toml::from_str("max_attempts = 3\nbackoff_ms = [50, 150, 450]\n")
+            .expect("冻结的重试策略必须可解析");
+        assert_eq!(exact.max_attempts, 3);
+        assert_eq!(exact.backoff_ms, [50, 150, 450]);
+
+        for invalid in [
+            "max_attempts = 0\nbackoff_ms = [50, 150, 450]\n",
+            "max_attempts = 255\nbackoff_ms = [50, 150, 450]\n",
+            "max_attempts = 3\nbackoff_ms = []\n",
+            "max_attempts = 3\nbackoff_ms = [50, 150]\n",
+            "max_attempts = 3\nbackoff_ms = [50, 150, 450, 900]\n",
+            "max_attempts = 3\nbackoff_ms = [50, 150, 65536]\n",
+            "max_attempts = 3\nbackoff_ms = [50, 150, 451]\n",
+        ] {
+            assert!(
+                toml::from_str::<DbRetryCfg>(invalid).is_err(),
+                "非冻结策略必须拒绝：{invalid}"
+            );
+        }
+    }
+
+    #[test]
     fn db_section_stage2_additions_match_the_ruling() {
         let d = DbCfg::default();
-        assert_eq!(d.budget.resident_max, 42, "裁定 C-04 常驻上限");
+        assert_eq!(d.budget.resident_max, 37, "当前 P340 四池常驻测量种子");
+        assert_eq!(d.budget.temporary_max, 10, "裁定 C-04 临时上限");
         assert_eq!(d.budget.peak_max, 52, "裁定 C-04 突发上限");
+        assert_eq!(d.ro_user, "ep_analyst_ro");
+        assert_eq!(d.ro_password_ref.as_str(), "secret://db/analyst_ro#1");
         assert_eq!(d.pool.acquire_timeout_ms, 8_000);
         assert_eq!(
             d.migration.expected_versions_path,
             PathBuf::from("/etc/ep/migration-versions.toml")
         );
+    }
+
+    #[test]
+    fn obsolete_integration_pool_keys_are_rejected() {
+        assert!(toml::from_str::<DbPoolCfg>("integ_max = 5").is_err());
+        assert!(toml::from_str::<DbTimeoutCfg>("[integ]\nstatement_ms = 10000\n").is_err());
     }
 
     /// 阶段 3a：幂等键保留期默认 7 天，未知键照例拒收。
@@ -902,9 +1131,38 @@ mod tests {
 
     #[test]
     fn egress_allowlist_entries_are_validated_at_config_time() {
-        let ok: EgressCfg =
-            toml::from_str("allowlist = [\"https://esign.example.com:443\"]").unwrap();
-        assert_eq!(ok.allowlist[0].as_str(), "https://esign.example.com:443");
+        let ok: EgressCfg = toml::from_str(
+            "allowlist = [\"https://192.0.2.10:8443\", \"https://[2001:db8::1]:8443\", \"https://esign.example.com\"]",
+        )
+        .unwrap();
+        assert_eq!(ok.allowlist[0].as_str(), "https://192.0.2.10:8443");
+        assert_eq!(ok.allowlist[1].as_str(), "https://[2001:db8::1]:8443");
+        assert_eq!(ok.allowlist[2].as_str(), "https://esign.example.com");
+
+        for bad_array in [
+            "allowlist = [\"https://b.example.com\", \"https://a.example.com\"]",
+            "allowlist = [\"https://a.example.com\", \"https://a.example.com\"]",
+        ] {
+            assert!(
+                toml::from_str::<EgressCfg>(bad_array).is_err(),
+                "白名单必须严格排序且去重：{bad_array}"
+            );
+        }
+    }
+
+    #[test]
+    fn report_spool_size_is_bounded_by_the_p340_capacity_bucket() {
+        assert_eq!(SpoolCfg::default().max_bytes, 268_435_456);
+        let at_limit: SpoolCfg =
+            toml::from_str(&format!("max_bytes = {REPORT_SPOOL_HARD_MAX_BYTES}"))
+                .expect("2 GiB equality is the hard maximum");
+        assert_eq!(at_limit.max_bytes, REPORT_SPOOL_HARD_MAX_BYTES);
+        let at_minimum: SpoolCfg = toml::from_str(&format!("max_bytes = {REPORT_SPOOL_MIN_BYTES}"))
+            .expect("64 MiB equality leaves the fixed critical reserve");
+        assert_eq!(at_minimum.max_bytes, REPORT_SPOOL_MIN_BYTES);
+        assert!(toml::from_str::<SpoolCfg>("max_bytes = 0").is_err());
+        assert!(toml::from_str::<SpoolCfg>("max_bytes = 67108863").is_err());
+        assert!(toml::from_str::<SpoolCfg>("max_bytes = 2147483649").is_err());
     }
 
     // 负样例断言的是白名单形态这条规则本身：明文、通配、带路径、坏端口都要拒。
@@ -915,6 +1173,25 @@ mod tests {
             "https://*.example.com",
             "https://esign.example.com/callback",
             "https://esign.example.com:70000",
+            "https://esign.example.com:0",
+            "https://esign.example.com:0443",
+            "https://esign.example.com:443",
+            "https://user@esign.example.com",
+            "https://esign.example.com?x=1",
+            "https://esign.example.com#fragment",
+            "https://esign.example.com\\callback",
+            "https://A.example.com",
+            "https://bad_name.example.com",
+            "https://example..com",
+            "https://example.com.",
+            "https://-example.com",
+            "https://2001:db8::1",
+            "https://[2001:0db8::1]",
+            "https://127.1",
+            "https://0177.0.0.1",
+            "https://2130706433",
+            "https://0x7f000001",
+            "https://esign.example.com ",
             "esign.example.com",
         ] {
             assert!(
@@ -928,5 +1205,25 @@ mod tests {
     fn password_ref_must_be_a_reference_not_a_literal() {
         assert!(toml::from_str::<DbCfg>("password_ref = \"hunter2\"").is_err());
         assert!(toml::from_str::<DbCfg>("password_ref = \"secret://db/app_rw#2\"").is_ok());
+    }
+
+    #[test]
+    fn secret_provider_defaults_to_kms_never_legacy_file() {
+        assert_eq!(SecretsCfg::default().provider, SecretsProvider::Kms);
+    }
+
+    #[test]
+    fn builtin_kms_default_has_no_legacy_master_key_file() {
+        assert!(KmsCfg::default()
+            .builtin
+            .master_key_path
+            .as_os_str()
+            .is_empty());
+    }
+
+    #[cfg(not(feature = "legacy-file"))]
+    #[test]
+    fn default_build_rejects_file_provider_at_config_parse_time() {
+        assert!(toml::from_str::<SecretsCfg>("provider = \"file\"").is_err());
     }
 }

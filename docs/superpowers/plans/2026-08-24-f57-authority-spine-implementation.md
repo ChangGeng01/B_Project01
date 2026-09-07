@@ -478,7 +478,7 @@ Expected: FAIL because the storage manifest, secret broker, deployment migration
 
 The immutable locator is on a non-OS HDD at `\EnterprisePlatform\packages\authority-storage-manifest.v1.json`. Resolve the opened handle to stable volume/device identity; never trust a drive letter, junction, mount point, symlink, or path string alone.
 
-`crates/platform/runtime/src/storage/manifest.rs` implements, without renaming or extending, the master's current exact `F57AuthorityStorageManifestPayloadV1` and `SignedF57AuthorityStorageManifestV1`; the historical 2026-08-23 shape is not an implementation authority. It solely generates `docs/schemas/f57-authority-storage-manifest.v1.schema.json`, exact media `application/vnd.ep.f57-authority-storage-manifest-v1+json`, and byte/unknown-field fixtures. Purpose, revision/time/deployment, two role/volume/root triples, complete canonical `customer_authority_data_roots`, backup/hardware/epoch/API/policy fields and six trust/anti-rollback fields are all mandatory and use the master's exact names/order/validation. The signed manifest routes PostgreSQL data/WAL/temp, attachments, quarantine, customer logs, imports/exports, spool, search, packages, vault, generations, both evidence roots, backup staging, and any dump/pagefile containing customer bytes to HDD or marks the feature disabled. Boot order is product-pinned deployment bootstrap → Stage-14 deployment manifest/CMS/trust bundle → storage manifest signer membership/chain/revocation/checkpoint → WDAC/trusted boot/BitLocker → final-handle volume/root policy and anti-rollback → trusted-time decision → secret broker → first DB connect → database mirror comparison. A self-authorizing root, ambient Windows root, network chain completion, wrong deployment manifest, root/checkpoint rollback, missing authority root class or storage-schema drift produces zero database connections. `deployment_manifest_store` and `secret_vault_store` are the only SQL adapters for the two tables; the runtime and KMS crates depend only on their ports. Their parent `lib.rs`/`mod.rs` registrations and the core-server composition are completed in this same task, and the all-target test must prove the concrete stores are reachable—file existence is not evidence.
+`crates/platform/runtime/src/storage/manifest.rs` implements, without renaming or extending, the master's current exact `F57AuthorityStorageManifestPayloadV1` and `SignedF57AuthorityStorageManifestV1`; the historical 2026-08-23 shape is not an implementation authority. It solely generates `docs/schemas/f57-authority-storage-manifest.v1.schema.json`, exact media `application/vnd.ep.f57-authority-storage-manifest-v1+json`, and byte/unknown-field fixtures. Purpose, revision/time/deployment, two role/volume/root triples, complete canonical `customer_authority_data_roots`, backup/hardware/epoch/API/policy fields and six trust/anti-rollback fields are all mandatory and use the master's exact names/order/validation. `policy_ids` carries exactly one `p340-persistent-hdd-capacity-map-sha256:<64-lowerhex>` pin to the G0-generated nine-bucket/fourteen-class/fourteen-selector policy. The signed manifest routes every product-managed canonical `data_root` object and registered VSS extent—PostgreSQL non-live-WAL data, the two typed live-WAL ledgers, archive staging, process/restore temp, attachments, quarantine, customer logs, imports/exports, both report spools, both MCP completion spools, search, packages, vault, generations, both evidence roots, backup staging, approved dump and VSS extents—to exactly one pinned DATA_HDD capacity class, or marks the feature disabled. NTFS/BitLocker volume metadata never receives a class ID and is measured separately by the fixed whole-volume collector. There is no catch-all root and the shared `pg_wal` subtree is legal only through the two disjoint cause ledgers. Boot order is product-pinned deployment bootstrap → Stage-14 deployment manifest/CMS/trust bundle → storage manifest signer membership/chain/revocation/checkpoint → WDAC/trusted boot/BitLocker → final-handle volume/root/capacity-map policy and anti-rollback → trusted-time decision → secret broker → first DB connect → database mirror comparison. A self-authorizing root, ambient Windows root, network chain completion, wrong deployment manifest, root/checkpoint rollback, missing/wrong capacity-map pin, missing/duplicate authority class or storage-schema drift produces zero database connections. `deployment_manifest_store` and `secret_vault_store` are the only SQL adapters for the two tables; the runtime and KMS crates depend only on their ports. Their parent `lib.rs`/`mod.rs` registrations and the core-server composition are completed in this same task, and the all-target test must prove the concrete stores are reachable—file existence is not evidence.
 
 The storage manifest's canonical `policy_ids` must contain exactly one member matching `generation-approval-registry-sha256:<64-lowerhex>` and exactly one matching `runtime-ssd-exception-registry-sha256:<64-lowerhex>`; other separately registered policy families may coexist but duplicates/unknown F57 prefixes fail. The latter pins exact static bytes of the master-defined four-row `WINDOWS_SERVER_2022_P340_SINGLE_DISK_V1` policy and has no manifest back-reference. After DATA_HDD final-handle verification, the runtime resolves only `<data_root>\generations\trust\generation-approval-registry.v1.json`, requires its exact envelope digest to equal the generation pin, and bootstrap-verifies its signed seven-field payload/three exact rows using the product-pinned deployment trust bundle plus exact registry-authority SPKI/DN/current revocation. Only then may `generation_approval.rs` construct private `VerifiedGenerationApprovalRegistryV1`. Missing/duplicate/malformed pin, another path, valid-old registry, deployment/revision/time/row/media/DN/SPKI drift, wildcard, self-root, ambient Windows trust or copied 89-row evidence registry fails before generation signing.
 
@@ -699,6 +699,11 @@ Commit: `feat(authz): add dynamic principal capability grants`
 - Create: `crates/foundation/tests/security_context_wire.rs`
 - Modify: `testkit/Cargo.toml`
 - Create: `testkit/tests/f57_g1_authorized_pg_tx.rs`
+
+`db/bootstrap/02_cluster_params.sql` 在本任务中只作为开发、测试和人工验证用的参数镜像维护；
+G1 不得把它提升为生产安装输入。G6 Windows 生产路径只接受签名配置投影生成的精确
+`postgresql.conf`，并要求 `postgresql.auto.conf` 不存在或为空且无有效覆盖，绝不执行该文件的
+`ALTER SYSTEM`。
 
 - [ ] **Step 1: Write the failing transaction-context attack matrix**
 
@@ -2534,6 +2539,20 @@ async fn unavailable_governor_rejects_heavy_work_but_never_throttles_wal() {
     assert_denied(WorkClassV1::HeavyReport).await;
     assert_admitted(WorkClassV1::PostgresWal).await;
 }
+
+#[tokio::test]
+async fn persistent_hdd_admission_is_unique_and_bucket_first() {
+    let policy = generated_p340_capacity_policy();
+    assert_eq!(policy.bucket_count(), 9);
+    assert_eq!(policy.capacity_class_count(), 14);
+    assert_eq!(policy.root_rule_count(), 14);
+    assert_denied(persist_without_class_id()).await;
+    assert_denied(persist_with_two_classes_for_one_file_id()).await;
+    assert_denied(persist_with_cross_bucket_credit()).await;
+    assert_denied(local_limit_available_but_aggregate_bucket_full()).await;
+    assert_hold(postgres_legal_hold_reaches_history_control_log_bucket_limit()).await;
+    assert_eq!(classify_same_live_wal_segment_with_two_causes().await.charge_count(), 1);
+}
 ```
 
 - [ ] **Step 2: Run RED**
@@ -2548,7 +2567,11 @@ Each Objective persists its kind, cycle, subject, state, obligations, closure pr
 
 `DISPATCHED → UNKNOWN` is mandatory after ambiguous delivery. Reconciliation observations cannot directly rewrite business state; they invoke the owning typed command. Opposing later evidence produces `CONFLICTED` and an incident. Closure review creates a work item and requires a distinct currently-authorized reviewer with SoD and reauthentication.
 
-Capacity permits are signed, expiring, and measured by work class, bytes, concurrency, and HDD pressure. The governor fails closed for heavy background work. It may never suspend or throttle PostgreSQL/WAL, audit, interactive saves, emergency recovery, or the reserved Control Center session. `automation_fault_matrix.rs` implements exactly `AUT-001..007`.
+Capacity permits are signed, expiring, and measured by work class, bytes, concurrency, and HDD pressure. `CapacityGovernor` imports only the G0-generated `P340CertificationPolicyDefinitionV1` and verified storage-manifest capacity-map pin. It implements the exact nine bucket, fourteen class and fourteen selector sets; every product-managed file/stream/reservation/partial/manifest and registered VSS extent receives one class before allocation, and the bucket aggregate reservation CAS happens before any local limit or write. It accounts NTFS allocation size, final-file-ID hard-link deduplication and provider-reported VSS allocated extents. A fixed whole-volume collector separately measures only allocation proven to be NTFS/BitLocker volume metadata as `measured_unclassifiable_filesystem_allocation_bytes`, reports any ordinary outside-root file or unexplained/inaccessible extent as independent nonzero `unclassified_allocation_bytes`, and at zero anomaly checked-proves `used_bytes=sum(class_usage.allocated_bytes)+measured_unclassifiable_filesystem_allocation_bytes`. Initial readback and every sample must exact-match both scalars and satisfy `volume_total_bytes >= max(1589137899520,1481763717120+107374182400+measured_unclassifiable_filesystem_allocation_bytes)`; metadata never becomes a fifteenth capacity class and cannot consume a product bucket or the 100-GiB floor. Unknown/unclassified class, duplicate physical identity, selector overlap/gap, a filesystem-metadata catch-all class, cross-bucket credit, checked arithmetic overflow, policy/config/map drift, nonzero unexplained allocation or an aggregate at its hard bound denies the write and creates a deployment-wide hold.
+
+The 60-GiB shared bucket reserves class maxima `36507222016+21474836480+2147483648+2147483648+1073741824+1073741824=64424509440`; report-spool runtime default is `268435456`, accepted configured range is `67108864..=2147483648`, but each writer retains a 2-GiB production class ceiling. `backup.spill_max_bytes=25769803776` covers the complete backup-staging allocation set. PostgreSQL legal hold never deletes a protected log and never borrows another bucket; aggregate exhaustion holds production. Non-live-WAL PGDATA charges the 40-GiB class; external process/restore temp, approved dumps and VSS extents charge the 48-GiB class. Live WAL uses one per-segment cause ledger with normal recovery/slot priority and archiver-failure only beyond that frontier, so the same physical segment is never charged twice. Startup and every five-minute capacity scan reconcile the durable class/bucket ledger with final-handle enumeration; any anomaly retains the hold until an authorized remediation and fresh exact scan pass.
+
+The governor fails closed for heavy background work. It may never suspend or throttle PostgreSQL/WAL, audit, interactive saves, emergency recovery, or the reserved Control Center session; protecting those lanes means rejecting other admission and, at a hard capacity boundary, entering the controlled write-hold/shutdown path rather than letting critical writes exceed a bucket. `automation_fault_matrix.rs` implements exactly `AUT-001..007`.
 
 - [ ] **Step 4: Verify Fresh PostgreSQL and GREEN**
 
@@ -2558,7 +2581,7 @@ Run: `cargo test -p ep-platform-flow -p ep-platform-runtime -p ep-adapter-db-pg 
 
 Run: `cargo test -p ep-testkit --test f57_g1_durable_flow -- --nocapture`
 
-Expected: PASS for crash/restart, duplicate worker, timeout-after-success, independent receipt reconciliation, opposing evidence, reviewer SoD, generation pins, and governor failure.
+Expected: PASS for crash/restart, duplicate worker, timeout-after-success, independent receipt reconciliation, opposing evidence, reviewer SoD, generation pins, governor failure, exact `9/14/14` product-object capacity sets, bucket-first admission, default/min/max report-spool boundaries, 24-GiB backup-staging total allocation, legal-hold exhaustion, live-WAL one-segment/one-ledger classification, whole-volume final-handle reconciliation, zero/one-byte filesystem-metadata volume goldens, used-byte decomposition, metadata-catch-all rejection, arithmetic-overflow rejection and all unknown/duplicate/cross-bucket/unexplained/one-byte-over negatives.
 
 - [ ] **Step 5: Commit only this task**
 

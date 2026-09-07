@@ -8,7 +8,6 @@
 //! `runtime::migrations::schema_of` 回填；清单之外的行如实报错，
 //! 由 `migration-version-matched` 判失败——读不到被测对象绝不判通过。
 
-use std::path::PathBuf;
 use std::sync::Arc;
 
 use ep_adapter_db_pg::foundation_check::DataFoundationCheck;
@@ -17,7 +16,7 @@ use ep_foundation::id::marker::LegalEntity;
 use ep_foundation::id::Id;
 use ep_foundation::security::context::{RequestId, TraceId};
 use ep_foundation::security::SecurityContext;
-use ep_platform_runtime::config::{KmsCfg, SecretRef};
+use ep_platform_runtime::config::{KmsCfg, SecretRef, SecretsCfg};
 use ep_platform_runtime::migrations::schema_of;
 use ep_platform_runtime::selfcheck::probe::{
     MigrationRow, ProbeError, RlsState, RolePrivileges, ServerSettings, SqlProbe, TableRls,
@@ -110,8 +109,8 @@ impl SqlProbe for FoundationProbeAdapter {
 /// 第二段（Degrading）：逐法人切换会话上下文核验密钥域存在——
 /// `key_domains` 挂法人行级策略，跨法人枚举只能逐法人取数。
 pub struct CoreSecretsProbe {
-    secrets_dir: PathBuf,
-    db_password_ref: SecretRef,
+    secrets: SecretsCfg,
+    db_password_refs: Vec<SecretRef>,
     kms: KmsCfg,
     directory: Arc<PgLegalEntityDirectory>,
     key_domains: Arc<PgKeyDomainStore>,
@@ -119,15 +118,15 @@ pub struct CoreSecretsProbe {
 
 impl CoreSecretsProbe {
     pub fn new(
-        secrets_dir: PathBuf,
-        db_password_ref: SecretRef,
+        secrets: SecretsCfg,
+        db_password_refs: Vec<SecretRef>,
         kms: KmsCfg,
         directory: Arc<PgLegalEntityDirectory>,
         key_domains: Arc<PgKeyDomainStore>,
     ) -> Self {
         Self {
-            secrets_dir,
-            db_password_ref,
+            secrets,
+            db_password_refs,
             kms,
             directory,
             key_domains,
@@ -147,8 +146,10 @@ impl CoreSecretsProbe {
 #[async_trait::async_trait]
 impl SecretsProbe for CoreSecretsProbe {
     async fn backend_available(&self) -> Result<(), ProbeError> {
-        resolve_secret(&self.secrets_dir, &self.db_password_ref).map_err(probe_err)?;
-        build_kms_backend(&self.kms, &self.secrets_dir)
+        for reference in &self.db_password_refs {
+            resolve_secret(&self.secrets, reference).map_err(probe_err)?;
+        }
+        build_kms_backend(&self.kms, &self.secrets.dir)
             .map(|_| ())
             .map_err(probe_err)
     }

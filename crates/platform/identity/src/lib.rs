@@ -10,7 +10,7 @@
 //! - [`ports`]：持久化端口与审计/事件/告警占位调用面；
 //! - [`password`]：Argon2id 哈希校验与口令策略；
 //! - [`totp`]：RFC 6238 自实现（HMAC-SHA1，skew ±1）；
-//! - [`mfa`]：强制判据、无状态登录挑战、TOTP/X509/WebAuthn 三形态；
+//! - [`mfa`]：强制判据、进程内一次消费登录挑战、TOTP/X509/WebAuthn 三形态；
 //! - [`enrollment`]：MFA 登记用例（TOTP begin/complete 与注销）；
 //! - [`session`]：不透明令牌、摘要、上限裁剪与续期合并；
 //! - [`login`]：sign-in 九步与 complete-mfa；

@@ -245,13 +245,13 @@ impl<U: UnitOfWork> LoginService<U> {
         self.map_outcome(outcome, client, &request_id, &trace_id)
     }
 
-    /// complete-mfa：校验无状态挑战后走会话建立收尾。
+    /// complete-mfa：校验并预留一次性挑战后走会话建立收尾。
     pub async fn complete_mfa(
         &self,
         req: CompleteMfaRequest,
         now: DateTime<Utc>,
     ) -> Result<SignInSuccess, AppError> {
-        let payload = self.challenges.verify(&req.challenge, now)?;
+        let (payload, mut challenge_reservation) = self.challenges.reserve(&req.challenge, now)?;
         let client = client_kind(&payload.client);
         let request_id = req.request_id.clone();
         let trace_id = req.trace_id.clone();
@@ -271,7 +271,7 @@ impl<U: UnitOfWork> LoginService<U> {
             self.policies.clone(),
             self.totp_domain,
         );
-        let outcome = uow
+        let outcome_result = uow
             .transact(&system_ctx_for(&payload.user_id)?, move |tx| {
                 Box::pin(run_complete_mfa_tx(
                     tx,
@@ -292,7 +292,29 @@ impl<U: UnitOfWork> LoginService<U> {
                     totp_domain,
                 ))
             })
-            .await?;
+            .await;
+        let outcome = match outcome_result {
+            Ok(outcome @ LoginTxOutcome::Succeeded { .. }) => {
+                // 事务已明确提交成功：即使随后上下文装配失败，已建会话
+                // 对应的挑战也不得再次执行。
+                challenge_reservation.mark_consumed();
+                outcome
+            }
+            Ok(outcome @ LoginTxOutcome::Rejected { .. }) => {
+                // transact 的 Ok 证明拒绝副作用已提交，且该分支明确未建会话；
+                // 只有这个已知结果可释放挑战，供用户在未锁定时合法重试。
+                challenge_reservation.release_after_known_rejection();
+                outcome
+            }
+            Ok(outcome @ LoginTxOutcome::MfaPending { .. }) => {
+                // complete-mfa 不应产生该结果；保留 reservation 的默认烧毁语义。
+                outcome
+            }
+            Err(error) => {
+                // 包含 commit outcome unknown 在内的任何错误均不释放；Drop 烧毁。
+                return Err(error);
+            }
+        };
         match self.map_outcome(outcome, client, &request_id, &trace_id)? {
             SignInOutcome::Authenticated(s) => Ok(*s),
             SignInOutcome::MfaRequired { .. } => Err(AppError::new(
@@ -380,7 +402,7 @@ fn pre_auth_lookup_ctx(req: &SignInRequest) -> Result<SecurityContext, AppError>
     Ok(SecurityContext::system(le, request_id, trace_id))
 }
 
-/// complete-mfa 事务的法人上下文（无状态挑战已绑定用户；法人取缺省，
+/// complete-mfa 事务的法人上下文（已验签挑战绑定用户；法人取缺省，
 /// 身份九表无 RLS，不受影响）。
 fn system_ctx_for(_user_id: &uuid::Uuid) -> Result<SecurityContext, AppError> {
     let request_id = RequestId::new("mfa00000000")
@@ -530,7 +552,6 @@ async fn run_sign_in_tx(
             client,
             &*credentials,
             &*attempts,
-            &*lockouts,
             &challenges,
         )
         .await;
@@ -607,7 +628,6 @@ async fn mfa_pending_path(
     client: ClientKind,
     credentials: &dyn CredentialStore,
     attempts: &dyn LoginAttemptStore,
-    lockouts: &dyn LockoutStore,
     challenges: &MfaChallengeService,
 ) -> Result<LoginTxOutcome, AppError> {
     let seconds = credentials
@@ -642,8 +662,9 @@ async fn mfa_pending_path(
         now,
     )
     .await?;
-    // 第一因子已过：锁定计数重置，挑战期不受失败窗口影响。
-    lockouts.reset(tx, account.id).await?;
+    // 第一因子成功只签发挑战，尚不构成完整登录成功，不能清零账号失败
+    // 计数；否则攻击者可在每次错 MFA 后重新通过口令，把账号级锁定
+    // 永久洗成一次失败。唯一重置点保留在 finish_login 的成功事务内。
     Ok(LoginTxOutcome::MfaPending { challenge })
 }
 
@@ -788,6 +809,28 @@ async fn run_complete_mfa_tx(
             rejection: Rejection::AccountInactive,
         });
     }
+    // 账号维限流只能绑定已验签挑战中的 user_id，不能从匿名请求体接收
+    // login_name。事务内先锁住同一锁定行：不同来源地址的 complete-mfa
+    // 尝试也必须串行推进同一个账号窗口，且锁定期正确码同样不得放行。
+    let lock_row = lockouts.lock_for_update(tx, user_id).await?;
+    if lock_row.locked_until.is_some_and(|until| until > now) {
+        attempts
+            .append(
+                tx,
+                NewLoginAttempt {
+                    user_id: Some(user_id),
+                    login_name_hash: crate::session::login_name_hash(&account.login_name).to_vec(),
+                    outcome: LoginAttemptOutcome::AccountLocked,
+                    client,
+                    source_addr: req.source_addr.clone(),
+                    occurred_at: now,
+                },
+            )
+            .await?;
+        return Ok(LoginTxOutcome::Rejected {
+            rejection: Rejection::AccountLocked,
+        });
+    }
     // 第二因子校验：失败同样提交（流水 + 锁定推进）。
     let verified = match &req.proof {
         SecondFactorProof::Totp { code } => {
@@ -811,7 +854,6 @@ async fn run_complete_mfa_tx(
         }
     };
     if !verified {
-        let lock_row = lockouts.lock_for_update(tx, user_id).await?;
         let lp = &policy.lockout;
         lockouts
             .record_failure(

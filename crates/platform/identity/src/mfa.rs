@@ -4,6 +4,9 @@
 //! 非空的有效角色授予，或持含六类高风险权限项的角色——后两支读
 //! [`UserAuthzSet`]（platform_authz 用户维度读取面）。
 
+use std::collections::HashMap;
+use std::sync::Mutex;
+
 use chrono::{DateTime, Utc};
 use ep_foundation::error::codes::{
     PLATFORM_AUTHN_MFA_CHALLENGE_EXPIRED, PLATFORM_AUTHN_MFA_INVALID,
@@ -12,7 +15,7 @@ use ep_foundation::error::codes::{
 use ep_foundation::error::AppError;
 use ep_foundation::port::kms::{Aad, KeyRef, KmsBackend, Signature};
 use hmac::{Hmac, Mac};
-use sha2::Sha256;
+use sha2::{Digest, Sha256};
 
 use crate::config::X509Policy;
 use crate::ports::UserAuthzSet;
@@ -21,6 +24,10 @@ use crate::totp::verify_totp;
 use crate::types::{CredentialKind, CredentialRow, UserAccountRow};
 
 type HmacSha256 = Hmac<Sha256>;
+
+// 当前首版是单实例、进程随机挑战密钥；在这个部署边界内保留一个
+// 有界的短期使用表，使 opaque challenge 具备并发安全的一次消费语义。
+const MAX_TRACKED_LOGIN_CHALLENGES: usize = 4_096;
 
 /// 强制 MFA 判据三支的合取判定。
 pub fn is_mfa_required(account: &UserAccountRow, authz: &UserAuthzSet) -> bool {
@@ -47,30 +54,137 @@ pub struct MfaChallengePayload {
     pub user_id: uuid::Uuid,
     pub device_id: String,
     pub client: String,
+    pub nonce_b64url: String,
     pub expires_at_unix: i64,
 }
 
-/// 无状态登录挑战服务：挑战 = base64url(紧凑 JSON 载荷 + HMAC-SHA256)。
-/// 挑战寿命短（默认 5 分钟）且仅限登录二段使用；签名密钥为进程级随机
-/// 材料，重启后旧挑战自然失效（单实例部署首版取舍，见汇报）。
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum ChallengeUseState {
+    Reserved,
+    Consumed,
+    Burned,
+}
+
+#[derive(Clone, Copy)]
+struct TrackedChallenge {
+    expires_at_unix: i64,
+    state: ChallengeUseState,
+}
+
+/// 登录挑战服务：opaque challenge = base64url(紧凑 JSON 载荷 +
+/// HMAC-SHA256)，成功后由有界进程状态保证一次消费。挑战寿命短（默认
+/// 5 分钟）且仅限登录二段使用；签名密钥为进程级随机材料，重启后旧挑战
+/// 自然失效（单实例部署首版取舍，见汇报）。
 pub struct MfaChallengeService {
     key: [u8; 32],
     ttl_seconds: u64,
+    uses: Mutex<HashMap<[u8; 32], TrackedChallenge>>,
+}
+
+/// complete-mfa 在数据库事务前原子预留挑战。Drop/取消/事务
+/// 结果不确定时默认转为 Burned；只有明确已提交的拒绝结果才允许
+/// 显式释放，已建会话则转为 Consumed。这使 commit outcome unknown 始终
+/// fail-closed，并发重放也在任一事务副作用发生前即被拒绝。
+pub(crate) struct MfaChallengeReservation<'a> {
+    service: &'a MfaChallengeService,
+    digest: [u8; 32],
+    expires_at_unix: i64,
+    finalized: bool,
+}
+
+impl MfaChallengeReservation<'_> {
+    pub(crate) fn mark_consumed(&mut self) {
+        let mut uses = self
+            .service
+            .uses
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        match uses.get_mut(&self.digest) {
+            Some(entry) => {
+                debug_assert!(entry.state == ChallengeUseState::Reserved);
+                entry.state = ChallengeUseState::Consumed;
+            }
+            None => {
+                // 即使未来清理策略在长事务期间移除了预留，也在会话已
+                // 提交后恢复 Consumed 事实，绝不因内部状态漂移而放行重放。
+                uses.insert(
+                    self.digest,
+                    TrackedChallenge {
+                        expires_at_unix: self.expires_at_unix,
+                        state: ChallengeUseState::Consumed,
+                    },
+                );
+            }
+        }
+        self.finalized = true;
+    }
+
+    /// 仅供数据库事务明确返回“未建立会话”且提交成功的拒绝分支。
+    pub(crate) fn release_after_known_rejection(&mut self) {
+        let mut uses = self
+            .service
+            .uses
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        if uses
+            .get(&self.digest)
+            .is_some_and(|entry| entry.state == ChallengeUseState::Reserved)
+        {
+            uses.remove(&self.digest);
+        }
+        self.finalized = true;
+    }
+}
+
+impl Drop for MfaChallengeReservation<'_> {
+    fn drop(&mut self) {
+        if self.finalized {
+            return;
+        }
+        let mut uses = self
+            .service
+            .uses
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        if let Some(entry) = uses.get_mut(&self.digest) {
+            if entry.state == ChallengeUseState::Reserved {
+                entry.state = ChallengeUseState::Burned;
+            }
+        } else {
+            // 即使未来清理策略在长事务期间移除了预留，异步取消或
+            // 未知结果也必须恢复烧毁事实，不得因内部状态漂移放行重放。
+            uses.insert(
+                self.digest,
+                TrackedChallenge {
+                    expires_at_unix: self.expires_at_unix,
+                    state: ChallengeUseState::Burned,
+                },
+            );
+        }
+    }
 }
 
 impl MfaChallengeService {
     pub fn new(ttl_seconds: u64) -> Self {
         let mut key = [0u8; 32];
         rand::RngCore::fill_bytes(&mut rand::thread_rng(), &mut key);
-        Self { key, ttl_seconds }
+        Self {
+            key,
+            ttl_seconds,
+            uses: Mutex::new(HashMap::new()),
+        }
     }
 
     #[cfg(test)]
     fn with_key(key: [u8; 32], ttl_seconds: u64) -> Self {
-        Self { key, ttl_seconds }
+        Self {
+            key,
+            ttl_seconds,
+            uses: Mutex::new(HashMap::new()),
+        }
     }
 
-    /// 签发挑战（不入库；明文只出现在响应）。
+    /// 签发挑战（不入库；opaque token 只出现在响应）。
     pub fn issue(
         &self,
         user_id: uuid::Uuid,
@@ -78,10 +192,13 @@ impl MfaChallengeService {
         client: &str,
         now: DateTime<Utc>,
     ) -> Result<String, AppError> {
+        let mut nonce = [0u8; 32];
+        rand::RngCore::fill_bytes(&mut rand::thread_rng(), &mut nonce);
         let payload = MfaChallengePayload {
             user_id,
             device_id: device_id.to_string(),
             client: client.to_string(),
+            nonce_b64url: base64url_encode(&nonce),
             expires_at_unix: now.timestamp() + i64::try_from(self.ttl_seconds).unwrap_or(i64::MAX),
         };
         let body = serde_json::to_vec(&payload).map_err(|e| {
@@ -94,6 +211,43 @@ impl MfaChallengeService {
         let mut combined = body;
         combined.extend_from_slice(&mac);
         Ok(base64url_encode(&combined))
+    }
+
+    /// 校验并原子预留一次使用权。相同挑战的并发或已消费重放统一映射
+    /// 为 MFA_INVALID，避免向匿名调用方泄露挑战是否曾经有效。
+    pub(crate) fn reserve(
+        &self,
+        challenge: &str,
+        now: DateTime<Utc>,
+    ) -> Result<(MfaChallengePayload, MfaChallengeReservation<'_>), AppError> {
+        let payload = self.verify(challenge, now)?;
+        let digest: [u8; 32] = Sha256::digest(challenge.as_bytes()).into();
+        let mut uses = self
+            .uses
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        uses.retain(|_, entry| entry.expires_at_unix >= now.timestamp());
+        if uses.contains_key(&digest) || uses.len() >= MAX_TRACKED_LOGIN_CHALLENGES {
+            return Err(invalid_challenge());
+        }
+        uses.insert(
+            digest,
+            TrackedChallenge {
+                expires_at_unix: payload.expires_at_unix,
+                state: ChallengeUseState::Reserved,
+            },
+        );
+        drop(uses);
+        let expires_at_unix = payload.expires_at_unix;
+        Ok((
+            payload,
+            MfaChallengeReservation {
+                service: self,
+                digest,
+                expires_at_unix,
+                finalized: false,
+            },
+        ))
     }
 
     /// 校验挑战：MAC 不符返 None（与不存在不可区分）；过期返 Err。
@@ -420,6 +574,59 @@ mod tests {
         assert!(svc.verify("garbage", now).is_err(), "垃圾输入拒");
         let tampered = format!("{token}x");
         assert!(svc.verify(&tampered, now).is_err(), "篡改 MAC 拒");
+    }
+
+    #[test]
+    fn login_challenges_are_unique_and_concurrent_reservations_are_rejected() {
+        let svc = MfaChallengeService::with_key([7; 32], 300);
+        let now = Utc::now();
+        let token = svc
+            .issue(uuid::Uuid::from_u128(9), "DEV-01", "win", now)
+            .expect("签发");
+        let another = svc
+            .issue(uuid::Uuid::from_u128(9), "DEV-01", "win", now)
+            .expect("同秒再次签发");
+        assert_ne!(token, another, "随机 nonce 防止同秒同载荷挑战碰撞");
+
+        let (_, pending) = svc.reserve(&token, now).expect("首次预留");
+        assert!(svc.reserve(&token, now).is_err(), "并发重放在事务前拒绝");
+        drop(pending);
+    }
+
+    #[test]
+    fn dropping_or_cancelling_a_reservation_burns_the_challenge_fail_closed() {
+        let svc = MfaChallengeService::with_key([7; 32], 300);
+        let now = Utc::now();
+        let token = svc
+            .issue(uuid::Uuid::from_u128(11), "DEV-03", "win", now)
+            .expect("签发");
+
+        // 取消 complete_mfa future 会 Drop 其栈上的 reservation；直接
+        // Drop 是该取消边界的最小、确定性模型。
+        let (_, cancelled) = svc.reserve(&token, now).expect("首次预留");
+        drop(cancelled);
+        assert!(
+            svc.reserve(&token, now).is_err(),
+            "reservation 被取消或 Drop 时必须默认烧毁，不得放行重放"
+        );
+    }
+
+    #[test]
+    fn only_an_explicit_known_rejection_releases_a_reserved_challenge() {
+        let svc = MfaChallengeService::with_key([7; 32], 300);
+        let now = Utc::now();
+        let token = svc
+            .issue(uuid::Uuid::from_u128(10), "DEV-02", "win", now)
+            .expect("签发");
+
+        let (_, mut rejected) = svc.reserve(&token, now).expect("首次预留");
+        rejected.release_after_known_rejection();
+        drop(rejected);
+
+        let (_, mut retried) = svc.reserve(&token, now).expect("明确未建会话才可合法重试");
+        retried.mark_consumed();
+        drop(retried);
+        assert!(svc.reserve(&token, now).is_err(), "消费后永久拒绝重放");
     }
 
     #[test]

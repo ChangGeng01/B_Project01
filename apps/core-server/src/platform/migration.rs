@@ -7,12 +7,12 @@
 
 use std::sync::Arc;
 
-use axum::extract::State;
+use axum::extract::{Extension, State};
 use axum::http::HeaderMap;
 use axum::response::{IntoResponse, Response};
 use ep_adapter_db_pg::DataFoundationCheck;
 use ep_foundation::capability::{ActionClass, CapabilityDomain};
-use ep_foundation::security::context::DutyClass;
+use ep_foundation::security::context::{DutyClass, SecurityContext};
 use ep_platform_runtime::http::{ApiError, Envelope};
 use ep_platform_runtime::migrations::{embedded_migrations, expected_version_by_binary};
 use ep_platform_tenancy::capability as cap;
@@ -30,11 +30,16 @@ const CAPABILITY_BINDING: (CapabilityDomain, ActionClass) = (
 
 pub async fn list_migrations(
     State(state): State<Arc<PlatformState>>,
+    security_context: Option<Extension<SecurityContext>>,
     headers: HeaderMap,
 ) -> Response {
     let trace = trace_of(&headers);
     let out: Result<Response, ApiError> = async {
-        let ctx = extract_context(&headers, &state.system, &[DutyClass::System])?;
+        let ctx = extract_context(
+            security_context.as_deref(),
+            &state.system,
+            &[DutyClass::System],
+        )?;
         let _ = ctx; // 历史表不带法人列，上下文仅用于门禁；查询走系统通道。
         let db = state.db.clone().ok_or_else(|| not_provisioned(&state, &trace))?;
         let rows = db

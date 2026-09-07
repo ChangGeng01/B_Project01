@@ -203,7 +203,11 @@ mod tests {
                 Category::BusinessConflict => &[409],
                 // F-63：限流是 Infrastructure 类唯一允许 429 的例外（分类表逐字「503，限流 429」）。
                 Category::Infrastructure => {
-                    if r.code.0.ends_with(".RATE_LIMITED") { &[429] } else { &[503] }
+                    if r.code.0.ends_with(".RATE_LIMITED") {
+                        &[429]
+                    } else {
+                        &[503]
+                    }
                 }
             };
             assert!(
